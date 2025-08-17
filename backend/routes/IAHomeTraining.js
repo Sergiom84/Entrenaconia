@@ -145,7 +145,8 @@ Ahora, genera el plan para el usuario.`;
     let aiJson;
     try {
       aiJson = JSON.parse(content);
-    } catch (_) {
+    } catch (error) {
+      console.error('IAHomeTraining error:', error);
       aiJson = { error: 'Formato no JSON' };
     }
 
