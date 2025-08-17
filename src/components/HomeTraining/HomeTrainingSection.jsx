@@ -10,6 +10,8 @@ const HomeTrainingSection = () => {
   const [selectedEquipment, setSelectedEquipment] = useState(null);
   const [selectedTrainingType, setSelectedTrainingType] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [showPersonalizedMessage, setShowPersonalizedMessage] = useState(false);
+  const [personalizedMessage, setPersonalizedMessage] = useState('');
   const [generatedPlan, setGeneratedPlan] = useState(null);
 
   // Estados para el sistema de entrenamiento
@@ -29,6 +31,8 @@ const HomeTrainingSection = () => {
     setSelectedEquipment(null);
     setSelectedTrainingType(null);
     setIsGenerating(false);
+    setShowPersonalizedMessage(false);
+    setPersonalizedMessage('');
     setGeneratedPlan(null);
     setCurrentSession(null);
     setShowExerciseModal(false);
@@ -131,8 +135,6 @@ const HomeTrainingSection = () => {
       return;
     }
 
-    setIsGenerating(true);
-
     try {
       const token = localStorage.getItem('token');
       if (!token) {
@@ -140,7 +142,7 @@ const HomeTrainingSection = () => {
         return;
       }
 
-      // Llamamos al backend para evitar exponer la API key en el frontend
+      // Llamamos al backend para generar el plan
       const resp = await fetch('/api/ia-home-training/generate', {
         method: 'POST',
         headers: {
@@ -158,7 +160,12 @@ const HomeTrainingSection = () => {
         throw new Error(data.error || 'Error al generar el entrenamiento');
       }
 
-      // El backend ya devuelve el plan enriquecido listo para usar
+      // Paso 3: Mostrar mensaje personalizado primero
+      const message = data.plan.mensaje_personalizado || 'Tu entrenamiento personalizado ha sido generado.';
+      setPersonalizedMessage(message);
+      setShowPersonalizedMessage(true);
+
+      // Guardamos el plan para mostrarlo después
       setGeneratedPlan(data.plan);
 
       // Guardar el plan en la base de datos
@@ -166,9 +173,17 @@ const HomeTrainingSection = () => {
     } catch (error) {
       console.error('Error:', error);
       alert('Error al generar el entrenamiento. Por favor, inténtalo de nuevo.');
-    } finally {
-      setIsGenerating(false);
     }
+  };
+
+  // Función para proceder del mensaje personalizado al loading
+  const proceedToGenerating = () => {
+    setShowPersonalizedMessage(false);
+    setIsGenerating(true);
+    // Simular un delay para mostrar el loading y luego mostrar el plan
+    setTimeout(() => {
+      setIsGenerating(false);
+    }, 2000); // 2 segundos de loading
   };
 
   // Función para guardar el plan en la base de datos
@@ -537,7 +552,32 @@ const HomeTrainingSection = () => {
           </div>
         )}
 
-        {/* Modal de carga */}
+        {/* Modal de mensaje personalizado (Paso 3) */}
+        {showPersonalizedMessage && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="bg-gray-800 border border-gray-600 rounded-2xl p-8 max-w-2xl mx-4">
+              <div className="text-center">
+                <div className="w-16 h-16 bg-yellow-400/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Target size={32} className="text-yellow-400" />
+                </div>
+                <h3 className="text-xl font-semibold text-white mb-4">
+                  ¡Tu Entrenamiento Está Listo!
+                </h3>
+                <div className="bg-yellow-400/10 border border-yellow-400/30 rounded-lg p-4 mb-6">
+                  <p className="text-yellow-100 leading-relaxed">{personalizedMessage}</p>
+                </div>
+                <button
+                  onClick={proceedToGenerating}
+                  className="bg-yellow-400 hover:bg-yellow-500 text-black font-semibold py-3 px-8 rounded-lg transition-colors duration-200"
+                >
+                  Ver Mi Plan de Entrenamiento
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal de carga (Paso 4) */}
         {isGenerating && (
           <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
             <div className="bg-gray-800 border border-gray-600 rounded-2xl p-8 max-w-md mx-4 text-center">
