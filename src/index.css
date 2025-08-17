@@ -1,0 +1,91 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+/* Estilos personalizados para formularios - Estilo del proyecto */
+.form-input {
+  @apply w-full bg-gray-700/60 border border-yellow-400/20 rounded-lg px-4 py-3 text-gray-100 placeholder-gray-300 focus:outline-none focus:border-yellow-400 transition-colors;
+}
+
+.form-input:focus {
+  @apply ring-2 ring-yellow-400/20;
+}
+
+/* Estilos para select/desplegables */
+select {
+  @apply bg-gray-900 text-white border border-yellow-400/20 rounded-lg px-4 py-3 focus:outline-none focus:border-yellow-400 transition-colors;
+}
+
+select option {
+  @apply bg-gray-900 text-white;
+}
+
+.form-select {
+  @apply w-full bg-gray-700/60 border border-yellow-400/20 rounded-lg px-4 py-3 text-gray-100 focus:outline-none focus:border-yellow-400 transition-colors;
+}
+
+.form-textarea {
+  @apply w-full bg-gray-700/60 border border-yellow-400/20 rounded-lg px-4 py-3 text-gray-100 placeholder-gray-300 focus:outline-none focus:border-yellow-400 transition-colors resize-none;
+}
+
+.form-label {
+  @apply block text-gray-100 font-semibold mb-2;
+}
+
+.form-section-title {
+  @apply text-xl font-semibold text-yellow-300 mb-6;
+}
+
+/* Estilos para botones - Estilo del proyecto */
+.btn-primary {
+  @apply bg-yellow-400 hover:bg-yellow-300 text-black font-semibold py-3 px-6 rounded-lg transition-colors;
+}
+
+.btn-secondary {
+  @apply bg-gray-700 hover:bg-gray-600 text-gray-100 font-semibold py-3 px-6 rounded-lg transition-colors border border-yellow-400/20;
+}
+
+/* Cards y modales - Estilo del proyecto */
+.card {
+  @apply bg-gray-800 rounded-xl border border-yellow-400/20;
+}
+
+.modal-overlay {
+  @apply fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4;
+}
+
+.modal-content {
+  @apply bg-gray-800 rounded-xl border border-yellow-400/20 shadow-2xl;
+}
+
+/* Responsive para móviles */
+@media (max-width: 640px) {
+  .mobile-padding {
+    @apply px-4 py-6;
+  }
+
+  .mobile-text {
+    @apply text-sm;
+  }
+
+  .mobile-grid {
+    @apply grid-cols-1;
+  }
+}
