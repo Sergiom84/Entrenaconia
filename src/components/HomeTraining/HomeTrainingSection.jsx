@@ -1,4 +1,3 @@
-import { motion } from 'framer-motion';
 import { ArrowLeft, Home, Dumbbell, Target } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
@@ -10,7 +9,11 @@ const HomeTrainingSection = () => {
   const [selectedEquipment, setSelectedEquipment] = useState(null);
   const [selectedTrainingType, setSelectedTrainingType] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [showPersonalizedMessage, setShowPersonalizedMessage] = useState(false);
+  const [personalizedMessage, setPersonalizedMessage] = useState('');
   const [generatedPlan, setGeneratedPlan] = useState(null);
+  const [hasShownPersonalizedMessage, setHasShownPersonalizedMessage] = useState(false);
+
 
   // Estados para el sistema de entrenamiento
   const [currentSession, setCurrentSession] = useState(null);
@@ -29,6 +32,8 @@ const HomeTrainingSection = () => {
     setSelectedEquipment(null);
     setSelectedTrainingType(null);
     setIsGenerating(false);
+    setShowPersonalizedMessage(false);
+    setPersonalizedMessage('');
     setGeneratedPlan(null);
     setCurrentSession(null);
     setShowExerciseModal(false);
@@ -124,14 +129,7 @@ const HomeTrainingSection = () => {
 
   // Función para generar entrenamiento con IA
   const generateTraining = async () => {
-    console.log('🎯 Generando entrenamiento...', { selectedEquipment, selectedTrainingType });
-
-    if (!selectedEquipment || !selectedTrainingType) {
-      console.log('❌ Faltan datos:', { selectedEquipment, selectedTrainingType });
-      return;
-    }
-
-    setIsGenerating(true);
+    if (!selectedEquipment || !selectedTrainingType) return;
 
     try {
       const token = localStorage.getItem('token');
@@ -140,7 +138,13 @@ const HomeTrainingSection = () => {
         return;
       }
 
-      // Llamamos al backend para evitar exponer la API key en el frontend
+      // ① Mostrar loader ANTES de llamar a la IA
+      setIsGenerating(true);
+      setShowPersonalizedMessage(false);
+      // Reset del flag para un nuevo plan
+      setHasShownPersonalizedMessage(false);
+
+      // ② Llamada a la IA
       const resp = await fetch('/api/ia-home-training/generate', {
         method: 'POST',
         headers: {
@@ -158,17 +162,32 @@ const HomeTrainingSection = () => {
         throw new Error(data.error || 'Error al generar el entrenamiento');
       }
 
-      // El backend ya devuelve el plan enriquecido listo para usar
+      // ③ Guardar plan y preparar mensaje
       setGeneratedPlan(data.plan);
+      const message = data.plan.mensaje_personalizado || 'Tu entrenamiento personalizado ha sido generado.';
+      setPersonalizedMessage(message);
 
-      // Guardar el plan en la base de datos
+      // ④ Ocultar loader y mostrar mensaje personalizado (solo primera vez por plan)
+      setIsGenerating(false);
+      if (!hasShownPersonalizedMessage) {
+        setShowPersonalizedMessage(true);
+        setHasShownPersonalizedMessage(true);
+      }
+
+      // ⑤ Persistir en BD (opcionalmente puedes hacerlo tras aceptar el plan)
       await savePlanToDatabase(data.plan, selectedEquipment, selectedTrainingType);
     } catch (error) {
       console.error('Error:', error);
+      setIsGenerating(false); // asegurar que se apague si falla
       alert('Error al generar el entrenamiento. Por favor, inténtalo de nuevo.');
-    } finally {
-      setIsGenerating(false);
     }
+  };
+
+  // Función para proceder del mensaje personalizado al plan
+  const proceedToGenerating = () => {
+    // Antes: encendía el loader 2s (comportamiento invertido)
+    setShowPersonalizedMessage(false);
+    // El modal del plan aparece porque `generatedPlan` ya está seteado y `showProgress` es false.
   };
 
   // Función para guardar el plan en la base de datos
@@ -528,16 +547,46 @@ const HomeTrainingSection = () => {
               </p>
               <button
                 onClick={generateTraining}
-                className="bg-yellow-400 hover:bg-yellow-500 text-black font-semibold py-3 px-8 rounded-lg transition-colors duration-200 flex items-center mx-auto"
+                disabled={isGenerating}
+                className="bg-yellow-400 hover:bg-yellow-500 disabled:opacity-60 disabled:cursor-not-allowed text-black font-semibold py-3 px-8 rounded-lg transition-colors duration-200 flex items-center mx-auto"
               >
-                <Target size={20} className="mr-2" />
+                {isGenerating ? (
+                  <div className="w-4 h-4 border-2 border-black/60 border-t-transparent rounded-full animate-spin mr-2" />
+                ) : (
+                  <Target size={20} className="mr-2" />
+                )}
                 Generar Mi Entrenamiento
               </button>
             </div>
           </div>
         )}
 
-        {/* Modal de carga */}
+        {/* Modal de mensaje personalizado (Paso 3) */}
+        {showPersonalizedMessage && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="bg-gray-800 border border-gray-600 rounded-2xl p-8 max-w-2xl mx-4">
+              <div className="text-center">
+                <div className="w-16 h-16 bg-yellow-400/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Target size={32} className="text-yellow-400" />
+                </div>
+                <h3 className="text-xl font-semibold text-white mb-4">
+                  ¡Tu Entrenamiento Está Listo!
+                </h3>
+                <div className="bg-yellow-400/10 border border-yellow-400/30 rounded-lg p-4 mb-6">
+                  <p className="text-yellow-100 leading-relaxed">{personalizedMessage}</p>
+                </div>
+                <button
+                  onClick={proceedToGenerating}
+                  className="bg-yellow-400 hover:bg-yellow-500 text-black font-semibold py-3 px-8 rounded-lg transition-colors duration-200"
+                >
+                  Ver Mi Plan de Entrenamiento
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal de carga (Paso 4) */}
         {isGenerating && (
           <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
             <div className="bg-gray-800 border border-gray-600 rounded-2xl p-8 max-w-md mx-4 text-center">

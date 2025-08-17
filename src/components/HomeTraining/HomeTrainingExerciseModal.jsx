@@ -226,52 +226,100 @@ const HomeTrainingExerciseModal = ({
             </div>
           </div>
 
-          {/* Notas del ejercicio */}
+          {/* Notas del ejercicio y consejos de ejecución */}
           {exercise.notas && (
             <div className="bg-blue-900/20 border border-blue-700/50 rounded-lg p-4 mb-6">
-              <p className="text-blue-200 text-sm">{exercise.notas}</p>
+              <div className="flex items-start mb-3">
+                <Target size={16} className="text-blue-400 mr-2 mt-1 flex-shrink-0" />
+                <h4 className="text-blue-200 font-semibold text-sm">Consejos de Ejecución</h4>
+              </div>
+              <p className="text-blue-200 text-sm leading-relaxed">{exercise.notas}</p>
             </div>
           )}
 
-          {/* Área de media del ejercicio */}
-          <div className="bg-gray-700/30 rounded-lg p-4 mb-6 text-center">
-            {exerciseGif ? (
-              <img
-                src={exerciseGif}
-                alt={exercise.nombre}
-                className="mx-auto max-h-64 rounded-md shadow-md"
-                onError={(e) => { e.currentTarget.style.display = 'none'; }}
-              />
-            ) : (
-              <div className="text-gray-400 py-6">
-                <Target size={48} className="mx-auto mb-2" />
-                <p>GIF no disponible</p>
-                <p className="text-sm">({exercise.nombre})</p>
+          {/* Información adicional del ejercicio */}
+          {(exercise.patron || exercise.implemento) && (
+            <div className="bg-gray-700/30 border border-gray-600/50 rounded-lg p-4 mb-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                {exercise.patron && (
+                  <div className="flex items-center">
+                    <span className="w-2 h-2 bg-green-400 rounded-full mr-2"></span>
+                    <span className="text-gray-300">Patrón: </span>
+                    <span className="text-white font-medium capitalize ml-1">{exercise.patron}</span>
+                  </div>
+                )}
+                {exercise.implemento && (
+                  <div className="flex items-center">
+                    <span className="w-2 h-2 bg-blue-400 rounded-full mr-2"></span>
+                    <span className="text-gray-300">Implemento: </span>
+                    <span className="text-white font-medium capitalize ml-1">{exercise.implemento}</span>
+                  </div>
+                )}
               </div>
-            )}
+            </div>
+          )}
 
-            {/* Input rápido para probar URL de GIF */}
-            <div className="mt-4 flex items-center gap-2">
-              <input
-                type="url"
-                placeholder="Pega una URL de GIF y pulsa Aplicar"
-                className="flex-1 bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-white placeholder-gray-400"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    const v = e.currentTarget.value.trim();
-                    if (v) setExerciseGif(v);
-                  }
-                }}
-              />
-              <button
-                onClick={(e) => {
-                  const input = e.currentTarget.previousSibling;
-                  if (input && input.value) setExerciseGif(input.value.trim());
-                }}
-                className="bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold px-3 py-2 rounded-md"
-              >
-                Aplicar
-              </button>
+          {/* Área de media del ejercicio mejorada */}
+          <div className="bg-gray-700/30 rounded-lg p-4 mb-6">
+            <div className="text-center mb-4">
+              <h4 className="text-white font-semibold mb-2">Demostración del Ejercicio</h4>
+              {exerciseGif ? (
+                <div className="relative inline-block">
+                  <img
+                    src={exerciseGif}
+                    alt={exercise.nombre}
+                    className="mx-auto max-h-64 rounded-md shadow-lg border border-gray-600"
+                    onError={(e) => { 
+                      e.currentTarget.style.display = 'none';
+                      e.currentTarget.nextSibling.style.display = 'block';
+                    }}
+                  />
+                  <div className="hidden text-center py-8">
+                    <Target size={48} className="mx-auto mb-2 text-gray-400" />
+                    <p className="text-gray-400">GIF no disponible</p>
+                    <p className="text-sm text-gray-500">({exercise.nombre})</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <Target size={48} className="mx-auto mb-2 text-gray-400" />
+                  <p className="text-gray-400">GIF no disponible</p>
+                  <p className="text-sm text-gray-500">({exercise.nombre})</p>
+                </div>
+              )}
+            </div>
+
+            {/* Input para URL de GIF personalizada */}
+            <div className="bg-gray-800/50 rounded-md p-3">
+              <div className="text-xs text-gray-400 mb-2">¿Tienes un GIF mejor? Pégalo aquí:</div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="url"
+                  placeholder="https://ejemplo.com/ejercicio.gif"
+                  className="flex-1 bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-white placeholder-gray-400 focus:border-yellow-400 focus:outline-none transition-colors"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      const v = e.currentTarget.value.trim();
+                      if (v) {
+                        setExerciseGif(v);
+                        e.currentTarget.value = '';
+                      }
+                    }
+                  }}
+                />
+                <button
+                  onClick={(e) => {
+                    const input = e.currentTarget.previousSibling;
+                    if (input && input.value.trim()) {
+                      setExerciseGif(input.value.trim());
+                      input.value = '';
+                    }
+                  }}
+                  className="bg-yellow-400 hover:bg-yellow-500 text-black text-sm font-semibold px-3 py-2 rounded-md transition-colors"
+                >
+                  Aplicar
+                </button>
+              </div>
             </div>
           </div>
 

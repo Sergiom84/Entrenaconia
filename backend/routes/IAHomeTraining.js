@@ -49,7 +49,9 @@ router.post('/generate', authenticateToken, async (req, res) => {
     const historyRes = await pool.query(
       `SELECT e.nombre
          FROM home_training_plans p
-              CROSS JOIN jsonb_to_recordset(p.plan_data->'ejercicios') AS e(nombre TEXT)
+              CROSS JOIN jsonb_to_recordset(
+                p.plan_data->'plan_entrenamiento'->'ejercicios'
+              ) AS e(nombre TEXT)
         WHERE p.user_id = $1
         ORDER BY p.created_at DESC
         LIMIT 15`,
@@ -88,8 +90,9 @@ La estructura es:
 4.  **REGLAS DE ORO PARA LA GENERACIÓN:**
     -   **¡SÉ CREATIVO!**: Esta es la regla más importante. Sorprende al usuario. No uses siempre los mismos 5 ejercicios de HIIT. Tienes una base de datos inmensa de movimientos, úsala.
     -   **EVITA LA REPETICIÓN**: El historial de ejercicios recientes es una lista de lo que NO debes usar, o al menos, no en su mayoría. Prioriza la novedad.
-    -   **CALIDAD TÉCNICA**: Las 'notas' de cada ejercicio deben ser consejos de experto, enfocados en la forma y la seguridad.
+    -   **CALIDAD TÉCNICA**: Las 'notas' de cada ejercicio deben ser consejos de experto detallados, enfocados en la forma correcta, seguridad, respiración y consejos para maximizar la efectividad. Incluye puntos clave como posición inicial, movimiento, respiración y errores comunes a evitar.
     -   **UTILIZA EL EQUIPAMIENTO**: Si el usuario tiene 'equipo básico', incorpora las mancuernas y las bandas elásticas de forma inteligente en el HIIT, no te limites al peso corporal.
+    -   **INFORMACIÓN TÉCNICA**: Siempre incluye los campos 'patron' (ej: sentadilla, empuje, tracción, bisagra_cadera) e 'implemento' (ej: peso_corporal, mancuernas, bandas_elasticas) para cada ejercicio.
 
 5.  **GUÍA DE ESTILOS (NO REGLAS ESTRICTAS):**
     -   **funcional**: Piensa en movimientos completos y fluidos. Combina fuerza, equilibrio y cardio.
@@ -113,7 +116,7 @@ La estructura es:
         "series": 4,
         "repeticiones": 12,
         "descanso_seg": 60,
-        "notas": "Mantén la mancuerna pegada al pecho y el torso erguido durante todo el movimiento.",
+        "notas": "Posición inicial: Sostén la mancuerna verticalmente contra tu pecho con ambas manos, codos apuntando hacia abajo. Pies a la anchura de los hombros. Movimiento: Desciende flexionando caderas y rodillas hasta que los muslos estén paralelos al suelo, mantén el torso erguido y el peso centrado. Respiración: Inhala al descender, exhala al subir. Evita: Inclinar el torso hacia adelante o que las rodillas se desvíen hacia adentro.",
         "patron": "sentadilla",
         "implemento": "mancuernas"
       }
@@ -144,7 +147,8 @@ Ahora, genera el plan para el usuario.`;
     let aiJson;
     try {
       aiJson = JSON.parse(content);
-    } catch (_) {
+    } catch (error) {
+      console.error('IAHomeTraining error:', error);
       aiJson = { error: 'Formato no JSON' };
     }
 
