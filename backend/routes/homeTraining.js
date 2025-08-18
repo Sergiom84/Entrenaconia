@@ -205,7 +205,7 @@ router.put('/sessions/:sessionId/exercise/:exerciseOrder', authenticateToken, as
            progress_percentage = $2,
            status = $3,
            completed_at = CASE WHEN $3 = 'completed' THEN NOW() ELSE completed_at END,
-           duration_seconds = $4
+           total_duration_seconds = $4
        WHERE id = $5`,
       [progress.completed_exercises, progressPercentage, sessionStatus, progress.total_duration, sessionId]
     );
@@ -233,8 +233,8 @@ router.put('/sessions/:sessionId/exercise/:exerciseOrder', authenticateToken, as
 
       await client.query(
         `INSERT INTO user_exercise_history
-           (user_id, exercise_name, exercise_key, reps, series, duration_seconds, session_id, plan_id, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+           (user_id, exercise_name, exercise_key, reps, series, duration_seconds, session_id, plan_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          ON CONFLICT DO NOTHING`,
         [user_id, exName, exKey, null, series_completed, duration_seconds, sessionId, planId]
       );
