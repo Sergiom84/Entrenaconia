@@ -271,42 +271,35 @@ const HomeTrainingSection = () => {
       const token = localStorage.getItem('token');
       const exercise = generatedPlan.plan_entrenamiento.ejercicios[currentExerciseIndex];
 
-      // Actualizar progreso en la base de datos
       await fetch(`/api/home-training/sessions/${currentSession.id}/exercise/${currentExerciseIndex}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          series_completed: exercise.series,
-          status: 'completed'
-        })
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ series_completed: exercise.series, status: 'completed' })
       });
 
-      // Actualizar estado local
-      const newCompletedExercises = Array.from(new Set([...sessionProgress.completedExercises, currentExerciseIndex]));
-      const total = generatedPlan.plan_entrenamiento.ejercicios.length || 0;
-      const newPercentage = total > 0 ? (newCompletedExercises.length / total) * 100 : 0;
+      // Actualizar estado local inmediatamente
+      const newCompletedExercises = [...sessionProgress.completedExercises, currentExerciseIndex];
+      const total = generatedPlan.plan_entrenamiento.ejercicios.length;
+      const newPercentage = (newCompletedExercises.length / total) * 100;
 
       setSessionProgress({
-        ...sessionProgress,
+        currentExercise: currentExerciseIndex + 1,
         completedExercises: newCompletedExercises,
-        percentage: newPercentage,
-        currentExercise: currentExerciseIndex + 1
+        percentage: newPercentage
       });
 
-      // Pasar al siguiente ejercicio o finalizar
       if (currentExerciseIndex < generatedPlan.plan_entrenamiento.ejercicios.length - 1) {
         setCurrentExerciseIndex(currentExerciseIndex + 1);
       } else {
-        // Entrenamiento completado
         setShowExerciseModal(false);
-        await loadUserStats(); // Recargar estadísticas
-        alert('¡Entrenamiento completado! ¡Excelente trabajo!');
+        await loadUserStats();
+        setTimeout(() => {
+          alert('🎉 ¡Felicitaciones! Has completado todo el entrenamiento. ¡Excelente trabajo!');
+        }, 500);
       }
     } catch (error) {
       console.error('Error completing exercise:', error);
+      alert('Error al guardar el progreso. Por favor, inténtalo de nuevo.');
     }
   };
 
@@ -315,26 +308,26 @@ const HomeTrainingSection = () => {
     try {
       const token = localStorage.getItem('token');
 
-      // Marcar ejercicio como saltado en la base de datos
       await fetch(`/api/home-training/sessions/${currentSession.id}/exercise/${currentExerciseIndex}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          series_completed: 0,
-          duration_seconds: null,
-          status: 'skipped'
-        })
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ series_completed: 0, status: 'skipped' })
       });
 
-      // Pasar al siguiente ejercicio
+      const total = generatedPlan.plan_entrenamiento.ejercicios.length;
+      const newPercentage = (sessionProgress.completedExercises.length / total) * 100;
+
+      setSessionProgress({
+        ...sessionProgress,
+        currentExercise: currentExerciseIndex + 1,
+        percentage: newPercentage
+      });
+
       if (currentExerciseIndex < generatedPlan.plan_entrenamiento.ejercicios.length - 1) {
         setCurrentExerciseIndex(currentExerciseIndex + 1);
       } else {
         setShowExerciseModal(false);
-        alert('Entrenamiento finalizado');
+        alert('Entrenamiento finalizado. Algunos ejercicios fueron saltados.');
       }
     } catch (error) {
       console.error('Error skipping exercise:', error);
@@ -345,19 +338,25 @@ const HomeTrainingSection = () => {
   const handleUpdateProgress = async (exerciseIndex, seriesCompleted, totalSeries) => {
     try {
       const token = localStorage.getItem('token');
+      const status = seriesCompleted === totalSeries ? 'completed' : 'in_progress';
 
       await fetch(`/api/home-training/sessions/${currentSession.id}/exercise/${exerciseIndex}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          series_completed: Number(seriesCompleted) || 0,
-          duration_seconds: null,
-          status: seriesCompleted === totalSeries ? 'completed' : 'in_progress'
-        })
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ series_completed: seriesCompleted, status })
       });
+
+      if (seriesCompleted === totalSeries && !sessionProgress.completedExercises.includes(exerciseIndex)) {
+        const newCompletedExercises = [...sessionProgress.completedExercises, exerciseIndex];
+        const total = generatedPlan.plan_entrenamiento.ejercicios.length;
+        const newPercentage = (newCompletedExercises.length / total) * 100;
+
+        setSessionProgress({
+          ...sessionProgress,
+          completedExercises: newCompletedExercises,
+          percentage: newPercentage
+        });
+      }
     } catch (error) {
       console.error('Error updating progress:', error);
     }

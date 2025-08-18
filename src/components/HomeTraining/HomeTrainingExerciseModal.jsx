@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Play, Pause, Square, SkipForward, X, Clock, Target, RotateCcw } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Play, Pause, Square, SkipForward, X, Clock, Target, RotateCcw, CheckCircle } from 'lucide-react';
 import { getExerciseGifUrl } from '../../config/exerciseGifs';
 
 const HomeTrainingExerciseModal = ({ 
@@ -16,16 +16,20 @@ const HomeTrainingExerciseModal = ({
   const [isRunning, setIsRunning] = useState(false);
   const [currentSeries, setCurrentSeries] = useState(1);
   const [exerciseGif, setExerciseGif] = useState(null);
+  const [totalTimeSpent, setTotalTimeSpent] = useState(0);
+  const intervalRef = useRef(null);
 
   // Configurar tiempo inicial y GIF basado en el ejercicio
   useEffect(() => {
-    // tiempo inicial
+    setCurrentPhase('ready');
+    setCurrentSeries(1);
+    setIsRunning(false);
+    setTotalTimeSpent(0);
     if (exercise.duracion_seg) {
       setTimeLeft(exercise.duracion_seg);
     } else {
-      setTimeLeft(45); // reps: usar 45s por defecto
+      setTimeLeft(45);
     }
-    // gif
     if (exercise?.gif_url) {
       setExerciseGif(exercise.gif_url);
     } else {
@@ -33,54 +37,51 @@ const HomeTrainingExerciseModal = ({
     }
   }, [exercise]);
 
-  // Timer principal
+  // Timer principal mejorado
   useEffect(() => {
-    let interval = null;
-    
     if (isRunning && timeLeft > 0) {
-      interval = setInterval(() => {
-        setTimeLeft(time => {
-          if (time <= 1) {
+      intervalRef.current = setInterval(() => {
+        setTimeLeft(prev => {
+          if (prev <= 1) {
             handlePhaseComplete();
             return 0;
           }
-          return time - 1;
+          return prev - 1;
         });
+        if (currentPhase === 'exercise') {
+          setTotalTimeSpent(prev => prev + 1);
+        }
       }, 1000);
+    } else {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
     }
 
     return () => {
-      if (interval) clearInterval(interval);
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
     };
-  }, [isRunning, timeLeft]);
+  }, [isRunning, timeLeft, currentPhase]);
 
   const handlePhaseComplete = () => {
+    setIsRunning(false);
     if (currentPhase === 'exercise') {
+      onUpdateProgress(exerciseIndex, currentSeries, exercise.series);
       if (currentSeries < exercise.series) {
-        // Pasar a descanso y arrancar automáticamente
         setCurrentPhase('rest');
-        setTimeLeft(exercise.descanso_seg || 60);
-        setIsRunning(true);
-        onUpdateProgress(exerciseIndex, currentSeries, exercise.series);
+        setTimeLeft(Math.min(60, Math.max(45, Number(exercise.descanso_seg) || 60)));
+        setTimeout(() => setIsRunning(true), 100);
       } else {
-        // Ejercicio completado
-        setIsRunning(false);
         setCurrentPhase('completed');
-        onUpdateProgress(exerciseIndex, exercise.series, exercise.series);
-        setTimeout(() => {
-          onComplete();
-        }, 500);
+        setTimeout(() => { onComplete(); }, 1500);
       }
     } else if (currentPhase === 'rest') {
-      // Pasar a la siguiente serie y arrancar
-      setCurrentSeries(prev => prev + 1);
+      setCurrentSeries(prev => Math.min(prev + 1, Number(exercise.series) || prev + 1));
       setCurrentPhase('exercise');
-      if (exercise.duracion_seg) {
-        setTimeLeft(exercise.duracion_seg);
-      } else {
-        setTimeLeft(45);
-      }
-      setIsRunning(true);
+      setTimeLeft(exercise.duracion_seg || 45);
+      setTimeout(() => setIsRunning(true), 100);
     }
   };
 
@@ -99,19 +100,23 @@ const HomeTrainingExerciseModal = ({
     setIsRunning(true);
   };
 
-  const handleStop = () => {
+  const handleReset = () => {
     setIsRunning(false);
     setCurrentPhase('ready');
     setCurrentSeries(1);
-    if (exercise.duracion_seg) {
-      setTimeLeft(exercise.duracion_seg);
-    } else {
-      setTimeLeft(45);
-    }
+    setTotalTimeSpent(0);
+    setTimeLeft(exercise.duracion_seg || 45);
   };
 
-  const handleSkipExercise = () => {
-    onSkip();
+  const handleSkipSeries = () => {
+    if (currentSeries < exercise.series) {
+      setCurrentSeries(prev => prev + 1);
+      setCurrentPhase('exercise');
+      setTimeLeft(exercise.duracion_seg || 45);
+      setIsRunning(false);
+    } else {
+      onSkip();
+    }
   };
 
   const formatTime = (seconds) => {
@@ -125,7 +130,7 @@ const HomeTrainingExerciseModal = ({
       case 'ready':
         return 'Preparado para comenzar';
       case 'exercise':
-        return `Serie ${currentSeries} de ${exercise.series}`;
+        return `Serie ${Math.min(currentSeries, Number(exercise.series) || currentSeries)} de ${exercise.series}`;
       case 'rest':
         return 'Tiempo de descanso';
       case 'completed':
@@ -237,22 +242,22 @@ const HomeTrainingExerciseModal = ({
             </div>
           )}
 
-          {/* Información adicional del ejercicio */}
+          {/* Información adicional */}
           {(exercise.patron || exercise.implemento) && (
-            <div className="bg-gray-700/30 border border-gray-600/50 rounded-lg p-4 mb-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+            <div className="bg-gray-700/30 rounded-lg p-3 mb-6">
+              <div className="flex flex-wrap gap-4 text-sm">
                 {exercise.patron && (
                   <div className="flex items-center">
                     <span className="w-2 h-2 bg-green-400 rounded-full mr-2"></span>
-                    <span className="text-gray-300">Patrón: </span>
-                    <span className="text-white font-medium capitalize ml-1">{exercise.patron}</span>
+                    <span className="text-gray-300">Patrón:</span>
+                    <span className="text-white font-medium ml-1 capitalize">{String(exercise.patron).replaceAll('_',' ')}</span>
                   </div>
                 )}
                 {exercise.implemento && (
                   <div className="flex items-center">
                     <span className="w-2 h-2 bg-blue-400 rounded-full mr-2"></span>
-                    <span className="text-gray-300">Implemento: </span>
-                    <span className="text-white font-medium capitalize ml-1">{exercise.implemento}</span>
+                    <span className="text-gray-300">Implemento:</span>
+                    <span className="text-white font-medium ml-1 capitalize">{String(exercise.implemento).replaceAll('_',' ')}</span>
                   </div>
                 )}
               </div>
@@ -323,7 +328,7 @@ const HomeTrainingExerciseModal = ({
             </div>
           </div>
 
-          {/* Controles */}
+          {/* Controles mejorados */}
           <div className="flex gap-3 justify-center">
             {currentPhase === 'ready' && (
               <button
@@ -356,22 +361,23 @@ const HomeTrainingExerciseModal = ({
                 )}
 
                 <button
-                  onClick={handleStop}
-                  className="flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+                  onClick={handleReset}
+                  className="flex items-center gap-2 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-3 px-4 rounded-lg transition-colors"
                 >
-                  <Square size={20} />
-                  Parar
+                  <RotateCcw size={20} />
                 </button>
               </>
             )}
 
-            <button
-              onClick={handleSkipExercise}
-              className="flex items-center gap-2 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
-            >
-              <SkipForward size={20} />
-              Saltar Ejercicio
-            </button>
+            {currentPhase !== 'completed' && (
+              <button
+                onClick={() => onSkip()}
+                className="flex items-center gap-2 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+              >
+                <SkipForward size={20} />
+                Saltar Ejercicio
+              </button>
+            )}
           </div>
         </div>
       </div>

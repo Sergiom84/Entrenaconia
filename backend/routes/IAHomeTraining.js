@@ -15,6 +15,42 @@ const calcIMC = (peso, alturaCm) => {
   return Number((p / (m * m)).toFixed(1));
 };
 
+// Duración y descansos
+const SECONDS_PER_REP_DEFAULT = 2.5;
+const DEFAULT_WORK_SECONDS = 45; // si no hay datos para reps
+const clampRest = (sec) => {
+  const n = Number(sec);
+  const val = Number.isFinite(n) && n > 0 ? n : 45;
+  return Math.min(60, Math.max(45, val));
+};
+
+const computeEstimatedDurationMinutes = (plan) => {
+  try {
+    const ejercicios = plan?.ejercicios || [];
+    if (!Array.isArray(ejercicios) || ejercicios.length === 0) return null;
+    let totalSeconds = 0;
+    for (const ej of ejercicios) {
+      const series = Number(ej?.series) || 0;
+      if (series <= 0) continue;
+      const descanso = clampRest(ej?.descanso_seg);
+      let trabajo = 0;
+      if (Number(ej?.duracion_seg)) {
+        trabajo = Number(ej.duracion_seg);
+      } else if (Number(ej?.repeticiones)) {
+        trabajo = Math.round(Number(ej.repeticiones) * SECONDS_PER_REP_DEFAULT);
+      } else {
+        trabajo = DEFAULT_WORK_SECONDS;
+      }
+      totalSeconds += series * (trabajo + descanso);
+    }
+    if (totalSeconds <= 0) return null;
+    return Math.max(1, Math.round(totalSeconds / 60));
+  } catch {
+    return null;
+  }
+};
+
+
 // POST /api/ia-home-training/generate
 router.post('/generate', authenticateToken, async (req, res) => {
   try {
@@ -60,6 +96,23 @@ router.post('/generate', authenticateToken, async (req, res) => {
     const recentExercises = historyRes.rows.map(r => r.nombre).join(', ') || 'Ninguno';
     const imc = calcIMC(u.peso, u.altura);
 
+    // Inventario de equipamiento permitido según selección (guardarraíl del prompt)
+    const equipmentInventories = {
+      minimo: {
+        label: 'Equipamiento Mínimo',
+        implements: ['peso_corporal','toallas','silla_sofa','pared']
+      },
+      basico: {
+        label: 'Equipamiento Básico',
+        implements: ['mancuernas','bandas_elasticas','esterilla','banco_step']
+      },
+      avanzado: {
+        label: 'Equipamiento Avanzado',
+        implements: ['barra_dominadas','kettlebells','trx','discos_olimpicos']
+      }
+    };
+    const inventory = equipmentInventories[equipment_type];
+
     const systemMessage = `Eres "MindFit Coach", un experto entrenador personal y biomecánico. Tu misión es diseñar rutinas de entrenamiento en casa excepcionales, seguras y efectivas, respondiendo SIEMPRE con un único objeto JSON válido.
 
 **REGLA DE ORO**: Tu respuesta debe ser exclusivamente un objeto JSON. No incluyas texto, comentarios o markdown fuera del JSON.
@@ -87,11 +140,14 @@ La estructura es:
 3.  **HISTORIAL RECIENTE (Ejercicios a evitar si es posible):**
     -   ${recentExercises}
 
-4.  **REGLAS DE ORO PARA LA GENERACIÓN:**
+4.  **EQUIPAMIENTO DISPONIBLE (USA SOLO ESTOS IMPLEMENTOS):**
+    -   ${inventory.label}: ${inventory.implements.join(', ')}
+
+5.  **REGLAS DE ORO PARA LA GENERACIÓN:**
     -   **¡SÉ CREATIVO!**: Esta es la regla más importante. Sorprende al usuario. No uses siempre los mismos 5 ejercicios de HIIT. Tienes una base de datos inmensa de movimientos, úsala.
     -   **EVITA LA REPETICIÓN**: El historial de ejercicios recientes es una lista de lo que NO debes usar, o al menos, no en su mayoría. Prioriza la novedad.
     -   **CALIDAD TÉCNICA**: Las 'notas' de cada ejercicio deben ser consejos de experto detallados, enfocados en la forma correcta, seguridad, respiración y consejos para maximizar la efectividad. Incluye puntos clave como posición inicial, movimiento, respiración y errores comunes a evitar.
-    -   **UTILIZA EL EQUIPAMIENTO**: Si el usuario tiene 'equipo básico', incorpora las mancuernas y las bandas elásticas de forma inteligente en el HIIT, no te limites al peso corporal.
+    -   **UTILIZA EL EQUIPAMIENTO**: Adáptate al inventario indicado. Si el usuario seleccionó 'mínimo', prohíbe implementos como mancuernas, kettlebells o barra; utiliza peso corporal, toallas, silla/sofá o pared.
     -   **INFORMACIÓN TÉCNICA**: Siempre incluye los campos 'patron' (ej: sentadilla, empuje, tracción, bisagra_cadera) e 'implemento' (ej: peso_corporal, mancuernas, bandas_elasticas) para cada ejercicio.
 
 5.  **GUÍA DE ESTILOS (NO REGLAS ESTRICTAS):**
@@ -156,11 +212,21 @@ Ahora, genera el plan para el usuario.`;
     const trainingNames = { funcional: 'Funcional', hiit: 'HIIT', fuerza: 'Fuerza' };
     const plan_source = { type: 'openai', label: 'OpenAI', detail: MODEL_NAME };
 
+    // Normalización de descansos y duración estimada
+    const aiPlan = aiJson?.plan_entrenamiento || {};
+    const sanitizedExercises = Array.isArray(aiPlan?.ejercicios)
+      ? aiPlan.ejercicios.map(ej => ({ ...ej, descanso_seg: clampRest(ej?.descanso_seg ?? 45) }))
+      : [];
+    const computedDuration = computeEstimatedDurationMinutes({ ejercicios: sanitizedExercises });
+    const durationOk = Number.isFinite(Number(aiPlan?.duracion_estimada_min)) && Number(aiPlan?.duracion_estimada_min) > 0;
+
     const enriched = {
       plan_source,
       ...aiJson,
       plan_entrenamiento: {
-        ...(aiJson?.plan_entrenamiento || {}),
+        ...aiPlan,
+        ejercicios: sanitizedExercises,
+        duracion_estimada_min: durationOk ? Number(aiPlan.duracion_estimada_min) : computedDuration,
         equipamiento: equipment_type,
         tipoEntrenamiento: training_type,
         equipamiento_nombre: equipmentNames[equipment_type],

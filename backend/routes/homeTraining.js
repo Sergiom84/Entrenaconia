@@ -141,49 +141,51 @@ router.post('/sessions/start', authenticateToken, async (req, res) => {
   }
 });
 
-// Actualizar progreso de ejercicio
+// Actualizar progreso de ejercicio (MEJORADO)
 router.put('/sessions/:sessionId/exercise/:exerciseOrder', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
   try {
+    await client.query('BEGIN');
+
     const { sessionId, exerciseOrder } = req.params;
     const { series_completed, duration_seconds, status } = req.body;
     const user_id = req.user.userId || req.user.id;
 
     // Verificar que la sesión pertenece al usuario
-    const sessionResult = await pool.query(
+    const sessionResult = await client.query(
       'SELECT * FROM home_training_sessions WHERE id = $1 AND user_id = $2',
       [sessionId, user_id]
     );
 
     if (sessionResult.rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: 'Sesión no encontrada'
-      });
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, message: 'Sesión no encontrada' });
     }
 
     // Actualizar progreso del ejercicio
-    const updateResult = await pool.query(
+    const updateResult = await client.query(
       `UPDATE home_exercise_progress
-       SET series_completed = $1, duration_seconds = $2, status = $3::varchar,
+       SET series_completed = $1,
+           duration_seconds = $2,
+           status = $3::varchar,
            completed_at = CASE WHEN $3::varchar = 'completed' THEN NOW() ELSE completed_at END,
            started_at = CASE WHEN started_at IS NULL THEN NOW() ELSE started_at END
        WHERE home_training_session_id = $4 AND exercise_order = $5
        RETURNING *`,
-      [series_completed, duration_seconds, status, sessionId, exerciseOrder]
+      [series_completed || 0, duration_seconds, status, sessionId, exerciseOrder]
     );
 
     if (updateResult.rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: 'Ejercicio no encontrado'
-      });
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, message: 'Ejercicio no encontrado' });
     }
 
     // Calcular progreso total de la sesión
-    const progressResult = await pool.query(
+    const progressResult = await client.query(
       `SELECT
          COUNT(*)::int as total_exercises,
-         COUNT(CASE WHEN status = 'completed' THEN 1 END)::int as completed_exercises
+         COUNT(CASE WHEN status = 'completed' THEN 1 END)::int as completed_exercises,
+         SUM(CASE WHEN status = 'completed' THEN COALESCE(duration_seconds, 0) ELSE 0 END)::int as total_duration
        FROM home_exercise_progress
        WHERE home_training_session_id = $1`,
       [sessionId]
@@ -191,52 +193,71 @@ router.put('/sessions/:sessionId/exercise/:exerciseOrder', authenticateToken, as
 
     const progress = progressResult.rows[0];
     const progressPercentage = progress.total_exercises > 0
-      ? (progress.completed_exercises / progress.total_exercises) * 100
+      ? Math.round((progress.completed_exercises / progress.total_exercises) * 100)
       : 0;
 
+    const sessionStatus = progressPercentage >= 100 ? 'completed' : 'in_progress';
+
     // Actualizar sesión con el progreso
-    await pool.query(
+    await client.query(
       `UPDATE home_training_sessions
-       SET exercises_completed = $1, progress_percentage = $2,
-           status = CASE WHEN $2 >= 100 THEN 'completed' ELSE status END,
-           completed_at = CASE WHEN $2 >= 100 THEN NOW() ELSE completed_at END
-       WHERE id = $3`,
-      [progress.completed_exercises, progressPercentage, sessionId]
+       SET exercises_completed = $1,
+           progress_percentage = $2,
+           status = $3,
+           completed_at = CASE WHEN $3 = 'completed' THEN NOW() ELSE completed_at END,
+           duration_seconds = $4
+       WHERE id = $5`,
+      [progress.completed_exercises, progressPercentage, sessionStatus, progress.total_duration, sessionId]
     );
 
-    // Registrar en historial si el ejercicio quedó completado en esta llamada
+    // Si el ejercicio se completó, actualizar estadísticas e historial
     if (status === 'completed') {
+      if (progressPercentage >= 100) {
+        await client.query(
+          `UPDATE user_home_training_stats
+           SET total_sessions = total_sessions + 1,
+               total_duration_seconds = total_duration_seconds + COALESCE($1, 0),
+               last_session_date = NOW(),
+               updated_at = NOW()
+           WHERE user_id = $2`,
+          [progress.total_duration, user_id]
+        );
+      }
+
       const exRow = updateResult.rows[0];
       const sessRow = sessionResult.rows[0];
       const planId = sessRow.home_training_plan_id;
 
-      // Obtener nombre y datos del ejercicio
       const exName = exRow.exercise_name || (exRow.exercise_data && exRow.exercise_data.nombre) || 'Ejercicio';
       const exKey = (exName || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g,' ').trim();
 
-      await pool.query(
+      await client.query(
         `INSERT INTO user_exercise_history
-           (user_id, exercise_name, exercise_key, reps, series, duration_seconds, session_id, plan_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-        [user_id, exName, exKey, null, exRow.total_series, exRow.duration_seconds || null, sessionId, planId]
+           (user_id, exercise_name, exercise_key, reps, series, duration_seconds, session_id, plan_id, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+         ON CONFLICT DO NOTHING`,
+        [user_id, exName, exKey, null, series_completed, duration_seconds, sessionId, planId]
       );
     }
+
+    await client.query('COMMIT');
 
     res.json({
       success: true,
       exercise: updateResult.rows[0],
       session_progress: {
-        completed_exercises: parseInt(progress.completed_exercises),
-        total_exercises: parseInt(progress.total_exercises),
-        percentage: progressPercentage
+        completed_exercises: progress.completed_exercises,
+        total_exercises: progress.total_exercises,
+        percentage: progressPercentage,
+        total_duration: progress.total_duration
       }
     });
   } catch (error) {
+    await client.query('ROLLBACK');
     console.error('Error updating exercise progress:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error al actualizar el progreso del ejercicio'
-    });
+    res.status(500).json({ success: false, message: 'Error al actualizar el progreso del ejercicio' });
+  } finally {
+    client.release();
   }
 });
 
