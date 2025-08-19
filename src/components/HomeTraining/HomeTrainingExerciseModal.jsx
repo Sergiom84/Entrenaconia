@@ -25,8 +25,9 @@ const HomeTrainingExerciseModal = ({
     setCurrentSeries(1);
     setIsRunning(false);
     setTotalTimeSpent(0);
-    if (exercise.duracion_seg) {
-      setTimeLeft(exercise.duracion_seg);
+    const durValueInit = Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos);
+    if (Number.isFinite(durValueInit) && durValueInit > 0) {
+      setTimeLeft(durValueInit);
     } else {
       setTimeLeft(45);
     }
@@ -75,12 +76,12 @@ const HomeTrainingExerciseModal = ({
         setTimeout(() => setIsRunning(true), 100);
       } else {
         setCurrentPhase('completed');
-        setTimeout(() => { onComplete(); }, 1500);
+        setTimeout(() => { onComplete(totalTimeSpent); }, 1500);
       }
     } else if (currentPhase === 'rest') {
       setCurrentSeries(prev => Math.min(prev + 1, Number(exercise.series) || prev + 1));
       setCurrentPhase('exercise');
-      setTimeLeft(exercise.duracion_seg || 45);
+      setTimeLeft((Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos) || 45));
       setTimeout(() => setIsRunning(true), 100);
     }
   };
@@ -105,14 +106,14 @@ const HomeTrainingExerciseModal = ({
     setCurrentPhase('ready');
     setCurrentSeries(1);
     setTotalTimeSpent(0);
-    setTimeLeft(exercise.duracion_seg || 45);
+    setTimeLeft((Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos) || 45));
   };
 
   const handleSkipSeries = () => {
     if (currentSeries < exercise.series) {
       setCurrentSeries(prev => prev + 1);
       setCurrentPhase('exercise');
-      setTimeLeft(exercise.duracion_seg || 45);
+      setTimeLeft((Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos) || 45));
       setIsRunning(false);
     } else {
       onSkip();
@@ -139,6 +140,11 @@ const HomeTrainingExerciseModal = ({
         return '';
     }
   };
+
+  // helpers para pintar métricas
+  const repsValue = Number(exercise?.repeticiones ?? exercise?.reps ?? exercise?.repeticiones_por_serie);
+  const durValue  = Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos);
+  const baseDuration = Math.max(1, (durValue || 45));
 
   const getPhaseColor = () => {
     switch (currentPhase) {
@@ -191,7 +197,7 @@ const HomeTrainingExerciseModal = ({
                   currentPhase === 'rest' ? 'border-yellow-400' : 'border-blue-400'
                 }`}
                 style={{
-                  transform: `rotate(${((exercise.duracion_seg || 45) - timeLeft) / (exercise.duracion_seg || 45) * 360}deg)`
+                  transform: `rotate(${(((baseDuration) - timeLeft) / (baseDuration)) * 360}deg)`
                 }}
               ></div>
               <div className="absolute inset-0 flex items-center justify-center">
@@ -214,14 +220,22 @@ const HomeTrainingExerciseModal = ({
               </div>
               <div>
                 <div className="text-2xl font-bold text-white">
-                  {exercise.repeticiones || `${exercise.duracion_seg}s`}
+                  {Number.isFinite(repsValue) && repsValue > 0
+                    ? repsValue
+                    : Number.isFinite(durValue) && durValue > 0
+                      ? `${durValue}s`
+                      : '—'}
                 </div>
                 <div className="text-sm text-gray-400">
-                  {exercise.repeticiones ? 'Repeticiones' : 'Duración'}
+                  {Number.isFinite(repsValue) && repsValue > 0
+                    ? 'Repeticiones'
+                    : Number.isFinite(durValue) && durValue > 0
+                      ? 'Duración'
+                      : 'Repeticiones'}
                 </div>
               </div>
               <div>
-                <div className="text-2xl font-bold text-white">{exercise.descanso_seg}s</div>
+                <div className="text-2xl font-bold text-white">{(Number(exercise?.descanso_seg) || 45)}s</div>
                 <div className="text-sm text-gray-400">Descanso</div>
               </div>
               <div>

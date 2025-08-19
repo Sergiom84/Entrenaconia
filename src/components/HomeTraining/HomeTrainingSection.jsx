@@ -26,6 +26,9 @@ const HomeTrainingSection = () => {
   });
   const [userStats, setUserStats] = useState(null);
   const [showProgress, setShowProgress] = useState(false);
+  // Flags para evitar PUT duplicados
+  const [sending, setSending] = useState(false);
+  const [sendingProgress, setSendingProgress] = useState(false);
 
   // Función para resetear todo al estado inicial
   const resetToInitialState = () => {
@@ -252,6 +255,7 @@ const HomeTrainingSection = () => {
         setCurrentSession(sessionData.session);
         setCurrentExerciseIndex(0);
         setShowProgress(true);
+        setShowPersonalizedMessage(false);
         setShowExerciseModal(true);
       }
     } catch (error) {
@@ -262,11 +266,14 @@ const HomeTrainingSection = () => {
 
   // Función para continuar el entrenamiento
   const continueTraining = () => {
+    setShowPersonalizedMessage(false);
     setShowExerciseModal(true);
   };
 
   // Función para completar un ejercicio
-  const handleExerciseComplete = async () => {
+  const handleExerciseComplete = async (durationSeconds) => {
+    if (sending) return;
+    setSending(true);
     try {
       const token = localStorage.getItem('token');
       const exercise = generatedPlan.plan_entrenamiento.ejercicios[currentExerciseIndex];
@@ -274,7 +281,7 @@ const HomeTrainingSection = () => {
       await fetch(`/api/home-training/sessions/${currentSession.id}/exercise/${currentExerciseIndex}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ series_completed: exercise.series, status: 'completed' })
+        body: JSON.stringify({ series_completed: exercise.series, status: 'completed', duration_seconds: durationSeconds || null })
       });
 
       // Actualizar estado local inmediatamente
@@ -292,6 +299,7 @@ const HomeTrainingSection = () => {
         setCurrentExerciseIndex(currentExerciseIndex + 1);
       } else {
         setShowExerciseModal(false);
+        setShowPersonalizedMessage(false);
         await loadUserStats();
         setTimeout(() => {
           alert('🎉 ¡Felicitaciones! Has completado todo el entrenamiento. ¡Excelente trabajo!');
@@ -300,11 +308,15 @@ const HomeTrainingSection = () => {
     } catch (error) {
       console.error('Error completing exercise:', error);
       alert('Error al guardar el progreso. Por favor, inténtalo de nuevo.');
+      } finally {
+      etSending(false);
     }
   };
 
   // Función para saltar un ejercicio
   const handleExerciseSkip = async () => {
+    if (sending) return;
+    setSending(true);
     try {
       const token = localStorage.getItem('token');
 
@@ -327,15 +339,20 @@ const HomeTrainingSection = () => {
         setCurrentExerciseIndex(currentExerciseIndex + 1);
       } else {
         setShowExerciseModal(false);
+        setShowPersonalizedMessage(false);
         alert('Entrenamiento finalizado. Algunos ejercicios fueron saltados.');
       }
     } catch (error) {
       console.error('Error skipping exercise:', error);
+      } finally {
+      setSending(false);
     }
   };
 
   // Función para actualizar progreso durante el ejercicio
   const handleUpdateProgress = async (exerciseIndex, seriesCompleted, totalSeries) => {
+    if (sendingProgress) return;
+    setSendingProgress(true);
     try {
       const token = localStorage.getItem('token');
       const status = seriesCompleted === totalSeries ? 'completed' : 'in_progress';
@@ -359,6 +376,8 @@ const HomeTrainingSection = () => {
       }
     } catch (error) {
       console.error('Error updating progress:', error);
+    } finally {
+      setSendingProgress(false);
     }
   };
 
@@ -561,7 +580,7 @@ const HomeTrainingSection = () => {
         )}
 
         {/* Modal de mensaje personalizado (Paso 3) */}
-        {showPersonalizedMessage && (
+        {showPersonalizedMessage && !showProgress && !showExerciseModal && (
           <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
             <div className="bg-gray-800 border border-gray-600 rounded-2xl p-8 max-w-2xl mx-4">
               <div className="text-center">
