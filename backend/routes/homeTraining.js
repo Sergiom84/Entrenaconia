@@ -117,7 +117,8 @@ router.post('/sessions/start', authenticateToken, async (req, res) => {
       // Crear registros de progreso para cada ejercicio (robusto)
       for (let i = 0; i < exercises.length; i++) {
         const ex = exercises[i] || {};
-        const totalSeries = Number(ex.series ?? ex.total_series ?? ex.totalSeries) || (ex.tipo === 'tiempo' ? 1 : 3);
+        // Series por defecto (si la IA no especifica): 4
+        const totalSeries = Number(ex.series ?? ex.total_series ?? ex.totalSeries) || 4;
         await client.query(
           `INSERT INTO app.home_exercise_progress
            (home_training_session_id, exercise_order, exercise_name, total_series, series_completed, status, duration_seconds, started_at, exercise_data)
@@ -274,7 +275,7 @@ router.put('/sessions/:sessionId/exercise/:exerciseOrder', authenticateToken, as
   }
 });
 
-// Obtener estadísticas del usuario
+// Obtener estadísticas del usuario (extendido con ejercicios y tiempo activo)
 router.get('/stats', authenticateToken, async (req, res) => {
   try {
     const user_id = req.user.userId || req.user.id;
@@ -297,9 +298,23 @@ router.get('/stats', authenticateToken, async (req, res) => {
       stats = createResult.rows[0];
     }
 
+    // Agregar métricas basadas en ejercicios completados (sin descansos)
+    const exAgg = await pool.query(
+      `SELECT COUNT(*)::int AS total_exercises_completed,
+              COALESCE(SUM(duration_seconds), 0)::int AS total_exercise_duration_seconds
+         FROM app.user_exercise_history
+        WHERE user_id = $1`,
+      [user_id]
+    );
+    const ex = exAgg.rows[0] || { total_exercises_completed: 0, total_exercise_duration_seconds: 0 };
+
     res.json({
       success: true,
-      stats: stats
+      stats: {
+        ...stats,
+        total_exercises_completed: ex.total_exercises_completed,
+        total_exercise_duration_seconds: ex.total_exercise_duration_seconds,
+      }
     });
   } catch (error) {
     console.error('Error getting user stats:', error);
@@ -329,12 +344,22 @@ router.get('/sessions/:sessionId/progress', authenticateToken, async (req, res) 
       });
     }
 
-    // Obtener progreso de todos los ejercicios
+    // Obtener progreso de todos los ejercicios + último feedback por ejercicio
     const progressResult = await pool.query(
-      `SELECT * FROM app.home_exercise_progress
-       WHERE home_training_session_id = $1
-       ORDER BY exercise_order`,
-      [sessionId]
+      `SELECT p.*, fb.sentiment AS feedback_sentiment, fb.comment AS feedback_comment
+         FROM app.home_exercise_progress p
+         LEFT JOIN LATERAL (
+           SELECT sentiment, comment
+             FROM app.user_exercise_feedback uf
+            WHERE uf.user_id = $2
+              AND uf.session_id = $1
+              AND uf.exercise_order = p.exercise_order
+            ORDER BY created_at DESC
+            LIMIT 1
+         ) fb ON true
+        WHERE p.home_training_session_id = $1
+        ORDER BY p.exercise_order`,
+      [sessionId, user_id]
     );
 
     const session = sessionResult.rows[0];
@@ -360,6 +385,51 @@ router.get('/sessions/:sessionId/progress', authenticateToken, async (req, res) 
       success: false,
       message: 'Error al obtener el progreso de la sesión'
     });
+  }
+});
+
+
+// Crear feedback de ejercicio
+router.post('/sessions/:sessionId/exercise/:exerciseOrder/feedback', authenticateToken, async (req, res) => {
+  try {
+    const { sessionId, exerciseOrder } = req.params;
+    const { sentiment, comment, exercise_name } = req.body || {};
+    const user_id = req.user.userId || req.user.id;
+
+    if (!['dislike','hard','love'].includes(String(sentiment))) {
+      return res.status(400).json({ success: false, message: 'sentiment inválido' });
+    }
+
+    // Buscar nombre/clave del ejercicio si no llega por body
+    let exName = exercise_name;
+    let exKey = null;
+    if (!exName) {
+      const q = await pool.query(
+        `SELECT exercise_name, exercise_data
+           FROM app.home_exercise_progress
+          WHERE home_training_session_id = $1 AND exercise_order = $2
+          LIMIT 1`,
+        [sessionId, exerciseOrder]
+      );
+      if (q.rows.length) {
+        exName = q.rows[0].exercise_name || q.rows[0].exercise_data?.nombre || 'Ejercicio';
+      } else {
+        exName = 'Ejercicio';
+      }
+    }
+    exKey = (exName || '').toLowerCase().replace(/[^a-z0-9]+/g, '_');
+
+    await pool.query(
+      `INSERT INTO app.user_exercise_feedback
+         (user_id, session_id, exercise_order, exercise_name, exercise_key, sentiment, comment)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [user_id, sessionId, exerciseOrder, exName, exKey, sentiment, comment || null]
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error creating feedback:', error);
+    res.status(500).json({ success: false, message: 'Error creando feedback' });
   }
 });
 

@@ -1,12 +1,14 @@
 import React from 'react';
 import { TrendingUp, Clock, Target, Calendar } from 'lucide-react';
+import HomeTrainingUserProgressCard from './HomeTrainingUserProgressCard';
 
-const HomeTrainingProgress = ({ 
-  currentPlan, 
-  progress, 
-  userStats, 
+const HomeTrainingProgress = ({
+  currentPlan,
+  sessionExercises = [],
+  progress,
+  userStats,
   onContinueTraining,
-  onGenerateNewPlan 
+  onGenerateNewPlan
 }) => {
   const formatDuration = (seconds) => {
     const hours = Math.floor(seconds / 3600);
@@ -53,51 +55,7 @@ const HomeTrainingProgress = ({
     <div className="max-w-4xl mx-auto mb-8">
       {/* Estadísticas del usuario */}
       {userStats && (
-        <div className="bg-gray-800/70 backdrop-blur-sm border border-gray-600 rounded-2xl p-6 mb-6">
-          <div className="flex items-center mb-4">
-            <TrendingUp className="text-yellow-400 mr-2" size={24} />
-            <h3 className="text-xl font-semibold text-white">
-              Tu Progreso en Casa - {userStats.userName || 'Usuario'}
-            </h3>
-          </div>
-          
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-            <div className="text-center">
-              <div className="text-3xl font-bold text-green-400 mb-1">
-                {userStats.total_sessions || 0}
-              </div>
-              <div className="text-sm text-gray-400">Rutinas Completadas</div>
-            </div>
-            
-            <div className="text-center">
-              <div className="text-3xl font-bold text-blue-400 mb-1">
-                {formatDuration(userStats.total_duration_seconds || 0)}
-              </div>
-              <div className="text-sm text-gray-400">Tiempo Total</div>
-            </div>
-            
-            <div className="text-center">
-              <div className="text-3xl font-bold text-yellow-400 mb-1">
-                {getNivelLabel(userStats.current_level)}
-              </div>
-              <div className="text-sm text-gray-400">Nivel Actual</div>
-            </div>
-            
-            <div className="text-center">
-              <div className="text-3xl font-bold text-purple-400 mb-1">
-                {userStats.current_streak_days || 0} días
-              </div>
-              <div className="text-sm text-gray-400">Racha Actual</div>
-            </div>
-          </div>
-
-          <div className="mt-4 pt-4 border-t border-gray-700">
-            <p className="text-sm text-gray-400">
-              <span className="font-semibold">Tu Espacio de Entrenamiento:</span> 
-              {userStats.training_space || 'No especificado'}
-            </p>
-          </div>
-        </div>
+        <HomeTrainingUserProgressCard userStats={userStats} />
       )}
 
       {/* Plan actual */}
@@ -160,37 +118,53 @@ const HomeTrainingProgress = ({
             <h4 className="text-lg font-semibold text-white mb-4">Ejercicios del Plan</h4>
             <div className="space-y-3">
               {currentPlan.exercises.map((ejercicio, idx) => {
-                const isCompleted = progress.completedExercises.includes(idx);
-                const isCurrent = progress.currentExercise === idx;
-                
+                // Enlazar datos del backend (status/feedback y total_series) si existen
+                const exSession = sessionExercises?.find(e => e.exercise_order === idx) || {};
+                const status = exSession.status || (progress.completedExercises.includes(idx) ? 'completed' : (progress.currentExercise === idx ? 'in_progress' : 'pending'));
+                const isCompleted = status === 'completed';
+                const isCurrent = status === 'in_progress' || progress.currentExercise === idx;
+                const sentiment = exSession.feedback_sentiment;
+
                 return (
-                  <div 
-                    key={idx} 
+                  <div
+                    key={idx}
                     className={`rounded-lg p-4 border-l-4 ${
-                      isCompleted 
-                        ? 'bg-green-900/20 border-green-500' 
-                        : isCurrent 
-                        ? 'bg-blue-900/20 border-blue-500' 
+                      isCompleted
+                        ? 'bg-green-900/20 border-green-500'
+                        : isCurrent
+                        ? 'bg-blue-900/20 border-blue-500'
+                        : status === 'cancelled'
+                        ? 'bg-red-900/10 border-red-500'
                         : 'bg-gray-700/30 border-gray-600'
                     }`}
                   >
                     <div className="flex items-center justify-between">
                       <h5 className={`font-semibold ${
-                        isCompleted ? 'text-green-400' : isCurrent ? 'text-blue-400' : 'text-white'
+                        isCompleted ? 'text-green-400' : isCurrent ? 'text-blue-400' : status === 'cancelled' ? 'text-red-300' : 'text-white'
                       }`}>
                         {ejercicio.nombre}
-                        {isCompleted && <span className="ml-2 text-xs">✓ Completado</span>}
-                        {isCurrent && <span className="ml-2 text-xs">← Actual</span>}
+                        {isCompleted && (
+                          <span className="ml-2 text-xs">
+                            ✓ Completado{sentiment ? `, ${sentiment === 'love' ? 'Me encanta' : sentiment === 'hard' ? 'Es difícil' : 'No me gusta'}` : ''}
+                          </span>
+                        )}
+                        {!isCompleted && isCurrent && <span className="ml-2 text-xs text-blue-300">• En progreso</span>}
+                        {!isCompleted && !isCurrent && status === 'skipped' && (
+                          <span className="ml-2 text-xs text-gray-300">• Saltado{sentiment ? `, ${sentiment === 'love' ? 'Me encanta' : sentiment === 'hard' ? 'Es difícil' : 'No me gusta'}` : ''}</span>
+                        )}
+                        {!isCompleted && !isCurrent && status === 'cancelled' && (
+                          <span className="ml-2 text-xs text-red-300">• Cancelado{sentiment ? `, ${sentiment === 'love' ? 'Me encanta' : sentiment === 'hard' ? 'Es difícil' : 'No me gusta'}` : ''}</span>
+                        )}
                       </h5>
                     </div>
-                    
+
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm text-gray-300 mt-2">
                       <span>Series: {ejercicio.series}</span>
                       {ejercicio.repeticiones && <span>Reps: {ejercicio.repeticiones}</span>}
                       {ejercicio.duracion_seg && <span>Duración: {ejercicio.duracion_seg}s</span>}
                       <span>Descanso: {ejercicio.descanso_seg}s</span>
                     </div>
-                    
+
                     {ejercicio.notas && (
                       <p className="text-xs text-gray-400 italic mt-2">{ejercicio.notas}</p>
                     )}
@@ -218,12 +192,20 @@ const HomeTrainingProgress = ({
               {progress.percentage === 0 ? 'Comenzar Entrenamiento' : 'Continuar Entrenamiento'}
             </button>
           ) : (
-            <button
-              onClick={onGenerateNewPlan}
-              className="flex-1 bg-green-600 hover:bg-green-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
-            >
-              ¡Entrenamiento Completado! Generar Nuevo
-            </button>
+            <>
+              <button
+                onClick={onGenerateNewPlan}
+                className="flex-1 bg-green-600 hover:bg-green-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+              >
+                ¡Entrenamiento Completado! Generar Nuevo
+              </button>
+              <button
+                onClick={onContinueTraining}
+                className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+              >
+                Reanudar ejercicios
+              </button>
+            </>
           )}
         </div>
       </div>

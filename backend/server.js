@@ -59,9 +59,9 @@ app.get('/api/health', (req, res) => {
 });
 
 // Manejo de errores
-app.use((err, req, res, next) => {
+app.use((err, req, res, _next) => {
   console.error(err.stack);
-  res.status(500).json({ 
+  res.status(500).json({
     error: 'Algo salió mal!',
     message: process.env.NODE_ENV === 'development' ? err.message : 'Error interno del servidor'
   });

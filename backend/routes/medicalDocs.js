@@ -147,9 +147,9 @@ router.post('/users/:id/medical-docs/:docId/extract', async (req, res) => {
     const dataBuffer = fs.readFileSync(filePath)
     const parsed = await pdfParse(dataBuffer)
     return res.json({ success: true, plainText: parsed.text || '' })
-  } catch (e) {
-    console.error('Error extrayendo texto de PDF:', e)
-    return res.status(500).json({ success: false, error: e.message || 'Error interno' })
+  } catch (err) {
+    console.error('Error extrayendo texto de PDF:', err)
+    return res.status(500).json({ success: false, error: err.message || 'Error interno' })
   }
 })
 

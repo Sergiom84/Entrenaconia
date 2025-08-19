@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import HomeTrainingExerciseModal from './HomeTrainingExerciseModal';
 import HomeTrainingProgress from './HomeTrainingProgress';
+import HomeTrainingPlanModal from './HomeTrainingPlanModal';
 
 const HomeTrainingSection = () => {
   const navigate = useNavigate();
@@ -24,6 +25,7 @@ const HomeTrainingSection = () => {
     completedExercises: [],
     percentage: 0
   });
+  const [exercisesProgress, setExercisesProgress] = useState([]);
   const [userStats, setUserStats] = useState(null);
   const [showProgress, setShowProgress] = useState(false);
   // Flags para evitar PUT duplicados
@@ -53,6 +55,7 @@ const HomeTrainingSection = () => {
   useEffect(() => {
     loadCurrentPlan();
     loadUserStats();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Función para cargar el plan actual del usuario
@@ -124,6 +127,7 @@ const HomeTrainingSection = () => {
       if (data.success) {
         setSessionProgress(data.progress);
         setCurrentExerciseIndex(data.progress.currentExercise);
+        setExercisesProgress(data.exercises || []);
       }
     } catch (error) {
       console.error('Error loading session progress:', error);
@@ -257,6 +261,8 @@ const HomeTrainingSection = () => {
         setShowProgress(true);
         setShowPersonalizedMessage(false);
         setShowExerciseModal(true);
+        // Cargar progreso de la sesión recién creada (para obtener total_series por ejercicio)
+        await loadSessionProgress(sessionData.session.id);
       }
     } catch (error) {
       console.error('Error starting training:', error);
@@ -342,9 +348,53 @@ const HomeTrainingSection = () => {
         setShowPersonalizedMessage(false);
         alert('Entrenamiento finalizado. Algunos ejercicios fueron saltados.');
       }
+
+      // refrescar progreso para reflejar estado 'skipped'
+      await loadSessionProgress(currentSession.id);
+      await loadUserStats();
     } catch (error) {
       console.error('Error skipping exercise:', error);
       } finally {
+      setSending(false);
+    }
+  };
+
+  // Función para cancelar un ejercicio
+  const handleExerciseCancel = async () => {
+    if (sending) return;
+    setSending(true);
+    try {
+      const token = localStorage.getItem('token');
+
+      await fetch(`/api/home-training/sessions/${currentSession.id}/exercise/${currentExerciseIndex}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ series_completed: 0, status: 'cancelled' })
+      });
+
+      const total = generatedPlan.plan_entrenamiento.ejercicios.length;
+      const newPercentage = (sessionProgress.completedExercises.length / total) * 100;
+
+      setSessionProgress({
+        ...sessionProgress,
+        currentExercise: currentExerciseIndex + 1,
+        percentage: newPercentage
+      });
+
+      if (currentExerciseIndex < generatedPlan.plan_entrenamiento.ejercicios.length - 1) {
+        setCurrentExerciseIndex(currentExerciseIndex + 1);
+      } else {
+        setShowExerciseModal(false);
+        setShowPersonalizedMessage(false);
+        alert('Entrenamiento finalizado. Algunos ejercicios fueron cancelados.');
+      }
+
+      // refrescar progreso para reflejar estado 'cancelled'
+      await loadSessionProgress(currentSession.id);
+      await loadUserStats();
+    } catch (error) {
+      console.error('Error cancelling exercise:', error);
+    } finally {
       setSending(false);
     }
   };
@@ -362,6 +412,9 @@ const HomeTrainingSection = () => {
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ series_completed: seriesCompleted, status })
       });
+
+      // Refrescar stats tras cada ejercicio actualizado
+      await loadUserStats();
 
       if (seriesCompleted === totalSeries && !sessionProgress.completedExercises.includes(exerciseIndex)) {
         const newCompletedExercises = [...sessionProgress.completedExercises, exerciseIndex];
@@ -630,6 +683,7 @@ const HomeTrainingSection = () => {
               estimated_duration: generatedPlan.plan_entrenamiento.duracion_estimada_min,
               exercises: generatedPlan.plan_entrenamiento.ejercicios
             }}
+            sessionExercises={exercisesProgress}
             progress={sessionProgress}
             userStats={userStats}
             onContinueTraining={currentSession ? continueTraining : startTraining}
@@ -639,117 +693,14 @@ const HomeTrainingSection = () => {
 
         {/* Modal de resultado */}
         {generatedPlan && !showProgress && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-gray-800 border border-gray-600 rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-              {/* Header del modal */}
-              <div className="p-6 border-b border-gray-700">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h2 className="text-2xl font-bold text-white mb-2">
-                      {generatedPlan.plan_entrenamiento.titulo}
-                    </h2>
-                    <p className="text-gray-300">
-                      {generatedPlan.plan_entrenamiento.subtitulo}
-                    </p>
-                  </div>
-                  <button
-                    onClick={resetToInitialState}
-                    className="text-gray-400 hover:text-white transition-colors"
-                  >
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-
-              {/* Contenido del modal */}
-              <div className="p-6 space-y-6">
-                {/* Mensaje personalizado */}
-                <div className="bg-yellow-400/10 border border-yellow-400/30 rounded-lg p-4">
-                  <p className="text-yellow-100">{generatedPlan.mensaje_personalizado}</p>
-                </div>
-
-                {/* Información del entrenamiento */}
-                <div className="bg-gray-700/50 rounded-lg p-4">
-                  <div className="flex items-center mb-3">
-                    <Target size={20} className="text-yellow-400 mr-2" />
-                    <h3 className="text-lg font-semibold text-yellow-400">
-                      {generatedPlan.plan_entrenamiento.tipo_nombre?.toUpperCase()} en Casa
-                    </h3>
-                  </div>
-                  <p className="text-gray-300 mb-4">Entrenamiento personalizado adaptado a tu equipamiento</p>
-
-                  <div className="space-y-2 text-sm">
-                    <p className="text-gray-300">
-                      <span className="font-semibold">Fuente del plan:</span> {generatedPlan.plan_source?.label || 'OpenAI'}{generatedPlan.plan_source?.detail ? ` (${generatedPlan.plan_source.detail})` : ''}
-                    </p>
-                    <p className="text-gray-300">
-                      <span className="font-semibold">Perfil:</span> {generatedPlan.plan_entrenamiento.perfil_usuario}
-                    </p>
-                  </div>
-
-                  {/* Barra de progreso */}
-                  <div className="mt-4">
-                    <div className="flex justify-between text-sm text-gray-400 mb-1">
-                      <span>Progreso</span>
-                      <span>0%</span>
-                    </div>
-                    <div className="w-full bg-gray-600 rounded-full h-2">
-                      <div className="bg-yellow-400 h-2 rounded-full" style={{ width: '0%' }}></div>
-                    </div>
-                  </div>
-
-                  {/* Información adicional */}
-                  <div className="mt-4 flex flex-wrap gap-4 text-xs text-gray-400">
-                    <span>Fecha: {generatedPlan.plan_entrenamiento.fecha_formateada}</span>
-                    <span>Equipo: {generatedPlan.plan_entrenamiento.equipamiento}</span>
-                    <span>Tipo: {generatedPlan.plan_entrenamiento.tipoEntrenamiento}</span>
-                    <span>Duración estimada: {generatedPlan.plan_entrenamiento.duracion_estimada_min} min</span>
-                  </div>
-                </div>
-
-                {/* Lista de ejercicios */}
-                {generatedPlan.plan_entrenamiento.ejercicios && (
-                  <div>
-                    <h4 className="text-lg font-semibold text-white mb-4">Ejercicios del Plan</h4>
-                    <div className="space-y-3">
-                      {generatedPlan.plan_entrenamiento.ejercicios.map((ejercicio, idx) => (
-                        <div key={idx} className="bg-gray-700/30 rounded-lg p-4">
-                          <h5 className="font-semibold text-white mb-2">{ejercicio.nombre}</h5>
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm text-gray-300 mb-2">
-                            <span>Series: {ejercicio.series}</span>
-                            {ejercicio.repeticiones && <span>Reps: {ejercicio.repeticiones}</span>}
-                            {ejercicio.duracion_seg && <span>Duración: {ejercicio.duracion_seg}s</span>}
-                            <span>Descanso: {ejercicio.descanso_seg}s</span>
-                          </div>
-                          {ejercicio.notas && (
-                            <p className="text-xs text-gray-400 italic">{ejercicio.notas}</p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Botones de acción */}
-                <div className="flex gap-4 pt-4">
-                  <button
-                    onClick={resetToInitialState}
-                    className="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
-                  >
-                    Generar Otro Plan
-                  </button>
-                  <button
-                    onClick={startTraining}
-                    className="flex-1 bg-yellow-400 hover:bg-yellow-500 text-black font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
-                  >
-                    Comenzar Entrenamiento
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
+          <HomeTrainingPlanModal
+            plan={generatedPlan.plan_entrenamiento}
+            planSource={generatedPlan.plan_source}
+            personalizedMessage={generatedPlan.mensaje_personalizado}
+            onStart={startTraining}
+            onGenerateAnother={resetToInitialState}
+            onClose={resetToInitialState}
+          />
         )}
 
         {/* Modal de ejercicio individual */}
@@ -760,8 +711,12 @@ const HomeTrainingSection = () => {
             totalExercises={generatedPlan.plan_entrenamiento.ejercicios.length}
             onComplete={handleExerciseComplete}
             onSkip={handleExerciseSkip}
+            onCancel={handleExerciseCancel}
             onClose={() => setShowExerciseModal(false)}
             onUpdateProgress={handleUpdateProgress}
+            overrideSeriesTotal={exercisesProgress?.[currentExerciseIndex]?.total_series}
+            sessionId={currentSession?.id}
+            onFeedbackSubmitted={() => currentSession?.id && loadSessionProgress(currentSession.id)}
           />
         )}
       </div>

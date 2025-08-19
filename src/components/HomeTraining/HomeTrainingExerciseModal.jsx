@@ -1,15 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Pause, Square, SkipForward, X, Clock, Target, RotateCcw, CheckCircle } from 'lucide-react';
+import { Play, Pause, Square, SkipForward, X, Clock, Target, RotateCcw, CheckCircle, Star } from 'lucide-react';
 import { getExerciseGifUrl } from '../../config/exerciseGifs';
+import ExerciseFeedbackModal from './ExerciseFeedbackModal';
 
-const HomeTrainingExerciseModal = ({ 
-  exercise, 
-  exerciseIndex, 
-  totalExercises, 
-  onComplete, 
-  onSkip, 
+const HomeTrainingExerciseModal = ({
+  exercise,
+  exerciseIndex,
+  totalExercises,
+  onComplete,
+  onSkip,
+  onCancel,
   onClose,
-  onUpdateProgress 
+  onUpdateProgress,
+  overrideSeriesTotal,
+  sessionId,
+  onFeedbackSubmitted
 }) => {
   const [currentPhase, setCurrentPhase] = useState('ready'); // ready, exercise, rest, completed
   const [timeLeft, setTimeLeft] = useState(0);
@@ -17,7 +22,10 @@ const HomeTrainingExerciseModal = ({
   const [currentSeries, setCurrentSeries] = useState(1);
   const [exerciseGif, setExerciseGif] = useState(null);
   const [totalTimeSpent, setTotalTimeSpent] = useState(0);
+  const [showFeedback, setShowFeedback] = useState(false);
   const intervalRef = useRef(null);
+  const lastPhaseHandledRef = useRef(''); // evita manejar la misma transición dos veces
+  const lastReportedSeriesRef = useRef(''); // evita PUT duplicados para la misma serie
 
   // Configurar tiempo inicial y GIF basado en el ejercicio
   useEffect(() => {
@@ -25,6 +33,8 @@ const HomeTrainingExerciseModal = ({
     setCurrentSeries(1);
     setIsRunning(false);
     setTotalTimeSpent(0);
+    lastPhaseHandledRef.current = '';
+    lastReportedSeriesRef.current = '';
     const durValueInit = Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos);
     if (Number.isFinite(durValueInit) && durValueInit > 0) {
       setTimeLeft(durValueInit);
@@ -38,12 +48,17 @@ const HomeTrainingExerciseModal = ({
     }
   }, [exercise]);
 
-  // Timer principal mejorado
+  // Timer principal con guardas para evitar dobles disparos
   useEffect(() => {
-    if (isRunning && timeLeft > 0) {
+    if (isRunning && timeLeft > 0 && !intervalRef.current) {
       intervalRef.current = setInterval(() => {
         setTimeLeft(prev => {
           if (prev <= 1) {
+            // Cerrar intervalo ANTES de completar fase
+            if (intervalRef.current) {
+              clearInterval(intervalRef.current);
+              intervalRef.current = null;
+            }
             handlePhaseComplete();
             return 0;
           }
@@ -53,36 +68,49 @@ const HomeTrainingExerciseModal = ({
           setTotalTimeSpent(prev => prev + 1);
         }
       }, 1000);
-    } else {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
     }
 
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
+        intervalRef.current = null;
       }
     };
   }, [isRunning, timeLeft, currentPhase]);
 
   const handlePhaseComplete = () => {
+    // Evitar manejar la misma fase más de una vez
+    const signature = `${currentPhase}-${currentSeries}`;
+    if (lastPhaseHandledRef.current === signature) return;
+    lastPhaseHandledRef.current = signature;
+
+    // Cortar el intervalo inmediatamente
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
     setIsRunning(false);
+
     if (currentPhase === 'exercise') {
-      onUpdateProgress(exerciseIndex, currentSeries, seriesTotal);
+      const reportSig = `${exerciseIndex}-${currentSeries}`;
+      if (lastReportedSeriesRef.current !== reportSig) {
+        lastReportedSeriesRef.current = reportSig;
+        onUpdateProgress(exerciseIndex, currentSeries, seriesTotal);
+      }
+
       if (currentSeries < seriesTotal) {
         setCurrentPhase('rest');
         setTimeLeft(Math.min(60, Math.max(45, Number(exercise.descanso_seg) || 60)));
-        setTimeout(() => setIsRunning(true), 100);
+        setTimeout(() => { lastPhaseHandledRef.current = ''; setIsRunning(true); }, 200);
       } else {
         setCurrentPhase('completed');
-        setTimeout(() => { onComplete(totalTimeSpent); }, 1500);
+        setTimeout(() => { onComplete(totalTimeSpent); }, 500);
       }
     } else if (currentPhase === 'rest') {
       setCurrentSeries(prev => Math.min(prev + 1, seriesTotal || prev + 1));
       setCurrentPhase('exercise');
       setTimeLeft((Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos) || 45));
-      setTimeout(() => setIsRunning(true), 100);
+      setTimeout(() => { lastPhaseHandledRef.current = ''; setIsRunning(true); }, 200);
     }
   };
 
@@ -109,16 +137,25 @@ const HomeTrainingExerciseModal = ({
     setTimeLeft((Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos) || 45));
   };
 
-  const handleSkipSeries = () => {
-    if (currentSeries < seriesTotal) {
-      setCurrentSeries(prev => prev + 1);
-      setCurrentPhase('exercise');
-      setTimeLeft((Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos) || 45));
-      setIsRunning(false);
-    } else {
-      onSkip();
-    }
+  const handleCancelExercise = () => {
+    // Marca el ejercicio como cancelado desde el modal
+    if (typeof onCancel === 'function') onCancel();
+    setIsRunning(false);
+    setCurrentPhase('completed'); // cerramos el flujo localmente
   };
+
+  // Reservado para futura UI de saltar solo una serie
+  // const handleSkipSeries = () => {
+  //   if (currentSeries < seriesTotal) {
+  //     setCurrentSeries(prev => prev + 1);
+  //     setCurrentPhase('exercise');
+  //     setTimeLeft((Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos) || 45));
+  //     setIsRunning(false);
+  //   } else {
+  //     onSkip();
+  //   }
+  // };
+
 
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
@@ -146,7 +183,9 @@ const HomeTrainingExerciseModal = ({
   const durValue  = Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos);
   const baseDuration = Math.max(1, (durValue || 45));
   const rawSeries = Number(exercise?.series ?? exercise?.total_series ?? exercise?.totalSeries ?? exercise?.series_totales);
-  const seriesTotal = (Number.isFinite(rawSeries) && rawSeries > 0) ? rawSeries : ((Number.isFinite(durValue) && durValue > 0) ? 1 : 3);
+  const seriesTotal = Number.isFinite(Number(overrideSeriesTotal)) && Number(overrideSeriesTotal) > 0
+    ? Number(overrideSeriesTotal)
+    : ((Number.isFinite(rawSeries) && rawSeries > 0) ? rawSeries : 4);
 
   const getPhaseColor = () => {
     switch (currentPhase) {
@@ -189,11 +228,11 @@ const HomeTrainingExerciseModal = ({
             <h3 className={`text-lg font-semibold mb-2 ${getPhaseColor()}`}>
               {getPhaseTitle()}
             </h3>
-            
+
             {/* Timer circular */}
             <div className="relative w-32 h-32 mx-auto mb-4">
               <div className="absolute inset-0 rounded-full border-4 border-gray-700"></div>
-              <div 
+              <div
                 className={`absolute inset-0 rounded-full border-4 border-t-transparent transition-all duration-1000 ${
                   currentPhase === 'exercise' ? 'border-green-400' :
                   currentPhase === 'rest' ? 'border-yellow-400' : 'border-blue-400'
@@ -276,6 +315,15 @@ const HomeTrainingExerciseModal = ({
                     <span className="text-white font-medium ml-1 capitalize">{String(exercise.implemento).replaceAll('_',' ')}</span>
                   </div>
                 )}
+                {/* Botón de feedback */}
+                <button
+                  onClick={() => setShowFeedback(true)}
+                  className="ml-auto flex items-center gap-2 text-yellow-300 hover:text-yellow-200 border border-yellow-400/30 px-3 py-1 rounded-md"
+                  title="Cómo has sentido este ejercicio?"
+                >
+                  <Star size={16} />
+                  Valorar
+                </button>
               </div>
             </div>
           )}
@@ -290,7 +338,7 @@ const HomeTrainingExerciseModal = ({
                     src={exerciseGif}
                     alt={exercise.nombre}
                     className="mx-auto max-h-64 rounded-md shadow-lg border border-gray-600"
-                    onError={(e) => { 
+                    onError={(e) => {
                       e.currentTarget.style.display = 'none';
                       e.currentTarget.nextSibling.style.display = 'block';
                     }}
@@ -322,6 +370,7 @@ const HomeTrainingExerciseModal = ({
                     if (e.key === 'Enter') {
                       const v = e.currentTarget.value.trim();
                       if (v) {
+
                         setExerciseGif(v);
                         e.currentTarget.value = '';
                       }
@@ -386,16 +435,68 @@ const HomeTrainingExerciseModal = ({
             )}
 
             {currentPhase !== 'completed' && (
-              <button
-                onClick={() => onSkip()}
-                className="flex items-center gap-2 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
-              >
-                <SkipForward size={20} />
-                Saltar Ejercicio
-              </button>
+              <>
+                <button
+                  onClick={() => onSkip()}
+                  className="flex items-center gap-2 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+                >
+                  <SkipForward size={20} />
+                  Saltar Ejercicio
+                </button>
+                <button
+                  onClick={handleCancelExercise}
+                  className="flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+                >
+                  <Square size={20} />
+                  Cancelar Ejercicio
+                </button>
+              </>
             )}
           </div>
         </div>
+        {/* Modal de feedback */}
+        {showFeedback && (
+          <ExerciseFeedbackModal
+            show={showFeedback}
+            exerciseName={exercise?.nombre}
+            onClose={() => setShowFeedback(false)}
+            onSubmit={async (payload) => {
+              try {
+                console.log('Feedback ejercicio:', payload);
+              } finally {
+                setShowFeedback(false);
+              }
+            }}
+          />
+        )}
+      {/* Modal de feedback */}
+      {showFeedback && (
+        <ExerciseFeedbackModal
+          show={showFeedback}
+          exerciseName={exercise?.nombre}
+          onClose={() => setShowFeedback(false)}
+          onSubmit={async (payload) => {
+            try {
+              if (sessionId != null) {
+                const token = localStorage.getItem('token');
+                await fetch(`/api/home-training/sessions/${sessionId}/exercise/${exerciseIndex}/feedback`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                  },
+                  body: JSON.stringify({ sentiment: payload.sentiment, comment: payload.comment, exercise_name: exercise?.nombre })
+                });
+                onFeedbackSubmitted?.();
+              }
+            } finally {
+              setShowFeedback(false);
+            }
+          }}
+        />
+      )}
+
+
       </div>
     </div>
   );

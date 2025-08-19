@@ -71,6 +71,19 @@ CREATE TABLE IF NOT EXISTS app.user_exercise_history (
 -- Si aún existiera performed_at en entornos antiguos, elimínalo:
 ALTER TABLE app.user_exercise_history DROP COLUMN IF EXISTS performed_at;
 
+-- Feedback por ejercicio (sentimiento + comentario)
+CREATE TABLE IF NOT EXISTS app.user_exercise_feedback (
+  id               SERIAL PRIMARY KEY,
+  user_id          INTEGER NOT NULL,
+  session_id       INTEGER,
+  exercise_order   INTEGER,
+  exercise_name    TEXT,
+  exercise_key     TEXT,
+  sentiment        TEXT NOT NULL CHECK (sentiment IN ('dislike','hard','love')),
+  comment          TEXT,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS app.user_home_training_stats (
   id                         SERIAL PRIMARY KEY,
   user_id                    INTEGER NOT NULL UNIQUE,
