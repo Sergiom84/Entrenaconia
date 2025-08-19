@@ -23,7 +23,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
         alergias, medicamentos, objetivo_principal, meta_peso,
         meta_grasa_corporal, enfoque_entrenamiento, horario_preferido,
         comidas_por_dia, suplementacion, alimentos_excluidos, created_at
-      FROM users WHERE id = $1`,
+      FROM app.users WHERE id = $1`,
       [id]
     );
 
@@ -80,7 +80,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
     values.push(id); // ID para el WHERE
 
     const query = `
-      UPDATE users 
+      UPDATE app.users
       SET ${updateFields.join(', ')}, updated_at = NOW()
       WHERE id = $${paramCount}
       RETURNING id, nombre, apellido, email

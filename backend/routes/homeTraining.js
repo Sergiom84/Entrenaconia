@@ -11,7 +11,7 @@ router.post('/plans', authenticateToken, async (req, res) => {
     const user_id = req.user.userId || req.user.id;
 
     const result = await pool.query(
-      `INSERT INTO home_training_plans (user_id, plan_data, equipment_type, training_type)
+      `INSERT INTO app.home_training_plans (user_id, plan_data, equipment_type, training_type)
        VALUES ($1, $2, $3, $4)
        RETURNING *`,
       [user_id, JSON.stringify(plan_data), equipment_type, training_type]
@@ -37,9 +37,9 @@ router.get('/current-plan', authenticateToken, async (req, res) => {
 
     // Buscar el plan más reciente del usuario
     const planResult = await pool.query(
-      `SELECT * FROM home_training_plans 
-       WHERE user_id = $1 
-       ORDER BY created_at DESC 
+      `SELECT * FROM app.home_training_plans
+       WHERE user_id = $1
+       ORDER BY created_at DESC
        LIMIT 1`,
       [user_id]
     );
@@ -56,9 +56,9 @@ router.get('/current-plan', authenticateToken, async (req, res) => {
 
     // Buscar la sesión activa para este plan
     const sessionResult = await pool.query(
-      `SELECT * FROM home_training_sessions 
+      `SELECT * FROM app.home_training_sessions
        WHERE user_id = $1 AND home_training_plan_id = $2 AND status = 'in_progress'
-       ORDER BY started_at DESC 
+       ORDER BY started_at DESC
        LIMIT 1`,
       [user_id, plan.id]
     );
@@ -87,7 +87,7 @@ router.post('/sessions/start', authenticateToken, async (req, res) => {
 
     // Verificar que el plan pertenece al usuario
     const planResult = await pool.query(
-      'SELECT * FROM home_training_plans WHERE id = $1 AND user_id = $2',
+      'SELECT * FROM app.home_training_plans WHERE id = $1 AND user_id = $2',
       [home_training_plan_id, user_id]
     );
 
@@ -103,7 +103,7 @@ router.post('/sessions/start', authenticateToken, async (req, res) => {
 
     // Crear nueva sesión
     const sessionResult = await pool.query(
-      `INSERT INTO home_training_sessions 
+      `INSERT INTO app.home_training_sessions
        (user_id, home_training_plan_id, total_exercises, session_data)
        VALUES ($1, $2, $3, $4)
        RETURNING *`,
@@ -115,7 +115,7 @@ router.post('/sessions/start', authenticateToken, async (req, res) => {
     // Crear registros de progreso para cada ejercicio
     for (let i = 0; i < exercises.length; i++) {
       await pool.query(
-        `INSERT INTO home_exercise_progress 
+        `INSERT INTO app.home_exercise_progress
          (home_training_session_id, exercise_name, exercise_order, total_series, exercise_data)
          VALUES ($1, $2, $3, $4, $5)`,
         [
@@ -153,7 +153,7 @@ router.put('/sessions/:sessionId/exercise/:exerciseOrder', authenticateToken, as
 
     // Verificar que la sesión pertenece al usuario
     const sessionResult = await client.query(
-      'SELECT * FROM home_training_sessions WHERE id = $1 AND user_id = $2',
+      'SELECT * FROM app.home_training_sessions WHERE id = $1 AND user_id = $2',
       [sessionId, user_id]
     );
 
@@ -162,18 +162,26 @@ router.put('/sessions/:sessionId/exercise/:exerciseOrder', authenticateToken, as
       return res.status(404).json({ success: false, message: 'Sesión no encontrada' });
     }
 
-    // Actualizar progreso del ejercicio
-    const updateResult = await client.query(
-      `UPDATE home_exercise_progress
-       SET series_completed = $1,
-           duration_seconds = $2,
-           status = $3::varchar,
-           completed_at = CASE WHEN $3::varchar = 'completed' THEN NOW() ELSE completed_at END,
-           started_at = CASE WHEN started_at IS NULL THEN NOW() ELSE started_at END
-       WHERE home_training_session_id = $4 AND exercise_order = $5
-       RETURNING *`,
-      [series_completed || 0, duration_seconds, status, sessionId, exerciseOrder]
-    );
+    // Actualizar progreso del ejercicio (SQL con casts y esquema app.)
+    const updateSql = `
+      UPDATE app.home_exercise_progress
+      SET
+        series_completed  = $1,
+        status            = $2::text,
+        duration_seconds  = COALESCE($3, duration_seconds),
+        completed_at      = CASE WHEN $2::text = 'completed' THEN now() ELSE completed_at END
+      WHERE home_training_session_id = $4
+        AND exercise_order = $5
+      RETURNING *;
+    `;
+    const updateResult = await client.query(updateSql, [
+      series_completed,
+      status,
+      duration_seconds ?? null,
+      sessionId,
+      exerciseOrder
+    ]);
+
 
     if (updateResult.rows.length === 0) {
       await client.query('ROLLBACK');
@@ -186,7 +194,7 @@ router.put('/sessions/:sessionId/exercise/:exerciseOrder', authenticateToken, as
          COUNT(*)::int as total_exercises,
          COUNT(CASE WHEN status = 'completed' THEN 1 END)::int as completed_exercises,
          SUM(CASE WHEN status = 'completed' THEN COALESCE(duration_seconds, 0) ELSE 0 END)::int as total_duration
-       FROM home_exercise_progress
+       FROM app.home_exercise_progress
        WHERE home_training_session_id = $1`,
       [sessionId]
     );
@@ -196,28 +204,30 @@ router.put('/sessions/:sessionId/exercise/:exerciseOrder', authenticateToken, as
       ? Math.round((progress.completed_exercises / progress.total_exercises) * 100)
       : 0;
 
-    const sessionStatus = progressPercentage >= 100 ? 'completed' : 'in_progress';
-
-    // Actualizar sesión con el progreso
-    await client.query(
-      `UPDATE home_training_sessions
-       SET exercises_completed = $1,
-           progress_percentage = $2,
-           status = $3,
-           completed_at = CASE WHEN $3 = 'completed' THEN NOW() ELSE completed_at END,
-           total_duration_seconds = $4
-       WHERE id = $5`,
-      [progress.completed_exercises, progressPercentage, sessionStatus, progress.total_duration, sessionId]
-    );
+    // Actualizar la sesión (usando nombres de columna reales y acumulando duración)
+    await client.query(`
+      UPDATE app.home_training_sessions
+      SET
+        exercises_completed    = (SELECT COUNT(*) FROM app.home_exercise_progress
+                                  WHERE home_training_session_id = $1 AND status = 'completed'),
+        progress_percentage    = ROUND(100.0 * (SELECT COUNT(*) FROM app.home_exercise_progress
+                                  WHERE home_training_session_id = $1 AND status = 'completed')
+                                  / NULLIF(total_exercises,0), 1),
+        total_duration_seconds = COALESCE(total_duration_seconds, 0) + COALESCE($2, 0),
+        completed_at           = CASE WHEN (SELECT COUNT(*) FROM app.home_exercise_progress
+                                  WHERE home_training_session_id = $1 AND status <> 'completed') = 0
+                                  THEN NOW() ELSE completed_at END
+      WHERE id = $1
+    `, [sessionId, duration_seconds ?? 0]);
 
     // Si el ejercicio se completó, actualizar estadísticas e historial
     if (status === 'completed') {
       if (progressPercentage >= 100) {
         await client.query(
-          `UPDATE user_home_training_stats
+          `UPDATE app.user_home_training_stats
            SET total_sessions = total_sessions + 1,
                total_duration_seconds = total_duration_seconds + COALESCE($1, 0),
-               last_session_date = NOW(),
+               last_training_date = CURRENT_DATE,
                updated_at = NOW()
            WHERE user_id = $2`,
           [progress.total_duration, user_id]
@@ -229,14 +239,14 @@ router.put('/sessions/:sessionId/exercise/:exerciseOrder', authenticateToken, as
       const planId = sessRow.home_training_plan_id;
 
       const exName = exRow.exercise_name || (exRow.exercise_data && exRow.exercise_data.nombre) || 'Ejercicio';
-      const exKey = (exName || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g,' ').trim();
+      const exKey = (exName || '').toLowerCase().replace(/[^a-z0-9]+/g, '_');
 
       await client.query(
-        `INSERT INTO user_exercise_history
+        `INSERT INTO app.user_exercise_history
            (user_id, exercise_name, exercise_key, reps, series, duration_seconds, session_id, plan_id)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          ON CONFLICT DO NOTHING`,
-        [user_id, exName, exKey, null, series_completed, duration_seconds, sessionId, planId]
+        [user_id, exName, exKey, null, series_completed, (duration_seconds ?? null), sessionId, planId]
       );
     }
 
@@ -267,7 +277,7 @@ router.get('/stats', authenticateToken, async (req, res) => {
     const user_id = req.user.userId || req.user.id;
 
     const statsResult = await pool.query(
-      'SELECT * FROM user_home_training_stats WHERE user_id = $1',
+      'SELECT * FROM app.user_home_training_stats WHERE user_id = $1',
       [user_id]
     );
 
@@ -276,8 +286,8 @@ router.get('/stats', authenticateToken, async (req, res) => {
     if (!stats) {
       // Crear estadísticas iniciales si no existen
       const createResult = await pool.query(
-        `INSERT INTO user_home_training_stats (user_id) 
-         VALUES ($1) 
+        `INSERT INTO app.user_home_training_stats (user_id)
+         VALUES ($1)
          RETURNING *`,
         [user_id]
       );
@@ -305,7 +315,7 @@ router.get('/sessions/:sessionId/progress', authenticateToken, async (req, res) 
 
     // Verificar que la sesión pertenece al usuario
     const sessionResult = await pool.query(
-      'SELECT * FROM home_training_sessions WHERE id = $1 AND user_id = $2',
+      'SELECT * FROM app.home_training_sessions WHERE id = $1 AND user_id = $2',
       [sessionId, user_id]
     );
 
@@ -318,8 +328,8 @@ router.get('/sessions/:sessionId/progress', authenticateToken, async (req, res) 
 
     // Obtener progreso de todos los ejercicios
     const progressResult = await pool.query(
-      `SELECT * FROM home_exercise_progress 
-       WHERE home_training_session_id = $1 
+      `SELECT * FROM app.home_exercise_progress
+       WHERE home_training_session_id = $1
        ORDER BY exercise_order`,
       [sessionId]
     );

@@ -54,7 +54,7 @@ router.post('/register', async (req, res) => {
 
     // Verificar si el usuario ya existe
     const existingUser = await pool.query(
-      'SELECT id FROM users WHERE email = $1',
+      'SELECT id FROM app.users WHERE email = $1',
       [email]
     );
 
@@ -136,7 +136,7 @@ router.post('/register', async (req, res) => {
 
     // Insertar usuario en la base de datos (created_at y updated_at se manejan automáticamente)
     const result = await pool.query(
-      `INSERT INTO users (
+      `INSERT INTO app.users (
         nombre, apellido, email, password_hash, edad, sexo, peso, altura,
         nivel_entrenamiento, anos_entrenando, frecuencia_semanal,
         metodologia_preferida, nivel_actividad, cintura, pecho, brazos,
@@ -207,7 +207,7 @@ router.post('/login', async (req, res) => {
 
     // Buscar usuario
     const result = await pool.query(
-      'SELECT id, nombre, apellido, email, password_hash FROM users WHERE email = $1',
+      'SELECT id, nombre, apellido, email, password_hash FROM app.users WHERE email = $1',
       [email]
     );
 
@@ -267,7 +267,7 @@ router.get('/verify', async (req, res) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     const result = await pool.query(
-      'SELECT id, nombre, apellido, email FROM users WHERE id = $1',
+      'SELECT id, nombre, apellido, email FROM app.users WHERE id = $1',
       [decoded.userId]
     );
 

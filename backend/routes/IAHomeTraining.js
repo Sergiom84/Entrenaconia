@@ -67,13 +67,9 @@ router.post('/generate', authenticateToken, async (req, res) => {
       return res.status(400).json({ success: false, error: 'Parámetros inválidos' });
     }
 
-    // Cargar perfil del usuario desde la BD
+    // Cargar perfil del usuario desde la vista normalizada
     const { rows } = await pool.query(
-      `SELECT id, nombre, apellido, email, edad, sexo, peso, altura,
-              nivel_actividad, anos_entrenando, nivel_entrenamiento,
-              objetivo_principal, alergias, medicamentos, limitaciones_fisicas
-         FROM users
-        WHERE id = $1`,
+      `SELECT * FROM app.v_user_profile_normalized WHERE id = $1`,
       [userId]
     );
     if (!rows.length) {
@@ -81,19 +77,29 @@ router.post('/generate', authenticateToken, async (req, res) => {
     }
     const u = rows[0];
 
-    // Cargar historial de ejercicios recientes
-    const historyRes = await pool.query(
-      `SELECT e.nombre
-         FROM home_training_plans p
-              CROSS JOIN jsonb_to_recordset(
-                p.plan_data->'plan_entrenamiento'->'ejercicios'
-              ) AS e(nombre TEXT)
-        WHERE p.user_id = $1
-        ORDER BY p.created_at DESC
-        LIMIT 15`,
+    // Cargar historial mezclado (prioriza completados) para el prompt
+    const mixRes = await pool.query(
+      `WITH base AS (
+         SELECT exercise_key, exercise_name, created_at, 2 AS weight
+         FROM app.v_hist_real WHERE user_id = $1
+         UNION ALL
+         SELECT exercise_key, exercise_name, created_at, 1 AS weight
+         FROM app.v_hist_propuesto WHERE user_id = $1
+       ),
+       ranked AS (
+         SELECT exercise_key,
+                (array_agg(exercise_name ORDER BY created_at DESC))[1] AS exercise_name,
+                MAX(created_at) AS last_seen_at,
+                MAX(weight) AS max_weight
+         FROM base GROUP BY exercise_key
+       )
+       SELECT exercise_name
+       FROM ranked
+       ORDER BY max_weight DESC, last_seen_at DESC
+       LIMIT 15`,
       [userId]
     );
-    const recentExercises = historyRes.rows.map(r => r.nombre).join(', ') || 'Ninguno';
+    const recentExercises = (mixRes.rows.map(r => r.exercise_name).join(', ')) || 'Ninguno';
     const imc = calcIMC(u.peso, u.altura);
 
     // Inventario de equipamiento permitido según selección (guardarraíl del prompt)
@@ -129,7 +135,7 @@ La estructura es:
     -   ID: ${u.id}
     -   Edad: ${u.edad || ''} años, Sexo: ${u.sexo || ''}
     -   Peso: ${u.peso || ''} kg, Altura: ${u.altura || ''} cm, IMC: ${imc || ''}
-    -   Nivel: ${u.nivel_actividad || ''}, Años entrenando: ${u.anos_entrenando || ''}
+    -   Nivel: ${u.nivel || ''}, Años entrenando: ${u.anos_entrenando || ''}
     -   Objetivo: ${u.objetivo_principal || ''}
     -   Limitaciones: ${u.limitaciones_fisicas?.join(', ') || 'Ninguna'}
 
@@ -232,7 +238,7 @@ Ahora, genera el plan para el usuario.`;
         equipamiento_nombre: equipmentNames[equipment_type],
         tipo_nombre: trainingNames[training_type],
         fecha_formateada: new Date().toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' }),
-        perfil_usuario: `${u.nombre || 'Usuario'} — Edad: ${u.edad ?? ''}, Peso: ${u.peso ?? ''} kg, Altura: ${u.altura ?? ''} cm, Nivel: ${u.nivel_actividad ?? ''}, IMC: ${imc ?? ''}`
+        perfil_usuario: `${u.nombre || 'Usuario'} — Edad: ${u.edad ?? ''}, Peso: ${u.peso ?? ''} kg, Altura: ${u.altura ?? ''} cm, Nivel: ${u.nivel ?? ''}, IMC: ${imc ?? ''}`
       }
     };
 

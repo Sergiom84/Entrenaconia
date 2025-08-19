@@ -8,7 +8,9 @@ const { Pool } = pkg;
 // Configuración de la base de datos
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+  application_name: 'EntrenaConIA',
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  options: '-c search_path=app,public'
 });
 
 // Establecer search_path en cada conexión (soporta esquemas como 'app')
