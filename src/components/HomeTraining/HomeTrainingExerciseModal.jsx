@@ -69,8 +69,8 @@ const HomeTrainingExerciseModal = ({
   const handlePhaseComplete = () => {
     setIsRunning(false);
     if (currentPhase === 'exercise') {
-      onUpdateProgress(exerciseIndex, currentSeries, exercise.series);
-      if (currentSeries < exercise.series) {
+      onUpdateProgress(exerciseIndex, currentSeries, seriesTotal);
+      if (currentSeries < seriesTotal) {
         setCurrentPhase('rest');
         setTimeLeft(Math.min(60, Math.max(45, Number(exercise.descanso_seg) || 60)));
         setTimeout(() => setIsRunning(true), 100);
@@ -79,7 +79,7 @@ const HomeTrainingExerciseModal = ({
         setTimeout(() => { onComplete(totalTimeSpent); }, 1500);
       }
     } else if (currentPhase === 'rest') {
-      setCurrentSeries(prev => Math.min(prev + 1, Number(exercise.series) || prev + 1));
+      setCurrentSeries(prev => Math.min(prev + 1, seriesTotal || prev + 1));
       setCurrentPhase('exercise');
       setTimeLeft((Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos) || 45));
       setTimeout(() => setIsRunning(true), 100);
@@ -110,7 +110,7 @@ const HomeTrainingExerciseModal = ({
   };
 
   const handleSkipSeries = () => {
-    if (currentSeries < exercise.series) {
+    if (currentSeries < seriesTotal) {
       setCurrentSeries(prev => prev + 1);
       setCurrentPhase('exercise');
       setTimeLeft((Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos) || 45));
@@ -131,7 +131,7 @@ const HomeTrainingExerciseModal = ({
       case 'ready':
         return 'Preparado para comenzar';
       case 'exercise':
-        return `Serie ${Math.min(currentSeries, Number(exercise.series) || currentSeries)} de ${exercise.series}`;
+        return `Serie ${Math.min(currentSeries, seriesTotal || currentSeries)} de ${seriesTotal}`;
       case 'rest':
         return 'Tiempo de descanso';
       case 'completed':
@@ -145,6 +145,8 @@ const HomeTrainingExerciseModal = ({
   const repsValue = Number(exercise?.repeticiones ?? exercise?.reps ?? exercise?.repeticiones_por_serie);
   const durValue  = Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos);
   const baseDuration = Math.max(1, (durValue || 45));
+  const rawSeries = Number(exercise?.series ?? exercise?.total_series ?? exercise?.totalSeries ?? exercise?.series_totales);
+  const seriesTotal = (Number.isFinite(rawSeries) && rawSeries > 0) ? rawSeries : ((Number.isFinite(durValue) && durValue > 0) ? 1 : 3);
 
   const getPhaseColor = () => {
     switch (currentPhase) {
@@ -215,7 +217,7 @@ const HomeTrainingExerciseModal = ({
           <div className="bg-gray-700/50 rounded-lg p-4 mb-6">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
               <div>
-                <div className="text-2xl font-bold text-white">{exercise.series}</div>
+                <div className="text-2xl font-bold text-white">{seriesTotal}</div>
                 <div className="text-sm text-gray-400">Series</div>
               </div>
               <div>

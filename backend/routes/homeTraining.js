@@ -82,56 +82,59 @@ router.get('/current-plan', authenticateToken, async (req, res) => {
 // Iniciar una nueva sesión de entrenamiento
 router.post('/sessions/start', authenticateToken, async (req, res) => {
   try {
-    const { home_training_plan_id } = req.body;
-    const user_id = req.user.userId || req.user.id;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
 
-    // Verificar que el plan pertenece al usuario
-    const planResult = await pool.query(
-      'SELECT * FROM app.home_training_plans WHERE id = $1 AND user_id = $2',
-      [home_training_plan_id, user_id]
-    );
+      const { home_training_plan_id } = req.body;
+      const user_id = req.user.userId || req.user.id;
 
-    if (planResult.rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: 'Plan de entrenamiento no encontrado'
-      });
-    }
-
-    const plan = planResult.rows[0];
-    const exercises = plan.plan_data.plan_entrenamiento?.ejercicios || [];
-
-    // Crear nueva sesión
-    const sessionResult = await pool.query(
-      `INSERT INTO app.home_training_sessions
-       (user_id, home_training_plan_id, total_exercises, session_data)
-       VALUES ($1, $2, $3, $4)
-       RETURNING *`,
-      [user_id, home_training_plan_id, exercises.length, JSON.stringify({ exercises })]
-    );
-
-    const session = sessionResult.rows[0];
-
-    // Crear registros de progreso para cada ejercicio
-    for (let i = 0; i < exercises.length; i++) {
-      await pool.query(
-        `INSERT INTO app.home_exercise_progress
-         (home_training_session_id, exercise_name, exercise_order, total_series, exercise_data)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [
-          session.id,
-          exercises[i].nombre,
-          i,
-          exercises[i].series,
-          JSON.stringify(exercises[i])
-        ]
+      // Verificar que el plan pertenece al usuario
+      const planResult = await client.query(
+        'SELECT * FROM app.home_training_plans WHERE id = $1 AND user_id = $2',
+        [home_training_plan_id, user_id]
       );
-    }
 
-    res.json({
-      success: true,
-      session: session
-    });
+      if (planResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ success: false, message: 'Plan de entrenamiento no encontrado' });
+      }
+
+      const plan = planResult.rows[0];
+      const exercises = plan.plan_data.plan_entrenamiento?.ejercicios || [];
+
+      // Crear nueva sesión
+      const sessionResult = await client.query(
+        `INSERT INTO app.home_training_sessions
+         (user_id, home_training_plan_id, total_exercises, session_data)
+         VALUES ($1, $2, $3, $4)
+         RETURNING *`,
+        [user_id, home_training_plan_id, exercises.length, JSON.stringify({ exercises })]
+      );
+      const session = sessionResult.rows[0];
+      const sessionId = session.id;
+
+      // Crear registros de progreso para cada ejercicio (robusto)
+      for (let i = 0; i < exercises.length; i++) {
+        const ex = exercises[i] || {};
+        const totalSeries = Number(ex.series ?? ex.total_series ?? ex.totalSeries) || (ex.tipo === 'tiempo' ? 1 : 3);
+        await client.query(
+          `INSERT INTO app.home_exercise_progress
+           (home_training_session_id, exercise_order, exercise_name, total_series, series_completed, status, duration_seconds, started_at, exercise_data)
+           VALUES ($1, $2, $3, $4, 0, 'pending', NULL, NOW(), $5)`,
+          [sessionId, i, ex.nombre, totalSeries, JSON.stringify(ex)]
+        );
+      }
+
+      await client.query('COMMIT');
+
+      res.json({ success: true, session });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   } catch (error) {
     console.error('Error starting training session:', error);
     res.status(500).json({

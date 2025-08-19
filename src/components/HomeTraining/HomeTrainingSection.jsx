@@ -308,8 +308,8 @@ const HomeTrainingSection = () => {
     } catch (error) {
       console.error('Error completing exercise:', error);
       alert('Error al guardar el progreso. Por favor, inténtalo de nuevo.');
-      } finally {
-      etSending(false);
+    } finally {
+      setSending(false);
     }
   };
 
