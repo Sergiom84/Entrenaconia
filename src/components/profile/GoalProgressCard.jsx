@@ -104,7 +104,8 @@ export const GoalProgressCard = ({
           </div>
         </div>
 
-        {/* Timeline visualization */}
+        {/* Timeline visualization - Comentado temporalmente */}
+        {/* 
         {!isEditing && userProfile.fecha_inicio_objetivo && userProfile.fecha_meta_objetivo && (
           <div className="mt-6 p-4 bg-gray-800 rounded-lg">
             <h4 className="text-sm font-semibold text-gray-300 mb-4">Línea de Tiempo del Objetivo</h4>
@@ -131,6 +132,7 @@ export const GoalProgressCard = ({
             </div>
           </div>
         )}
+        */}
       </CardContent>
     </Card>
   )

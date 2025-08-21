@@ -26,8 +26,16 @@ export const AuthProvider = ({ children }) => {
       const token = localStorage.getItem('token');
       const userData = localStorage.getItem('user');
 
+      // Protección extra: si falta userData o no tiene id válido, forzar logout
       if (token && userData) {
         const parsedUser = JSON.parse(userData);
+        if (!parsedUser?.id || typeof parsedUser.id !== 'number' || parsedUser.id <= 0) {
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          setUser(null);
+          setIsAuthenticated(false);
+          return;
+        }
         setUser(parsedUser);
         setIsAuthenticated(true);
       } else {
@@ -38,6 +46,8 @@ export const AuthProvider = ({ children }) => {
       console.error('Error checking auth status:', error);
       setUser(null);
       setIsAuthenticated(false);
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
     } finally {
       setIsLoading(false);
     }

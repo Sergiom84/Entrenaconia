@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, User, Activity, Target, Heart, Settings, Ruler } from 'lucide-react';
+import { ArrowLeft, User, Activity, Target, Heart, Settings, Ruler, Dumbbell } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useProfileState } from '../../hooks/useProfileState';
 import { useAuth } from '../../contexts/AuthContext';
@@ -11,8 +11,16 @@ import { ExperienceTab } from './ExperienceTab';
 import { GoalsTab } from './GoalsTab';
 import { HealthTab } from './HealthTab';
 import { SettingsTab } from './SettingsTab';
+import { EquipmentTab } from './EquipmentTab';
 
 const ProfileSection = () => {
+  // Leer ?tab=... para navegación directa
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search)
+    const t = p.get('tab')
+    if (t) setActiveTab(t)
+  }, [])
+
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('basic');
 
@@ -55,6 +63,12 @@ const ProfileSection = () => {
       label: 'Preferencias',
       icon: Settings,
       component: SettingsTab
+    },
+    {
+      id: 'equipment',
+      label: 'Mi equipamiento',
+      icon: Dumbbell,
+      component: EquipmentTab
     }
   ];
 
@@ -121,7 +135,7 @@ const ProfileSection = () => {
             <span className="text-sm text-gray-400 mr-3">Perfil completado:</span>
             <div className="flex items-center">
               <div className="w-24 bg-gray-700 rounded-full h-2 mr-2">
-                <div 
+                <div
                   className="bg-yellow-400 h-2 rounded-full transition-all duration-300"
                   style={{ width: `${profileProgress}%` }}
                 ></div>

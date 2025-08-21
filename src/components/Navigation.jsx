@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { LogOut, User, Home, Dumbbell, UserCircle } from 'lucide-react';
+import { LogOut, User, Home, Dumbbell, UserCircle, BookOpen } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -18,95 +18,101 @@ const Navigation = () => {
   };
 
   return (
-    <motion.nav
-      initial={{ opacity: 0, y: -20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.6 }}
-      className="bg-[#0d1522] border-b border-yellow-400/20 sticky top-0 z-50"
-    >
-      <div className="container mx-auto px-6 py-4">
-        <div className="flex items-center justify-between">
-          {/* Logo */}
-          <div 
-            onClick={() => navigate('/')}
-            className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity"
-          >
-            <div className="bg-yellow-400 p-2 rounded-lg">
-              <Dumbbell size={24} className="text-[#0b1220]" />
-            </div>
-            <h1 className="text-xl font-bold text-white">Entrena con IA</h1>
-          </div>
-
-          {/* Navegación central */}
-          <div className="hidden md:flex items-center gap-6">
-            <button
+    <>
+      {/* Header con logo y usuario */}
+      <motion.header
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6 }}
+        className="bg-black border-b border-yellow-400/20 sticky top-0 z-50"
+      >
+        <div className="container mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            {/* Logo */}
+            <div 
               onClick={() => navigate('/')}
-              className="flex items-center gap-2 text-gray-300 hover:text-yellow-400 transition-colors font-medium"
+              className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity"
             >
-              <Home size={18} />
-              Inicio
-            </button>
-            <button
-              onClick={() => navigate('/home-training')}
-              className="flex items-center gap-2 text-gray-300 hover:text-yellow-400 transition-colors font-medium"
-            >
-              <Dumbbell size={18} />
-              Entrenar
-            </button>
-            <button
-              onClick={() => navigate('/profile')}
-              className="flex items-center gap-2 text-gray-300 hover:text-yellow-400 transition-colors font-medium"
-            >
-              <UserCircle size={18} />
-              Perfil
-            </button>
-          </div>
-
-          {/* Usuario y logout */}
-          <div className="flex items-center gap-4">
-            <div className="hidden sm:flex items-center gap-2 text-gray-300">
-              <User size={18} />
-              <span className="font-medium">
-                {user?.nombre} {user?.apellido}
-              </span>
+              <div className="bg-yellow-400 p-2 rounded-lg">
+                <Dumbbell size={24} className="text-black" />
+              </div>
+              <h1 className="text-xl font-bold text-white">MindFit</h1>
             </div>
-            
-            <button
-              onClick={handleLogout}
-              className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors font-medium"
-            >
-              <LogOut size={18} />
-              <span className="hidden sm:inline">Cerrar Sesión</span>
-            </button>
+
+            {/* Profile Sphere */}
+            <div className="flex items-center gap-3">
+              <div 
+                onClick={() => navigate('/profile')}
+                className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity"
+              >
+                {/* Profile Picture Sphere */}
+                <div className="relative">
+                  <div className="w-10 h-10 bg-gradient-to-r from-yellow-400 to-yellow-500 rounded-full flex items-center justify-center border-2 border-yellow-400/30 hover:border-yellow-400/60 transition-colors">
+                    {user?.profile_picture ? (
+                      <img 
+                        src={user.profile_picture} 
+                        alt="Profile" 
+                        className="w-full h-full rounded-full object-cover"
+                      />
+                    ) : (
+                      <User size={20} className="text-black" />
+                    )}
+                  </div>
+                </div>
+                
+                {/* User Name */}
+                <div className="hidden sm:block">
+                  <span className="text-white font-medium text-sm">
+                    {user?.nombre}
+                  </span>
+                </div>
+              </div>
+
+              {/* Logout Button - Smaller and more discrete */}
+              <button
+                onClick={handleLogout}
+                className="ml-2 p-2 text-gray-400 hover:text-red-400 transition-colors"
+                title="Cerrar sesión"
+              >
+                <LogOut size={18} />
+              </button>
+            </div>
           </div>
         </div>
+      </motion.header>
 
-        {/* Navegación móvil */}
-        <div className="md:hidden flex justify-center gap-6 mt-4 pt-4 border-t border-yellow-400/20">
+      {/* Navegación inferior fija */}
+      <motion.nav
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, delay: 0.2 }}
+        className="fixed bottom-0 left-0 right-0 bg-black border-t border-yellow-400/20 z-50"
+      >
+        <div className="flex justify-around items-center py-2">
           <button
             onClick={() => navigate('/')}
-            className="flex flex-col items-center gap-1 text-gray-300 hover:text-yellow-400 transition-colors"
+            className="flex flex-col items-center gap-1 py-2 px-4 text-gray-300 hover:text-yellow-400 transition-colors"
           >
-            <Home size={20} />
-            <span className="text-xs">Inicio</span>
+            <Home size={24} />
+            <span className="text-xs font-medium">Inicio</span>
           </button>
           <button
-            onClick={() => navigate('/home-training')}
-            className="flex flex-col items-center gap-1 text-gray-300 hover:text-yellow-400 transition-colors"
+            onClick={() => navigate('/methodologies')}
+            className="flex flex-col items-center gap-1 py-2 px-4 text-gray-300 hover:text-yellow-400 transition-colors"
           >
-            <Dumbbell size={20} />
-            <span className="text-xs">Entrenar</span>
+            <BookOpen size={24} />
+            <span className="text-xs font-medium">Metodologías</span>
           </button>
           <button
             onClick={() => navigate('/profile')}
-            className="flex flex-col items-center gap-1 text-gray-300 hover:text-yellow-400 transition-colors"
+            className="flex flex-col items-center gap-1 py-2 px-4 text-gray-300 hover:text-yellow-400 transition-colors"
           >
-            <UserCircle size={20} />
-            <span className="text-xs">Perfil</span>
+            <UserCircle size={24} />
+            <span className="text-xs font-medium">Perfil</span>
           </button>
         </div>
-      </div>
-    </motion.nav>
+      </motion.nav>
+    </>
   );
 };
 

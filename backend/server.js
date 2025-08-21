@@ -6,6 +6,7 @@ import userRoutes from './routes/users.js';
 import medicalDocsRoutes from './routes/medicalDocs.js';
 import homeTrainingRoutes from './routes/homeTraining.js';
 import iaHomeTrainingRoutes from './routes/IAHomeTraining.js';
+import equipmentRoutes from './routes/equipment.js';
 import { pool } from './db.js';
 
 // Cargar variables de entorno
@@ -48,6 +49,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/medical-docs', medicalDocsRoutes);
 app.use('/api/home-training', homeTrainingRoutes);
 app.use('/api/ia-home-training', iaHomeTrainingRoutes);
+app.use('/api/equipment', equipmentRoutes);
 
 // Ruta de prueba
 app.get('/api/health', (req, res) => {

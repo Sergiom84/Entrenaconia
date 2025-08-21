@@ -1,5 +1,5 @@
 import express from 'express';
-import OpenAI from 'openai';
+import { getOpenAI } from '../lib/openaiClient.js';
 import authenticateToken from '../middleware/auth.js';
 import { pool } from '../db.js';
 
@@ -57,11 +57,12 @@ router.post('/generate', authenticateToken, async (req, res) => {
     const { equipment_type, training_type } = req.body || {};
     const userId = req.user?.userId || req.user?.id;
 
-    if (!process.env.OPENAI_API_KEY) {
+    const client = getOpenAI();
+    if (!client) {
       return res.status(500).json({ success: false, error: 'Falta OPENAI_API_KEY en el backend' });
     }
 
-    const allowedEq = new Set(['minimo', 'basico', 'avanzado']);
+    const allowedEq = new Set(['minimo', 'basico', 'avanzado', 'personalizado', 'usar_este_equipamiento']);
     const allowedTr = new Set(['funcional', 'hiit', 'fuerza']);
     if (!allowedEq.has(equipment_type) || !allowedTr.has(training_type)) {
       return res.status(400).json({ success: false, error: 'Parámetros inválidos' });
@@ -76,6 +77,23 @@ router.post('/generate', authenticateToken, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
     }
     const u = rows[0];
+
+    // Cargar equipamiento del usuario (curado + personalizado)
+    const curatedEqRes = await pool.query(
+      `SELECT COALESCE(ue.equipment_key, ei.key) AS equipment_key
+       FROM app.user_equipment ue
+       LEFT JOIN app.equipment_items ei ON ei.key = ue.equipment_id::text
+       WHERE ue.user_id = $1`,
+      [userId]
+    );
+    const customEqRes = await pool.query(
+      `SELECT name FROM app.user_custom_equipment WHERE user_id = $1 ORDER BY created_at DESC`,
+      [userId]
+    );
+    const userCuratedEquipment = curatedEqRes.rows.map(r => r.equipment_key);
+    const userCustomEquipment = customEqRes.rows.map(r => r.name);
+    const curatedKeysStr = userCuratedEquipment.length ? userCuratedEquipment.join(', ') : 'Ninguno';
+    const customNamesStr = userCustomEquipment.length ? userCustomEquipment.join(', ') : 'Ninguno';
 
     // Cargar historial mezclado (prioriza completados) para el prompt
     const mixRes = await pool.query(
@@ -115,9 +133,25 @@ router.post('/generate', authenticateToken, async (req, res) => {
       avanzado: {
         label: 'Equipamiento Avanzado',
         implements: ['barra_dominadas','kettlebells','trx','discos_olimpicos']
+      },
+      personalizado: {
+        label: 'Mi equipamiento',
+        // El guardarraíl para "personalizado" será el equipamiento real del usuario (curated + custom)
+        implements: []
       }
     };
-    const inventory = equipmentInventories[equipment_type];
+    let inventory = equipmentInventories[equipment_type];
+    if (equipment_type === 'personalizado' || equipment_type === 'usar_este_equipamiento') {
+      // Usa el equipamiento real del usuario como guardarraíl
+      const eqSet = new Set(userCuratedEquipment);
+      // También añadimos hints de custom como implementos libres
+      for (const name of userCustomEquipment) {
+        if (typeof name === 'string' && name.trim()) {
+          eqSet.add(name.trim().toLowerCase().replace(/\s+/g, '_'));
+        }
+      }
+      inventory = { label: 'Mi equipamiento', implements: Array.from(eqSet) };
+    }
 
     const systemMessage = `Eres "MindFit Coach", un experto entrenador personal y biomecánico. Tu misión es diseñar rutinas de entrenamiento en casa excepcionales, seguras y efectivas, respondiendo SIEMPRE con un único objeto JSON válido.
 
@@ -137,16 +171,20 @@ La estructura es:
     -   Peso: ${u.peso || ''} kg, Altura: ${u.altura || ''} cm, IMC: ${imc || ''}
     -   Nivel: ${u.nivel || ''}, Años entrenando: ${u.anos_entrenando || ''}
     -   Objetivo: ${u.objetivo_principal || ''}
-    -   Limitaciones: ${u.limitaciones_fisicas?.join(', ') || 'Ninguna'}
+    -   Lesiones: ${u.limitaciones_fisicas?.join(', ') || 'Ninguna'}
 
 2.  **PREFERENCIAS DE HOY:**
-    -   Equipamiento: "${equipment_type}"
+    -   Equipamiento (nivel): "${equipment_type}"
     -   Tipo de Entrenamiento: "${training_type}"
 
-3.  **HISTORIAL RECIENTE (Ejercicios a evitar si es posible):**
+3.  **EQUIPAMIENTO DEL USUARIO (PREFERIR ESTOS IMPLEMENTOS SI ENTRAN EN EL NIVEL SELECCIONADO):**
+    -   Curado (codes): ${curatedKeysStr}
+    -   Personalizado (texto libre, hints): ${customNamesStr}
+
+4.  **HISTORIAL RECIENTE (Ejercicios a evitar si es posible):**
     -   ${recentExercises}
 
-4.  **EQUIPAMIENTO DISPONIBLE (USA SOLO ESTOS IMPLEMENTOS):**
+4.  **EQUIPAMIENTO DISPONIBLE HOY (GUARDARRAIL, NO SALIRSE):**
     -   ${inventory.label}: ${inventory.implements.join(', ')}
 
 5.  **REGLAS DE ORO PARA LA GENERACIÓN:**
@@ -188,8 +226,7 @@ La estructura es:
 
 Ahora, genera el plan para el usuario.`;
 
-    const apiKey = process.env.OPENAI_API_KEY;
-    const client = new OpenAI({ apiKey });
+
 
     const completion = await client.chat.completions.create({
       model: MODEL_NAME,

@@ -4,11 +4,21 @@ import { useState, useEffect } from 'react';
 import HomeTrainingExerciseModal from './HomeTrainingExerciseModal';
 import HomeTrainingProgress from './HomeTrainingProgress';
 import HomeTrainingPlanModal from './HomeTrainingPlanModal';
+import UserEquipmentSummaryCard from './UserEquipmentSummaryCard';
+
 
 const HomeTrainingSection = () => {
   const navigate = useNavigate();
   const [selectedEquipment, setSelectedEquipment] = useState(null);
   const [selectedTrainingType, setSelectedTrainingType] = useState(null);
+
+  // Leer selección desde UserEquipmentSummaryCard
+  useEffect(() => {
+    if (sessionStorage.getItem('selectPersonalizedEquipment') === '1') {
+      setSelectedEquipment('usar_este_equipamiento');
+      sessionStorage.removeItem('selectPersonalizedEquipment');
+    }
+  }, []);
   const [isGenerating, setIsGenerating] = useState(false);
   const [showPersonalizedMessage, setShowPersonalizedMessage] = useState(false);
   const [personalizedMessage, setPersonalizedMessage] = useState('');
@@ -524,7 +534,7 @@ const HomeTrainingSection = () => {
         </div>
 
         {/* Tarjetas de equipamiento */}
-        <div className="grid md:grid-cols-3 gap-6 max-w-6xl mx-auto mb-8">
+        <div className="grid md:grid-cols-2 gap-6 max-w-6xl mx-auto mb-8">
           {equipmentTypes.map((equipment) => (
             <div
               key={equipment.id}
@@ -564,6 +574,25 @@ const HomeTrainingSection = () => {
               </div>
             </div>
           ))}
+          <div
+              onClick={() => setSelectedEquipment('personalizado')}
+              className={`bg-gray-800/50 backdrop-blur-sm border-2 rounded-2xl p-6 cursor-pointer transition-all duration-200 hover:bg-gray-800/70 ${
+                selectedEquipment === 'personalizado'
+                  ? `border-yellow-500 bg-gray-800/80`
+                  : 'border-gray-700'
+              }`}
+            >
+              <div className="flex items-center mb-4">
+                <Dumbbell size={24} className="text-white mr-3" />
+                <h3 className="text-lg font-semibold text-white">Usar mi equipamiento</h3>
+              </div>
+
+              <div className="mb-4 text-center">
+                <p className="text-sm text-gray-300 mb-2">Equipamiento:</p>
+                <UserEquipmentSummaryCard />
+              </div>
+
+            </div>
         </div>
 
         {/* Fila de tipos de entrenamiento */}
@@ -611,7 +640,7 @@ const HomeTrainingSection = () => {
               </h3>
               <p className="text-gray-300 mb-6">
                 Basado en tu equipamiento: <span className="text-yellow-400 font-semibold">
-                  {equipmentTypes.find(eq => eq.id === selectedEquipment)?.title}
+                  {selectedEquipment === 'personalizado' || selectedEquipment === 'usar_este_equipamiento' ? 'Mi equipamiento' : (equipmentTypes.find(eq => eq.id === selectedEquipment)?.title || '')}
                 </span> y tipo de entrenamiento: <span className="text-yellow-400 font-semibold">
                   {trainingTypes.find(type => type.id === selectedTrainingType)?.title}
                 </span>

@@ -29,10 +29,12 @@ const HealthInfoStep = ({ formData, onInputChange }) => {
             Ejemplo: Diabetes, hipertensión, problemas cardíacos, etc.
           </p>
         </div>
+        {/* Alias visual: Limitaciones -> Lesiones (sin cambiar la clave) */}
+
 
         {/* Limitaciones Físicas */}
         <div>
-          <label className="block text-white font-medium mb-2">Limitaciones Físicas</label>
+          <label className="block text-white font-medium mb-2">Lesiones</label>
           <textarea
             name="limitacionesFisicas"
             value={formData.limitacionesFisicas}
@@ -80,16 +82,16 @@ const HealthInfoStep = ({ formData, onInputChange }) => {
         <h3 className="text-lg font-semibold text-yellow-400 mb-4">⚠️ Importante</h3>
         <div className="space-y-3 text-gray-300 text-sm">
           <p>
-            <strong>Consulta médica:</strong> Si tienes condiciones médicas serias o dudas sobre tu capacidad 
-            para hacer ejercicio, consulta con un profesional de la salud antes de comenzar cualquier programa 
+            <strong>Consulta médica:</strong> Si tienes condiciones médicas serias o dudas sobre tu capacidad
+            para hacer ejercicio, consulta con un profesional de la salud antes de comenzar cualquier programa
             de entrenamiento.
           </p>
           <p>
-            <strong>No somos médicos:</strong> Esta aplicación no reemplaza el consejo médico profesional. 
+            <strong>No somos médicos:</strong> Esta aplicación no reemplaza el consejo médico profesional.
             Los entrenamientos generados son sugerencias basadas en la información que proporcionas.
           </p>
           <p>
-            <strong>Escucha a tu cuerpo:</strong> Detén cualquier ejercicio si sientes dolor, mareos o 
+            <strong>Escucha a tu cuerpo:</strong> Detén cualquier ejercicio si sientes dolor, mareos o
             malestar. Tu seguridad es lo más importante.
           </p>
         </div>
