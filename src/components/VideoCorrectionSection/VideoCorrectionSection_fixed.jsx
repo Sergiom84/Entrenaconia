@@ -98,6 +98,7 @@ export default function VideoCorrectionSection() {
   const recordedBlobsRef = useRef([])
   const fileInputRef = useRef(null)
   const canvasRef = useRef(null) // para capturas de fotogramas
+  const [showInfoModal, setShowInfoModal] = useState(false);
 
   const [isCameraOn, setIsCameraOn] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
@@ -226,42 +227,42 @@ export default function VideoCorrectionSection() {
       
       // Verificar soporte para MediaRecorder
       if (!MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')) {
-        console.warn('Codec vp9,opus no soportado, usando configuración básica')
-        const recorder = new MediaRecorder(stream)
-        mediaRecorderRef.current = recorder
-      } else {
-        const recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9,opus' })
-        mediaRecorderRef.current = recorder
-      }
-      
-      mediaRecorderRef.current.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) recordedBlobsRef.current.push(e.data)
-      }
-      
-      mediaRecorderRef.current.start(100) // trozos cada 100ms
-      setIsRecording(true)
-    } catch (err) {
-      console.error('No se pudo iniciar la grabación:', err)
-      alert('Error al iniciar la grabación: ' + err.message)
-    }
-  }
-
-  const stopRecording = () => {
-    try {
-      mediaRecorderRef.current?.stop()
-      setIsRecording(false)
-    } catch (err) {
-      console.error('Error al detener la grabación:', err)
-    }
-  }
-
-  const downloadRecording = () => {
-    const blob = new Blob(recordedBlobsRef.current, { type: 'video/webm' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.style.display = 'none'
-    a.href = url
-    a.download = 'entrenamiento.webm'
+        const analysisFeatures = [
+          {
+            title: 'Análisis Postural en Tiempo Real',
+            description: 'Detección de desalineaciones y compensaciones',
+            icon: <Eye className="w-6 h-6 text-blue-400" />,
+            details: [
+              'Análisis de ~33 puntos corporales',
+              'Detección de asimetrías',
+              'Evaluación de cadena cinética',
+              'Corrección de compensaciones',
+            ],
+          },
+          {
+            title: 'Rango de Movimiento',
+            description: 'Medición de ángulos y amplitud',
+            icon: <Target className="w-6 h-6 text-green-400" />,
+            details: [
+              'Flexión/extensión articular',
+              'Movilidad específica',
+              'Limitaciones funcionales',
+              'Progresión de flexibilidad',
+            ],
+          },
+          {
+            title: 'Tempo y Ritmo',
+            description: 'Velocidad de ejecución y control excéntrico',
+            icon: <Clock className="w-6 h-6 text-yellow-400" />,
+            details: ['Fases concéntrica/excéntrica', 'Tiempo bajo tensión', 'Estabilidad', 'Optimización del tempo'],
+          },
+          {
+            title: 'Reconocimiento de Ejercicios',
+            description: 'Identificación automática del ejercicio',
+            icon: <Zap className="w-6 h-6 text-purple-400" />,
+            details: ['Base de +500 ejercicios', 'Variaciones', 'Corrección de ejercicio', 'Alternativas'],
+          },
+        ]
     document.body.appendChild(a)
     a.click()
     URL.revokeObjectURL(url)
@@ -580,35 +581,100 @@ export default function VideoCorrectionSection() {
           </CardContent>
         </Card>
 
-        {/* Características de Análisis */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-          {analysisFeatures.map((feature, index) => (
-            <Card key={index} className="bg-black/80 border-yellow-400/20 hover:border-yellow-400/40 transition-colors">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    {feature.icon}
-                    <div>
-                      <CardTitle className="text-white text-lg">{feature.title}</CardTitle>
-                      <CardDescription className="text-gray-400">{feature.description}</CardDescription>
-                    </div>
-                  </div>
-                  <Badge className="bg-green-500 text-white">{feature.accuracy}</Badge>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <ul className="space-y-2">
-                  {feature.details.map((detail, idx) => (
-                    <li key={idx} className="flex items-center gap-2 text-sm">
-                      <CheckCircle className="w-4 h-4 text-green-400" />
-                      <span className="text-gray-300">{detail}</span>
-                    </li>
-                  ))}
-                </ul>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+         {/* Botón para mostrar información de análisis */}
+         <div className="flex justify-end mb-8">
+           <Button onClick={() => setShowInfoModal(true)} className="bg-yellow-400 text-black hover:bg-yellow-300 font-semibold px-6 py-2 rounded-lg shadow-lg">
+             Información
+           </Button>
+         </div>
+
+         {/* Modal de información */}
+         {showInfoModal && (
+           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
+             <div className="bg-gray-900 rounded-2xl shadow-2xl max-w-2xl w-full mx-4 p-6 relative animate-fade-in">
+               <h2 className="text-2xl font-bold text-yellow-400 mb-4 text-center">Información</h2>
+               <div className="max-h-[60vh] overflow-y-auto pr-2">
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                   {analysisFeatures.map((feature, index) => (
+                     <Card key={index} className="bg-black/80 border-yellow-400/20">
+                       <CardHeader>
+                         <div className="flex items-center gap-3">
+                           {feature.icon}
+                           <div>
+                             <CardTitle className="text-white text-lg">{feature.title}</CardTitle>
+                             <CardDescription className="text-gray-400">{feature.description}</CardDescription>
+                           </div>
+                         </div>
+                       </CardHeader>
+                       <CardContent>
+                         <ul className="space-y-2">
+                           {feature.details.map((detail, idx) => (
+                             <li key={idx} className="flex items-center gap-2 text-sm">
+                               <CheckCircle className="w-4 h-4 text-green-400" />
+                               <span className="text-gray-300">{detail}</span>
+                             </li>
+                           ))}
+                         </ul>
+                       </CardContent>
+                     </Card>
+                   ))}
+                 </div>
+               </div>
+               <div className="flex justify-center mt-6">
+                 <Button onClick={() => setShowInfoModal(false)} className="bg-yellow-400 text-black hover:bg-yellow-300 font-semibold px-8 py-2 rounded-lg">
+                   Aceptar
+                 </Button>
+               </div>
+             </div>
+           </div>
+         )}
+         {/* Botón para mostrar información de análisis */}
+         <div className="flex justify-end mb-8">
+           <Button onClick={() => setShowInfoModal(true)} className="bg-yellow-400 text-black hover:bg-yellow-300 font-semibold px-6 py-2 rounded-lg shadow-lg">
+             Información
+           </Button>
+         </div>
+
+         {/* Modal de información */}
+         {showInfoModal && (
+           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
+             <div className="bg-gray-900 rounded-2xl shadow-2xl max-w-2xl w-full mx-4 p-6 relative animate-fade-in">
+               <h2 className="text-2xl font-bold text-yellow-400 mb-4 text-center">Información</h2>
+               <div className="max-h-[60vh] overflow-y-auto pr-2">
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                   {analysisFeatures.map((feature, index) => (
+                     <Card key={index} className="bg-black/80 border-yellow-400/20">
+                       <CardHeader>
+                         <div className="flex items-center gap-3">
+                           {feature.icon}
+                           <div>
+                             <CardTitle className="text-white text-lg">{feature.title}</CardTitle>
+                             <CardDescription className="text-gray-400">{feature.description}</CardDescription>
+                           </div>
+                         </div>
+                       </CardHeader>
+                       <CardContent>
+                         <ul className="space-y-2">
+                           {feature.details.map((detail, idx) => (
+                             <li key={idx} className="flex items-center gap-2 text-sm">
+                               <CheckCircle className="w-4 h-4 text-green-400" />
+                               <span className="text-gray-300">{detail}</span>
+                             </li>
+                           ))}
+                         </ul>
+                       </CardContent>
+                     </Card>
+                   ))}
+                 </div>
+               </div>
+               <div className="flex justify-center mt-6">
+                 <Button onClick={() => setShowInfoModal(false)} className="bg-yellow-400 text-black hover:bg-yellow-300 font-semibold px-8 py-2 rounded-lg">
+                   Aceptar
+                 </Button>
+               </div>
+             </div>
+           </div>
+         )}
 
         {/* Estadísticas y Progreso (dinámico) */}
         <Card className="bg-black/80 border-yellow-400/20 mb-8">
