@@ -120,6 +120,44 @@ export default function VideoCorrectionSection() {
   const { user } = useAuth()
   const { userData } = useUserContext()
 
+  // Text-to-Speech functionality
+  const speakText = (text) => {
+    if ('speechSynthesis' in window) {
+      // Cancel any ongoing speech
+      window.speechSynthesis.cancel()
+      
+      const utterance = new SpeechSynthesisUtterance(text)
+      utterance.lang = 'es-ES' // Spanish language
+      utterance.rate = 0.9 // Slightly slower for clarity
+      utterance.pitch = 1.0
+      utterance.volume = 0.8
+      
+      window.speechSynthesis.speak(utterance)
+    } else {
+      alert('Lo siento, tu navegador no soporta síntesis de voz.')
+    }
+  }
+
+  // Function to speak all corrections
+  const speakCorrections = () => {
+    if (!advancedResult || !advancedResult.correcciones_priorizadas) {
+      alert('No hay correcciones disponibles para reproducir.')
+      return
+    }
+
+    let textToSpeak = 'Correcciones principales: '
+    
+    advancedResult.correcciones_priorizadas.forEach((correction, index) => {
+      textToSpeak += `${index + 1}. ${correction.accion || correction}. `
+    })
+
+    if (advancedResult.feedback_voz && advancedResult.feedback_voz.length > 0) {
+      textToSpeak += 'Indicaciones clave: ' + advancedResult.feedback_voz.join('. ') + '.'
+    }
+
+    speakText(textToSpeak)
+  }
+
   // Cargar biblioteca de ejercicios desde el backend
   useEffect(() => {
     const loadExercises = async () => {
@@ -372,8 +410,8 @@ export default function VideoCorrectionSection() {
   setAdvancedResult(data)
   setShowAdvancedIA(true)
       
-      // Mostrar mensaje de éxito al usuario
-      alert('¡Análisis IA completado! Revisa la consola para ver los resultados.')
+      // Show success message without forcing user to check console
+      alert('¡Análisis IA completado exitosamente! Los resultados se muestran a continuación.')
     } catch (err) {
       console.error('Error en Corrección IA Avanzada:', err)
       alert(`No se pudo ejecutar la Corrección IA Avanzada: ${err.message}`)
@@ -670,8 +708,18 @@ export default function VideoCorrectionSection() {
               {/* Correcciones Prioritarias */}
               {Array.isArray(advancedResult.correcciones_priorizadas) && advancedResult.correcciones_priorizadas.length > 0 && (
                 <div>
-                  <h4 className="text-white font-semibold mb-3 flex items-center">
-                    <Target className="w-4 h-4 mr-2 text-yellow-400" /> Correcciones Prioritarias
+                  <h4 className="text-white font-semibold mb-3 flex items-center justify-between">
+                    <div className="flex items-center">
+                      <Target className="w-4 h-4 mr-2 text-yellow-400" /> Correcciones Prioritarias
+                    </div>
+                    <Button 
+                      onClick={speakCorrections}
+                      size="sm"
+                      className="bg-yellow-600 hover:bg-yellow-700 text-black"
+                    >
+                      <Play className="w-4 h-4 mr-1" /> 
+                      Escuchar
+                    </Button>
                   </h4>
                   <ul className="space-y-3">
                     {advancedResult.correcciones_priorizadas.map((c, idx) => (
@@ -762,8 +810,18 @@ export default function VideoCorrectionSection() {
               {/* Feedback de Voz sugerido */}
               {Array.isArray(advancedResult.feedback_voz) && advancedResult.feedback_voz.length > 0 && (
                 <div>
-                  <h4 className="text-white font-semibold mb-3 flex items-center">
-                    <Play className="w-4 h-4 mr-2 text-purple-400" /> Cues Verbales
+                  <h4 className="text-white font-semibold mb-3 flex items-center justify-between">
+                    <div className="flex items-center">
+                      <Play className="w-4 h-4 mr-2 text-purple-400" /> Cues Verbales
+                    </div>
+                    <Button 
+                      onClick={speakCorrections}
+                      size="sm"
+                      className="bg-purple-600 hover:bg-purple-700 text-white"
+                    >
+                      <Play className="w-4 h-4 mr-1" /> 
+                      Reproducir
+                    </Button>
                   </h4>
                   <div className="flex flex-wrap gap-2">
                     {advancedResult.feedback_voz.map((c,idx)=>(
