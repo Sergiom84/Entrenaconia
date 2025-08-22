@@ -1,13 +1,16 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import { preloadAllPrompts } from './lib/promptRegistry.js';
+import { validateAPIKeys } from './lib/openaiClient.js';
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/users.js';
 import medicalDocsRoutes from './routes/medicalDocs.js';
 import homeTrainingRoutes from './routes/homeTraining.js';
 import iaHomeTrainingRoutes from './routes/IAHomeTraining.js';
 import equipmentRoutes from './routes/equipment.js';
-import aiRoutes from './routes/ai.js';
+import aiVideoCorrection from './routes/aiVideoCorrection.js';
+import aiPhotoCorrection from './routes/aiPhotoCorrection.js';
 import uploadsRoutes from './routes/uploads.js';
 import exercisesRoutes from './routes/exercises.js';
 import techniqueRoutes from './routes/technique.js';
@@ -20,13 +23,44 @@ const app = express();
 const PORT = process.env.PORT || 3002;
 
 
-// Verificar search_path al arrancar el backend
+// Verificar search_path y precargar prompts al arrancar el backend
 (async () => {
   try {
     const { rows } = await pool.query('SHOW search_path;');
     console.log('📂 search_path actual:', rows[0].search_path);
+    
+    // Verificar que la tabla users existe
+    const userCheck = await pool.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'app' AND table_name = 'users'
+      );
+    `);
+    
+    if (userCheck.rows[0].exists) {
+      console.log('✅ Tabla users encontrada (search_path)');
+    } else {
+      console.warn('⚠️ Tabla users NO encontrada en search_path actual');
+    }
+
+    // Precargar prompts en caché
+    console.log('🔄 Precargando prompts de IA...');
+    const promptResult = await preloadAllPrompts();
+    console.log(`✅ Prompts cargados: ${promptResult.successful}/${promptResult.total} exitosos`);
+
+    // Validar API keys
+    console.log('🔑 Validando API keys...');
+    const apiKeyStatus = validateAPIKeys();
+    if (apiKeyStatus.allConfigured) {
+      console.log('✅ Todas las API keys configuradas correctamente');
+      console.log('🤖 Features disponibles: photo, video, home');
+    } else {
+      console.warn('⚠️ API keys faltantes:', apiKeyStatus.missing.join(', '));
+      console.log('🔍 Estado detallado:', apiKeyStatus.features);
+    }
+    
   } catch (err) {
-    console.error('Error verificando search_path:', err);
+    console.error('❌ Error en inicialización:', err);
   }
 })();
 
@@ -54,18 +88,70 @@ app.use('/api/medical-docs', medicalDocsRoutes);
 app.use('/api/home-training', homeTrainingRoutes);
 app.use('/api/ia-home-training', iaHomeTrainingRoutes);
 app.use('/api/equipment', equipmentRoutes);
-app.use('/api/ai', aiRoutes);
+app.use('/api/ai', aiVideoCorrection);
+app.use('/api/ai-photo-correction', aiPhotoCorrection);
 app.use('/api/uploads', uploadsRoutes);
 app.use('/api/exercises', exercisesRoutes);
 app.use('/api/technique', techniqueRoutes);
 
 // Ruta de prueba
+app.use('/api/uploads', uploadsRoutes);
+
+// Endpoint simple de salud
 app.get('/api/health', (req, res) => {
   res.json({ 
-    status: 'OK', 
-    message: 'Backend de Entrena con IA funcionando correctamente',
+    status: 'ok', 
+    message: 'Servidor funcionando correctamente',
     timestamp: new Date().toISOString()
   });
+});
+
+// Endpoint de test para validar módulos IA
+app.get('/api/test-ai-modules', async (req, res) => {
+  try {
+    const { getOpenAIClient } = await import('./lib/openaiClient.js');
+    const { getPrompt } = await import('./lib/promptRegistry.js');
+    
+    const features = ['video', 'photo', 'home'];
+    const results = [];
+    
+    for (const feature of features) {
+      try {
+        // 1. Verificar cliente OpenAI
+        const client = getOpenAIClient(feature);
+        
+        // 2. Verificar prompt
+        const prompt = await getPrompt(feature);
+        
+        results.push({
+          feature: feature.toUpperCase(),
+          status: 'OK',
+          client: '✅ Cliente creado',
+          prompt: `✅ Prompt cargado (${prompt.length} caracteres)`,
+          preview: prompt.substring(0, 100) + '...'
+        });
+        
+      } catch (error) {
+        results.push({
+          feature: feature.toUpperCase(),
+          status: 'ERROR',
+          error: error.message
+        });
+      }
+    }
+    
+    res.json({
+      message: 'Test de módulos IA completado',
+      timestamp: new Date().toISOString(),
+      results
+    });
+    
+  } catch (error) {
+    res.status(500).json({
+      error: 'Error ejecutando tests de IA',
+      details: error.message
+    });
+  }
 });
 
 // Manejo de errores

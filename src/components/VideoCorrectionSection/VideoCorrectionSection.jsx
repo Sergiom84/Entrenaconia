@@ -27,6 +27,24 @@ import {
   Upload,
 } from 'lucide-react'
 
+// Estilos para la animación del modal
+const modalStyles = `
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.2s ease-out;
+}
+`
+
 /**
  * Corrección por Video IA — Versión conectable
  *
@@ -102,12 +120,14 @@ export default function VideoCorrectionSection() {
   const [isCameraOn, setIsCameraOn] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
+  const [isAnalyzingPhotos, setIsAnalyzingPhotos] = useState(false)
   const [selectedExerciseId, setSelectedExerciseId] = useState('squat')
   const [showAdvancedIA, setShowAdvancedIA] = useState(false)
   const [advancedResult, setAdvancedResult] = useState(null)
   const [photos, setPhotos] = useState([]) // previsualizaciones locales
   const [uploadResponses, setUploadResponses] = useState([]) // respuestas del backend
   const [exercises, setExercises] = useState(FALLBACK_EXERCISES)
+  const [showInfoModal, setShowInfoModal] = useState(false)
   const [stats, setStats] = useState({
     precisionPromedio: '—',
     sesionesAnalizadas: 0,
@@ -120,21 +140,42 @@ export default function VideoCorrectionSection() {
   const { user } = useAuth()
   const { userData } = useUserContext()
 
-  // Text-to-Speech functionality
-  const speakText = (text) => {
+  // Text-to-Speech (Web Speech API)
+  const voiceRef = useRef(null)
+
+  useEffect(() => {
     if ('speechSynthesis' in window) {
-      // Cancel any ongoing speech
-      window.speechSynthesis.cancel()
-      
-      const utterance = new SpeechSynthesisUtterance(text)
-      utterance.lang = 'es-ES' // Spanish language
-      utterance.rate = 0.9 // Slightly slower for clarity
-      utterance.pitch = 1.0
-      utterance.volume = 0.8
-      
-      window.speechSynthesis.speak(utterance)
-    } else {
+      const updateVoices = () => {
+        const voices = window.speechSynthesis.getVoices() || []
+        const es = voices.find(v => (v.lang || '').toLowerCase().startsWith('es'))
+        voiceRef.current = es || voices[0] || null
+      }
+      updateVoices()
+      window.speechSynthesis.onvoiceschanged = updateVoices
+    }
+  }, [])
+
+  const speakText = (text) => {
+    if (!('speechSynthesis' in window)) {
       alert('Lo siento, tu navegador no soporta síntesis de voz.')
+      return
+    }
+    // Cancel any ongoing speech to avoid overlap
+    window.speechSynthesis.cancel()
+
+    const utterance = new SpeechSynthesisUtterance(text)
+    utterance.lang = 'es-ES'
+    utterance.rate = 0.95
+    utterance.pitch = 1.0
+    utterance.volume = 0.9
+    if (voiceRef.current) utterance.voice = voiceRef.current
+
+    window.speechSynthesis.speak(utterance)
+  }
+
+  const stopSpeaking = () => {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel()
     }
   }
 
@@ -146,16 +187,79 @@ export default function VideoCorrectionSection() {
     }
 
     let textToSpeak = 'Correcciones principales: '
-    
+
     advancedResult.correcciones_priorizadas.forEach((correction, index) => {
-      textToSpeak += `${index + 1}. ${correction.accion || correction}. `
+      const accion = typeof correction === 'string' ? correction : (correction.accion || '')
+      if (accion) textToSpeak += `${index + 1}. ${accion}. `
     })
 
-    if (advancedResult.feedback_voz && advancedResult.feedback_voz.length > 0) {
-      textToSpeak += 'Indicaciones clave: ' + advancedResult.feedback_voz.join('. ') + '.'
+    const fv = advancedResult.feedback_voz
+    if (Array.isArray(fv) && fv.length > 0) {
+      textToSpeak += 'Indicaciones clave: ' + fv.join('. ') + '.'
+    } else if (typeof fv === 'string' && fv.trim()) {
+      textToSpeak += 'Indicaciones clave: ' + fv
     }
 
     speakText(textToSpeak)
+  }
+
+  // Normaliza la respuesta del endpoint de fotos al formato esperado por la UI
+  const normalizePhotoAnalysis = (payload, fallbackExercise) => {
+    try {
+      const a = payload?.analysis || {}
+      const md = payload?.metadata || {}
+
+      const mapRiskToConfidence = (risk) => {
+        const r = String(risk || '').toLowerCase()
+        if (r === 'bajo') return 'alta'
+        if (r === 'medio' || r === 'media') return 'media'
+        if (r === 'alto') return 'baja'
+        return 'media'
+      }
+
+      // Fuente de correcciones: soporta "correcciones" y "correcciones_priorizadas"
+      const correctionsSrc = Array.isArray(a.correcciones_priorizadas)
+        ? a.correcciones_priorizadas
+        : (Array.isArray(a.correcciones) ? a.correcciones : [])
+
+      const correcciones = correctionsSrc.map((c) => {
+        if (typeof c === 'string') {
+          return { prioridad: 'media', accion: c, fundamento: '' }
+        }
+        return {
+          prioridad: c.prioridad || c.importancia || 'media',
+          accion: c.accion || c.solucion || c.aspecto || c.descripcion || c.description || '',
+          fundamento: c.fundamento || c.problema || c.evidencia || c.evidence || ''
+        }
+      })
+
+      const feedbackVoz = correcciones
+        .map(c => c.accion)
+        .filter(Boolean)
+        .slice(0, 5)
+
+      return {
+        ejercicio: md.exercise_analyzed || fallbackExercise || 'No especificado',
+        confianza_global: mapRiskToConfidence(a.nivel_riesgo),
+        correcciones_priorizadas: correcciones,
+        errores_detectados: Array.isArray(a.errores_detectados) ? a.errores_detectados : [],
+        metricas: a.metricas || null,
+        puntos_clave: Array.isArray(a.puntos_positivos) ? a.puntos_positivos : (Array.isArray(a.puntos_clave) ? a.puntos_clave : []),
+        riesgos_potenciales: Array.isArray(a.riesgos_potenciales) ? a.riesgos_potenciales : (a.nivel_riesgo ? [a.nivel_riesgo] : []),
+        siguiente_paso: a.siguiente_paso || a.recomendaciones_adicionales || a.nota_final || '',
+        feedback_voz: Array.isArray(a.feedback_voz) ? a.feedback_voz : feedbackVoz,
+        overlay_recomendado: Array.isArray(a.overlay_recomendado) ? a.overlay_recomendado : [],
+        metadata: {
+          timestamp: md.timestamp || new Date().toISOString(),
+          model: md.model_used || md.model || 'gpt-4o-mini',
+          imageCount: md.photos_count || md.imageCount || 0,
+          confidence: mapRiskToConfidence(a.nivel_riesgo)
+        }
+      }
+    } catch (e) {
+      console.warn('No se pudo normalizar análisis de foto, devolviendo payload crudo:', e)
+      return payload
+    }
   }
 
   // Cargar biblioteca de ejercicios desde el backend
@@ -185,7 +289,7 @@ export default function VideoCorrectionSection() {
   // Cargar estadísticas reales del usuario
   useEffect(() => {
     if (!user?.id) return // No cargar si no hay usuario
-    
+
     const loadStats = async () => {
       try {
         const res = await fetch(`/api/technique/stats?userId=${user.id}`)
@@ -225,7 +329,7 @@ export default function VideoCorrectionSection() {
     } catch (err) {
       console.error('No se pudo iniciar la cámara:', err)
       let errorMessage = 'No se pudo acceder a la cámara. '
-      
+
       if (err.name === 'NotAllowedError') {
         errorMessage += 'Por favor, permite el acceso a la cámara en tu navegador.'
       } else if (err.name === 'NotFoundError') {
@@ -235,7 +339,7 @@ export default function VideoCorrectionSection() {
       } else {
         errorMessage += `Error: ${err.message}`
       }
-      
+
       alert(errorMessage)
     }
   }
@@ -262,7 +366,7 @@ export default function VideoCorrectionSection() {
 
       recordedBlobsRef.current = []
       const stream = mediaStreamRef.current
-      
+
       // Verificar soporte para MediaRecorder
       if (!MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')) {
         console.warn('Codec vp9,opus no soportado, usando configuración básica')
@@ -272,11 +376,11 @@ export default function VideoCorrectionSection() {
         const recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9,opus' })
         mediaRecorderRef.current = recorder
       }
-      
+
       mediaRecorderRef.current.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) recordedBlobsRef.current.push(e.data)
       }
-      
+
       mediaRecorderRef.current.start(100) // trozos cada 100ms
       setIsRecording(true)
     } catch (err) {
@@ -404,17 +508,81 @@ export default function VideoCorrectionSection() {
         const errorText = await res.text()
         throw new Error(`IA avanzada no disponible: ${errorText}`)
       }
-      
+
   const data = await res.json()
   console.log('Corrección IA Avanzada:', data)
   setAdvancedResult(data)
   setShowAdvancedIA(true)
-      
+
       // Show success message without forcing user to check console
       alert('¡Análisis IA completado exitosamente! Los resultados se muestran a continuación.')
     } catch (err) {
       console.error('Error en Corrección IA Avanzada:', err)
       alert(`No se pudo ejecutar la Corrección IA Avanzada: ${err.message}`)
+    }
+  }
+
+  const handlePhotosAnalysis = async () => {
+    if (!photos.length) {
+      alert('Por favor, sube al menos una imagen para analizar.')
+      return
+    }
+
+    if (!user?.id) {
+      alert('Necesitas estar autenticado para usar el Análisis IA de Fotos.')
+      return
+    }
+
+    try {
+      setIsAnalyzingPhotos(true)
+
+      const fd = new FormData()
+
+      // Convertir las fotos de base64 a blob y agregarlas al FormData
+      for (let i = 0; i < photos.length; i++) {
+        const photo = photos[i]
+        // Convertir data URL a blob
+        const response = await fetch(photo.url)
+        const blob = await response.blob()
+        fd.append('photos', blob, photo.name)
+      }
+
+      // Campos esperados por el endpoint de fotos
+      fd.append('exercise_name', selectedExerciseId)
+      fd.append('exercise_description', '')
+      fd.append('user_context', JSON.stringify({
+        edad: userData?.edad,
+        peso: userData?.peso,
+        altura: userData?.altura,
+        nivel: userData?.nivel,
+        lesiones: userData?.lesiones,
+        equipamiento: userData?.equipamiento,
+        objetivos: userData?.objetivos,
+      }))
+
+      console.log(`🖼️ Analizando ${photos.length} fotos subidas...`)
+
+      // Llamar a la ruta específica de análisis de fotos
+      const res = await fetch('/api/ai-photo-correction/analyze', { method: 'POST', body: fd })
+      if (!res.ok) {
+        const errorText = await res.text()
+        throw new Error(`Análisis IA no disponible: ${errorText}`)
+      }
+
+      const data = await res.json()
+      console.log('Análisis IA de Fotos (raw):', data)
+      const normalized = normalizePhotoAnalysis(data, selectedExerciseId)
+      console.log('Análisis IA de Fotos (normalizado):', normalized)
+      setAdvancedResult(normalized)
+      setShowAdvancedIA(true)
+
+      // Show success message without forcing user to check console
+      alert('¡Análisis IA de fotos completado exitosamente! Los resultados se muestran a continuación.')
+    } catch (err) {
+      console.error('Error en Análisis IA de Fotos:', err)
+      alert(`No se pudo ejecutar el Análisis IA de Fotos: ${err.message}`)
+    } finally {
+      setIsAnalyzingPhotos(false)
     }
   }
 
@@ -425,7 +593,7 @@ export default function VideoCorrectionSection() {
     {
       title: 'Análisis Postural en Tiempo Real',
       description: 'Detección de desalineaciones y compensaciones',
-      icon: <Eye className="w-6 h-6 text-blue-400" />, accuracy: '95%',
+      icon: <Eye className="w-6 h-6 text-blue-400" />,
       details: [
         'Análisis de ~33 puntos corporales',
         'Detección de asimetrías',
@@ -436,7 +604,7 @@ export default function VideoCorrectionSection() {
     {
       title: 'Rango de Movimiento',
       description: 'Medición de ángulos y amplitud',
-      icon: <Target className="w-6 h-6 text-green-400" />, accuracy: '92%',
+      icon: <Target className="w-6 h-6 text-green-400" />,
       details: [
         'Flexión/extensión articular',
         'Movilidad específica',
@@ -447,19 +615,20 @@ export default function VideoCorrectionSection() {
     {
       title: 'Tempo y Ritmo',
       description: 'Velocidad de ejecución y control excéntrico',
-      icon: <Clock className="w-6 h-6 text-yellow-400" />, accuracy: '89%',
+      icon: <Clock className="w-6 h-6 text-yellow-400" />,
       details: ['Fases concéntrica/excéntrica', 'Tiempo bajo tensión', 'Estabilidad', 'Optimización del tempo'],
     },
     {
       title: 'Reconocimiento de Ejercicios',
       description: 'Identificación automática del ejercicio',
-      icon: <Zap className="w-6 h-6 text-purple-400" />, accuracy: '97%',
+      icon: <Zap className="w-6 h-6 text-purple-400" />,
       details: ['Base de +500 ejercicios', 'Variaciones', 'Corrección de ejercicio', 'Alternativas'],
     },
   ]
 
   return (
     <div className="min-h-screen bg-black text-white p-6 pb-24">
+      <style>{modalStyles}</style>
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold mb-4 bg-gradient-to-r from-yellow-400 to-yellow-200 bg-clip-text text-transparent">
@@ -523,6 +692,10 @@ export default function VideoCorrectionSection() {
               <Button onClick={handleAdvancedIA} className="bg-yellow-400 text-black hover:bg-yellow-300">
                 <Brain className="w-4 h-4 mr-2" /> Activar Corrección IA Avanzada
               </Button>
+
+              <Button onClick={() => setShowInfoModal(true)} className="bg-yellow-400 text-black hover:bg-yellow-300 font-semibold">
+                Información
+              </Button>
             </div>
 
             {/* Canvas oculto para capturas */}
@@ -576,6 +749,8 @@ export default function VideoCorrectionSection() {
                   <ul className="space-y-2">
                     {(selectedExercise.keyPoints || []).map((pt, idx) => (
                       <li key={idx} className="flex items-center gap-2 text-sm">
+
+
                         <div className="w-2 h-2 bg-green-400 rounded-full" />
                         <span className="text-gray-300">{pt}</span>
                       </li>
@@ -604,6 +779,18 @@ export default function VideoCorrectionSection() {
                 <Upload className="w-4 h-4 mr-2" /> Subir fotos
               </Button>
               {isUploading && <Badge className="bg-yellow-500">Subiendo…</Badge>}
+
+              {photos.length > 0 && (
+                <Button
+                  onClick={handlePhotosAnalysis}
+                  disabled={isAnalyzingPhotos}
+                  className="bg-yellow-400 text-black hover:bg-yellow-300 font-semibold"
+                >
+                  <Brain className="w-4 h-4 mr-2" />
+                  {isAnalyzingPhotos ? 'Analizando...' : 'Análisis'}
+                </Button>
+              )}
+              {isAnalyzingPhotos && <Badge className="bg-yellow-500">Analizando fotos...</Badge>}
             </div>
 
             {photos.length > 0 && (
@@ -619,35 +806,49 @@ export default function VideoCorrectionSection() {
           </CardContent>
         </Card>
 
-        {/* Características de Análisis */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-          {analysisFeatures.map((feature, index) => (
-            <Card key={index} className="bg-black/80 border-yellow-400/20 hover:border-yellow-400/40 transition-colors">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    {feature.icon}
-                    <div>
-                      <CardTitle className="text-white text-lg">{feature.title}</CardTitle>
-                      <CardDescription className="text-gray-400">{feature.description}</CardDescription>
-                    </div>
-                  </div>
-                  <Badge className="bg-green-500 text-white">{feature.accuracy}</Badge>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <ul className="space-y-2">
-                  {feature.details.map((detail, idx) => (
-                    <li key={idx} className="flex items-center gap-2 text-sm">
-                      <CheckCircle className="w-4 h-4 text-green-400" />
-                      <span className="text-gray-300">{detail}</span>
-                    </li>
+        {/* Modal de información */}
+        {showInfoModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
+            <div className="bg-gray-900 rounded-2xl shadow-2xl max-w-4xl w-full mx-4 p-6 relative animate-fade-in max-h-[90vh]">
+              <h2 className="text-2xl font-bold text-yellow-400 mb-4 text-center">Información</h2>
+              <div className="max-h-[60vh] overflow-y-auto pr-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {analysisFeatures.map((feature, index) => (
+                    <Card key={index} className="bg-black/80 border-yellow-400/20">
+                      <CardHeader>
+                        <div className="flex items-center gap-3">
+                          {feature.icon}
+                          <div>
+                            <CardTitle className="text-white text-lg">{feature.title}</CardTitle>
+                            <CardDescription className="text-gray-400">{feature.description}</CardDescription>
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <ul className="space-y-2">
+                          {feature.details.map((detail, idx) => (
+                            <li key={idx} className="flex items-center gap-2 text-sm">
+                              <CheckCircle className="w-4 h-4 text-green-400" />
+                              <span className="text-gray-300">{detail}</span>
+                            </li>
+
+
+
+                          ))}
+                        </ul>
+                      </CardContent>
+                    </Card>
                   ))}
-                </ul>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+                </div>
+              </div>
+              <div className="flex justify-center mt-6">
+                <Button onClick={() => setShowInfoModal(false)} className="bg-yellow-400 text-black hover:bg-yellow-300 font-semibold px-8 py-2 rounded-lg">
+                  Aceptar
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Estadísticas y Progreso (dinámico) */}
         <Card className="bg-black/80 border-yellow-400/20 mb-8">
@@ -705,6 +906,12 @@ export default function VideoCorrectionSection() {
                 </div>
               </div>
 
+        {advancedResult === null && showAdvancedIA && (
+          <div className="p-3 rounded bg-yellow-400/10 border border-yellow-400/30 text-yellow-200 text-sm">
+            No hay resultados disponibles todavía.
+          </div>
+        )}
+
               {/* Correcciones Prioritarias */}
               {Array.isArray(advancedResult.correcciones_priorizadas) && advancedResult.correcciones_priorizadas.length > 0 && (
                 <div>
@@ -712,14 +919,25 @@ export default function VideoCorrectionSection() {
                     <div className="flex items-center">
                       <Target className="w-4 h-4 mr-2 text-yellow-400" /> Correcciones Prioritarias
                     </div>
-                    <Button 
-                      onClick={speakCorrections}
-                      size="sm"
-                      className="bg-yellow-600 hover:bg-yellow-700 text-black"
-                    >
-                      <Play className="w-4 h-4 mr-1" /> 
-                      Escuchar
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        onClick={speakCorrections}
+                        size="sm"
+                        className="bg-yellow-600 hover:bg-yellow-700 text-black"
+                      >
+                        <Play className="w-4 h-4 mr-1" />
+                        Escuchar
+                      </Button>
+                      <Button
+                        onClick={stopSpeaking}
+                        size="sm"
+                        variant="outline"
+                        className="border-yellow-600 text-yellow-400 hover:bg-yellow-400/10"
+                      >
+                        <Pause className="w-4 h-4 mr-1" />
+                        Detener
+                      </Button>
+                    </div>
                   </h4>
                   <ul className="space-y-3">
                     {advancedResult.correcciones_priorizadas.map((c, idx) => (
@@ -814,12 +1032,12 @@ export default function VideoCorrectionSection() {
                     <div className="flex items-center">
                       <Play className="w-4 h-4 mr-2 text-purple-400" /> Cues Verbales
                     </div>
-                    <Button 
+                    <Button
                       onClick={speakCorrections}
                       size="sm"
                       className="bg-purple-600 hover:bg-purple-700 text-white"
                     >
-                      <Play className="w-4 h-4 mr-1" /> 
+                      <Play className="w-4 h-4 mr-1" />
                       Reproducir
                     </Button>
                   </h4>
@@ -838,9 +1056,18 @@ export default function VideoCorrectionSection() {
                     <ImageIcon className="w-4 h-4 mr-2 text-blue-400" /> Overlays Recomendados
                   </h4>
                   <div className="flex flex-wrap gap-2 text-xs">
-                    {advancedResult.overlay_recomendado.map((o,idx)=>(
-                      <span key={idx} className="px-2 py-1 rounded bg-blue-500/20 border border-blue-400/30 text-blue-200">{o}</span>
-                    ))}
+                    {advancedResult.overlay_recomendado.map((o,idx)=>{
+                      if (typeof o === 'string') {
+                        return (
+                          <span key={idx} className="px-2 py-1 rounded bg-blue-500/20 border border-blue-400/30 text-blue-200">{o}</span>
+                        )
+                      }
+                      const tipo = o.tipo || o.type || 'overlay'
+                      const range = (o.from != null && o.to != null) ? ` (${o.from}-${o.to})` : ''
+                      return (
+                        <span key={idx} title={JSON.stringify(o)} className="px-2 py-1 rounded bg-blue-500/20 border border-blue-400/30 text-blue-200">{`${tipo}${range}`}</span>
+                      )
+                    })}
                   </div>
                 </div>
               )}

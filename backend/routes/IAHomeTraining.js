@@ -1,10 +1,13 @@
 import express from 'express';
-import { getOpenAI } from '../lib/openaiClient.js';
+import { getOpenAIClient } from '../lib/openaiClient.js';
+import { getPrompt, FeatureKey } from '../lib/promptRegistry.js';
 import authenticateToken from '../middleware/auth.js';
 import { pool } from '../db.js';
 
 const router = express.Router();
-const MODEL_NAME = 'gpt-4o-mini'; // Modelo definido en una constante
+
+// Modelo para Home Training
+const MODEL = process.env.OPENAI_TEXT_MODEL || 'gpt-4.1-nano';
 
 // Utilidad para calcular IMC con datos en kg/cm
 const calcIMC = (peso, alturaCm) => {
@@ -57,10 +60,9 @@ router.post('/generate', authenticateToken, async (req, res) => {
     const { equipment_type, training_type } = req.body || {};
     const userId = req.user?.userId || req.user?.id;
 
-    const client = getOpenAI();
-    if (!client) {
-      return res.status(500).json({ success: false, error: 'Falta OPENAI_API_KEY en el backend' });
-    }
+    // Obtener cliente específico para home training
+    const client = getOpenAIClient("home");
+    const systemPrompt = await getPrompt(FeatureKey.HOME);
 
     const allowedEq = new Set(['minimo', 'basico', 'avanzado', 'personalizado', 'usar_este_equipamiento']);
     const allowedTr = new Set(['funcional', 'hiit', 'fuerza']);
@@ -153,83 +155,24 @@ router.post('/generate', authenticateToken, async (req, res) => {
       inventory = { label: 'Mi equipamiento', implements: Array.from(eqSet) };
     }
 
-    const systemMessage = `Eres "MindFit Coach", un experto entrenador personal y biomecánico. Tu misión es diseñar rutinas de entrenamiento en casa excepcionales, seguras y efectivas, respondiendo SIEMPRE con un único objeto JSON válido.
-
-**REGLA DE ORO**: Tu respuesta debe ser exclusivamente un objeto JSON. No incluyas texto, comentarios o markdown fuera del JSON.
-
-La estructura es:
-{
-  "mensaje_personalizado": "Texto breve, motivador y específico para el usuario.",
-  "plan_entrenamiento": { /* Objeto del plan detallado */ }
-}
-
-**ANALIZA AL USUARIO Y GENERA EL PLAN SIGUIENDO ESTAS DIRECTIVAS:**
-
-1.  **PERFIL DE USUARIO:**
-    -   ID: ${u.id}
-    -   Edad: ${u.edad || ''} años, Sexo: ${u.sexo || ''}
-    -   Peso: ${u.peso || ''} kg, Altura: ${u.altura || ''} cm, IMC: ${imc || ''}
-    -   Nivel: ${u.nivel || ''}, Años entrenando: ${u.anos_entrenando || ''}
-    -   Objetivo: ${u.objetivo_principal || ''}
-    -   Lesiones: ${u.limitaciones_fisicas?.join(', ') || 'Ninguna'}
-
-2.  **PREFERENCIAS DE HOY:**
-    -   Equipamiento (nivel): "${equipment_type}"
-    -   Tipo de Entrenamiento: "${training_type}"
-
-3.  **EQUIPAMIENTO DEL USUARIO (PREFERIR ESTOS IMPLEMENTOS SI ENTRAN EN EL NIVEL SELECCIONADO):**
-    -   Curado (codes): ${curatedKeysStr}
-    -   Personalizado (texto libre, hints): ${customNamesStr}
-
-4.  **HISTORIAL RECIENTE (Ejercicios a evitar si es posible):**
-    -   ${recentExercises}
-
-4.  **EQUIPAMIENTO DISPONIBLE HOY (GUARDARRAIL, NO SALIRSE):**
-    -   ${inventory.label}: ${inventory.implements.join(', ')}
-
-5.  **REGLAS DE ORO PARA LA GENERACIÓN:**
-    -   **¡SÉ CREATIVO!**: Esta es la regla más importante. Sorprende al usuario. No uses siempre los mismos 5 ejercicios de HIIT. Tienes una base de datos inmensa de movimientos, úsala.
-    -   **EVITA LA REPETICIÓN**: El historial de ejercicios recientes es una lista de lo que NO debes usar, o al menos, no en su mayoría. Prioriza la novedad.
-    -   **CALIDAD TÉCNICA**: Las 'notas' de cada ejercicio deben ser consejos de experto detallados, enfocados en la forma correcta, seguridad, respiración y consejos para maximizar la efectividad. Incluye puntos clave como posición inicial, movimiento, respiración y errores comunes a evitar.
-    -   **UTILIZA EL EQUIPAMIENTO**: Adáptate al inventario indicado. Si el usuario seleccionó 'mínimo', prohíbe implementos como mancuernas, kettlebells o barra; utiliza peso corporal, toallas, silla/sofá o pared.
-    -   **INFORMACIÓN TÉCNICA**: Siempre incluye los campos 'patron' (ej: sentadilla, empuje, tracción, bisagra_cadera) e 'implemento' (ej: peso_corporal, mancuernas, bandas_elasticas) para cada ejercicio.
-
-5.  **GUÍA DE ESTILOS (NO REGLAS ESTRICTAS):**
-    -   **funcional**: Piensa en movimientos completos y fluidos. Combina fuerza, equilibrio y cardio.
-    -   **hiit**: El objetivo es la intensidad. Alterna picos de esfuerzo máximo con descansos cortos. La estructura (ej. 30s trabajo / 30s descanso) es una guía, siéntete libre de proponer otras (ej. 45/15, Tabata, etc.).
-    -   **fuerza**: Enfócate en la sobrecarga progresiva. Menos repeticiones, más peso y descansos más largos para permitir la recuperación.
-
-**EJEMPLO DE SALIDA JSON PERFECTA:**
-{
-  "mensaje_personalizado": "¡Hola Sergio! Para tu objetivo de ganar músculo, y viendo que hoy toca HIIT, he preparado una sesión intensa con tu equipo básico que elevará tu ritmo cardíaco y estimulará tus fibras musculares. ¡Vamos a por ello!",
-  "plan_entrenamiento": {
-    "titulo": "HIIT para Hipertrofia",
-    "subtitulo": "Entrenamiento con equipamiento básico",
-    "fecha": "${new Date().toISOString().slice(0, 10)}",
-    "equipamiento": "basico",
-    "tipoEntrenamiento": "hiit",
-    "duracion_estimada_min": 25,
-    "ejercicios": [
-      {
-        "nombre": "Sentadilla Goblet con Mancuerna",
-        "tipo": "reps",
-        "series": 4,
-        "repeticiones": 12,
-        "descanso_seg": 60,
-        "notas": "Posición inicial: Sostén la mancuerna verticalmente contra tu pecho con ambas manos, codos apuntando hacia abajo. Pies a la anchura de los hombros. Movimiento: Desciende flexionando caderas y rodillas hasta que los muslos estén paralelos al suelo, mantén el torso erguido y el peso centrado. Respiración: Inhala al descender, exhala al subir. Evita: Inclinar el torso hacia adelante o que las rodillas se desvíen hacia adentro.",
-        "patron": "sentadilla",
-        "implemento": "mancuernas"
-      }
-    ]
-  }
-}
-
-Ahora, genera el plan para el usuario.`;
-
-
+    // Construir system message dinámico con datos del usuario
+    const systemMessage = systemPrompt
+      .replace(/\$\{u\.id\}/g, u.id || '')
+      .replace(/\$\{u\.edad \|\| ''\}/g, u.edad || '')
+      .replace(/\$\{u\.sexo \|\| ''\}/g, u.sexo || '')
+      .replace(/\$\{u\.peso \|\| ''\}/g, u.peso || '')
+      .replace(/\$\{u\.altura \|\| ''\}/g, u.altura || '')
+      .replace(/\$\{imc \|\| ''\}/g, imc || '')
+      .replace(/\$\{u\.nivel_actividad \|\| ''\}/g, u.nivel || '')
+      .replace(/\$\{u\.anos_entrenando \|\| ''\}/g, u.anos_entrenando || '')
+      .replace(/\$\{u\.objetivo_principal \|\| ''\}/g, u.objetivo_principal || '')
+      .replace(/\$\{u\.limitaciones_fisicas\?\.join\(', '\) \|\| 'Ninguna'\}/g, u.limitaciones_fisicas?.join(', ') || 'Ninguna')
+      .replace(/\$\{equipment_type\}/g, equipment_type)
+      .replace(/\$\{training_type\}/g, training_type)
+      .replace(/\$\{recentExercises\}/g, recentExercises);
 
     const completion = await client.chat.completions.create({
-      model: MODEL_NAME,
+      model: MODEL,
       messages: [
         { role: 'system', content: systemMessage },
         {
@@ -238,7 +181,7 @@ Ahora, genera el plan para el usuario.`;
         }
       ],
       response_format: { type: 'json_object' },
-      temperature: 0.9,
+      temperature: 1.0,
       top_p: 1.0
     });
 
@@ -253,7 +196,7 @@ Ahora, genera el plan para el usuario.`;
 
     const equipmentNames = { minimo: 'Equipamiento Mínimo', basico: 'Equipamiento Básico', avanzado: 'Equipamiento Avanzado' };
     const trainingNames = { funcional: 'Funcional', hiit: 'HIIT', fuerza: 'Fuerza' };
-    const plan_source = { type: 'openai', label: 'OpenAI', detail: MODEL_NAME };
+    const plan_source = { type: 'openai', label: 'OpenAI', detail: MODEL };
 
     // Normalización de descansos y duración estimada
     const aiPlan = aiJson?.plan_entrenamiento || {};
