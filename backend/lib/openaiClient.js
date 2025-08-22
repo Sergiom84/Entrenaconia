@@ -3,13 +3,11 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-let clients = {};
+const clients = {};
 
 /**
- * Devuelve una instancia reutilizable del cliente de OpenAI.
- * Si se pasa apiKey, la usa; si no, usa process.env.OPENAI_API_KEY.
- * Si falta la API key, devuelve null.
- * @param {string} [apiKey] - API key específica (opcional)
+ * Obtiene (y cachea) un cliente OpenAI por apiKey.
+ * @param {string} [apiKey]
  * @returns {OpenAI|null}
  */
 export function getOpenAI(apiKey) {
@@ -21,4 +19,22 @@ export function getOpenAI(apiKey) {
   if (clients[key]) return clients[key];
   clients[key] = new OpenAI({ apiKey: key });
   return clients[key];
+}
+
+/**
+ * Devuelve cliente OpenAI para un módulo definido en config/aiConfigs.
+ * Lee su propia variable de entorno (envKey). Si no existe, fallback a OPENAI_API_KEY.
+ * @param {object} moduleConfig { envKey }
+ */
+export function getModuleOpenAI(moduleConfig) {
+  if (!moduleConfig) return getOpenAI();
+  const { envKey } = moduleConfig;
+  const specificKey = envKey ? process.env[envKey] : undefined;
+  return getOpenAI(specificKey);
+}
+
+export function hasAPIKeyForModule(moduleConfig) {
+  if (!moduleConfig) return !!process.env.OPENAI_API_KEY;
+  const specificKey = process.env[moduleConfig.envKey];
+  return !!(specificKey || process.env.OPENAI_API_KEY);
 }

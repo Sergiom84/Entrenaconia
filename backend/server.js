@@ -7,13 +7,17 @@ import medicalDocsRoutes from './routes/medicalDocs.js';
 import homeTrainingRoutes from './routes/homeTraining.js';
 import iaHomeTrainingRoutes from './routes/IAHomeTraining.js';
 import equipmentRoutes from './routes/equipment.js';
+import aiRoutes from './routes/ai.js';
+import uploadsRoutes from './routes/uploads.js';
+import exercisesRoutes from './routes/exercises.js';
+import techniqueRoutes from './routes/technique.js';
 import { pool } from './db.js';
 
 // Cargar variables de entorno
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3002;
 
 
 // Verificar search_path al arrancar el backend
@@ -28,7 +32,7 @@ const PORT = process.env.PORT || 3001;
 
 // Middleware
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:3000'],
+  origin: ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175', 'http://localhost:3000'],
   credentials: true
 }));
 app.use(express.json());
@@ -50,6 +54,10 @@ app.use('/api/medical-docs', medicalDocsRoutes);
 app.use('/api/home-training', homeTrainingRoutes);
 app.use('/api/ia-home-training', iaHomeTrainingRoutes);
 app.use('/api/equipment', equipmentRoutes);
+app.use('/api/ai', aiRoutes);
+app.use('/api/uploads', uploadsRoutes);
+app.use('/api/exercises', exercisesRoutes);
+app.use('/api/technique', techniqueRoutes);
 
 // Ruta de prueba
 app.get('/api/health', (req, res) => {

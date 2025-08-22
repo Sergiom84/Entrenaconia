@@ -2,6 +2,12 @@ import express from 'express';
 import { pool } from '../db.js';
 import authenticateToken from '../middleware/auth.js';
 
+// TODO: Integrar endpoint IA de generación de plan usando módulo HOME_TRAINING (promptId, temperature 1.0)
+// Ejemplo futuro: POST /plans/ai/generate
+//   - Usa datos de perfil + objetivos
+//   - Llama a responses.create con config HOME_TRAINING
+//   - Devuelve plan estructurado para persistir
+
 const router = express.Router();
 
 // Crear un nuevo plan de entrenamiento en casa

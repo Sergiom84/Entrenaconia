@@ -33,10 +33,10 @@ import {
  * Cambios clave:
  *  - Vista previa real de cámara (getUserMedia) con start/stop.
  *  - Opción de grabar y almacenar el vídeo localmente (MediaRecorder).
- *  - Botón “Subir fotos” (múltiples imágenes) con previsualización y envío a backend.
+ *  - Botón "Subir fotos" (múltiples imágenes) con previsualización y envío a backend.
  *  - Biblioteca de ejercicios dinámica vía API, con fallback local.
  *  - Métricas/estadísticas cargadas desde backend, con fallback.
- *  - Hook de “Corrección IA Avanzada” preparado para tu endpoint que usa OpenAI.
+ *  - Hook de "Corrección IA Avanzada" preparado para tu endpoint que usa OpenAI.
  *  - Código defensivo y accesible. Diseño consistente con tu UI (shadcn + Tailwind).
  */
 
@@ -104,7 +104,6 @@ export default function VideoCorrectionSection() {
   const [isUploading, setIsUploading] = useState(false)
   const [selectedExerciseId, setSelectedExerciseId] = useState('squat')
   const [showAdvancedIA, setShowAdvancedIA] = useState(false)
-  const [advancedResult, setAdvancedResult] = useState(null)
   const [photos, setPhotos] = useState([]) // previsualizaciones locales
   const [uploadResponses, setUploadResponses] = useState([]) // respuestas del backend
   const [exercises, setExercises] = useState(FALLBACK_EXERCISES)
@@ -367,10 +366,10 @@ export default function VideoCorrectionSection() {
         throw new Error(`IA avanzada no disponible: ${errorText}`)
       }
       
-  const data = await res.json()
-  console.log('Corrección IA Avanzada:', data)
-  setAdvancedResult(data)
-  setShowAdvancedIA(true)
+      const data = await res.json()
+      // TODO: renderizar overlays/feedback a partir de data
+      console.log('Corrección IA Avanzada:', data)
+      setShowAdvancedIA(true)
       
       // Mostrar mensaje de éxito al usuario
       alert('¡Análisis IA completado! Revisa la consola para ver los resultados.')
@@ -639,163 +638,6 @@ export default function VideoCorrectionSection() {
             </div>
           </CardContent>
         </Card>
-
-        {/* Resultado IA Avanzada */}
-        {showAdvancedIA && advancedResult && (
-          <Card className="bg-black/80 border-yellow-400/40 mb-8">
-            <CardHeader>
-              <CardTitle className="text-white flex items-center">
-                <Brain className="w-5 h-5 mr-2 text-yellow-400" /> Resultado Análisis IA
-              </CardTitle>
-              <CardDescription className="text-gray-400">
-                Feedback estructurado generado por el modelo (beta)
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="p-3 rounded-lg bg-yellow-400/10 border border-yellow-400/30">
-                  <div className="text-xs uppercase tracking-wide text-yellow-500">Ejercicio</div>
-                  <div className="text-lg font-semibold text-white">{advancedResult.ejercicio || '—'}</div>
-                </div>
-                <div className="p-3 rounded-lg bg-green-400/10 border border-green-400/30">
-                  <div className="text-xs uppercase tracking-wide text-green-400">Confianza</div>
-                  <div className="text-lg font-semibold text-white">{advancedResult.confianza_global || advancedResult.metadata?.confidence || '—'}</div>
-                </div>
-                <div className="p-3 rounded-lg bg-blue-400/10 border border-blue-400/30">
-                  <div className="text-xs uppercase tracking-wide text-blue-300">Imágenes</div>
-                  <div className="text-lg font-semibold text-white">{advancedResult.metadata?.imageCount ?? '—'}</div>
-                </div>
-              </div>
-
-              {/* Correcciones Prioritarias */}
-              {Array.isArray(advancedResult.correcciones_priorizadas) && advancedResult.correcciones_priorizadas.length > 0 && (
-                <div>
-                  <h4 className="text-white font-semibold mb-3 flex items-center">
-                    <Target className="w-4 h-4 mr-2 text-yellow-400" /> Correcciones Prioritarias
-                  </h4>
-                  <ul className="space-y-3">
-                    {advancedResult.correcciones_priorizadas.map((c, idx) => (
-                      <li key={idx} className="p-3 rounded border border-yellow-400/20 bg-yellow-400/5">
-                        <div className="flex flex-wrap gap-2 items-center mb-1">
-                          <Badge className={c.prioridad === 'alta' ? 'bg-red-500' : c.prioridad === 'media' ? 'bg-yellow-500' : 'bg-green-600'}>
-                            {c.prioridad || '—'}
-                          </Badge>
-                          {c.cue && <span className="text-xs text-gray-400">Cue: {c.cue}</span>}
-                        </div>
-                        <div className="text-sm text-gray-200"><strong>Acción:</strong> {c.accion || '—'}</div>
-                        {c.fundamento && (
-                          <div className="text-xs text-gray-400 mt-1"><strong>Por qué:</strong> {c.fundamento}</div>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Errores detectados */}
-              {Array.isArray(advancedResult.errores_detectados) && advancedResult.errores_detectados.length > 0 && (
-                <div>
-                  <h4 className="text-white font-semibold mb-3 flex items-center">
-                    <AlertTriangle className="w-4 h-4 mr-2 text-red-400" /> Errores Detectados
-                  </h4>
-                  <ul className="space-y-3">
-                    {advancedResult.errores_detectados.map((e, idx) => (
-                      <li key={idx} className="p-3 rounded border border-red-400/30 bg-red-400/10">
-                        <div className="flex flex-wrap gap-2 items-center mb-1">
-                          <Badge className="bg-red-500/80">{e.severidad || '—'}</Badge>
-                          <Badge variant="outline" className="border-red-400 text-red-300 text-xs">{e.tipo || '—'}</Badge>
-                          {e.zona && <span className="text-xs text-gray-300">{e.zona}</span>}
-                        </div>
-                        <div className="text-sm text-gray-200">{e.descripcion || '—'}</div>
-                        {e.impacto && <div className="text-xs text-gray-400 mt-1">Impacto: {e.impacto}</div>}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Métricas */}
-              {advancedResult.metricas && (
-                <div>
-                  <h4 className="text-white font-semibold mb-3 flex items-center">
-                    <TrendingUp className="w-4 h-4 mr-2 text-green-400" /> Métricas
-                  </h4>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                    {Object.entries(advancedResult.metricas).map(([k,v]) => (
-                      <div key={k} className="p-2 rounded bg-green-400/10 border border-green-400/20">
-                        <div className="text-xs uppercase tracking-wide text-green-300">{k.replace(/_/g,' ')}</div>
-                        <div className="text-white font-semibold">{v === null ? '—' : String(v)}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Puntos clave & Riesgos */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {Array.isArray(advancedResult.puntos_clave) && advancedResult.puntos_clave.length > 0 && (
-                  <div>
-                    <h4 className="text-white font-semibold mb-3 flex items-center">
-                      <CheckCircle className="w-4 h-4 mr-2 text-green-400" /> Puntos Clave
-                    </h4>
-                    <ul className="space-y-2 text-sm">
-                      {advancedResult.puntos_clave.map((p,idx)=>(
-                        <li key={idx} className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-green-400" /> <span className="text-gray-300">{p}</span></li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {Array.isArray(advancedResult.riesgos_potenciales) && advancedResult.riesgos_potenciales.length > 0 && (
-                  <div>
-                    <h4 className="text-white font-semibold mb-3 flex items-center">
-                      <AlertTriangle className="w-4 h-4 mr-2 text-yellow-400" /> Riesgos Potenciales
-                    </h4>
-                    <ul className="space-y-2 text-sm">
-                      {advancedResult.riesgos_potenciales.map((p,idx)=>(
-                        <li key={idx} className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-yellow-400" /> <span className="text-gray-300">{p}</span></li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-
-              {/* Feedback de Voz sugerido */}
-              {Array.isArray(advancedResult.feedback_voz) && advancedResult.feedback_voz.length > 0 && (
-                <div>
-                  <h4 className="text-white font-semibold mb-3 flex items-center">
-                    <Play className="w-4 h-4 mr-2 text-purple-400" /> Cues Verbales
-                  </h4>
-                  <div className="flex flex-wrap gap-2">
-                    {advancedResult.feedback_voz.map((c,idx)=>(
-                      <Badge key={idx} className="bg-purple-600 text-white">{c}</Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Overlay recomendado (placeholder listado) */}
-              {Array.isArray(advancedResult.overlay_recomendado) && advancedResult.overlay_recomendado.length > 0 && (
-                <div>
-                  <h4 className="text-white font-semibold mb-3 flex items-center">
-                    <ImageIcon className="w-4 h-4 mr-2 text-blue-400" /> Overlays Recomendados
-                  </h4>
-                  <div className="flex flex-wrap gap-2 text-xs">
-                    {advancedResult.overlay_recomendado.map((o,idx)=>(
-                      <span key={idx} className="px-2 py-1 rounded bg-blue-500/20 border border-blue-400/30 text-blue-200">{o}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {advancedResult.siguiente_paso && (
-                <div className="p-4 rounded border border-teal-400/40 bg-teal-400/10">
-                  <div className="text-xs uppercase tracking-wide text-teal-300 mb-1">Siguiente Paso</div>
-                  <div className="text-sm text-teal-100">{advancedResult.siguiente_paso}</div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
 
         {/* Alertas dinámicas */}
         <div className="space-y-4 mb-8">
