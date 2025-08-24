@@ -4,6 +4,7 @@ import HomePage from './components/HomePage'
 import HomeTrainingSection from './components/HomeTraining/HomeTrainingSection'
 import ProfileSection from './components/profile/ProfileSection'
 import MethodologiesScreen from './components/Methodologie/MethodologiesScreen'
+import RoutineScreen from './components/routines/RoutineScreen'
 import VideoCorrectionSection from './components/VideoCorrectionSection/VideoCorrectionSection'
 import LoginPage from './components/auth/LoginPage'
 import RegisterPage from './components/auth/RegisterPage'
@@ -46,6 +47,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <MethodologiesScreen />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/routines"
+            element={
+              <ProtectedRoute>
+                <RoutineScreen />
               </ProtectedRoute>
             }
           />

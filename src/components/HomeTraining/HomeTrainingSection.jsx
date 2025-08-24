@@ -136,7 +136,21 @@ const HomeTrainingSection = () => {
       const data = await response.json();
       if (data.success) {
         setSessionProgress(data.progress);
-        setCurrentExerciseIndex(data.progress.currentExercise);
+        
+        // Validar que el currentExercise esté dentro del rango válido
+        const currentExerciseFromServer = data.progress.currentExercise || 0;
+        if (generatedPlan && generatedPlan.plan_entrenamiento && generatedPlan.plan_entrenamiento.ejercicios) {
+          const maxIndex = generatedPlan.plan_entrenamiento.ejercicios.length - 1;
+          const validIndex = Math.max(0, Math.min(currentExerciseFromServer, maxIndex));
+          setCurrentExerciseIndex(validIndex);
+          
+          if (validIndex !== currentExerciseFromServer) {
+            console.warn(`Ajustado índice de ejercicio de ${currentExerciseFromServer} a ${validIndex}`);
+          }
+        } else {
+          setCurrentExerciseIndex(currentExerciseFromServer);
+        }
+        
         setExercisesProgress(data.exercises || []);
       }
     } catch (error) {
@@ -281,9 +295,50 @@ const HomeTrainingSection = () => {
   };
 
   // Función para continuar el entrenamiento
-  const continueTraining = () => {
-    setShowPersonalizedMessage(false);
-    setShowExerciseModal(true);
+  const continueTraining = async () => {
+    try {
+      // Validar que existen los datos necesarios
+      if (!generatedPlan || !generatedPlan.plan_entrenamiento || !generatedPlan.plan_entrenamiento.ejercicios) {
+        console.error('No hay plan de entrenamiento cargado');
+        
+        // Intentar recargar el plan actual
+        await loadCurrentPlan();
+        
+        // Verificar nuevamente después de la recarga
+        if (!generatedPlan || !generatedPlan.plan_entrenamiento || !generatedPlan.plan_entrenamiento.ejercicios) {
+          alert('Error: No se encontró el plan de entrenamiento. Por favor, genera uno nuevo.');
+          return;
+        }
+      }
+
+      // Validar que el índice del ejercicio actual está dentro del rango válido
+      const exercises = generatedPlan.plan_entrenamiento.ejercicios;
+      if (currentExerciseIndex < 0 || currentExerciseIndex >= exercises.length) {
+        console.error('Índice de ejercicio inválido:', currentExerciseIndex, 'Total ejercicios:', exercises.length);
+        
+        // Intentar corregir el índice
+        const correctedIndex = Math.max(0, Math.min(currentExerciseIndex, exercises.length - 1));
+        setCurrentExerciseIndex(correctedIndex);
+        
+        if (correctedIndex !== currentExerciseIndex) {
+          console.log(`Índice corregido de ${currentExerciseIndex} a ${correctedIndex}`);
+        }
+      }
+
+      // Validar que el ejercicio actual tiene los datos necesarios
+      const currentExercise = exercises[currentExerciseIndex];
+      if (!currentExercise || !currentExercise.nombre) {
+        console.error('Ejercicio actual no válido:', currentExercise);
+        alert('Error: Datos del ejercicio no válidos. Por favor, genera un nuevo plan.');
+        return;
+      }
+
+      setShowPersonalizedMessage(false);
+      setShowExerciseModal(true);
+    } catch (error) {
+      console.error('Error en continueTraining:', error);
+      alert('Error al continuar el entrenamiento. Intenta generar un nuevo plan.');
+    }
   };
 
   // Función para completar un ejercicio
@@ -733,7 +788,10 @@ const HomeTrainingSection = () => {
         )}
 
         {/* Modal de ejercicio individual */}
-        {showExerciseModal && generatedPlan && generatedPlan.plan_entrenamiento.ejercicios && (
+        {showExerciseModal && 
+         generatedPlan && 
+         generatedPlan.plan_entrenamiento.ejercicios && 
+         generatedPlan.plan_entrenamiento.ejercicios[currentExerciseIndex] && (
           <HomeTrainingExerciseModal
             exercise={generatedPlan.plan_entrenamiento.ejercicios[currentExerciseIndex]}
             exerciseIndex={currentExerciseIndex}

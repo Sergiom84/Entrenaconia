@@ -6,9 +6,10 @@ import {
   CardHeader,
   CardTitle
 } from '@/components/ui/card'
-import { Activity, Save, Pencil, Calculator } from 'lucide-react'
+import { Activity, Save, Pencil, Calculator, Clock } from 'lucide-react'
 import { EditableField } from '../EditableField'
 import { BodyCompositionCalculator } from './BodyCompositionCalculator'
+import { useUserContext } from '@/contexts/UserContext'
 
 export const BodyCompositionCard = (props) => {
   const {
@@ -22,29 +23,44 @@ export const BodyCompositionCard = (props) => {
     setUserProfile
   } = props
 
+  const { updateUserProfile } = useUserContext()
   const [showCalculator, setShowCalculator] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
   const isEditing = editingSection === 'bodyComp'
 
-  const handleCalculatorResults = (results) => {
-    // Calcular agua corporal (estimación: 60% para hombres, 55% para mujeres)
-    const aguaCorporal = userProfile.sexo === 'masculino' ? 60 : 55
+  const handleCalculatorResults = async (results) => {
+    setIsSaving(true)
+    
+    try {
+      // Usar los resultados calculados directamente por la calculadora
+      const compositionData = {
+        grasa_corporal: results.porcentaje_grasa,
+        masa_muscular: results.masa_magra,
+        agua_corporal: results.agua_corporal,
+        metabolismo_basal: results.metabolismo_basal
+      }
 
-    // Calcular metabolismo basal usando la fórmula Harris-Benedict
-    let metabolismoBasal
-    if (userProfile.sexo === 'masculino') {
-      metabolismoBasal = 88.362 + (13.397 * userProfile.peso) + (4.799 * userProfile.altura) - (5.677 * userProfile.edad)
-    } else {
-      metabolismoBasal = 447.593 + (9.247 * userProfile.peso) + (3.098 * userProfile.altura) - (4.330 * userProfile.edad)
+      // Actualizar inmediatamente la UI
+      setUserProfile(prev => ({
+        ...prev,
+        ...compositionData
+      }))
+
+      // Guardar en base de datos automáticamente
+      const success = await updateUserProfile(compositionData)
+      
+      if (success) {
+        console.log('✅ Composición corporal guardada automáticamente')
+      } else {
+        console.error('❌ Error guardando composición corporal')
+        // Opcional: mostrar notificación de error
+      }
+      
+    } catch (error) {
+      console.error('Error procesando resultados de calculadora:', error)
+    } finally {
+      setIsSaving(false)
     }
-
-    // Actualizar el perfil con los resultados calculados
-    setUserProfile(prev => ({
-      ...prev,
-      grasa_corporal: results.porcentaje_grasa,
-      masa_muscular: results.masa_magra,
-      agua_corporal: aguaCorporal,
-      metabolismo_basal: Math.round(metabolismoBasal)
-    }))
   }
 
   return (
@@ -101,9 +117,20 @@ export const BodyCompositionCard = (props) => {
                 variant="outline"
                 className="border-gray-600 text-gray-300 hover:bg-gray-700"
                 onClick={() => setShowCalculator(true)}
-                title="Calcular automáticamente"
+                disabled={isSaving}
+                title="Calcular automáticamente y guardar"
               >
-                <Calculator className="w-4 h-4 mr-1" /> Calcular
+                {isSaving ? (
+                  <>
+                    <Clock className="w-4 h-4 mr-1 animate-spin" /> 
+                    Guardando...
+                  </>
+                ) : (
+                  <>
+                    <Calculator className="w-4 h-4 mr-1" /> 
+                    Calcular
+                  </>
+                )}
               </Button>
             )}
           </div>
@@ -160,6 +187,7 @@ export const BodyCompositionCard = (props) => {
         isOpen={showCalculator}
         onClose={() => setShowCalculator(false)}
         onCalculate={handleCalculatorResults}
+        userProfile={userProfile}
       />
     </Card>
   )

@@ -61,7 +61,8 @@ router.put('/:id', authenticateToken, async (req, res) => {
       'muslos', 'cuello', 'antebrazos', 'historial_medico', 'limitaciones_fisicas',
       'alergias', 'medicamentos', 'objetivo_principal', 'meta_peso',
       'meta_grasa_corporal', 'enfoque_entrenamiento', 'horario_preferido',
-      'comidas_por_dia', 'suplementacion', 'alimentos_excluidos'
+      'comidas_por_dia', 'suplementacion', 'alimentos_excluidos',
+      'grasa_corporal', 'masa_muscular', 'agua_corporal', 'metabolismo_basal'
     ];
 
     // Construir query dinámicamente

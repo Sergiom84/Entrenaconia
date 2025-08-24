@@ -5,7 +5,7 @@
 -- Dumped from database version 16.8
 -- Dumped by pg_dump version 16.8
 
--- Started on 2025-08-22 19:55:38
+-- Started on 2025-08-24 19:47:48
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -29,7 +29,38 @@ CREATE SCHEMA app;
 ALTER SCHEMA app OWNER TO postgres;
 
 --
--- TOC entry 268 (class 1255 OID 26961)
+-- TOC entry 284 (class 1255 OID 27260)
+-- Name: save_body_composition(); Type: FUNCTION; Schema: app; Owner: postgres
+--
+
+CREATE FUNCTION app.save_body_composition() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+        BEGIN
+            IF (OLD.grasa_corporal IS DISTINCT FROM NEW.grasa_corporal) OR 
+               (OLD.masa_muscular IS DISTINCT FROM NEW.masa_muscular) OR 
+               (OLD.agua_corporal IS DISTINCT FROM NEW.agua_corporal) OR 
+               (OLD.metabolismo_basal IS DISTINCT FROM NEW.metabolismo_basal) THEN
+                
+                INSERT INTO app.body_composition_history (
+                    user_id, peso, grasa_corporal, masa_muscular, agua_corporal, 
+                    metabolismo_basal, cintura, cuello, calculation_method, notes
+                ) VALUES (
+                    NEW.id, NEW.peso, NEW.grasa_corporal, NEW.masa_muscular, 
+                    NEW.agua_corporal, NEW.metabolismo_basal, NEW.cintura, NEW.cuello,
+                    'us_navy', 'Actualización automática desde calculadora'
+                );
+            END IF;
+            
+            RETURN NEW;
+        END;
+        $$;
+
+
+ALTER FUNCTION app.save_body_composition() OWNER TO postgres;
+
+--
+-- TOC entry 278 (class 1255 OID 26961)
 -- Name: set_timestamp(); Type: FUNCTION; Schema: app; Owner: postgres
 --
 
@@ -46,7 +77,7 @@ $$;
 ALTER FUNCTION app.set_timestamp() OWNER TO postgres;
 
 --
--- TOC entry 269 (class 1255 OID 27047)
+-- TOC entry 279 (class 1255 OID 27047)
 -- Name: tg_set_updated_at(); Type: FUNCTION; Schema: app; Owner: postgres
 --
 
@@ -61,6 +92,60 @@ ALTER FUNCTION app.tg_set_updated_at() OWNER TO postgres;
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
+
+--
+-- TOC entry 269 (class 1259 OID 27236)
+-- Name: body_composition_history; Type: TABLE; Schema: app; Owner: postgres
+--
+
+CREATE TABLE app.body_composition_history (
+    id integer NOT NULL,
+    user_id integer NOT NULL,
+    measurement_date timestamp with time zone DEFAULT now(),
+    peso numeric(5,2),
+    grasa_corporal numeric(5,2),
+    masa_muscular numeric(5,2),
+    agua_corporal numeric(5,2),
+    metabolismo_basal integer,
+    imc numeric(4,2),
+    cintura numeric(5,2),
+    cuello numeric(5,2),
+    cadera numeric(5,2),
+    calculation_method character varying(50) DEFAULT 'us_navy'::character varying,
+    notes text,
+    created_at timestamp with time zone DEFAULT now(),
+    CONSTRAINT chk_body_comp_agua CHECK (((agua_corporal IS NULL) OR ((agua_corporal >= (40)::numeric) AND (agua_corporal <= (80)::numeric)))),
+    CONSTRAINT chk_body_comp_grasa CHECK (((grasa_corporal IS NULL) OR ((grasa_corporal >= (1)::numeric) AND (grasa_corporal <= (50)::numeric)))),
+    CONSTRAINT chk_body_comp_method CHECK (((calculation_method)::text = ANY ((ARRAY['us_navy'::character varying, 'dexa'::character varying, 'bioimpedance'::character varying, 'manual'::character varying])::text[])))
+);
+
+
+ALTER TABLE app.body_composition_history OWNER TO postgres;
+
+--
+-- TOC entry 268 (class 1259 OID 27235)
+-- Name: body_composition_history_id_seq; Type: SEQUENCE; Schema: app; Owner: postgres
+--
+
+CREATE SEQUENCE app.body_composition_history_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE app.body_composition_history_id_seq OWNER TO postgres;
+
+--
+-- TOC entry 5231 (class 0 OID 0)
+-- Dependencies: 268
+-- Name: body_composition_history_id_seq; Type: SEQUENCE OWNED BY; Schema: app; Owner: postgres
+--
+
+ALTER SEQUENCE app.body_composition_history_id_seq OWNED BY app.body_composition_history.id;
+
 
 --
 -- TOC entry 257 (class 1259 OID 27121)
@@ -96,7 +181,7 @@ CREATE SEQUENCE app.equipment_catalog_id_seq
 ALTER SEQUENCE app.equipment_catalog_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5140 (class 0 OID 0)
+-- TOC entry 5232 (class 0 OID 0)
 -- Dependencies: 256
 -- Name: equipment_catalog_id_seq; Type: SEQUENCE OWNED BY; Schema: app; Owner: postgres
 --
@@ -118,6 +203,59 @@ CREATE TABLE app.equipment_items (
 
 
 ALTER TABLE app.equipment_items OWNER TO postgres;
+
+--
+-- TOC entry 265 (class 1259 OID 27201)
+-- Name: exercises_catalog; Type: TABLE; Schema: app; Owner: postgres
+--
+
+CREATE TABLE app.exercises_catalog (
+    id integer NOT NULL,
+    name character varying(100) NOT NULL,
+    key character varying(50) NOT NULL,
+    category character varying(50) NOT NULL,
+    muscle_groups text[],
+    equipment_required character varying(50),
+    difficulty_level character varying(20) DEFAULT 'beginner'::character varying,
+    description text,
+    instructions text,
+    video_url character varying(255),
+    gif_url character varying(255),
+    safety_notes text,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    is_active boolean DEFAULT true,
+    CONSTRAINT chk_exercises_category CHECK (((category)::text = ANY ((ARRAY['strength'::character varying, 'cardio'::character varying, 'flexibility'::character varying, 'mobility'::character varying, 'balance'::character varying, 'functional'::character varying])::text[]))),
+    CONSTRAINT chk_exercises_difficulty CHECK (((difficulty_level)::text = ANY ((ARRAY['beginner'::character varying, 'intermediate'::character varying, 'advanced'::character varying])::text[])))
+);
+
+
+ALTER TABLE app.exercises_catalog OWNER TO postgres;
+
+--
+-- TOC entry 264 (class 1259 OID 27200)
+-- Name: exercises_catalog_id_seq; Type: SEQUENCE; Schema: app; Owner: postgres
+--
+
+CREATE SEQUENCE app.exercises_catalog_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE app.exercises_catalog_id_seq OWNER TO postgres;
+
+--
+-- TOC entry 5233 (class 0 OID 0)
+-- Dependencies: 264
+-- Name: exercises_catalog_id_seq; Type: SEQUENCE OWNED BY; Schema: app; Owner: postgres
+--
+
+ALTER SEQUENCE app.exercises_catalog_id_seq OWNED BY app.exercises_catalog.id;
+
 
 --
 -- TOC entry 233 (class 1259 OID 26760)
@@ -159,7 +297,7 @@ CREATE SEQUENCE app.home_exercise_progress_id_seq
 ALTER SEQUENCE app.home_exercise_progress_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5141 (class 0 OID 0)
+-- TOC entry 5234 (class 0 OID 0)
 -- Dependencies: 232
 -- Name: home_exercise_progress_id_seq; Type: SEQUENCE OWNED BY; Schema: app; Owner: postgres
 --
@@ -202,7 +340,7 @@ CREATE SEQUENCE app.home_training_plans_id_seq
 ALTER SEQUENCE app.home_training_plans_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5142 (class 0 OID 0)
+-- TOC entry 5235 (class 0 OID 0)
 -- Dependencies: 228
 -- Name: home_training_plans_id_seq; Type: SEQUENCE OWNED BY; Schema: app; Owner: postgres
 --
@@ -249,12 +387,190 @@ CREATE SEQUENCE app.home_training_sessions_id_seq
 ALTER SEQUENCE app.home_training_sessions_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5143 (class 0 OID 0)
+-- TOC entry 5236 (class 0 OID 0)
 -- Dependencies: 230
 -- Name: home_training_sessions_id_seq; Type: SEQUENCE OWNED BY; Schema: app; Owner: postgres
 --
 
 ALTER SEQUENCE app.home_training_sessions_id_seq OWNED BY app.home_training_sessions.id;
+
+
+--
+-- TOC entry 263 (class 1259 OID 27181)
+-- Name: medical_documents; Type: TABLE; Schema: app; Owner: postgres
+--
+
+CREATE TABLE app.medical_documents (
+    id integer NOT NULL,
+    user_id integer NOT NULL,
+    document_name character varying(255) NOT NULL,
+    document_type character varying(50) NOT NULL,
+    file_path character varying(500),
+    content text,
+    analysis_result jsonb,
+    status character varying(20) DEFAULT 'pending'::character varying,
+    upload_date timestamp with time zone DEFAULT now(),
+    analyzed_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    CONSTRAINT chk_medical_doc_type CHECK (((document_type)::text = ANY ((ARRAY['pdf'::character varying, 'image'::character varying, 'text'::character varying])::text[]))),
+    CONSTRAINT chk_medical_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'analyzed'::character varying, 'error'::character varying])::text[])))
+);
+
+
+ALTER TABLE app.medical_documents OWNER TO postgres;
+
+--
+-- TOC entry 262 (class 1259 OID 27180)
+-- Name: medical_documents_id_seq; Type: SEQUENCE; Schema: app; Owner: postgres
+--
+
+CREATE SEQUENCE app.medical_documents_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE app.medical_documents_id_seq OWNER TO postgres;
+
+--
+-- TOC entry 5237 (class 0 OID 0)
+-- Dependencies: 262
+-- Name: medical_documents_id_seq; Type: SEQUENCE OWNED BY; Schema: app; Owner: postgres
+--
+
+ALTER SEQUENCE app.medical_documents_id_seq OWNED BY app.medical_documents.id;
+
+
+--
+-- TOC entry 271 (class 1259 OID 27264)
+-- Name: methodology_plans; Type: TABLE; Schema: app; Owner: postgres
+--
+
+CREATE TABLE app.methodology_plans (
+    id integer NOT NULL,
+    user_id integer NOT NULL,
+    methodology_type character varying(50) NOT NULL,
+    plan_data jsonb NOT NULL,
+    generation_mode character varying(20) DEFAULT 'manual'::character varying,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now()
+);
+
+
+ALTER TABLE app.methodology_plans OWNER TO postgres;
+
+--
+-- TOC entry 5238 (class 0 OID 0)
+-- Dependencies: 271
+-- Name: TABLE methodology_plans; Type: COMMENT; Schema: app; Owner: postgres
+--
+
+COMMENT ON TABLE app.methodology_plans IS 'Almacena planes de entrenamiento generados por metodologías específicas';
+
+
+--
+-- TOC entry 5239 (class 0 OID 0)
+-- Dependencies: 271
+-- Name: COLUMN methodology_plans.methodology_type; Type: COMMENT; Schema: app; Owner: postgres
+--
+
+COMMENT ON COLUMN app.methodology_plans.methodology_type IS 'Tipo de metodología: Heavy Duty, Powerlifting, Hipertrofia, etc.';
+
+
+--
+-- TOC entry 5240 (class 0 OID 0)
+-- Dependencies: 271
+-- Name: COLUMN methodology_plans.plan_data; Type: COMMENT; Schema: app; Owner: postgres
+--
+
+COMMENT ON COLUMN app.methodology_plans.plan_data IS 'Datos JSON completos del plan generado por IA';
+
+
+--
+-- TOC entry 5241 (class 0 OID 0)
+-- Dependencies: 271
+-- Name: COLUMN methodology_plans.generation_mode; Type: COMMENT; Schema: app; Owner: postgres
+--
+
+COMMENT ON COLUMN app.methodology_plans.generation_mode IS 'Modo de generación: manual (usuario elige) o auto (IA elige)';
+
+
+--
+-- TOC entry 270 (class 1259 OID 27263)
+-- Name: methodology_plans_id_seq; Type: SEQUENCE; Schema: app; Owner: postgres
+--
+
+CREATE SEQUENCE app.methodology_plans_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE app.methodology_plans_id_seq OWNER TO postgres;
+
+--
+-- TOC entry 5242 (class 0 OID 0)
+-- Dependencies: 270
+-- Name: methodology_plans_id_seq; Type: SEQUENCE OWNED BY; Schema: app; Owner: postgres
+--
+
+ALTER SEQUENCE app.methodology_plans_id_seq OWNED BY app.methodology_plans.id;
+
+
+--
+-- TOC entry 267 (class 1259 OID 27218)
+-- Name: technique_analysis; Type: TABLE; Schema: app; Owner: postgres
+--
+
+CREATE TABLE app.technique_analysis (
+    id integer NOT NULL,
+    user_id integer NOT NULL,
+    exercise_key character varying(50) NOT NULL,
+    video_url character varying(500),
+    analysis_result jsonb NOT NULL,
+    score integer,
+    feedback text,
+    corrections text[],
+    status character varying(20) DEFAULT 'pending'::character varying,
+    created_at timestamp with time zone DEFAULT now(),
+    analyzed_at timestamp with time zone,
+    CONSTRAINT chk_technique_score CHECK (((score IS NULL) OR ((score >= 0) AND (score <= 100)))),
+    CONSTRAINT chk_technique_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'analyzed'::character varying, 'reviewed'::character varying])::text[])))
+);
+
+
+ALTER TABLE app.technique_analysis OWNER TO postgres;
+
+--
+-- TOC entry 266 (class 1259 OID 27217)
+-- Name: technique_analysis_id_seq; Type: SEQUENCE; Schema: app; Owner: postgres
+--
+
+CREATE SEQUENCE app.technique_analysis_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE app.technique_analysis_id_seq OWNER TO postgres;
+
+--
+-- TOC entry 5243 (class 0 OID 0)
+-- Dependencies: 266
+-- Name: technique_analysis_id_seq; Type: SEQUENCE OWNED BY; Schema: app; Owner: postgres
+--
+
+ALTER SEQUENCE app.technique_analysis_id_seq OWNED BY app.technique_analysis.id;
 
 
 --
@@ -316,7 +632,7 @@ CREATE SEQUENCE app.user_custom_equipment_id_seq
 ALTER SEQUENCE app.user_custom_equipment_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5144 (class 0 OID 0)
+-- TOC entry 5244 (class 0 OID 0)
 -- Dependencies: 259
 -- Name: user_custom_equipment_id_seq; Type: SEQUENCE OWNED BY; Schema: app; Owner: postgres
 --
@@ -377,7 +693,7 @@ CREATE SEQUENCE app.user_exercise_feedback_id_seq
 ALTER SEQUENCE app.user_exercise_feedback_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5145 (class 0 OID 0)
+-- TOC entry 5245 (class 0 OID 0)
 -- Dependencies: 254
 -- Name: user_exercise_feedback_id_seq; Type: SEQUENCE OWNED BY; Schema: app; Owner: postgres
 --
@@ -424,7 +740,7 @@ CREATE SEQUENCE app.user_exercise_history_id_seq
 ALTER SEQUENCE app.user_exercise_history_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5146 (class 0 OID 0)
+-- TOC entry 5246 (class 0 OID 0)
 -- Dependencies: 249
 -- Name: user_exercise_history_id_seq; Type: SEQUENCE OWNED BY; Schema: app; Owner: postgres
 --
@@ -472,7 +788,7 @@ CREATE SEQUENCE app.user_home_training_stats_id_seq
 ALTER SEQUENCE app.user_home_training_stats_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5147 (class 0 OID 0)
+-- TOC entry 5247 (class 0 OID 0)
 -- Dependencies: 234
 -- Name: user_home_training_stats_id_seq; Type: SEQUENCE OWNED BY; Schema: app; Owner: postgres
 --
@@ -591,7 +907,7 @@ CREATE TABLE app.users (
 ALTER TABLE app.users OWNER TO postgres;
 
 --
--- TOC entry 5148 (class 0 OID 0)
+-- TOC entry 5248 (class 0 OID 0)
 -- Dependencies: 217
 -- Name: COLUMN users.nivel_entrenamiento; Type: COMMENT; Schema: app; Owner: postgres
 --
@@ -616,7 +932,7 @@ CREATE SEQUENCE app.users_id_seq
 ALTER SEQUENCE app.users_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5149 (class 0 OID 0)
+-- TOC entry 5249 (class 0 OID 0)
 -- Dependencies: 216
 -- Name: users_id_seq; Type: SEQUENCE OWNED BY; Schema: app; Owner: postgres
 --
@@ -690,7 +1006,15 @@ CREATE VIEW app.v_user_profile_normalized AS
 ALTER VIEW app.v_user_profile_normalized OWNER TO postgres;
 
 --
--- TOC entry 4848 (class 2604 OID 27124)
+-- TOC entry 4892 (class 2604 OID 27239)
+-- Name: body_composition_history id; Type: DEFAULT; Schema: app; Owner: postgres
+--
+
+ALTER TABLE ONLY app.body_composition_history ALTER COLUMN id SET DEFAULT nextval('app.body_composition_history_id_seq'::regclass);
+
+
+--
+-- TOC entry 4874 (class 2604 OID 27124)
 -- Name: equipment_catalog id; Type: DEFAULT; Schema: app; Owner: postgres
 --
 
@@ -698,7 +1022,15 @@ ALTER TABLE ONLY app.equipment_catalog ALTER COLUMN id SET DEFAULT nextval('app.
 
 
 --
--- TOC entry 4831 (class 2604 OID 26763)
+-- TOC entry 4884 (class 2604 OID 27204)
+-- Name: exercises_catalog id; Type: DEFAULT; Schema: app; Owner: postgres
+--
+
+ALTER TABLE ONLY app.exercises_catalog ALTER COLUMN id SET DEFAULT nextval('app.exercises_catalog_id_seq'::regclass);
+
+
+--
+-- TOC entry 4857 (class 2604 OID 26763)
 -- Name: home_exercise_progress id; Type: DEFAULT; Schema: app; Owner: postgres
 --
 
@@ -706,7 +1038,7 @@ ALTER TABLE ONLY app.home_exercise_progress ALTER COLUMN id SET DEFAULT nextval(
 
 
 --
--- TOC entry 4822 (class 2604 OID 26723)
+-- TOC entry 4848 (class 2604 OID 26723)
 -- Name: home_training_plans id; Type: DEFAULT; Schema: app; Owner: postgres
 --
 
@@ -714,7 +1046,7 @@ ALTER TABLE ONLY app.home_training_plans ALTER COLUMN id SET DEFAULT nextval('ap
 
 
 --
--- TOC entry 4825 (class 2604 OID 26739)
+-- TOC entry 4851 (class 2604 OID 26739)
 -- Name: home_training_sessions id; Type: DEFAULT; Schema: app; Owner: postgres
 --
 
@@ -722,7 +1054,31 @@ ALTER TABLE ONLY app.home_training_sessions ALTER COLUMN id SET DEFAULT nextval(
 
 
 --
--- TOC entry 4851 (class 2604 OID 27150)
+-- TOC entry 4879 (class 2604 OID 27184)
+-- Name: medical_documents id; Type: DEFAULT; Schema: app; Owner: postgres
+--
+
+ALTER TABLE ONLY app.medical_documents ALTER COLUMN id SET DEFAULT nextval('app.medical_documents_id_seq'::regclass);
+
+
+--
+-- TOC entry 4896 (class 2604 OID 27267)
+-- Name: methodology_plans id; Type: DEFAULT; Schema: app; Owner: postgres
+--
+
+ALTER TABLE ONLY app.methodology_plans ALTER COLUMN id SET DEFAULT nextval('app.methodology_plans_id_seq'::regclass);
+
+
+--
+-- TOC entry 4889 (class 2604 OID 27221)
+-- Name: technique_analysis id; Type: DEFAULT; Schema: app; Owner: postgres
+--
+
+ALTER TABLE ONLY app.technique_analysis ALTER COLUMN id SET DEFAULT nextval('app.technique_analysis_id_seq'::regclass);
+
+
+--
+-- TOC entry 4877 (class 2604 OID 27150)
 -- Name: user_custom_equipment id; Type: DEFAULT; Schema: app; Owner: postgres
 --
 
@@ -730,7 +1086,7 @@ ALTER TABLE ONLY app.user_custom_equipment ALTER COLUMN id SET DEFAULT nextval('
 
 
 --
--- TOC entry 4846 (class 2604 OID 27103)
+-- TOC entry 4872 (class 2604 OID 27103)
 -- Name: user_exercise_feedback id; Type: DEFAULT; Schema: app; Owner: postgres
 --
 
@@ -738,7 +1094,7 @@ ALTER TABLE ONLY app.user_exercise_feedback ALTER COLUMN id SET DEFAULT nextval(
 
 
 --
--- TOC entry 4844 (class 2604 OID 26990)
+-- TOC entry 4870 (class 2604 OID 26990)
 -- Name: user_exercise_history id; Type: DEFAULT; Schema: app; Owner: postgres
 --
 
@@ -746,7 +1102,7 @@ ALTER TABLE ONLY app.user_exercise_history ALTER COLUMN id SET DEFAULT nextval('
 
 
 --
--- TOC entry 4836 (class 2604 OID 26779)
+-- TOC entry 4862 (class 2604 OID 26779)
 -- Name: user_home_training_stats id; Type: DEFAULT; Schema: app; Owner: postgres
 --
 
@@ -754,7 +1110,7 @@ ALTER TABLE ONLY app.user_home_training_stats ALTER COLUMN id SET DEFAULT nextva
 
 
 --
--- TOC entry 4814 (class 2604 OID 26583)
+-- TOC entry 4840 (class 2604 OID 26583)
 -- Name: users id; Type: DEFAULT; Schema: app; Owner: postgres
 --
 
@@ -762,7 +1118,17 @@ ALTER TABLE ONLY app.users ALTER COLUMN id SET DEFAULT nextval('app.users_id_seq
 
 
 --
--- TOC entry 5130 (class 0 OID 27121)
+-- TOC entry 5223 (class 0 OID 27236)
+-- Dependencies: 269
+-- Data for Name: body_composition_history; Type: TABLE DATA; Schema: app; Owner: postgres
+--
+
+COPY app.body_composition_history (id, user_id, measurement_date, peso, grasa_corporal, masa_muscular, agua_corporal, metabolismo_basal, imc, cintura, cuello, cadera, calculation_method, notes, created_at) FROM stdin;
+\.
+
+
+--
+-- TOC entry 5211 (class 0 OID 27121)
 -- Dependencies: 257
 -- Data for Name: equipment_catalog; Type: TABLE DATA; Schema: app; Owner: postgres
 --
@@ -787,7 +1153,7 @@ COPY app.equipment_catalog (id, code, name, category, icon, active) FROM stdin;
 
 
 --
--- TOC entry 5134 (class 0 OID 27163)
+-- TOC entry 5215 (class 0 OID 27163)
 -- Dependencies: 261
 -- Data for Name: equipment_items; Type: TABLE DATA; Schema: app; Owner: postgres
 --
@@ -805,7 +1171,22 @@ discos_olimpicos	Barra con discos profesionales	avanzado
 
 
 --
--- TOC entry 5117 (class 0 OID 26760)
+-- TOC entry 5219 (class 0 OID 27201)
+-- Dependencies: 265
+-- Data for Name: exercises_catalog; Type: TABLE DATA; Schema: app; Owner: postgres
+--
+
+COPY app.exercises_catalog (id, name, key, category, muscle_groups, equipment_required, difficulty_level, description, instructions, video_url, gif_url, safety_notes, created_at, updated_at, is_active) FROM stdin;
+1	Flexiones de Brazos	push_ups	strength	{pecho,triceps,hombros}	peso_corporal	beginner	Ejercicio básico de empuje para tren superior	Mantén el cuerpo recto, baja hasta que el pecho casi toque el suelo	\N	\N	No arquees la espalda, mantén el core activado	2025-08-23 13:51:56.137543+02	2025-08-23 13:51:56.137543+02	t
+2	Sentadillas	squats	strength	{cuadriceps,gluteos,isquiotibiales}	peso_corporal	beginner	Ejercicio fundamental para tren inferior	Baja como si te fueras a sentar, mantén las rodillas alineadas	\N	\N	No dejes que las rodillas pasen de los dedos de los pies	2025-08-23 13:51:56.137543+02	2025-08-23 13:51:56.137543+02	t
+3	Dominadas	pull_ups	strength	{espalda,biceps}	barra_dominadas	intermediate	Ejercicio de tracción para espalda	Cuelga de la barra y tira hasta que el mentón pase la barra	\N	\N	Controla el descenso, no te dejes caer	2025-08-23 13:51:56.137543+02	2025-08-23 13:51:56.137543+02	t
+4	Burpees	burpees	cardio	{cuerpo_completo}	peso_corporal	intermediate	Ejercicio cardiovascular de cuerpo completo	Combina flexión, salto y sentadilla en un movimiento fluido	\N	\N	Mantén un ritmo controlado para evitar lesiones	2025-08-23 13:51:56.137543+02	2025-08-23 13:51:56.137543+02	t
+5	Plancha	plank	strength	{core,hombros}	peso_corporal	beginner	Ejercicio isométrico para el core	Mantén el cuerpo recto como una tabla	\N	\N	No hundas las caderas ni las eleves demasiado	2025-08-23 13:51:56.137543+02	2025-08-23 13:51:56.137543+02	t
+\.
+
+
+--
+-- TOC entry 5198 (class 0 OID 26760)
 -- Dependencies: 233
 -- Data for Name: home_exercise_progress; Type: TABLE DATA; Schema: app; Owner: postgres
 --
@@ -841,6 +1222,7 @@ COPY app.home_exercise_progress (id, home_training_session_id, exercise_name, ex
 167	49	Elevaciones de Cadera con una Pierna	1	0	4	\N	2025-08-19 20:10:43.605819+02	\N	skipped	{"tipo": "tiempo", "notas": "Posición inicial: Acostado boca arriba, una pierna elevada. Movimiento: Eleva las caderas apretando los glúteos y el abdomen. Alterna las piernas en cada serie. Respiración: Exhala al elevar las caderas, inhala al descender. Evita: Que tus hombros se levanten del suelo, manténlos apoyados.", "nombre": "Elevaciones de Cadera con una Pierna", "patron": "bisagra_cadera", "series": 4, "implemento": "peso_corporal", "descanso_seg": 45, "duracion_seg": 30}
 128	40	Press de Hombro con Mancuernas	0	3	3	89	2025-08-19 08:26:46.782479+02	2025-08-19 08:29:28.647804+02	completed	{"tipo": "reps", "notas": "Posición inicial: De pie, sostén una mancuerna en cada mano a la altura de los hombros. Pies a la altura de los hombros. Movimiento: Eleva las mancuernas por encima de la cabeza hasta que tus brazos estén completamente extendidos. Asegúrate de que tus muñecas estén rectas y tus codos cerca del cuerpo al bajarlas. Respiración: Inhala al bajar y exhala al subir. Evita: Arqueo en la espalda baja y que los brazos se separen demasiado del cuerpo.", "nombre": "Press de Hombro con Mancuernas", "patron": "empuje", "series": 3, "implemento": "mancuernas", "descanso_seg": 60, "repeticiones": 10}
 181	52	Mountain Climbers en Suelo	3	0	4	\N	2025-08-22 13:22:42.216763+02	\N	cancelled	{"tipo": "tiempo", "notas": "Posición inicial: En posición de plancha alta, con manos debajo de los hombros. Movimiento: Lleva una rodilla hacia el pecho y luego alterna rápidamente con la otra pierna, como si estuvieras corriendo en el lugar. Mantén el abdomen contraído. Respiración: Inhala y exhala rápidamente. Evita: Que las caderas se eleven o se bajen excesivamente.", "nombre": "Mountain Climbers en Suelo", "patron": "tracción", "implemento": "peso_corporal", "descanso_seg": 45, "duracion_seg": 30}
+203	56	Elevaciones Laterales de Cadera con Toalla en Pared	4	0	3	\N	2025-08-23 15:04:15.516777+02	\N	cancelled	{"tipo": "reps", "notas": "Mantén la espalda pegada a la pared y realiza elevaciones controladas para activar los glúteos y oblicuos.", "nombre": "Elevaciones Laterales de Cadera con Toalla en Pared", "patron": "elevaciones de cadera", "series": 3, "implemento": "toalla, pared", "descanso_seg": 45, "repeticiones": 15}
 36	14	Burpees con Mancuernas	0	0	4	\N	2025-08-17 18:18:35.237473+02	\N	skipped	{"tipo": "intervalo", "notas": "Asegúrate de hacer el jump con fuerza y controlar la caída. Mantén las mancuernas firmes principalmente durante el press.", "nombre": "Burpees con Mancuernas", "patron": "cuerpo completo", "series": 4, "implemento": "mancuernas", "duracion_trabajo_seg": 30, "duracion_descanso_seg": 15}
 37	14	Zancadas Alternas con Mancuernas	1	0	4	\N	2025-08-17 18:18:38.844582+02	\N	skipped	{"tipo": "intervalo", "notas": "Da un paso amplio hacia adelante, manteniendo la espalda recta y el núcleo apretado. Alterna las piernas con cada repetición.", "nombre": "Zancadas Alternas con Mancuernas", "patron": "piernas", "series": 4, "implemento": "mancuernas", "duracion_trabajo_seg": 30, "duracion_descanso_seg": 15}
 38	14	Remo Alto con Banda Elástica	2	0	4	\N	2025-08-17 18:18:43.172141+02	\N	skipped	{"tipo": "intervalo", "notas": "Mantén los codos por encima de los hombros y los hombros relajados mientras tiras de la banda hacia ti.", "nombre": "Remo Alto con Banda Elástica", "patron": "espalda", "series": 4, "implemento": "banda elástica", "duracion_trabajo_seg": 30, "duracion_descanso_seg": 15}
@@ -864,7 +1246,9 @@ COPY app.home_exercise_progress (id, home_training_session_id, exercise_name, ex
 134	41	Saltos de Tijera	1	0	1	\N	2025-08-19 08:58:42.600418+02	\N	pending	{"tipo": "tiempo", "notas": "Posición inicial: De pie, con los pies juntos. Movimiento: Salta abriendo las piernas y levantando los brazos por encima de la cabeza, luego salta y regresa a la posición inicial. Respiración: Respira de forma constante, mantén el ritmo. Evita: Golpear el suelo al aterrizar.", "nombre": "Saltos de Tijera", "patron": "funcional", "implemento": "peso_corporal", "descanso_seg": 45, "duracion_seg": 30}
 135	41	Desplantes con Rotación	2	0	1	\N	2025-08-19 08:58:42.600418+02	\N	pending	{"tipo": "tiempo", "notas": "Posición inicial: De pie, con los pies al ancho de los hombros. Movimiento: Da un paso adelante y baja en un desplante, gira el torso hacia la pierna delantera. Regresa a la posición inicial y alterna. Respiración: Inhala al bajar, exhala al regresar. Evita: Que la rodilla delantera sobrepase el pie.", "nombre": "Desplantes con Rotación", "patron": "bisagra_cadera", "implemento": "peso_corporal", "descanso_seg": 45, "duracion_seg": 30}
 136	41	Rodillas al Pecho con Toalla	3	0	1	\N	2025-08-19 08:58:42.600418+02	\N	pending	{"tipo": "tiempo", "notas": "Posición inicial: Coloca una toalla en el suelo, siéntate en ella y apoya las manos detrás. Movimiento: Levanta las rodillas hacia el pecho y vuelve a la posición inicial, manteniendo el control. Respiración: Inhala al bajar y exhala al subir. Evita: Invertir la espalda o perder el equilibrio.", "nombre": "Rodillas al Pecho con Toalla", "patron": "funcional", "implemento": "toallas", "descanso_seg": 45, "duracion_seg": 30}
+199	56	Flexiones con Toalla en Pared	0	0	4	\N	2025-08-23 15:04:15.516777+02	\N	skipped	{"tipo": "reps", "notas": "Usa la toalla para aumentar la resistencia y mantener la estabilidad, asegurando una correcta alineación del cuerpo.", "nombre": "Flexiones con Toalla en Pared", "patron": "flexiones", "series": 4, "implemento": "toalla", "descanso_seg": 45, "repeticiones": 15}
 169	49	Tijeras en el Suelo	3	0	4	\N	2025-08-19 20:10:43.605819+02	\N	cancelled	{"tipo": "tiempo", "notas": "Posición inicial: Acostado boca arriba con las manos bajo los glúteos. Movimiento: Levanta las piernas rectas alternando hacia arriba y hacia abajo sin tocar el suelo. Respiración: Inhala al bajar, exhala al subir. Evita: Arqueo en la espalda baja, mantén el abdomen apretado.", "nombre": "Tijeras en el Suelo", "patron": "abdomen", "series": 4, "implemento": "peso_corporal", "descanso_seg": 45, "duracion_seg": 30}
+200	56	Saltos en Silla con Elevación de Rodillas Alternas	1	0	4	\N	2025-08-23 15:04:15.516777+02	\N	skipped	{"tipo": "reps", "notas": "Ejecuta saltos explosivos y lleva las rodillas al pecho al subir, cuidando la técnica para evitar impacto excesivo en las articulaciones.", "nombre": "Saltos en Silla con Elevación de Rodillas Alternas", "patron": "saltos", "series": 4, "implemento": "silla", "descanso_seg": 45, "repeticiones": 20}
 58	19	Kettlebell Swing	0	0	5	\N	2025-08-17 20:50:19.078936+02	\N	skipped	{"tipo": "tiempo", "notas": "Posición inicial: Pies a la altura de los hombros, sostén el kettlebell con ambas manos entre tus piernas. Movimiento: Flexiona ligeramente las rodillas y empuja las caderas hacia atrás, luego, explosivamente, mueve las caderas hacia adelante y levanta el kettlebell hasta la altura del pecho. Respiración: Inhala en la bajada, exhala al levantar. Evita: Hacer el movimiento solo con los brazos, mantén la potencia en las caderas.", "nombre": "Kettlebell Swing", "patron": "bisagra_cadera", "series": 5, "implemento": "kettlebells", "descanso_seg": 30, "duracion_seg": 30}
 59	19	Box Jump	1	0	4	\N	2025-08-17 20:50:19.617835+02	\N	skipped	{"tipo": "tiempo", "notas": "Posición inicial: Colócate frente a una caja o plataforma estable. Movimiento: Flexiona las rodillas y salta hacia arriba, aterrizando suavemente sobre la caja, usando las piernas para amortiguar el impacto. Respiración: Inhala al bajar, exhala al saltar. Evita: Caer duramente sobre la caja o aterrizar con las rodillas bloqueadas.", "nombre": "Box Jump", "patron": "explosión", "series": 4, "implemento": "caja", "descanso_seg": 40, "duracion_seg": 20}
 60	19	Remo Invertido en TRX	2	0	5	\N	2025-08-17 20:50:20.351187+02	\N	skipped	{"tipo": "tiempo", "notas": "Posición inicial: Agárrate de las cintas del TRX con los brazos extendidos y el cuerpo recto. Movimiento: Tira de las cintas hacia ti, flexionando los codos y llevando el pecho hacia las manos. Respiración: Inhala al bajar, exhala al subir. Evita: Dejar que la cadera se hunda o que el cuerpo se curve.", "nombre": "Remo Invertido en TRX", "patron": "tracción", "series": 5, "implemento": "trx", "descanso_seg": 30, "duracion_seg": 30}
@@ -872,6 +1256,7 @@ COPY app.home_exercise_progress (id, home_training_session_id, exercise_name, ex
 62	20	Sentadilla con Mancuerna	0	1	4	\N	2025-08-17 21:07:53.878947+02	\N	in_progress	{"tipo": "reps", "notas": "Posición inicial: Sostén una mancuerna con ambas manos a la altura del pecho. Pies a la anchura de los hombros. Movimiento: Flexiona las caderas y las rodillas como si te fueras a sentar, asegurándote de que las rodillas no sobrepasen los dedos de los pies. Mantén el torso erguido. Respiración: Inhala al bajar, exhala al subir. Evita: Colapsar el pecho hacia adelante o que los talones se levanten.", "nombre": "Sentadilla con Mancuerna", "patron": "sentadilla", "series": 4, "implemento": "mancuernas", "descanso_seg": 45, "repeticiones": 15}
 55	18	Zancada Alterna con Mancuernas	2	0	4	\N	2025-08-19 07:28:38.455348+02	\N	pending	{"tipo": "reps", "notas": "Posición inicial: De pie, con las mancuernas a los lados. Movimiento: Da un paso hacia adelante y baja la rodilla trasera hacia el suelo, manteniendo el torso recto. Regresa. Respiración: Inhala al bajar, exhala al levantarte. Evita: Que la rodilla delantera se desplace hacia adelante más allá del pie.", "nombre": "Zancada Alterna con Mancuernas", "patron": "bisagra_cadera", "series": 4, "implemento": "mancuernas", "descanso_seg": 45, "repeticiones": 10}
 56	18	Plancha Alternando Elevación de Pierna	3	0	4	\N	2025-08-19 07:28:38.455348+02	\N	pending	{"tipo": "tiempo", "notas": "Posición inicial: En posición de plancha con los codos debajo de los hombros. Movimiento: Eleva una pierna manteniendo la posición del torso estática. Alterna piernas. Respiración: Respira de manera controlada. Evita: Caderas demasiado altas o bajas, mantén una línea recta desde cabeza a talones.", "nombre": "Plancha Alternando Elevación de Pierna", "patron": "isometrico", "series": 4, "implemento": "peso_corporal", "descanso_seg": 30, "duracion_seg": 30}
+206	57	Peso Muerto Rumano con Discos	2	0	4	\N	2025-08-24 19:07:08.020974+02	\N	skipped	{"tipo": "reps", "notas": "Mantén la espalda recta y activa el core durante toda la acción. No doble demasiado las rodillas y enfócate en la cadera.", "nombre": "Peso Muerto Rumano con Discos", "patron": "peso_muerto", "series": 4, "implemento": "discos", "descanso_seg": 60, "repeticiones": 8}
 138	42	Sentadilla a la Pared	1	\N	1	29	2025-08-19 09:23:28.815813+02	2025-08-19 09:24:55.154587+02	completed	{"tipo": "tiempo", "notas": "Posición inicial: Apóyate en la pared con la espalda recta, pies al ancho de los hombros y a un paso de la pared. Movimiento: Desciende como si te fueras a sentar, manteniendo la espalda recta, hasta que tus muslos queden paralelos al suelo. Respiración: Inhala al bajar, exhala al subir. Evita: Despegar la espalda de la pared.", "nombre": "Sentadilla a la Pared", "patron": "bisagra_cadera", "implemento": "pared", "descanso_seg": 45, "duracion_seg": 30}
 168	49	Russian Twists con Mancuerna	2	0	4	\N	2025-08-19 20:10:43.605819+02	\N	skipped	{"tipo": "tiempo", "notas": "Posición inicial: Sentado con las rodillas flexionadas y los pies en el suelo, sostén una mancuerna con ambas manos. Movimiento: Gira el torso hacia un lado, luego hacia el otro, manteniendo el abdomen contraído. Respiración: Exhala durante la torsión, inhala al volver al centro. Evita: Redondear la espalda, mantén una postura recta.", "nombre": "Russian Twists con Mancuerna", "patron": "rotación", "series": 4, "implemento": "mancuernas", "descanso_seg": 45, "duracion_seg": 30}
 139	42	Escaladores (sin salto)	2	\N	1	29	2025-08-19 09:23:28.815813+02	2025-08-19 09:26:55.520754+02	completed	{"tipo": "tiempo", "notas": "Posición inicial: En posición de plancha con las manos en el suelo. Movimiento: Lleva las rodillas hacia el pecho alternando rápidamente, manteniendo la posición de plancha. Respiración: Exhala al llevar la rodilla hacia adelante, inhala al volver. Evita: Hacerlo con la cadera elevada o dejar caer las caderas.", "nombre": "Escaladores (sin salto)", "patron": "tracción", "implemento": "peso_corporal", "descanso_seg": 45, "duracion_seg": 30}
@@ -886,19 +1271,24 @@ COPY app.home_exercise_progress (id, home_training_session_id, exercise_name, ex
 175	51	Bicicleta Estática	1	4	4	179	2025-08-20 09:26:54.414399+02	2025-08-20 10:13:40.693335+02	completed	{"tipo": "tiempo", "notas": "Posición inicial: Siéntate en la bici con la espalda recta y las manos en el manillar. Movimiento: Pedalea a máxima intensidad, manteniendo el ritmo y la postura. Respiración: Inhala y exhala de manera rítmica. Evita: Encoger los hombros o inclinarte demasiado adelante.", "nombre": "Bicicleta Estática", "patron": "cardio", "series": 4, "implemento": "bici", "descanso_seg": 45, "duracion_seg": 45}
 177	51	Plancha Lateral con Banda Elástica	3	4	4	119	2025-08-20 09:26:54.414399+02	2025-08-20 10:31:05.087108+02	completed	{"tipo": "tiempo", "notas": "Posición inicial: Coloca la banda elástica alrededor de tus muñecas y apóyate sobre un lado. Movimiento: Eleva las caderas hasta que el cuerpo forme una línea recta. Mantén la posición y luego baja. Respiración: Mantén la respiración constante. Evita: Caer en la cadera o no mantener la alineación de la espalda.", "nombre": "Plancha Lateral con Banda Elástica", "patron": "estabilización", "series": 4, "implemento": "bandas_elasticas", "descanso_seg": 45, "duracion_seg": 30}
 178	52	Saltos en Silla	0	\N	4	119	2025-08-22 13:22:42.216763+02	2025-08-22 13:27:13.389142+02	completed	{"tipo": "tiempo", "notas": "Posición inicial: Coloca una silla estable frente a ti. Movimiento: Salta con ambos pies hacia arriba y aterriza suavemente sobre la silla. Mantén los pies juntos y las rodillas ligeramente flexionadas. Respiración: Exhala al saltar, inhala al aterrizar. Evita: Aterrizar con las piernas rígidas o hacer saltos demasiado altos.", "nombre": "Saltos en Silla", "patron": "bisagra_cadera", "implemento": "silla_sofa", "descanso_seg": 45, "duracion_seg": 30}
+207	57	Dominadas con Agarre Paralelo en Barra	3	0	4	\N	2025-08-24 19:07:08.020974+02	\N	skipped	{"tipo": "reps", "notas": "Asegura una buena amplitud en el movimiento, sin colgarse en exceso y controlando la bajada. Si es muy fácil, añade peso.", "nombre": "Dominadas con Agarre Paralelo en Barra", "patron": "dominadas", "series": 4, "implemento": "barra", "descanso_seg": 60, "repeticiones": 8}
 73	22	Sentadilla Isométrica con Elevación de Talones	1	0	3	\N	2025-08-19 07:28:38.455348+02	\N	pending	{"tipo": "tiempo", "notas": "Posición inicial: En cuclillas, mantén las rodillas flexionadas a 90 grados. Movimiento: Eleva los talones manteniendo la posición de cuclillas. Mantén la espalda recta. Respiración: Respira de forma controlada durante el ejercicio. Evita: No dejar que las rodillas se desplacen hacia adelante de los dedos de los pies.", "nombre": "Sentadilla Isométrica con Elevación de Talones", "patron": "sentadilla", "series": 3, "implemento": "peso_corporal", "descanso_seg": 15, "duracion_seg": 30}
 74	22	Mountain Climbers	2	0	4	\N	2025-08-19 07:28:38.455348+02	\N	pending	{"tipo": "tiempo", "notas": "Posición inicial: En posición de plancha alta con las manos directamente debajo de los hombros. Movimiento: Lleva una rodilla hacia el pecho, vuelve a la posición inicial y alterna rápidamente con la otra rodilla. Respiración: Exhala al acercar la rodilla, inhala al volver a la posición de plancha. Evita: No dejes caer las caderas ni arquees la espalda.", "nombre": "Mountain Climbers", "patron": "tracción", "series": 4, "implemento": "peso_corporal", "descanso_seg": 15, "duracion_seg": 30}
 75	22	Flexiones de Brazo con Rotación	3	0	3	\N	2025-08-19 07:28:38.455348+02	\N	pending	{"tipo": "tiempo", "notas": "Posición inicial: En posición de plancha, brazos extendidos, manos a la altura de los hombros. Movimiento: Realiza una flexión normal y al subir, gira el torso hacia un lado levantando un brazo hacia el techo. Alterna lados. Respiración: Inhala al bajar, exhala al subir y girar. Evita: No arquees la espalda ni bajes demasiado las caderas.", "nombre": "Flexiones de Brazo con Rotación", "patron": "empuje", "series": 3, "implemento": "peso_corporal", "descanso_seg": 15, "duracion_seg": 30}
 76	23	Sentadilla con Mancuerna y Elevación	0	0	4	\N	2025-08-19 07:28:38.455348+02	\N	pending	{"tipo": "reps", "notas": "Posición inicial: Sostén una mancuerna con ambas manos en el pecho. Pies a la anchura de los hombros. Movimiento: Desciende en sentadilla y al subir, eleva la mancuerna por encima de la cabeza. Respiración: Inhala al bajar, exhala al elevar. Evita: Que tus rodillas sobrepasen la punta de los pies.", "nombre": "Sentadilla con Mancuerna y Elevación", "patron": "sentadilla", "series": 4, "implemento": "mancuernas", "descanso_seg": 30, "repeticiones": 10}
 77	23	Remo Invertido con Banda Elástica	1	0	4	\N	2025-08-19 07:28:38.455348+02	\N	pending	{"tipo": "reps", "notas": "Posición inicial: Ancla la banda elástica a un punto bajo y sostén los extremos. Acuéstate boca arriba y tira de la banda hacia tu pecho mientras mantienes el cuerpo en línea recta. Movimiento: Tira de la banda hacia ti manteniendo los codos pegados al cuerpo. Respiración: Inhala al bajar, exhala al tirar. Evita: Arqueo de espalda y movimientos bruscos.", "nombre": "Remo Invertido con Banda Elástica", "patron": "tracción", "series": 4, "implemento": "bandas_elasticas", "descanso_seg": 30, "repeticiones": 12}
 78	23	Zancadas Alternas con Mancuernas	2	0	4	\N	2025-08-19 07:28:38.455348+02	\N	pending	{"tipo": "reps", "notas": "Posición inicial: Sostén una mancuerna en cada mano a los lados. Pies a la altura de los hombros. Movimiento: Da un paso adelante flexionando ambas rodillas y vuelve a la posición inicial. Alterna las piernas. Respiración: Inhala al descender, exhala al volver. Evita: Que la rodilla que avanza sobrepase la punta del pie.", "nombre": "Zancadas Alternas con Mancuernas", "patron": "bisagra_cadera", "series": 4, "implemento": "mancuernas", "descanso_seg": 30, "repeticiones": 10}
+208	57	Press Militar con Barra	4	0	4	\N	2025-08-24 19:07:08.020974+02	\N	skipped	{"tipo": "reps", "notas": "Mantén el core firme y no sobreextiendas la espalda. Eleva la barra de manera controlada y evita movimientos bruscos.", "nombre": "Press Militar con Barra", "patron": "press_vertical", "series": 4, "implemento": "barra", "descanso_seg": 60, "repeticiones": 6}
 143	43	Flexiones de Brazos con Rodillas Apoyadas	2	0	4	\N	2025-08-19 10:05:10.023349+02	\N	skipped	{"tipo": "tiempo", "notas": "Posición inicial: En posición de flexión con las rodillas en el suelo, manos a la altura de los hombros. Movimiento: Baja el pecho hacia el suelo flexionando los codos y vuelve a subir. Mantén el cuerpo recto. Respiración: Inhala al bajar, exhala al subir. Evita: Dejar caer la cadera.", "nombre": "Flexiones de Brazos con Rodillas Apoyadas", "patron": "empuje", "series": 4, "implemento": "peso_corporal", "descanso_seg": 45, "duracion_seg": 30}
 142	43	Remo con Bandas Elásticas	1	4	4	89	2025-08-19 10:05:10.023349+02	2025-08-19 11:06:01.011732+02	completed	{"tipo": "tiempo", "notas": "Posición inicial: Sentado en el suelo con las piernas extendidas, sujeta la banda elástica con ambas manos. Movimiento: Tira de la banda hacia tu abdomen, manteniendo la espalda recta y los codos pegados al cuerpo. Respiración: Inhala al soltar, exhala al tirar. Evita: Arqueamiento de la espalda.", "nombre": "Remo con Bandas Elásticas", "patron": "tracción", "series": 4, "implemento": "bandas_elasticas", "descanso_seg": 45, "duracion_seg": 30}
 144	43	Sentadilla Isla con Bandas Elásticas	3	4	4	89	2025-08-19 10:05:10.023349+02	2025-08-19 11:11:46.306442+02	completed	{"tipo": "tiempo", "notas": "Posición inicial: Coloca la banda elástica alrededor de los muslos, pies a la altura de los hombros. Movimiento: Realiza una sentadilla manteniendo la tensión en la banda, asegurándote de que las rodillas no sobrepasen los pies. Respiración: Inhala al bajar, exhala al subir. Evita: Que las rodillas se desplacen hacia adentro.", "nombre": "Sentadilla Isla con Bandas Elásticas", "patron": "sentadilla", "series": 4, "implemento": "bandas_elasticas", "descanso_seg": 45, "duracion_seg": 30}
 145	43	Plancha Lateral Dinámica	4	0	4	\N	2025-08-19 10:05:10.023349+02	\N	skipped	{"tipo": "tiempo", "notas": "Posición inicial: Acuéstate de lado con los pies apilados y apoyando el antebrazo en el suelo. Movimiento: Levanta las caderas formando una línea recta y realiza giros hacia el frente y de regreso. Respiración: Mantén una respiración controlada. Evita: Que las caderas se caigan.", "nombre": "Plancha Lateral Dinámica", "patron": "estabilización", "series": 4, "implemento": "peso_corporal", "descanso_seg": 45, "duracion_seg": 30}
 174	51	Tirón de TRX	0	4	4	119	2025-08-20 09:26:54.414399+02	2025-08-20 09:33:27.07303+02	completed	{"tipo": "tiempo", "notas": "Posición inicial: Agarra las asas del TRX con los brazos extendidos y el cuerpo recto. Movimiento: Inclínate hacia atrás, manteniendo el cuerpo recto y los pies firmes en el suelo. Tira hacia ti, flexionando los codos y llevando el pecho hacia las asas. Respiración: Exhala al tirar, inhala al volver. Evita: Que el cuerpo se desplace de lado o que la espalda se curve.", "nombre": "Tirón de TRX", "patron": "tracción", "series": 4, "implemento": "trx", "descanso_seg": 45, "duracion_seg": 30}
 180	52	Sentadillas con Peso Corporal	2	0	4	\N	2025-08-22 13:22:42.216763+02	\N	skipped	{"tipo": "tiempo", "notas": "Posición inicial: Pies a la altura de hombros y dedos ligeramente hacia afuera. Movimiento: Baja las caderas como si fueras a sentarte en una silla, manteniendo el pecho erguido y las rodillas alineadas con los pies. Respiración: Inhala al bajar, exhala al subir. Evita: Que las rodillas se desvíen hacia adentro o que el torso se incline hacia adelante.", "nombre": "Sentadillas con Peso Corporal", "patron": "sentadilla", "implemento": "peso_corporal", "descanso_seg": 45, "duracion_seg": 30}
+204	57	Remo con Barra Pendlay	0	0	4	\N	2025-08-24 19:07:08.020974+02	\N	skipped	{"tipo": "reps", "notas": "Mantén la espalda recta y activa el core para evitar lesiones. El movimiento debe ser controlado y sin rebotes en la parte baja.", "nombre": "Remo con Barra Pendlay", "patron": "remo", "series": 4, "implemento": "barra", "descanso_seg": 60, "repeticiones": 8}
+205	57	Press de Banca con Barra	1	0	4	\N	2025-08-24 19:07:08.020974+02	\N	skipped	{"tipo": "reps", "notas": "Asegura una buena estabilidad en los pies y evita que los brazos bajen excesivamente. Controla la bajada y empuja explosivamente.", "nombre": "Press de Banca con Barra", "patron": "press_horizontal", "series": 4, "implemento": "barra", "descanso_seg": 60, "repeticiones": 6}
 141	43	Saltos en Banco Step	0	4	4	89	2025-08-19 10:05:10.023349+02	2025-08-19 10:08:19.230438+02	completed	{"tipo": "tiempo", "notas": "Posición inicial: De pie frente al banco step, con los pies a la altura de los hombros. Movimiento: Salta con ambos pies al banco y aterriza suavemente. Mantén el core contraído. Respiración: Exhala al saltar e inhala al bajar. Evita: Aterrizar con las rodillas bloqueadas.", "nombre": "Saltos en Banco Step", "patron": "bisagra_cadera", "series": 4, "implemento": "peso_corporal", "descanso_seg": 45, "duracion_seg": 30}
+209	57	Remo en T con Mancuernas Pesadas	5	0	4	\N	2025-08-24 19:07:08.020974+02	\N	cancelled	{"tipo": "reps", "notas": "Inclina el torso a 45 grados y activa el dorsal durante el movimiento. No uses impulso para levantar las mancuernas.", "nombre": "Remo en T con Mancuernas Pesadas", "patron": "remo", "series": 4, "implemento": "mancuernas", "descanso_seg": 60, "repeticiones": 8}
 10	2	Fondos en paralelas	4	0	4	\N	2025-08-19 07:28:38.455348+02	\N	pending	{"tipo": "reps", "notas": "Baja hasta que los codos estén a 90 grados y empuja hacia arriba.", "nombre": "Fondos en paralelas", "patron": "empuje", "series": 4, "implemento": "paralelas", "descanso_seg": 90, "duracion_seg": null, "repeticiones": 8}
 57	18	Elevaciones de Talones con Mancuernas	4	0	4	\N	2025-08-19 07:28:38.455348+02	\N	pending	{"tipo": "reps", "notas": "Posición inicial: De pie, sostén las mancuernas a los lados. Movimiento: Eleva los talones del suelo, manteniendo el equilibrio en la parte frontal de los pies. Respiración: Exhala al subir, inhala al bajar. Evita: Dejar caer el peso hacia atrás o hacia adelante al elevarte.", "nombre": "Elevaciones de Talones con Mancuernas", "patron": "empuje", "series": 4, "implemento": "mancuernas", "descanso_seg": 45, "repeticiones": 15}
 90	26	Press de Pecho en Suelo con Mancuernas	1	0	4	\N	2025-08-19 07:28:38.455348+02	\N	pending	{"tipo": "reps", "notas": "Posición inicial: Acostado boca arriba con una mancuerna en cada mano, brazos extendidos hacia arriba. Movimiento: Baja las mancuernas hacia los lados, flexionando los codos, y luego empuja hacia arriba. Respiración: Inhala al bajar, exhala al subir. Evita: Arqueo excesivo de la espalda baja.", "nombre": "Press de Pecho en Suelo con Mancuernas", "patron": "empuje", "series": 4, "implemento": "mancuernas", "descanso_seg": 60, "repeticiones": 10}
@@ -918,11 +1308,23 @@ COPY app.home_exercise_progress (id, home_training_session_id, exercise_name, ex
 153	45	Sentadillas a una Pierna con Kettlebell	3	0	3	\N	2025-08-19 11:54:39.845362+02	\N	pending	{"tipo": "reps", "notas": "Posición inicial: Sosten el kettlebell en la mano del lado que vas a trabajar. Párate sobre una pierna. Movimiento: Baja el cuerpo hacia abajo mientras mantienes la otra pierna levantada. Respiración: Inhala al bajar, exhala al subir. Evita: Dejar que la rodilla se desplace hacia adentro y no perder el equilibrio.", "nombre": "Sentadillas a una Pierna con Kettlebell", "patron": "bisagra_cadera", "series": 3, "implemento": "kettlebells", "descanso_seg": 60, "repeticiones": 8}
 100	28	Tijeras en el Suelo	3	0	4	\N	2025-08-19 07:28:38.455348+02	\N	pending	{"tipo": "reps", "notas": "Posición inicial: Acostado sobre la espalda con las manos debajo de los glúteos. Movimiento: Eleva las piernas juntas hacia el techo y luego bájalas alternando un pie hacia el suelo sin tocarlo. Respiración: Inhala al bajar, exhala al subir. Evita: Levantar la cabeza o arquear la espalda baja.", "nombre": "Tijeras en el Suelo", "patron": "tracción", "series": 4, "implemento": "peso_corporal", "descanso_seg": 45, "repeticiones": 15}
 150	45	Dominadas con Peso	0	3	4	\N	2025-08-19 11:54:39.845362+02	\N	in_progress	{"tipo": "reps", "notas": "Posición inicial: Agárrate a la barra con las manos un poco más anchas que los hombros. Mantén el cuerpo recto y los pies cruzados detrás de ti. Movimiento: Tira de tu cuerpo hacia arriba hasta que la barbilla supere la barra, concentrándote en activar la espalda. Respiración: Exhala al subir, inhala al bajar. Evita: Balancearte o usar impulso.", "nombre": "Dominadas con Peso", "patron": "tracción", "series": 4, "implemento": "barra_dominadas", "descanso_seg": 60, "repeticiones": 8}
+187	54	Pistol Squat asistido con silla	0	4	4	179	2025-08-23 12:32:56.458283+02	2025-08-23 12:39:20.895533+02	completed	{"tipo": "reps", "notas": "Utiliza la silla para apoyo en la bajada y asegura que la técnica sea controlada para proteger las rodillas.", "nombre": "Pistol Squat asistido con silla", "patron": "sentadilla con una pierna", "series": 4, "implemento": "silla", "descanso_seg": 60, "repeticiones": 8}
+188	54	Remo en T con bandas elásticas en posición inclinado	1	0	4	\N	2025-08-23 12:32:56.458283+02	\N	skipped	{"tipo": "reps", "notas": "Mantén la espalda recta y aprieta los omóplatos al final del movimiento para activar bien la espalda.", "nombre": "Remo en T con bandas elásticas en posición inclinado", "patron": "remo", "series": 4, "implemento": "bandas elásticas", "descanso_seg": 60, "repeticiones": 10}
+189	54	Press de hombros con mancuernas en banco inclinado	2	0	4	\N	2025-08-23 12:32:56.458283+02	\N	skipped	{"tipo": "reps", "notas": "Asegúrate de no arquear demasiado la espalda y realiza movimientos controlados para evitar lesiones en hombros.", "nombre": "Press de hombros con mancuernas en banco inclinado", "patron": "press de hombro", "series": 4, "implemento": "mancuernas", "descanso_seg": 60, "repeticiones": 8}
+190	54	Elevaciones laterales de hombro con banda elástica	3	0	3	\N	2025-08-23 12:32:56.458283+02	\N	cancelled	{"tipo": "reps", "notas": "Realiza movimientos lentos y controlados, concentrándote en la contracción muscular para maximizar el trabajo.", "nombre": "Elevaciones laterales de hombro con banda elástica", "patron": "elevación lateral", "series": 3, "implemento": "banda elástica", "descanso_seg": 60, "repeticiones": 12}
+191	54	Curl de bíceps en concentración con mancuernas	4	0	3	\N	2025-08-23 12:32:56.458283+02	\N	cancelled	{"tipo": "reps", "notas": "Mantén el codo fijado y evita balancear el cuerpo para aislar mejor el bíceps.", "nombre": "Curl de bíceps en concentración con mancuernas", "patron": "curl", "series": 3, "implemento": "mancuernas", "descanso_seg": 60, "repeticiones": 10}
+192	54	Extensión de tríceps con banda en banco plano	5	0	3	\N	2025-08-23 12:32:56.458283+02	\N	cancelled	{"tipo": "reps", "notas": "Controla la fase excéntrica y evita que la banda tenga demasiado slack para mantener tensión constante.", "nombre": "Extensión de tríceps con banda en banco plano", "patron": "extensión de tríceps", "series": 3, "implemento": "banda elástica", "descanso_seg": 60, "repeticiones": 10}
+193	54	Plancha con levantamiento de pierna alterno	6	0	3	\N	2025-08-23 12:32:56.458283+02	\N	cancelled	{"tipo": "reps", "notas": "Mantén el core apretado y evita que las caderas se hundan durante el ejercicio para una mejor estabilidad.", "nombre": "Plancha con levantamiento de pierna alterno", "patron": "plancha dinámica", "series": 3, "implemento": "sin implemento", "descanso_seg": 60, "repeticiones": 12}
+194	55	Clean to Press con Kettlebell	0	0	4	\N	2025-08-23 14:39:39.849304+02	\N	cancelled	{"tipo": "reps", "notas": "Utiliza una técnica controlada, asegurándote de elevar la pesa en línea recta y mantener la espalda recta durante el movimiento.", "nombre": "Clean to Press con Kettlebell", "patron": "propio peso dinámico", "series": 4, "implemento": "kettlebell", "descanso_seg": 45, "repeticiones": 10}
+195	55	Remo con Barra en Pendiente	1	0	4	\N	2025-08-23 14:39:39.849304+02	\N	cancelled	{"tipo": "reps", "notas": "Mantén la espalda plana y activa el core para evitar lesiones. Realiza el movimiento con control y concentración en la contracción muscular.", "nombre": "Remo con Barra en Pendiente", "patron": "remo", "series": 4, "implemento": "barra", "descanso_seg": 45, "repeticiones": 12}
 154	46	Push-Up a Escalera	0	\N	4	119	2025-08-19 11:59:37.019801+02	2025-08-19 12:03:59.707541+02	completed	{"tipo": "time", "notas": "Posición inicial: Manos apoyadas en el banco, cuerpo en línea recta. Movimiento: Realiza una flexión de brazos llevando el pecho hacia el banco y empuja hacia arriba. Variación: Usa una escalera o un objeto estable para variar la altura y aumentar la dificultad. Respiración: Inhala al bajar, exhala al subir. Evita: Que las caderas se hundan o se eleven excesivamente.", "nombre": "Push-Up a Escalera", "patron": "empuje", "implemento": "banco_step", "descanso_seg": 45, "duracion_seg": 30}
+196	55	Saltos en Caja con Peso	2	0	4	\N	2025-08-23 14:39:39.849304+02	\N	cancelled	{"tipo": "reps", "notas": "Asegúrate de aterrizar suavemente y mantener el control en cada salto para proteger las articulaciones.", "nombre": "Saltos en Caja con Peso", "patron": "saltos pliométricos", "series": 4, "implemento": "disco o peso en mano", "descanso_seg": 45, "repeticiones": 15}
 155	46	Zancadas Alternas con Mancuernas	1	\N	4	119	2025-08-19 11:59:37.019801+02	2025-08-19 12:08:22.713876+02	completed	{"tipo": "time", "notas": "Posición inicial: De pie, sosteniendo una mancuerna en cada mano, pies al ancho de los hombros. Movimiento: Da un paso hacia adelante con una pierna, bajando la rodilla trasera hacia el suelo, mantén el torso erguido. Alterna piernas. Respiración: Inhala al bajar, exhala al empujar hacia arriba. Evita: Que la rodilla delantera sobrepase los dedos del pie.", "nombre": "Zancadas Alternas con Mancuernas", "patron": "bisagra_cadera", "implemento": "mancuernas", "descanso_seg": 45, "duracion_seg": 30}
+197	55	Elevaciones de Tronco con Discos	3	0	3	\N	2025-08-23 14:39:39.849304+02	\N	cancelled	{"tipo": "reps", "notas": "Mantén el core contraído y evita empujar el suelo con las manos, enfócate en la contracción abdominal.", "nombre": "Elevaciones de Tronco con Discos", "patron": "core", "series": 3, "implemento": "discos", "descanso_seg": 45, "repeticiones": 15}
 156	46	Remo Alto con Banda Elástica	2	\N	4	119	2025-08-19 11:59:37.019801+02	2025-08-19 12:12:48.527181+02	completed	{"tipo": "time", "notas": "Posición inicial: Sienta la banda elástica bajo tus pies, sosteniendo los extremos con ambas manos, espalda recta. Movimiento: Tira de la banda hacia tu pecho, manteniendo los codos arriba. Controla el movimiento al soltar. Respiración: Inhala al tirar, exhala al soltar. Evita: Inclinar el torso hacia atrás al tirar.", "nombre": "Remo Alto con Banda Elástica", "patron": "tracción", "implemento": "bandas_elasticas", "descanso_seg": 45, "duracion_seg": 30}
 108	30	Saltos de Tijera	2	0	4	\N	2025-08-19 07:28:38.455348+02	\N	pending	{"tipo": "tiempo", "notas": "Posición inicial: De pie, con los pies juntos. Movimiento: Salta abriendo las piernas y elevando los brazos por encima de la cabeza, regresa a la posición inicial. Respiración: Exhala al saltar, inhala al regresar. Evita: Aterrizar con los pies rígidos o inclinarte hacia adelante.", "nombre": "Saltos de Tijera", "patron": "cardio", "series": 4, "implemento": "peso_corporal", "descanso_seg": 45, "duracion_seg": 30}
 113	31	Mountain Climbers	3	0	5	\N	2025-08-19 07:28:38.455348+02	\N	skipped	{"tipo": "intervalo", "notas": "Posición inicial: En posición de plancha alta. Movimiento: Lleva una rodilla hacia el pecho mientras mantienes el torso firme y alterna. Respiración: Exhala al acercar la rodilla, inhala al regresar. Evita: Dejar caer la cadera o arquear la espalda.", "nombre": "Mountain Climbers", "patron": "tracción", "series": 5, "implemento": "peso_corporal", "descanso_seg": 45, "duracion_trabajo_seg": 30}
+198	55	Sprint en Sitio con Arrastre de Pesas	4	0	4	\N	2025-08-23 14:39:39.849304+02	\N	skipped	{"tipo": "tiempo", "notas": "Levanta las rodillas con énfasis en la velocidad y arrastra las pesas con movimientos controlados para activar la cadena posterior.", "nombre": "Sprint en Sitio con Arrastre de Pesas", "patron": "cardio intenso", "series": 4, "implemento": "pesas", "descanso_seg": 45, "repeticiones": "20 segundos de trabajo / 20 segundos de descanso"}
 157	46	Mountain Climbers en Banco	3	\N	4	119	2025-08-19 11:59:37.019801+02	2025-08-19 12:17:11.246264+02	completed	{"tipo": "time", "notas": "Posición inicial: Manos sobre el banco, cuerpo en línea recta desde los pies hasta la cabeza. Movimiento: Alterna llevando las rodillas hacia tu pecho a velocidad controlada. Respiración: Exhala al llevar la rodilla hacia adelante, inhala al regresar. Evita: Que las caderas se elevan o caen.", "nombre": "Mountain Climbers en Banco", "patron": "cardio", "implemento": "banco_step", "descanso_seg": 45, "duracion_seg": 30}
 158	47	Flexiones de Brazos con Manos en Banquito	0	5	5	224	2025-08-19 12:53:42.233176+02	2025-08-19 13:00:37.315243+02	completed	{"tipo": "intervalo", "notas": "Posición inicial: Coloca tus manos en el banco con los brazos extendidos y el cuerpo en línea recta. Movimiento: Baja el pecho hacia el banco, manteniendo el cuerpo recto. Respiración: Inhala al bajar, exhala al empujar hacia arriba. Evita: Dejar caer las caderas o elevar demasiado el trasero.", "nombre": "Flexiones de Brazos con Manos en Banquito", "patron": "empuje", "series": 5, "implemento": "peso_corporal", "descanso_seg": 45, "repeticiones": "30s trabajo, 15s descanso"}
 117	32	Plancha Lateral con Rodilla Apoyada	3	0	3	\N	2025-08-19 07:28:38.455348+02	\N	pending	{"tipo": "tiempo", "notas": "Posición inicial: Acuéstate de lado con una rodilla apoyada en el suelo, el codo directamente debajo del hombro. Movimiento: Levanta las caderas manteniendo el cuerpo en línea recta desde la cabeza hasta la rodilla apoyada. Mantén la posición. Respiración: Respira normalmente, evita contener el aliento. Evita: No dejar caer las caderas ni torcer el torso.", "nombre": "Plancha Lateral con Rodilla Apoyada", "patron": "estabilidad", "series": 3, "implemento": "peso_corporal", "descanso_seg": 60, "duracion_seg": 30}
@@ -980,6 +1382,8 @@ COPY app.home_exercise_progress (id, home_training_session_id, exercise_name, ex
 116	32	Elevaciones de Talón en Silla	2	0	4	\N	2025-08-19 07:28:38.455348+02	\N	pending	{"tipo": "reps", "notas": "Posición inicial: Apóyate en la parte posterior de una silla con las manos, pies a la altura de los hombros. Movimiento: Eleva los talones del suelo manteniendo la posición. Aprieta los gemelos en la parte superior y regresa a la posición inicial. Respiración: Exhala al elevar, inhala al bajar. Evita: No dejar caer la cadera hacia atrás.", "nombre": "Elevaciones de Talón en Silla", "patron": "bisagra_cadera", "series": 4, "implemento": "silla_sofa", "descanso_seg": 60, "repeticiones": 15}
 115	32	Flexiones de Brazos en Pared	1	3	4	\N	2025-08-19 07:28:38.455348+02	\N	in_progress	{"tipo": "reps", "notas": "Posición inicial: De pie frente a una pared, coloca las manos al ancho de los hombros sobre la pared. Movimiento: Flexiona los codos llevando el pecho hacia la pared y empuja de regreso a la posición inicial. Respiración: Inhala al bajar, exhala al subir. Evita: No arquear la espalda ni permitir que las caderas se desplacen hacia adelante.", "nombre": "Flexiones de Brazos en Pared", "patron": "empuje", "series": 4, "implemento": "pared", "descanso_seg": 60, "repeticiones": 12}
 121	33	Sentadilla a Silla	3	0	4	\N	2025-08-19 07:28:38.455348+02	\N	skipped	{"tipo": "reps", "notas": "Posición inicial: De pie frente a una silla, pies al ancho de los hombros. Movimiento: Baja las caderas hacia atrás como si fueras a sentarte, detente justo antes de tocar la silla, luego sube. Respiración: Inhala al bajar, exhala al subir. Evita: Que las rodillas sobrepasen los dedos de los pies.", "nombre": "Sentadilla a Silla", "patron": "sentadilla", "series": 4, "implemento": "silla_sofa", "descanso_seg": 60, "repeticiones": 12}
+201	56	Remo en Puente usando Silla y Toalla	2	0	4	\N	2025-08-23 15:04:15.516777+02	\N	cancelled	{"tipo": "reps", "notas": "Mantén una línea recta desde los hombros hasta los talones, jalando la toalla hacia ti mientras aprietas la espalda.", "nombre": "Remo en Puente usando Silla y Toalla", "patron": "remo", "series": 4, "implemento": "toalla y silla", "descanso_seg": 45, "repeticiones": 12}
+202	56	Plancha Dinámica con Desplazamiento lateral	3	0	3	\N	2025-08-23 15:04:15.516777+02	\N	cancelled	{"tipo": "reps", "notas": "Mantén el core firme y evita que las caderas se hundan. Desplaza las manos o los pies lateralmente para mayor movimiento.", "nombre": "Plancha Dinámica con Desplazamiento lateral", "patron": "plancha", "series": 3, "implemento": "ninguno", "descanso_seg": 45, "repeticiones": 12}
 162	48	Sentadilla con Salto	0	4	4	119	2025-08-19 13:40:31.625414+02	2025-08-19 13:44:55.602278+02	completed	{"tipo": "tiempo", "notas": "Posición inicial: Pies al ancho de los hombros. Movimiento: Realiza una sentadilla y al subir, salta explosivamente. Aterriza suavemente. Respiración: Inhala al bajar, exhala al saltar. Evita: Caer con los pies juntos o permitir que las rodillas sobrepasen los dedos de los pies.", "nombre": "Sentadilla con Salto", "patron": "bisagra_cadera", "series": 4, "implemento": "peso_corporal", "descanso_seg": 45, "duracion_seg": 30}
 163	48	Puente de Glúteos con Elevación	1	0	4	\N	2025-08-19 13:40:31.625414+02	\N	skipped	{"tipo": "tiempo", "notas": "Posición inicial: Acostado boca arriba, rodillas flexionadas y pies en el suelo. Movimiento: Eleva las caderas hacia el techo apretando glúteos y abdominales. Respiración: Inhala al bajar, exhala al elevar. Evita: Dejar caer los glúteos al suelo sin activar los músculos.", "nombre": "Puente de Glúteos con Elevación", "patron": "empuje", "series": 4, "implemento": "peso_corporal", "descanso_seg": 45, "duracion_seg": 30}
 164	48	Remo en Posición de Planchas con Banda Elástica	2	0	4	\N	2025-08-19 13:40:31.625414+02	\N	cancelled	{"tipo": "tiempo", "notas": "Posición inicial: Coloca las manos en el suelo, con la banda elástica bajo tus pies. Movimiento: Tira de la banda hacia tu torso mientras mantienes el cuerpo recto. Respiración: Inhala al tirar, exhala al regresar. Evita: Girar las caderas o relajar el abdomen.", "nombre": "Remo en Posición de Planchas con Banda Elástica", "patron": "tracción", "series": 4, "implemento": "bandas_elasticas", "descanso_seg": 45, "duracion_seg": 30}
@@ -988,7 +1392,7 @@ COPY app.home_exercise_progress (id, home_training_session_id, exercise_name, ex
 
 
 --
--- TOC entry 5113 (class 0 OID 26720)
+-- TOC entry 5194 (class 0 OID 26720)
 -- Dependencies: 229
 -- Data for Name: home_training_plans; Type: TABLE DATA; Schema: app; Owner: postgres
 --
@@ -1078,11 +1482,17 @@ COPY app.home_training_plans (id, user_id, plan_data, equipment_type, training_t
 82	10	{"plan_source": {"type": "openai", "label": "OpenAI", "detail": "gpt-4.1-nano"}, "plan_entrenamiento": {"fecha": "2024-08-17", "titulo": "Rutina funcional creativa", "subtitulo": "Entrenamiento en casa con equipamiento personalizado", "ejercicios": [{"tipo": "reps", "notas": "Mantén una postura erguida, contrae el core y realiza saltos suaves para evitar impacto excesivo en las articulaciones.", "nombre": "Saltos con Taza de Agua sobre la Cabeza", "patron": "saltos", "series": 3, "implemento": "personalizado", "descanso_seg": 45, "repeticiones": 15}, {"tipo": "reps", "notas": "Mantén el abdomen apretado y realiza movimientos rápidos, manteniendo la alineación de la espalda y las caderas.", "nombre": "Escaladores de Montaña con Toalla", "patron": "escaladores", "series": 3, "implemento": "toalla", "descanso_seg": 45, "repeticiones": 20}, {"tipo": "reps", "notas": "Mantén los glúteos elevados y contraídos durante toda la ejecución, evitando que la cadera caiga o suba demasiado rápido.", "nombre": "Puente con un Libro en la Cadera", "patron": "puente", "series": 3, "implemento": "libro", "descanso_seg": 50, "repeticiones": 12}, {"tipo": "reps", "notas": "Realiza el movimiento controladamente, asegurando una resistencia constante y sin balancear el cuerpo.", "nombre": "Lanzamiento Lateral de Banda Elástica a la Altura del Hombro", "patron": "excepto", "series": 3, "implemento": "banda elástica", "descanso_seg": 45, "repeticiones": 15}, {"tipo": "reps", "notas": "Al realizar la sentadilla, extiende un brazo hacia adelante y el otro hacia atrás, alternando en cada repetición para trabajar equilibrio y coordinación.", "nombre": "Sentadillas con Peso Corporal y Péndulo de Brazo", "patron": "sentadilla", "series": 3, "implemento": "peso corporal", "descanso_seg": 60, "repeticiones": 12}, {"tipo": "reps", "notas": "Mantén el torso estable y usa la toalla para simular el movimiento de remos, activando dorsal y bíceps sin forzar la espalda baja.", "nombre": "Remo en Puente con Toalla en Pared", "patron": "remo", "series": 3, "implemento": "toalla", "descanso_seg": 50, "repeticiones": 15}], "tipo_nombre": "Funcional", "equipamiento": "personalizado", "perfil_usuario": "Sergio — Edad: 41, Peso: 76.00 kg, Altura: 183.00 cm, Nivel: intermedio, IMC: 22.7", "fecha_formateada": "22/8", "tipoEntrenamiento": "funcional", "duracion_estimada_min": 40}, "mensaje_personalizado": "¡Excelente elección de entrenamiento funcional con equipamiento personalizado! Este plan te ayudará a mejorar tu fuerza, equilibrio y resistencia de forma segura y efectiva. Vamos a desafiar tus límites con movimientos creativos y variados."}	personalizado	funcional	2025-08-22 18:46:58.311615+02	2025-08-22 18:46:58.311615+02
 83	10	{"plan_source": {"type": "openai", "label": "OpenAI", "detail": "gpt-4.1-nano"}, "plan_entrenamiento": {"fecha": "2025-08-17", "titulo": "HIIT Avanzado para Potenciar Funciones Múltiples", "subtitulo": "Sesión de alta intensidad con equipamiento avanzado", "ejercicios": [{"tipo": "reps", "notas": "Mantén una buena técnica en flexión y evita que la espalda se hunda. Aprovecha el salto para activar toda la cadena posterior.", "nombre": "Burpees con Salto y Flexión de Espalda en Barra", "patron": "alta intensidad", "series": 4, "implemento": "barra y peso corporal", "descanso_seg": 45, "repeticiones": 15}, {"tipo": "reps", "notas": "Realiza el swing con control, aprovechando la fuerza explosiva de las caderas. Mantén la espalda recta en todo momento.", "nombre": "Swing con Kettlebell en Traza Rápida", "patron": "potencia y cardio", "series": 4, "implemento": "Kettlebell", "descanso_seg": 45, "repeticiones": 20}, {"tipo": "reps", "notas": "Procura que el movimiento sea explosivo pero controlado, activando el dorsal y los brazos. No balancees el torso.", "nombre": "Remo en Barra Explosivo", "patron": "potencia", "series": 4, "implemento": "barra y discos", "descanso_seg": 45, "repeticiones": 12}, {"tipo": "reps", "notas": "Mantén un ritmo rápido, sin comprometer la técnica. Usa los brazos para impulsarte y elevar las rodillas con fuerza.", "nombre": "Saltos en Cama Elástica con Elevación de Rodillas", "patron": "cardio intenso", "series": 4, "implemento": "cama elástica", "descanso_seg": 45, "repeticiones": 30}, {"tipo": "reps", "notas": "Controla la bajada y evita que la rodilla pase la punta del pie. Usa la mancuerna para mantener el equilibrio y la carga.", "nombre": "Sentadilla Pistol Asistida con Mancuerna en Mano", "patron": "fuerza y equilibrio", "series": 3, "implemento": "mancuerna", "descanso_seg": 45, "repeticiones": 8}], "tipo_nombre": "HIIT", "equipamiento": "avanzado", "perfil_usuario": "Sergio — Edad: 41, Peso: 76.00 kg, Altura: 183.00 cm, Nivel: intermedio, IMC: 22.7", "fecha_formateada": "22/8", "tipoEntrenamiento": "hiit", "equipamiento_nombre": "Equipamiento Avanzado", "duracion_estimada_min": 30}, "mensaje_personalizado": "Perfecto, Juan. Con tu equipamiento avanzado y tu experiencia, vamos a crear un entrenamiento HIIT desafiante y variado que potenciará tu resistencia y fuerza. ¡A darlo todo hoy!"}	avanzado	hiit	2025-08-22 18:48:06.657639+02	2025-08-22 18:48:06.657639+02
 84	10	{"plan_source": {"type": "openai", "label": "OpenAI", "detail": "gpt-4.1-nano"}, "plan_entrenamiento": {"fecha": "2025-08-17", "titulo": "Rutina de fuerza para ganancia muscular", "subtitulo": "Entrenamiento en casa con equipamiento básico", "ejercicios": [{"tipo": "series_reps", "notas": "Asegúrate de mantener la espalda recta y los codos cerca del torso durante la tracción. Controla el movimiento para maximizar el trabajo muscular.", "nombre": "Remo invertido en silla", "patron": "remo", "series": 4, "implemento": "silla", "descanso_seg": 60, "repeticiones": 8}, {"tipo": "series_reps", "notas": "Da pasos largos y mantén la rodilla alineada con el tobillo en el descenso. Incorpora una toalla en las manos para mayor estabilidad si necesitas.", "nombre": "Zancadas con peso corporal", "patron": "zancada", "series": 4, "implemento": "peso corporal", "descanso_seg": 60, "repeticiones": 10}, {"tipo": "series_reps", "notas": "Mantén los codos ligeramente flexionados y realiza el movimiento de manera controlada para activar bien los deltoides y trapecios.", "nombre": "Press de hombros con bandas elásticas", "patron": "press_shoulders", "series": 4, "implemento": "bandas elásticas", "descanso_seg": 60, "repeticiones": 10}, {"tipo": "series_reps", "notas": "Realiza movimientos lentos y controlados, levantando las toallas a la altura de los hombros sin levantar los pies del suelo para mantener la estabilidad.", "nombre": "Elevaciones laterales con toalla", "patron": "elevaciones_laterales", "series": 3, "implemento": "toallas", "descanso_seg": 60, "repeticiones": 12}, {"tipo": "series_reps", "notas": "Aprieta los glúteos en la parte superior y mantén la posición unos segundos. Evita sobreextender la zona lumbar.", "nombre": "Puente de glúteos en suelo", "patron": "puente_gluteos", "series": 4, "implemento": "peso corporal", "descanso_seg": 60, "repeticiones": 15}], "tipo_nombre": "Fuerza", "equipamiento": "basico", "perfil_usuario": "Sergio — Edad: 41, Peso: 76.00 kg, Altura: 183.00 cm, Nivel: intermedio, IMC: 22.7", "fecha_formateada": "22/8", "tipoEntrenamiento": "fuerza", "equipamiento_nombre": "Equipamiento Básico", "duracion_estimada_min": 45}, "mensaje_personalizado": "Enfoquémonos en fortalecer tu musculatura con una rutina variada y segura, aprovechando tu equipamiento básico. Cada ejercicio será una oportunidad para desafiarte y progresar en tu objetivo de ganar peso. ¡Vamos allá!"}	basico	fuerza	2025-08-22 18:50:22.802686+02	2025-08-22 18:50:22.802686+02
+85	10	{"plan_source": {"type": "openai", "label": "OpenAI", "detail": "gpt-4.1-nano"}, "plan_entrenamiento": {"fecha": "2025-08-17", "titulo": "Rutina de Fuerza Funcional con Equipo Básico", "subtitulo": "Entrenamiento centrado en fuerza y equilibrio", "ejercicios": [{"tipo": "reposo", "notas": "Mantén las caderas elevados al subir y controla la bajada, sin que las rodillas se abran excesivamente, para trabajar glúteos y femorales.", "nombre": "Puente de Glúteos con Silla", "series": 4, "descanso_seg": 60, "repeticiones": 10}, {"tipo": "reps", "notas": "Asegúrate de mantener el tronco inclinado hacia adelante, sin redondear la espalda, y retrae las escápulas al tirar de la banda.", "nombre": "Remo con Bandas Elásticas en T - Posición Agachada", "series": 4, "descanso_seg": 60, "repeticiones": 8}, {"tipo": "reps", "notas": "Sostén la toalla con ambas manos y realiza elevaciones controladas, concentrándote en la contracción del deltoides lateral.", "nombre": "Elevaciones Laterales de Hombros con Toalla", "series": 3, "descanso_seg": 45, "repeticiones": 12}, {"tipo": "reps", "notas": "Mantén la espalda recta y los pies a la anchura de las caderas. Empuja con los talones para subir.", "nombre": "Sentadillas con Peso Corporal y Silla", "series": 4, "descanso_seg": 60, "repeticiones": 10}, {"tipo": "reps", "notas": "Realiza el movimiento de manera controlada, sin balancear, concentrándote en la contracción del bíceps.", "nombre": "Curl de Bíceps con Mancuernas Ajustables", "series": 3, "descanso_seg": 60, "repeticiones": 8}, {"tipo": "reps", "notas": "Mantén los codos fijos y extiende los brazos completamente para activar los tríceps eficientemente.", "nombre": "Extensiones de Tríceps en Silla", "series": 3, "descanso_seg": 45, "repeticiones": 10}], "tipo_nombre": "Fuerza", "equipamiento": "basico", "perfil_usuario": "Sergio — Edad: 41, Peso: 76.00 kg, Altura: 183.00 cm, Nivel: intermedio, IMC: 22.7", "fecha_formateada": "23/8", "tipoEntrenamiento": "fuerza", "equipamiento_nombre": "Equipamiento Básico", "duracion_estimada_min": 50}, "mensaje_personalizado": "Perfecto para potenciar tu fuerza con un enfoque innovador y efectivo usando tu equipamiento básico. Cada ejercicio ha sido seleccionado para desafiarte y promover un crecimiento muscular equilibrado."}	basico	fuerza	2025-08-23 12:23:13.743451+02	2025-08-23 12:23:13.743451+02
+86	10	{"plan_source": {"type": "openai", "label": "OpenAI", "detail": "gpt-4.1-nano"}, "plan_entrenamiento": {"fecha": "2024-08-17", "titulo": "HIIT para Incremento de Masa Muscular", "subtitulo": "Entrenamiento con equipamiento personalizado", "ejercicios": [{"tipo": "intervalos", "notas": "Mantén la espalda plana y los abdomen contraído durante todo el ejercicio, desplazándote lentamente para controlar la carga.", "nombre": "Bear Crawl con Carga", "patron": "crawling", "series": 5, "implemento": "peso adicional opcional", "descanso_seg": 45, "repeticiones": 30}, {"tipo": "intervalos", "notas": "Asegúrate de que la pierna que trabaja esté alineada con la cadera y mantén el core firme para estabilidad.", "nombre": "Flexión de Tijera con Peso (en una pierna)", "patron": "flexión", "series": 4, "implemento": "mancuernas ligeras", "descanso_seg": 45, "repeticiones": 20}, {"tipo": "intervalos", "notas": "Utiliza un ritmo explosivo en el salto sin perder la técnica de alineación y cuidado en la aterrizaje.", "nombre": "Sentadillas con Salto a Propio Peso", "patron": "salto", "series": 5, "implemento": "peso corporal", "descanso_seg": 45, "repeticiones": 15}, {"tipo": "intervalos", "notas": "Mantén la espalda recta y activa el core durante la remada para evitar lesiones y maximizar el trabajo muscular.", "nombre": "Remo Renegado con Manoplas o Mancuernas", "patron": "remo", "series": 4, "implemento": "mancuernas", "descanso_seg": 45, "repeticiones": 12}, {"tipo": "intervalos", "notas": "Desde la posición de plancha, desliza las manos sobre la superficie (toalla) con control para trabajar hombros y core.", "nombre": "Planchas Dinámicas con Toalla", "patron": "plancha", "series": 3, "implemento": "toalla", "descanso_seg": 45, "repeticiones": 20}], "tipo_nombre": "HIIT", "equipamiento": "personalizado", "perfil_usuario": "Sergio — Edad: 41, Peso: 76.00 kg, Altura: 183.00 cm, Nivel: intermedio, IMC: 22.7", "fecha_formateada": "23/8", "tipoEntrenamiento": "hiit", "duracion_estimada_min": 30}, "mensaje_personalizado": "Para potenciar tu ganancia de peso utilizando tu equipamiento personalizado y un enfoque HIIT, he diseñado una rutina que desafiará tu resistencia y fuerza de manera innovadora y segura. ¡Motívate a dar lo mejor en cada serie!"}	personalizado	hiit	2025-08-23 12:24:16.531257+02	2025-08-23 12:24:16.531257+02
+87	10	{"plan_source": {"type": "openai", "label": "OpenAI", "detail": "gpt-4.1-nano"}, "plan_entrenamiento": {"fecha": "2025-08-17", "titulo": "Rutina avanzada de fuerza con equipamiento personalizado", "subtitulo": "Ejercicios creativos y efectivos para potenciar tu fuerza", "ejercicios": [{"tipo": "reps", "notas": "Utiliza la silla para apoyo en la bajada y asegura que la técnica sea controlada para proteger las rodillas.", "nombre": "Pistol Squat asistido con silla", "patron": "sentadilla con una pierna", "series": 4, "implemento": "silla", "descanso_seg": 60, "repeticiones": 8}, {"tipo": "reps", "notas": "Mantén la espalda recta y aprieta los omóplatos al final del movimiento para activar bien la espalda.", "nombre": "Remo en T con bandas elásticas en posición inclinado", "patron": "remo", "series": 4, "implemento": "bandas elásticas", "descanso_seg": 60, "repeticiones": 10}, {"tipo": "reps", "notas": "Asegúrate de no arquear demasiado la espalda y realiza movimientos controlados para evitar lesiones en hombros.", "nombre": "Press de hombros con mancuernas en banco inclinado", "patron": "press de hombro", "series": 4, "implemento": "mancuernas", "descanso_seg": 60, "repeticiones": 8}, {"tipo": "reps", "notas": "Realiza movimientos lentos y controlados, concentrándote en la contracción muscular para maximizar el trabajo.", "nombre": "Elevaciones laterales de hombro con banda elástica", "patron": "elevación lateral", "series": 3, "implemento": "banda elástica", "descanso_seg": 60, "repeticiones": 12}, {"tipo": "reps", "notas": "Mantén el codo fijado y evita balancear el cuerpo para aislar mejor el bíceps.", "nombre": "Curl de bíceps en concentración con mancuernas", "patron": "curl", "series": 3, "implemento": "mancuernas", "descanso_seg": 60, "repeticiones": 10}, {"tipo": "reps", "notas": "Controla la fase excéntrica y evita que la banda tenga demasiado slack para mantener tensión constante.", "nombre": "Extensión de tríceps con banda en banco plano", "patron": "extensión de tríceps", "series": 3, "implemento": "banda elástica", "descanso_seg": 60, "repeticiones": 10}, {"tipo": "reps", "notas": "Mantén el core apretado y evita que las caderas se hundan durante el ejercicio para una mejor estabilidad.", "nombre": "Plancha con levantamiento de pierna alterno", "patron": "plancha dinámica", "series": 3, "implemento": "sin implemento", "descanso_seg": 60, "repeticiones": 12}], "tipo_nombre": "Fuerza", "equipamiento": "personalizado", "perfil_usuario": "Sergio — Edad: 41, Peso: 76.00 kg, Altura: 183.00 cm, Nivel: intermedio, IMC: 22.7", "fecha_formateada": "23/8", "tipoEntrenamiento": "fuerza", "duracion_estimada_min": 45}, "mensaje_personalizado": "Con tu experiencia y nivel intermedio, te propongo una rutina de fuerza innovadora y variada que aprovechará tu equipamiento personalizado, ayudándote a seguir progresando sin repetir ejercicios de tu reciente historial."}	personalizado	fuerza	2025-08-23 12:32:35.77673+02	2025-08-23 12:32:35.77673+02
+88	10	{"plan_source": {"type": "openai", "label": "OpenAI", "detail": "gpt-4.1-nano"}, "plan_entrenamiento": {"fecha": "2025-08-17", "titulo": "HIIT avanzado para máxima eficiencia", "subtitulo": "Rutina dinámica con equipamiento avanzado", "ejercicios": [{"tipo": "reps", "notas": "Utiliza una técnica controlada, asegurándote de elevar la pesa en línea recta y mantener la espalda recta durante el movimiento.", "nombre": "Clean to Press con Kettlebell", "patron": "propio peso dinámico", "series": 4, "implemento": "kettlebell", "descanso_seg": 45, "repeticiones": 10}, {"tipo": "reps", "notas": "Mantén la espalda plana y activa el core para evitar lesiones. Realiza el movimiento con control y concentración en la contracción muscular.", "nombre": "Remo con Barra en Pendiente", "patron": "remo", "series": 4, "implemento": "barra", "descanso_seg": 45, "repeticiones": 12}, {"tipo": "reps", "notas": "Asegúrate de aterrizar suavemente y mantener el control en cada salto para proteger las articulaciones.", "nombre": "Saltos en Caja con Peso", "patron": "saltos pliométricos", "series": 4, "implemento": "disco o peso en mano", "descanso_seg": 45, "repeticiones": 15}, {"tipo": "reps", "notas": "Mantén el core contraído y evita empujar el suelo con las manos, enfócate en la contracción abdominal.", "nombre": "Elevaciones de Tronco con Discos", "patron": "core", "series": 3, "implemento": "discos", "descanso_seg": 45, "repeticiones": 15}, {"tipo": "tiempo", "notas": "Levanta las rodillas con énfasis en la velocidad y arrastra las pesas con movimientos controlados para activar la cadena posterior.", "nombre": "Sprint en Sitio con Arrastre de Pesas", "patron": "cardio intenso", "series": 4, "implemento": "pesas", "descanso_seg": 45, "repeticiones": "20 segundos de trabajo / 20 segundos de descanso"}], "tipo_nombre": "HIIT", "equipamiento": "avanzado", "perfil_usuario": "Sergio — Edad: 41, Peso: 76.00 kg, Altura: 183.00 cm, Nivel: intermedio, IMC: 22.7", "fecha_formateada": "23/8", "tipoEntrenamiento": "hiit", "equipamiento_nombre": "Equipamiento Avanzado", "duracion_estimada_min": 30}, "mensaje_personalizado": "Enfocado en tu nivel intermedio y con tu equipo avanzado, esta rutina de HIIT te ayudará a potenciar tu resistencia y fuerza, llevándote a un nuevo nivel en cada sesión. ¡Prepárate para desafiarte a ti mismo y obtener resultados sorprendentes!"}	avanzado	hiit	2025-08-23 14:39:37.364297+02	2025-08-23 14:39:37.364297+02
+89	10	{"plan_source": {"type": "openai", "label": "OpenAI", "detail": "gpt-4.1-nano"}, "plan_entrenamiento": {"fecha": "2025-08-17", "titulo": "HIIT Creativo para Impulso de Peso", "subtitulo": "Ejercicios en casa con recursos personales", "ejercicios": [{"tipo": "reps", "notas": "Usa la toalla para aumentar la resistencia y mantener la estabilidad, asegurando una correcta alineación del cuerpo.", "nombre": "Flexiones con Toalla en Pared", "patron": "flexiones", "series": 4, "implemento": "toalla", "descanso_seg": 45, "repeticiones": 15}, {"tipo": "reps", "notas": "Ejecuta saltos explosivos y lleva las rodillas al pecho al subir, cuidando la técnica para evitar impacto excesivo en las articulaciones.", "nombre": "Saltos en Silla con Elevación de Rodillas Alternas", "patron": "saltos", "series": 4, "implemento": "silla", "descanso_seg": 45, "repeticiones": 20}, {"tipo": "reps", "notas": "Mantén una línea recta desde los hombros hasta los talones, jalando la toalla hacia ti mientras aprietas la espalda.", "nombre": "Remo en Puente usando Silla y Toalla", "patron": "remo", "series": 4, "implemento": "toalla y silla", "descanso_seg": 45, "repeticiones": 12}, {"tipo": "reps", "notas": "Mantén el core firme y evita que las caderas se hundan. Desplaza las manos o los pies lateralmente para mayor movimiento.", "nombre": "Plancha Dinámica con Desplazamiento lateral", "patron": "plancha", "series": 3, "implemento": "ninguno", "descanso_seg": 45, "repeticiones": 12}, {"tipo": "reps", "notas": "Mantén la espalda pegada a la pared y realiza elevaciones controladas para activar los glúteos y oblicuos.", "nombre": "Elevaciones Laterales de Cadera con Toalla en Pared", "patron": "elevaciones de cadera", "series": 3, "implemento": "toalla, pared", "descanso_seg": 45, "repeticiones": 15}], "estructura": "30s trabajo / 15s descanso en cada ejercicio, repitiendo el circuito 3 veces para un entrenamiento dinámico y desafiante.", "tipo_nombre": "HIIT", "equipamiento": "personalizado", "perfil_usuario": "Sergio — Edad: 41, Peso: 76.00 kg, Altura: 183.00 cm, Nivel: avanzado, IMC: 22.7", "fecha_formateada": "23/8", "tipoEntrenamiento": "hiit", "duracion_estimada_min": 30}, "mensaje_personalizado": "Preparado para una sesión de HIIT innovadora y efectiva, enfocada en maximizar tu rendimiento con tu equipamiento personalizado. Aprovecha al máximo cada movimiento y conquista tus objetivos."}	personalizado	hiit	2025-08-23 15:03:37.967605+02	2025-08-23 15:03:37.967605+02
+90	10	{"plan_source": {"type": "openai", "label": "OpenAI", "detail": "gpt-4.1-nano"}, "plan_entrenamiento": {"fecha": "2025-08-17", "titulo": "Fortalecimiento con Equipamiento Avanzado", "subtitulo": "Entrenamiento exclusivo en casa para fuerza máxima", "ejercicios": [{"tipo": "reps", "notas": "Mantén la espalda recta y activa el core para evitar lesiones. El movimiento debe ser controlado y sin rebotes en la parte baja.", "nombre": "Remo con Barra Pendlay", "patron": "remo", "series": 4, "implemento": "barra", "descanso_seg": 60, "repeticiones": 8}, {"tipo": "reps", "notas": "Asegura una buena estabilidad en los pies y evita que los brazos bajen excesivamente. Controla la bajada y empuja explosivamente.", "nombre": "Press de Banca con Barra", "patron": "press_horizontal", "series": 4, "implemento": "barra", "descanso_seg": 60, "repeticiones": 6}, {"tipo": "reps", "notas": "Mantén la espalda recta y activa el core durante toda la acción. No doble demasiado las rodillas y enfócate en la cadera.", "nombre": "Peso Muerto Rumano con Discos", "patron": "peso_muerto", "series": 4, "implemento": "discos", "descanso_seg": 60, "repeticiones": 8}, {"tipo": "reps", "notas": "Asegura una buena amplitud en el movimiento, sin colgarse en exceso y controlando la bajada. Si es muy fácil, añade peso.", "nombre": "Dominadas con Agarre Paralelo en Barra", "patron": "dominadas", "series": 4, "implemento": "barra", "descanso_seg": 60, "repeticiones": 8}, {"tipo": "reps", "notas": "Mantén el core firme y no sobreextiendas la espalda. Eleva la barra de manera controlada y evita movimientos bruscos.", "nombre": "Press Militar con Barra", "patron": "press_vertical", "series": 4, "implemento": "barra", "descanso_seg": 60, "repeticiones": 6}, {"tipo": "reps", "notas": "Inclina el torso a 45 grados y activa el dorsal durante el movimiento. No uses impulso para levantar las mancuernas.", "nombre": "Remo en T con Mancuernas Pesadas", "patron": "remo", "series": 4, "implemento": "mancuernas", "descanso_seg": 60, "repeticiones": 8}], "tipo_nombre": "Fuerza", "equipamiento": "avanzado", "perfil_usuario": "Sergio — Edad: 41, Peso: 76.00 kg, Altura: 183.00 cm, Nivel: avanzado, IMC: 22.7", "fecha_formateada": "24/8", "tipoEntrenamiento": "fuerza", "equipamiento_nombre": "Equipamiento Avanzado", "duracion_estimada_min": 50}, "mensaje_personalizado": "Para potenciar tu fuerza y aprovechar al máximo tu equipamiento avanzado, he diseñado una rutina que desafía tus límites con movimientos novedosos y efectivos. ¡Confía en tu técnica y progresión constante!"}	avanzado	fuerza	2025-08-24 19:06:51.280578+02	2025-08-24 19:06:51.280578+02
 \.
 
 
 --
--- TOC entry 5115 (class 0 OID 26736)
+-- TOC entry 5196 (class 0 OID 26736)
 -- Dependencies: 231
 -- Data for Name: home_training_sessions; Type: TABLE DATA; Schema: app; Owner: postgres
 --
@@ -1138,14 +1548,48 @@ COPY app.home_training_sessions (id, user_id, home_training_plan_id, started_at,
 49	10	74	2025-08-19 20:10:43.605819+02	\N	119	1	4	25.00	in_progress	{"exercises": [{"tipo": "tiempo", "notas": "Posición inicial: En posición de flexión, con las manos bajo los hombros. Movimiento: Al bajar, eleva una pierna hacia atrás. Varía las piernas en cada repetición. Respiración: Inhala al bajar, exhala al subir. Evita: Que la cadera caiga o se levante demasiado, mantén el cuerpo en línea recta.", "nombre": "Flexiones de Brazos con Elevación de Pierna", "patron": "empuje", "series": 4, "implemento": "peso_corporal", "descanso_seg": 45, "duracion_seg": 30}, {"tipo": "tiempo", "notas": "Posición inicial: Acostado boca arriba, una pierna elevada. Movimiento: Eleva las caderas apretando los glúteos y el abdomen. Alterna las piernas en cada serie. Respiración: Exhala al elevar las caderas, inhala al descender. Evita: Que tus hombros se levanten del suelo, manténlos apoyados.", "nombre": "Elevaciones de Cadera con una Pierna", "patron": "bisagra_cadera", "series": 4, "implemento": "peso_corporal", "descanso_seg": 45, "duracion_seg": 30}, {"tipo": "tiempo", "notas": "Posición inicial: Sentado con las rodillas flexionadas y los pies en el suelo, sostén una mancuerna con ambas manos. Movimiento: Gira el torso hacia un lado, luego hacia el otro, manteniendo el abdomen contraído. Respiración: Exhala durante la torsión, inhala al volver al centro. Evita: Redondear la espalda, mantén una postura recta.", "nombre": "Russian Twists con Mancuerna", "patron": "rotación", "series": 4, "implemento": "mancuernas", "descanso_seg": 45, "duracion_seg": 30}, {"tipo": "tiempo", "notas": "Posición inicial: Acostado boca arriba con las manos bajo los glúteos. Movimiento: Levanta las piernas rectas alternando hacia arriba y hacia abajo sin tocar el suelo. Respiración: Inhala al bajar, exhala al subir. Evita: Arqueo en la espalda baja, mantén el abdomen apretado.", "nombre": "Tijeras en el Suelo", "patron": "abdomen", "series": 4, "implemento": "peso_corporal", "descanso_seg": 45, "duracion_seg": 30}]}
 48	10	73	2025-08-19 13:40:31.625414+02	\N	119	1	4	25.00	in_progress	{"exercises": [{"tipo": "tiempo", "notas": "Posición inicial: Pies al ancho de los hombros. Movimiento: Realiza una sentadilla y al subir, salta explosivamente. Aterriza suavemente. Respiración: Inhala al bajar, exhala al saltar. Evita: Caer con los pies juntos o permitir que las rodillas sobrepasen los dedos de los pies.", "nombre": "Sentadilla con Salto", "patron": "bisagra_cadera", "series": 4, "implemento": "peso_corporal", "descanso_seg": 45, "duracion_seg": 30}, {"tipo": "tiempo", "notas": "Posición inicial: Acostado boca arriba, rodillas flexionadas y pies en el suelo. Movimiento: Eleva las caderas hacia el techo apretando glúteos y abdominales. Respiración: Inhala al bajar, exhala al elevar. Evita: Dejar caer los glúteos al suelo sin activar los músculos.", "nombre": "Puente de Glúteos con Elevación", "patron": "empuje", "series": 4, "implemento": "peso_corporal", "descanso_seg": 45, "duracion_seg": 30}, {"tipo": "tiempo", "notas": "Posición inicial: Coloca las manos en el suelo, con la banda elástica bajo tus pies. Movimiento: Tira de la banda hacia tu torso mientras mantienes el cuerpo recto. Respiración: Inhala al tirar, exhala al regresar. Evita: Girar las caderas o relajar el abdomen.", "nombre": "Remo en Posición de Planchas con Banda Elástica", "patron": "tracción", "series": 4, "implemento": "bandas_elasticas", "descanso_seg": 45, "duracion_seg": 30}, {"tipo": "tiempo", "notas": "Posición inicial: De pie. Movimiento: Baja a cuclillas, pon las manos en el suelo, salta hacia atrás a la posición de plancha, regresa a cuclillas y salta al final. Respiración: Inhala al bajar, exhala al saltar. Evita: No dejar caer las caderas en la posición de plancha.", "nombre": "Burpees Modificados", "patron": "empuje", "series": 4, "implemento": "peso_corporal", "descanso_seg": 45, "duracion_seg": 30}]}
 50	10	79	2025-08-19 22:18:53.711302+02	\N	0	0	4	0.00	in_progress	{"exercises": [{"tipo": "reps", "notas": "Posición inicial: Pies a la altura de los hombros, sostén los discos con ambas manos frente a tus muslos. Movimiento: Flexiona las caderas hacia atrás manteniendo la espalda recta y la cabeza en línea con la columna. Desciende hasta sentir un estiramiento en los isquiotibiales. Respira: Inhala al bajar, exhala al subir. Evita: Redondear la espalda o dejar que las rodillas se muevan hacia adelante.", "nombre": "Peso Muerto Rumano con Discos Olímpicos", "patron": "bisagra_cadera", "series": 4, "implemento": "discos_olimpicos", "descanso_seg": 60, "repeticiones": 8}, {"tipo": "reps", "notas": "Posición inicial: Sujeta las asas del TRX con las manos y recuéstate hacia atrás. Mantén el cuerpo en línea recta. Movimiento: Tira de tus manos hacia ti, llevando los codos hacia atrás y juntando los omóplatos. Respira: Inhala al bajar, exhala al subir. Evita: Dejar que la cadera se hunda o que los hombros suban hacia las orejas.", "nombre": "Remo con TRX", "patron": "tracción", "series": 4, "implemento": "trx", "descanso_seg": 60, "repeticiones": 10}, {"tipo": "reps", "notas": "Posición inicial: Sostén los discos al nivel de los hombros con los codos hacia adelante. Movimiento: Flexiona ligeramente las rodillas, luego utiliza el impulso de tus piernas para empujar los discos hacia arriba, extendiendo los brazos completamente. Respira: Inhala al bajar, exhala al empujar. Evita: Arqueo excesivo en la espalda al levantar o que los discos se desplacen hacia adelante.", "nombre": "Push Press con Discos Olímpicos", "patron": "empuje", "series": 4, "implemento": "discos_olimpicos", "descanso_seg": 60, "repeticiones": 8}, {"tipo": "reps", "notas": "Posición inicial: Con discos en las manos, párate en el borde de una plataforma o escalón. Movimiento: Eleva los talones, quedándote en las puntas de los pies, luego baja los talones por debajo de la plataforma. Respira: Inhala al bajar, exhala al subir. Evita: Dejar que las rodillas se muevan hacia adelante o perder el equilibrio.", "nombre": "Elevaciones de Talones con Discos Olímpicos", "patron": "empuje", "series": 4, "implemento": "discos_olimpicos", "descanso_seg": 60, "repeticiones": 12}]}
+54	10	87	2025-08-23 12:32:56.458283+02	\N	179	1	7	14.30	in_progress	{"exercises": [{"tipo": "reps", "notas": "Utiliza la silla para apoyo en la bajada y asegura que la técnica sea controlada para proteger las rodillas.", "nombre": "Pistol Squat asistido con silla", "patron": "sentadilla con una pierna", "series": 4, "implemento": "silla", "descanso_seg": 60, "repeticiones": 8}, {"tipo": "reps", "notas": "Mantén la espalda recta y aprieta los omóplatos al final del movimiento para activar bien la espalda.", "nombre": "Remo en T con bandas elásticas en posición inclinado", "patron": "remo", "series": 4, "implemento": "bandas elásticas", "descanso_seg": 60, "repeticiones": 10}, {"tipo": "reps", "notas": "Asegúrate de no arquear demasiado la espalda y realiza movimientos controlados para evitar lesiones en hombros.", "nombre": "Press de hombros con mancuernas en banco inclinado", "patron": "press de hombro", "series": 4, "implemento": "mancuernas", "descanso_seg": 60, "repeticiones": 8}, {"tipo": "reps", "notas": "Realiza movimientos lentos y controlados, concentrándote en la contracción muscular para maximizar el trabajo.", "nombre": "Elevaciones laterales de hombro con banda elástica", "patron": "elevación lateral", "series": 3, "implemento": "banda elástica", "descanso_seg": 60, "repeticiones": 12}, {"tipo": "reps", "notas": "Mantén el codo fijado y evita balancear el cuerpo para aislar mejor el bíceps.", "nombre": "Curl de bíceps en concentración con mancuernas", "patron": "curl", "series": 3, "implemento": "mancuernas", "descanso_seg": 60, "repeticiones": 10}, {"tipo": "reps", "notas": "Controla la fase excéntrica y evita que la banda tenga demasiado slack para mantener tensión constante.", "nombre": "Extensión de tríceps con banda en banco plano", "patron": "extensión de tríceps", "series": 3, "implemento": "banda elástica", "descanso_seg": 60, "repeticiones": 10}, {"tipo": "reps", "notas": "Mantén el core apretado y evita que las caderas se hundan durante el ejercicio para una mejor estabilidad.", "nombre": "Plancha con levantamiento de pierna alterno", "patron": "plancha dinámica", "series": 3, "implemento": "sin implemento", "descanso_seg": 60, "repeticiones": 12}]}
 52	10	81	2025-08-22 13:22:42.216763+02	\N	238	2	4	50.00	in_progress	{"exercises": [{"tipo": "tiempo", "notas": "Posición inicial: Coloca una silla estable frente a ti. Movimiento: Salta con ambos pies hacia arriba y aterriza suavemente sobre la silla. Mantén los pies juntos y las rodillas ligeramente flexionadas. Respiración: Exhala al saltar, inhala al aterrizar. Evita: Aterrizar con las piernas rígidas o hacer saltos demasiado altos.", "nombre": "Saltos en Silla", "patron": "bisagra_cadera", "implemento": "silla_sofa", "descanso_seg": 45, "duracion_seg": 30}, {"tipo": "tiempo", "notas": "Posición inicial: Colócate frente a una pared a una distancia cómoda. Movimiento: Inclínate hacia la pared manteniendo el cuerpo recto, y empuja para volver a la posición inicial. Asegúrate de que los codos estén cerca del cuerpo. Respiración: Inhala al bajar, exhala al subir. Evita: Dejar caer la cadera o arquear la espalda.", "nombre": "Flexiones de Brazos en Pared", "patron": "empuje", "implemento": "pared", "descanso_seg": 45, "duracion_seg": 30}, {"tipo": "tiempo", "notas": "Posición inicial: Pies a la altura de hombros y dedos ligeramente hacia afuera. Movimiento: Baja las caderas como si fueras a sentarte en una silla, manteniendo el pecho erguido y las rodillas alineadas con los pies. Respiración: Inhala al bajar, exhala al subir. Evita: Que las rodillas se desvíen hacia adentro o que el torso se incline hacia adelante.", "nombre": "Sentadillas con Peso Corporal", "patron": "sentadilla", "implemento": "peso_corporal", "descanso_seg": 45, "duracion_seg": 30}, {"tipo": "tiempo", "notas": "Posición inicial: En posición de plancha alta, con manos debajo de los hombros. Movimiento: Lleva una rodilla hacia el pecho y luego alterna rápidamente con la otra pierna, como si estuvieras corriendo en el lugar. Mantén el abdomen contraído. Respiración: Inhala y exhala rápidamente. Evita: Que las caderas se eleven o se bajen excesivamente.", "nombre": "Mountain Climbers en Suelo", "patron": "tracción", "implemento": "peso_corporal", "descanso_seg": 45, "duracion_seg": 30}]}
 51	10	80	2025-08-20 09:26:54.414399+02	2025-08-20 10:31:05.087108+02	536	4	4	100.00	in_progress	{"exercises": [{"tipo": "tiempo", "notas": "Posición inicial: Agarra las asas del TRX con los brazos extendidos y el cuerpo recto. Movimiento: Inclínate hacia atrás, manteniendo el cuerpo recto y los pies firmes en el suelo. Tira hacia ti, flexionando los codos y llevando el pecho hacia las asas. Respiración: Exhala al tirar, inhala al volver. Evita: Que el cuerpo se desplace de lado o que la espalda se curve.", "nombre": "Tirón de TRX", "patron": "tracción", "series": 4, "implemento": "trx", "descanso_seg": 45, "duracion_seg": 30}, {"tipo": "tiempo", "notas": "Posición inicial: Siéntate en la bici con la espalda recta y las manos en el manillar. Movimiento: Pedalea a máxima intensidad, manteniendo el ritmo y la postura. Respiración: Inhala y exhala de manera rítmica. Evita: Encoger los hombros o inclinarte demasiado adelante.", "nombre": "Bicicleta Estática", "patron": "cardio", "series": 4, "implemento": "bici", "descanso_seg": 45, "duracion_seg": 45}, {"tipo": "tiempo", "notas": "Posición inicial: Coloca los discos en el suelo, súbete a ellos y mantén el equilibrio. Movimiento: Eleva los talones, apretando los músculos de las pantorrillas. Baja controladamente. Respiración: Exhala al elevar, inhala al bajar. Evita: Colapsar los tobillos o permitir que las rodillas se desvíen.", "nombre": "Elevaciones de Talones con Discos", "patron": "bisagra_cadera", "series": 4, "implemento": "discos_olimpicos", "descanso_seg": 45, "duracion_seg": 30}, {"tipo": "tiempo", "notas": "Posición inicial: Coloca la banda elástica alrededor de tus muñecas y apóyate sobre un lado. Movimiento: Eleva las caderas hasta que el cuerpo forme una línea recta. Mantén la posición y luego baja. Respiración: Mantén la respiración constante. Evita: Caer en la cadera o no mantener la alineación de la espalda.", "nombre": "Plancha Lateral con Banda Elástica", "patron": "estabilización", "series": 4, "implemento": "bandas_elasticas", "descanso_seg": 45, "duracion_seg": 30}]}
 53	10	84	2025-08-22 18:50:51.524176+02	\N	358	2	5	40.00	in_progress	{"exercises": [{"tipo": "series_reps", "notas": "Asegúrate de mantener la espalda recta y los codos cerca del torso durante la tracción. Controla el movimiento para maximizar el trabajo muscular.", "nombre": "Remo invertido en silla", "patron": "remo", "series": 4, "implemento": "silla", "descanso_seg": 60, "repeticiones": 8}, {"tipo": "series_reps", "notas": "Da pasos largos y mantén la rodilla alineada con el tobillo en el descenso. Incorpora una toalla en las manos para mayor estabilidad si necesitas.", "nombre": "Zancadas con peso corporal", "patron": "zancada", "series": 4, "implemento": "peso corporal", "descanso_seg": 60, "repeticiones": 10}, {"tipo": "series_reps", "notas": "Mantén los codos ligeramente flexionados y realiza el movimiento de manera controlada para activar bien los deltoides y trapecios.", "nombre": "Press de hombros con bandas elásticas", "patron": "press_shoulders", "series": 4, "implemento": "bandas elásticas", "descanso_seg": 60, "repeticiones": 10}, {"tipo": "series_reps", "notas": "Realiza movimientos lentos y controlados, levantando las toallas a la altura de los hombros sin levantar los pies del suelo para mantener la estabilidad.", "nombre": "Elevaciones laterales con toalla", "patron": "elevaciones_laterales", "series": 3, "implemento": "toallas", "descanso_seg": 60, "repeticiones": 12}, {"tipo": "series_reps", "notas": "Aprieta los glúteos en la parte superior y mantén la posición unos segundos. Evita sobreextender la zona lumbar.", "nombre": "Puente de glúteos en suelo", "patron": "puente_gluteos", "series": 4, "implemento": "peso corporal", "descanso_seg": 60, "repeticiones": 15}]}
+55	10	88	2025-08-23 14:39:39.849304+02	\N	0	0	5	0.00	in_progress	{"exercises": [{"tipo": "reps", "notas": "Utiliza una técnica controlada, asegurándote de elevar la pesa en línea recta y mantener la espalda recta durante el movimiento.", "nombre": "Clean to Press con Kettlebell", "patron": "propio peso dinámico", "series": 4, "implemento": "kettlebell", "descanso_seg": 45, "repeticiones": 10}, {"tipo": "reps", "notas": "Mantén la espalda plana y activa el core para evitar lesiones. Realiza el movimiento con control y concentración en la contracción muscular.", "nombre": "Remo con Barra en Pendiente", "patron": "remo", "series": 4, "implemento": "barra", "descanso_seg": 45, "repeticiones": 12}, {"tipo": "reps", "notas": "Asegúrate de aterrizar suavemente y mantener el control en cada salto para proteger las articulaciones.", "nombre": "Saltos en Caja con Peso", "patron": "saltos pliométricos", "series": 4, "implemento": "disco o peso en mano", "descanso_seg": 45, "repeticiones": 15}, {"tipo": "reps", "notas": "Mantén el core contraído y evita empujar el suelo con las manos, enfócate en la contracción abdominal.", "nombre": "Elevaciones de Tronco con Discos", "patron": "core", "series": 3, "implemento": "discos", "descanso_seg": 45, "repeticiones": 15}, {"tipo": "tiempo", "notas": "Levanta las rodillas con énfasis en la velocidad y arrastra las pesas con movimientos controlados para activar la cadena posterior.", "nombre": "Sprint en Sitio con Arrastre de Pesas", "patron": "cardio intenso", "series": 4, "implemento": "pesas", "descanso_seg": 45, "repeticiones": "20 segundos de trabajo / 20 segundos de descanso"}]}
+56	10	89	2025-08-23 15:04:15.516777+02	\N	0	0	5	0.00	in_progress	{"exercises": [{"tipo": "reps", "notas": "Usa la toalla para aumentar la resistencia y mantener la estabilidad, asegurando una correcta alineación del cuerpo.", "nombre": "Flexiones con Toalla en Pared", "patron": "flexiones", "series": 4, "implemento": "toalla", "descanso_seg": 45, "repeticiones": 15}, {"tipo": "reps", "notas": "Ejecuta saltos explosivos y lleva las rodillas al pecho al subir, cuidando la técnica para evitar impacto excesivo en las articulaciones.", "nombre": "Saltos en Silla con Elevación de Rodillas Alternas", "patron": "saltos", "series": 4, "implemento": "silla", "descanso_seg": 45, "repeticiones": 20}, {"tipo": "reps", "notas": "Mantén una línea recta desde los hombros hasta los talones, jalando la toalla hacia ti mientras aprietas la espalda.", "nombre": "Remo en Puente usando Silla y Toalla", "patron": "remo", "series": 4, "implemento": "toalla y silla", "descanso_seg": 45, "repeticiones": 12}, {"tipo": "reps", "notas": "Mantén el core firme y evita que las caderas se hundan. Desplaza las manos o los pies lateralmente para mayor movimiento.", "nombre": "Plancha Dinámica con Desplazamiento lateral", "patron": "plancha", "series": 3, "implemento": "ninguno", "descanso_seg": 45, "repeticiones": 12}, {"tipo": "reps", "notas": "Mantén la espalda pegada a la pared y realiza elevaciones controladas para activar los glúteos y oblicuos.", "nombre": "Elevaciones Laterales de Cadera con Toalla en Pared", "patron": "elevaciones de cadera", "series": 3, "implemento": "toalla, pared", "descanso_seg": 45, "repeticiones": 15}]}
+57	10	90	2025-08-24 19:07:08.020974+02	\N	0	0	6	0.00	in_progress	{"exercises": [{"tipo": "reps", "notas": "Mantén la espalda recta y activa el core para evitar lesiones. El movimiento debe ser controlado y sin rebotes en la parte baja.", "nombre": "Remo con Barra Pendlay", "patron": "remo", "series": 4, "implemento": "barra", "descanso_seg": 60, "repeticiones": 8}, {"tipo": "reps", "notas": "Asegura una buena estabilidad en los pies y evita que los brazos bajen excesivamente. Controla la bajada y empuja explosivamente.", "nombre": "Press de Banca con Barra", "patron": "press_horizontal", "series": 4, "implemento": "barra", "descanso_seg": 60, "repeticiones": 6}, {"tipo": "reps", "notas": "Mantén la espalda recta y activa el core durante toda la acción. No doble demasiado las rodillas y enfócate en la cadera.", "nombre": "Peso Muerto Rumano con Discos", "patron": "peso_muerto", "series": 4, "implemento": "discos", "descanso_seg": 60, "repeticiones": 8}, {"tipo": "reps", "notas": "Asegura una buena amplitud en el movimiento, sin colgarse en exceso y controlando la bajada. Si es muy fácil, añade peso.", "nombre": "Dominadas con Agarre Paralelo en Barra", "patron": "dominadas", "series": 4, "implemento": "barra", "descanso_seg": 60, "repeticiones": 8}, {"tipo": "reps", "notas": "Mantén el core firme y no sobreextiendas la espalda. Eleva la barra de manera controlada y evita movimientos bruscos.", "nombre": "Press Militar con Barra", "patron": "press_vertical", "series": 4, "implemento": "barra", "descanso_seg": 60, "repeticiones": 6}, {"tipo": "reps", "notas": "Inclina el torso a 45 grados y activa el dorsal durante el movimiento. No uses impulso para levantar las mancuernas.", "nombre": "Remo en T con Mancuernas Pesadas", "patron": "remo", "series": 4, "implemento": "mancuernas", "descanso_seg": 60, "repeticiones": 8}]}
 \.
 
 
 --
--- TOC entry 5120 (class 0 OID 26895)
+-- TOC entry 5217 (class 0 OID 27181)
+-- Dependencies: 263
+-- Data for Name: medical_documents; Type: TABLE DATA; Schema: app; Owner: postgres
+--
+
+COPY app.medical_documents (id, user_id, document_name, document_type, file_path, content, analysis_result, status, upload_date, analyzed_at, created_at, updated_at) FROM stdin;
+\.
+
+
+--
+-- TOC entry 5225 (class 0 OID 27264)
+-- Dependencies: 271
+-- Data for Name: methodology_plans; Type: TABLE DATA; Schema: app; Owner: postgres
+--
+
+COPY app.methodology_plans (id, user_id, methodology_type, plan_data, generation_mode, created_at, updated_at) FROM stdin;
+\.
+
+
+--
+-- TOC entry 5221 (class 0 OID 27218)
+-- Dependencies: 267
+-- Data for Name: technique_analysis; Type: TABLE DATA; Schema: app; Owner: postgres
+--
+
+COPY app.technique_analysis (id, user_id, exercise_key, video_url, analysis_result, score, feedback, corrections, status, created_at, analyzed_at) FROM stdin;
+\.
+
+
+--
+-- TOC entry 5201 (class 0 OID 26895)
 -- Dependencies: 244
 -- Data for Name: user_alergias; Type: TABLE DATA; Schema: app; Owner: postgres
 --
@@ -1155,7 +1599,7 @@ COPY app.user_alergias (user_id, alergia) FROM stdin;
 
 
 --
--- TOC entry 5122 (class 0 OID 26921)
+-- TOC entry 5203 (class 0 OID 26921)
 -- Dependencies: 246
 -- Data for Name: user_alimentos_excluidos; Type: TABLE DATA; Schema: app; Owner: postgres
 --
@@ -1165,18 +1609,20 @@ COPY app.user_alimentos_excluidos (user_id, alimento) FROM stdin;
 
 
 --
--- TOC entry 5133 (class 0 OID 27147)
+-- TOC entry 5214 (class 0 OID 27147)
 -- Dependencies: 260
 -- Data for Name: user_custom_equipment; Type: TABLE DATA; Schema: app; Owner: postgres
 --
 
 COPY app.user_custom_equipment (id, user_id, name, category, created_at) FROM stdin;
 2	10	bici	\N	2025-08-19 19:53:41.850526
+5	10	banco en paralelas	\N	2025-08-23 12:31:22.307999
+7	10	banco	\N	2025-08-23 15:03:09.577078
 \.
 
 
 --
--- TOC entry 5131 (class 0 OID 27130)
+-- TOC entry 5212 (class 0 OID 27130)
 -- Dependencies: 258
 -- Data for Name: user_equipment; Type: TABLE DATA; Schema: app; Owner: postgres
 --
@@ -1187,11 +1633,13 @@ COPY app.user_equipment (user_id, equipment_id, created_at, equipment_key) FROM 
 10	11	2025-08-19 20:08:37.913695	esterilla
 10	16	2025-08-19 20:30:22.906903	discos_olimpicos
 10	12	2025-08-19 22:01:49.010236	bandas_elasticas
+10	14	2025-08-23 14:59:31.207872	banco_step
+10	13	2025-08-23 14:59:34.627435	mancuernas
 \.
 
 
 --
--- TOC entry 5128 (class 0 OID 27100)
+-- TOC entry 5209 (class 0 OID 27100)
 -- Dependencies: 255
 -- Data for Name: user_exercise_feedback; Type: TABLE DATA; Schema: app; Owner: postgres
 --
@@ -1209,11 +1657,14 @@ COPY app.user_exercise_feedback (id, user_id, session_id, exercise_order, exerci
 10	10	52	1	Flexiones de Brazos en Pared	flexiones_de_brazos_en_pared	hard	\N	2025-08-22 13:28:41.453335+02
 11	10	53	0	Remo invertido en silla	remo_invertido_en_silla	love	\N	2025-08-22 18:51:04.487881+02
 12	10	53	1	Zancadas con peso corporal	zancadas_con_peso_corporal	hard	\N	2025-08-22 18:57:54.787783+02
+13	10	54	0	Pistol Squat asistido con silla	pistol_squat_asistido_con_silla	dislike	\N	2025-08-23 12:36:48.502752+02
+14	10	54	3	Elevaciones laterales de hombro con banda elástica	elevaciones_laterales_de_hombro_con_banda_el_stica	love	\N	2025-08-23 12:39:28.838882+02
+15	10	56	0	Flexiones con Toalla en Pared	flexiones_con_toalla_en_pared	hard	\N	2025-08-23 15:04:36.493362+02
 \.
 
 
 --
--- TOC entry 5126 (class 0 OID 26987)
+-- TOC entry 5207 (class 0 OID 26987)
 -- Dependencies: 250
 -- Data for Name: user_exercise_history; Type: TABLE DATA; Schema: app; Owner: postgres
 --
@@ -1253,11 +1704,12 @@ COPY app.user_exercise_history (id, user_id, exercise_name, exercise_key, reps, 
 99	10	Flexiones de Brazos en Pared	flexiones_de_brazos_en_pared	\N	4	\N	\N	52	81	\N	2025-08-22 13:33:09.932698+02
 101	10	Remo invertido en silla	remo_invertido_en_silla	\N	4	\N	\N	53	84	\N	2025-08-22 18:57:33.820025+02
 103	10	Zancadas con peso corporal	zancadas_con_peso_corporal	\N	4	\N	\N	53	84	\N	2025-08-22 19:04:28.187364+02
+105	10	Pistol Squat asistido con silla	pistol_squat_asistido_con_silla	\N	4	\N	\N	54	87	\N	2025-08-23 12:39:20.381917+02
 \.
 
 
 --
--- TOC entry 5119 (class 0 OID 26776)
+-- TOC entry 5200 (class 0 OID 26776)
 -- Dependencies: 235
 -- Data for Name: user_home_training_stats; Type: TABLE DATA; Schema: app; Owner: postgres
 --
@@ -1293,7 +1745,7 @@ COPY app.user_home_training_stats (id, user_id, total_sessions, total_duration_s
 
 
 --
--- TOC entry 5124 (class 0 OID 26947)
+-- TOC entry 5205 (class 0 OID 26947)
 -- Dependencies: 248
 -- Data for Name: user_limitaciones; Type: TABLE DATA; Schema: app; Owner: postgres
 --
@@ -1303,7 +1755,7 @@ COPY app.user_limitaciones (user_id, limitacion) FROM stdin;
 
 
 --
--- TOC entry 5121 (class 0 OID 26908)
+-- TOC entry 5202 (class 0 OID 26908)
 -- Dependencies: 245
 -- Data for Name: user_medicamentos; Type: TABLE DATA; Schema: app; Owner: postgres
 --
@@ -1313,7 +1765,7 @@ COPY app.user_medicamentos (user_id, medicamento) FROM stdin;
 
 
 --
--- TOC entry 5123 (class 0 OID 26934)
+-- TOC entry 5204 (class 0 OID 26934)
 -- Dependencies: 247
 -- Data for Name: user_suplementos; Type: TABLE DATA; Schema: app; Owner: postgres
 --
@@ -1323,7 +1775,7 @@ COPY app.user_suplementos (user_id, suplemento) FROM stdin;
 
 
 --
--- TOC entry 5111 (class 0 OID 26580)
+-- TOC entry 5192 (class 0 OID 26580)
 -- Dependencies: 217
 -- Data for Name: users; Type: TABLE DATA; Schema: app; Owner: postgres
 --
@@ -1331,12 +1783,21 @@ COPY app.user_suplementos (user_id, suplemento) FROM stdin;
 COPY app.users (id, email, password_hash, nombre, created_at, updated_at, edad, sexo, peso, altura, nivel_actividad, "años_entrenando", grasa_corporal, masa_muscular, agua_corporal, metabolismo_basal, cintura, cuello, cadera, pecho, brazo, muslo, metodologia, enfoque, horario_preferido, objetivo_principal, meta_peso, meta_grasa, historial_medico_docs, alergias, medicamentos, suplementacion, alimentos_evitar, apellido, nivel_entrenamiento, anos_entrenando, frecuencia_semanal, metodologia_preferida, brazos, muslos, antebrazos, historial_medico, limitaciones_fisicas, meta_grasa_corporal, enfoque_entrenamiento, comidas_por_dia, alimentos_excluidos, last_login, is_active, email_verified, lesiones) FROM stdin;
 8	null@example.com	hash	Sergio	2025-08-17 11:42:56.731082	2025-08-19 19:39:31.368464	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	[]	\N	\N	\N	\N	Null	principiante	0	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	t	f	\N
 9	lista@example.com	hash	Ana	2025-08-17 11:42:56.731082	2025-08-19 19:39:31.368464	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	[]	{Polen,Gluten}	{Ibuprofeno}	\N	\N	Listas	principiante	0	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	t	f	\N
-10	sergiohernandezlara07@gmail.com	$2a$10$IiGo7M5Y33BG5oGXo2SGAeboG4FVR/xUwYiXWlzWG57.QRZjG/WqW	Sergio	2025-08-17 12:25:18.847449	2025-08-21 15:18:47.712901	41	masculino	76.00	183.00	moderado	\N	\N	\N	\N	\N	90.00	34.00	\N	98.00	\N	\N	\N	\N	tarde	ganar_peso	\N	\N	[]	{Polen}	{}	{}	\N	Hernández Lara	intermedio	20	3	funcional	40.00	55.00	25.00	\N	\N	\N	general	3	{}	\N	t	f	\N
+10	sergiohernandezlara07@gmail.com	$2a$10$IiGo7M5Y33BG5oGXo2SGAeboG4FVR/xUwYiXWlzWG57.QRZjG/WqW	Sergio	2025-08-17 12:25:18.847449	2025-08-23 15:02:12.939988	41	masculino	76.00	183.00	moderado	\N	\N	\N	\N	\N	90.00	34.00	\N	98.00	\N	\N	\N	\N	tarde	ganar_peso	\N	\N	[]	{Polen}	{fdfdfdf,""}	{}	\N	Hernández Lara	avanzado	20	3	bodybuilding	40.00	55.00	25.00	\N	\N	\N	resistencia	3	{}	\N	t	f	\N
 \.
 
 
 --
--- TOC entry 5150 (class 0 OID 0)
+-- TOC entry 5250 (class 0 OID 0)
+-- Dependencies: 268
+-- Name: body_composition_history_id_seq; Type: SEQUENCE SET; Schema: app; Owner: postgres
+--
+
+SELECT pg_catalog.setval('app.body_composition_history_id_seq', 1, false);
+
+
+--
+-- TOC entry 5251 (class 0 OID 0)
 -- Dependencies: 256
 -- Name: equipment_catalog_id_seq; Type: SEQUENCE SET; Schema: app; Owner: postgres
 --
@@ -1345,61 +1806,97 @@ SELECT pg_catalog.setval('app.equipment_catalog_id_seq', 16, true);
 
 
 --
--- TOC entry 5151 (class 0 OID 0)
+-- TOC entry 5252 (class 0 OID 0)
+-- Dependencies: 264
+-- Name: exercises_catalog_id_seq; Type: SEQUENCE SET; Schema: app; Owner: postgres
+--
+
+SELECT pg_catalog.setval('app.exercises_catalog_id_seq', 5, true);
+
+
+--
+-- TOC entry 5253 (class 0 OID 0)
 -- Dependencies: 232
 -- Name: home_exercise_progress_id_seq; Type: SEQUENCE SET; Schema: app; Owner: postgres
 --
 
-SELECT pg_catalog.setval('app.home_exercise_progress_id_seq', 186, true);
+SELECT pg_catalog.setval('app.home_exercise_progress_id_seq', 209, true);
 
 
 --
--- TOC entry 5152 (class 0 OID 0)
+-- TOC entry 5254 (class 0 OID 0)
 -- Dependencies: 228
 -- Name: home_training_plans_id_seq; Type: SEQUENCE SET; Schema: app; Owner: postgres
 --
 
-SELECT pg_catalog.setval('app.home_training_plans_id_seq', 84, true);
+SELECT pg_catalog.setval('app.home_training_plans_id_seq', 90, true);
 
 
 --
--- TOC entry 5153 (class 0 OID 0)
+-- TOC entry 5255 (class 0 OID 0)
 -- Dependencies: 230
 -- Name: home_training_sessions_id_seq; Type: SEQUENCE SET; Schema: app; Owner: postgres
 --
 
-SELECT pg_catalog.setval('app.home_training_sessions_id_seq', 53, true);
+SELECT pg_catalog.setval('app.home_training_sessions_id_seq', 57, true);
 
 
 --
--- TOC entry 5154 (class 0 OID 0)
+-- TOC entry 5256 (class 0 OID 0)
+-- Dependencies: 262
+-- Name: medical_documents_id_seq; Type: SEQUENCE SET; Schema: app; Owner: postgres
+--
+
+SELECT pg_catalog.setval('app.medical_documents_id_seq', 1, false);
+
+
+--
+-- TOC entry 5257 (class 0 OID 0)
+-- Dependencies: 270
+-- Name: methodology_plans_id_seq; Type: SEQUENCE SET; Schema: app; Owner: postgres
+--
+
+SELECT pg_catalog.setval('app.methodology_plans_id_seq', 1, false);
+
+
+--
+-- TOC entry 5258 (class 0 OID 0)
+-- Dependencies: 266
+-- Name: technique_analysis_id_seq; Type: SEQUENCE SET; Schema: app; Owner: postgres
+--
+
+SELECT pg_catalog.setval('app.technique_analysis_id_seq', 1, false);
+
+
+--
+-- TOC entry 5259 (class 0 OID 0)
 -- Dependencies: 259
 -- Name: user_custom_equipment_id_seq; Type: SEQUENCE SET; Schema: app; Owner: postgres
 --
 
-SELECT pg_catalog.setval('app.user_custom_equipment_id_seq', 4, true);
+SELECT pg_catalog.setval('app.user_custom_equipment_id_seq', 7, true);
 
 
 --
--- TOC entry 5155 (class 0 OID 0)
+-- TOC entry 5260 (class 0 OID 0)
 -- Dependencies: 254
 -- Name: user_exercise_feedback_id_seq; Type: SEQUENCE SET; Schema: app; Owner: postgres
 --
 
-SELECT pg_catalog.setval('app.user_exercise_feedback_id_seq', 12, true);
+SELECT pg_catalog.setval('app.user_exercise_feedback_id_seq', 15, true);
 
 
 --
--- TOC entry 5156 (class 0 OID 0)
+-- TOC entry 5261 (class 0 OID 0)
 -- Dependencies: 249
 -- Name: user_exercise_history_id_seq; Type: SEQUENCE SET; Schema: app; Owner: postgres
 --
 
-SELECT pg_catalog.setval('app.user_exercise_history_id_seq', 104, true);
+SELECT pg_catalog.setval('app.user_exercise_history_id_seq', 106, true);
 
 
 --
--- TOC entry 5157 (class 0 OID 0)
+-- TOC entry 5262 (class 0 OID 0)
 -- Dependencies: 234
 -- Name: user_home_training_stats_id_seq; Type: SEQUENCE SET; Schema: app; Owner: postgres
 --
@@ -1408,7 +1905,7 @@ SELECT pg_catalog.setval('app.user_home_training_stats_id_seq', 30, true);
 
 
 --
--- TOC entry 5158 (class 0 OID 0)
+-- TOC entry 5263 (class 0 OID 0)
 -- Dependencies: 216
 -- Name: users_id_seq; Type: SEQUENCE SET; Schema: app; Owner: postgres
 --
@@ -1417,7 +1914,16 @@ SELECT pg_catalog.setval('app.users_id_seq', 10, true);
 
 
 --
--- TOC entry 4928 (class 2606 OID 27129)
+-- TOC entry 5010 (class 2606 OID 27249)
+-- Name: body_composition_history body_composition_history_pkey; Type: CONSTRAINT; Schema: app; Owner: postgres
+--
+
+ALTER TABLE ONLY app.body_composition_history
+    ADD CONSTRAINT body_composition_history_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 4984 (class 2606 OID 27129)
 -- Name: equipment_catalog equipment_catalog_code_key; Type: CONSTRAINT; Schema: app; Owner: postgres
 --
 
@@ -1426,7 +1932,7 @@ ALTER TABLE ONLY app.equipment_catalog
 
 
 --
--- TOC entry 4930 (class 2606 OID 27127)
+-- TOC entry 4986 (class 2606 OID 27127)
 -- Name: equipment_catalog equipment_catalog_pkey; Type: CONSTRAINT; Schema: app; Owner: postgres
 --
 
@@ -1435,7 +1941,7 @@ ALTER TABLE ONLY app.equipment_catalog
 
 
 --
--- TOC entry 4941 (class 2606 OID 27170)
+-- TOC entry 4997 (class 2606 OID 27170)
 -- Name: equipment_items equipment_items_pkey; Type: CONSTRAINT; Schema: app; Owner: postgres
 --
 
@@ -1444,7 +1950,25 @@ ALTER TABLE ONLY app.equipment_items
 
 
 --
--- TOC entry 4886 (class 2606 OID 26769)
+-- TOC entry 5002 (class 2606 OID 27216)
+-- Name: exercises_catalog exercises_catalog_key_key; Type: CONSTRAINT; Schema: app; Owner: postgres
+--
+
+ALTER TABLE ONLY app.exercises_catalog
+    ADD CONSTRAINT exercises_catalog_key_key UNIQUE (key);
+
+
+--
+-- TOC entry 5004 (class 2606 OID 27214)
+-- Name: exercises_catalog exercises_catalog_pkey; Type: CONSTRAINT; Schema: app; Owner: postgres
+--
+
+ALTER TABLE ONLY app.exercises_catalog
+    ADD CONSTRAINT exercises_catalog_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 4942 (class 2606 OID 26769)
 -- Name: home_exercise_progress home_exercise_progress_pkey; Type: CONSTRAINT; Schema: app; Owner: postgres
 --
 
@@ -1453,7 +1977,7 @@ ALTER TABLE ONLY app.home_exercise_progress
 
 
 --
--- TOC entry 4876 (class 2606 OID 26729)
+-- TOC entry 4932 (class 2606 OID 26729)
 -- Name: home_training_plans home_training_plans_pkey; Type: CONSTRAINT; Schema: app; Owner: postgres
 --
 
@@ -1462,7 +1986,7 @@ ALTER TABLE ONLY app.home_training_plans
 
 
 --
--- TOC entry 4881 (class 2606 OID 26748)
+-- TOC entry 4937 (class 2606 OID 26748)
 -- Name: home_training_sessions home_training_sessions_pkey; Type: CONSTRAINT; Schema: app; Owner: postgres
 --
 
@@ -1471,7 +1995,34 @@ ALTER TABLE ONLY app.home_training_sessions
 
 
 --
--- TOC entry 4898 (class 2606 OID 26901)
+-- TOC entry 5000 (class 2606 OID 27194)
+-- Name: medical_documents medical_documents_pkey; Type: CONSTRAINT; Schema: app; Owner: postgres
+--
+
+ALTER TABLE ONLY app.medical_documents
+    ADD CONSTRAINT medical_documents_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 5017 (class 2606 OID 27274)
+-- Name: methodology_plans methodology_plans_pkey; Type: CONSTRAINT; Schema: app; Owner: postgres
+--
+
+ALTER TABLE ONLY app.methodology_plans
+    ADD CONSTRAINT methodology_plans_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 5008 (class 2606 OID 27229)
+-- Name: technique_analysis technique_analysis_pkey; Type: CONSTRAINT; Schema: app; Owner: postgres
+--
+
+ALTER TABLE ONLY app.technique_analysis
+    ADD CONSTRAINT technique_analysis_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 4954 (class 2606 OID 26901)
 -- Name: user_alergias user_alergias_pkey; Type: CONSTRAINT; Schema: app; Owner: postgres
 --
 
@@ -1480,7 +2031,7 @@ ALTER TABLE ONLY app.user_alergias
 
 
 --
--- TOC entry 4904 (class 2606 OID 26927)
+-- TOC entry 4960 (class 2606 OID 26927)
 -- Name: user_alimentos_excluidos user_alimentos_excluidos_pkey; Type: CONSTRAINT; Schema: app; Owner: postgres
 --
 
@@ -1489,7 +2040,7 @@ ALTER TABLE ONLY app.user_alimentos_excluidos
 
 
 --
--- TOC entry 4939 (class 2606 OID 27153)
+-- TOC entry 4995 (class 2606 OID 27153)
 -- Name: user_custom_equipment user_custom_equipment_pkey; Type: CONSTRAINT; Schema: app; Owner: postgres
 --
 
@@ -1498,7 +2049,7 @@ ALTER TABLE ONLY app.user_custom_equipment
 
 
 --
--- TOC entry 4935 (class 2606 OID 27135)
+-- TOC entry 4991 (class 2606 OID 27135)
 -- Name: user_equipment user_equipment_pkey; Type: CONSTRAINT; Schema: app; Owner: postgres
 --
 
@@ -1507,7 +2058,7 @@ ALTER TABLE ONLY app.user_equipment
 
 
 --
--- TOC entry 4926 (class 2606 OID 27109)
+-- TOC entry 4982 (class 2606 OID 27109)
 -- Name: user_exercise_feedback user_exercise_feedback_pkey; Type: CONSTRAINT; Schema: app; Owner: postgres
 --
 
@@ -1516,7 +2067,7 @@ ALTER TABLE ONLY app.user_exercise_feedback
 
 
 --
--- TOC entry 4922 (class 2606 OID 26995)
+-- TOC entry 4978 (class 2606 OID 26995)
 -- Name: user_exercise_history user_exercise_history_pkey; Type: CONSTRAINT; Schema: app; Owner: postgres
 --
 
@@ -1525,7 +2076,7 @@ ALTER TABLE ONLY app.user_exercise_history
 
 
 --
--- TOC entry 4893 (class 2606 OID 26788)
+-- TOC entry 4949 (class 2606 OID 26788)
 -- Name: user_home_training_stats user_home_training_stats_pkey; Type: CONSTRAINT; Schema: app; Owner: postgres
 --
 
@@ -1534,7 +2085,7 @@ ALTER TABLE ONLY app.user_home_training_stats
 
 
 --
--- TOC entry 4895 (class 2606 OID 26790)
+-- TOC entry 4951 (class 2606 OID 26790)
 -- Name: user_home_training_stats user_home_training_stats_user_id_key; Type: CONSTRAINT; Schema: app; Owner: postgres
 --
 
@@ -1543,7 +2094,7 @@ ALTER TABLE ONLY app.user_home_training_stats
 
 
 --
--- TOC entry 4910 (class 2606 OID 26953)
+-- TOC entry 4966 (class 2606 OID 26953)
 -- Name: user_limitaciones user_limitaciones_pkey; Type: CONSTRAINT; Schema: app; Owner: postgres
 --
 
@@ -1552,7 +2103,7 @@ ALTER TABLE ONLY app.user_limitaciones
 
 
 --
--- TOC entry 4901 (class 2606 OID 26914)
+-- TOC entry 4957 (class 2606 OID 26914)
 -- Name: user_medicamentos user_medicamentos_pkey; Type: CONSTRAINT; Schema: app; Owner: postgres
 --
 
@@ -1561,7 +2112,7 @@ ALTER TABLE ONLY app.user_medicamentos
 
 
 --
--- TOC entry 4907 (class 2606 OID 26940)
+-- TOC entry 4963 (class 2606 OID 26940)
 -- Name: user_suplementos user_suplementos_pkey; Type: CONSTRAINT; Schema: app; Owner: postgres
 --
 
@@ -1570,7 +2121,7 @@ ALTER TABLE ONLY app.user_suplementos
 
 
 --
--- TOC entry 4872 (class 2606 OID 26598)
+-- TOC entry 4928 (class 2606 OID 26598)
 -- Name: users users_email_key; Type: CONSTRAINT; Schema: app; Owner: postgres
 --
 
@@ -1579,7 +2130,7 @@ ALTER TABLE ONLY app.users
 
 
 --
--- TOC entry 4874 (class 2606 OID 26596)
+-- TOC entry 4930 (class 2606 OID 26596)
 -- Name: users users_pkey; Type: CONSTRAINT; Schema: app; Owner: postgres
 --
 
@@ -1588,7 +2139,31 @@ ALTER TABLE ONLY app.users
 
 
 --
--- TOC entry 4923 (class 1259 OID 27111)
+-- TOC entry 5011 (class 1259 OID 27259)
+-- Name: idx_body_comp_date; Type: INDEX; Schema: app; Owner: postgres
+--
+
+CREATE INDEX idx_body_comp_date ON app.body_composition_history USING btree (measurement_date);
+
+
+--
+-- TOC entry 5012 (class 1259 OID 27258)
+-- Name: idx_body_comp_user_id; Type: INDEX; Schema: app; Owner: postgres
+--
+
+CREATE INDEX idx_body_comp_user_id ON app.body_composition_history USING btree (user_id);
+
+
+--
+-- TOC entry 5005 (class 1259 OID 27256)
+-- Name: idx_exercises_key; Type: INDEX; Schema: app; Owner: postgres
+--
+
+CREATE INDEX idx_exercises_key ON app.exercises_catalog USING btree (key);
+
+
+--
+-- TOC entry 4979 (class 1259 OID 27111)
 -- Name: idx_feedback_exercise_key; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1596,7 +2171,7 @@ CREATE INDEX idx_feedback_exercise_key ON app.user_exercise_feedback USING btree
 
 
 --
--- TOC entry 4924 (class 1259 OID 27110)
+-- TOC entry 4980 (class 1259 OID 27110)
 -- Name: idx_feedback_user_created; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1604,7 +2179,7 @@ CREATE INDEX idx_feedback_user_created ON app.user_exercise_feedback USING btree
 
 
 --
--- TOC entry 4911 (class 1259 OID 27059)
+-- TOC entry 4967 (class 1259 OID 27059)
 -- Name: idx_hist_real_user_key_created; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1612,7 +2187,7 @@ CREATE INDEX idx_hist_real_user_key_created ON app.user_exercise_history USING b
 
 
 --
--- TOC entry 4912 (class 1259 OID 27076)
+-- TOC entry 4968 (class 1259 OID 27076)
 -- Name: idx_hist_user_created; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1620,7 +2195,7 @@ CREATE INDEX idx_hist_user_created ON app.user_exercise_history USING btree (use
 
 
 --
--- TOC entry 4913 (class 1259 OID 27077)
+-- TOC entry 4969 (class 1259 OID 27077)
 -- Name: idx_hist_user_key_created; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1628,7 +2203,7 @@ CREATE INDEX idx_hist_user_key_created ON app.user_exercise_history USING btree 
 
 
 --
--- TOC entry 4914 (class 1259 OID 27114)
+-- TOC entry 4970 (class 1259 OID 27114)
 -- Name: idx_history_key; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1636,7 +2211,7 @@ CREATE INDEX idx_history_key ON app.user_exercise_history USING btree (exercise_
 
 
 --
--- TOC entry 4915 (class 1259 OID 27113)
+-- TOC entry 4971 (class 1259 OID 27113)
 -- Name: idx_history_user_created; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1644,7 +2219,7 @@ CREATE INDEX idx_history_user_created ON app.user_exercise_history USING btree (
 
 
 --
--- TOC entry 4887 (class 1259 OID 26799)
+-- TOC entry 4943 (class 1259 OID 26799)
 -- Name: idx_home_exercise_progress_session_id; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1652,7 +2227,7 @@ CREATE INDEX idx_home_exercise_progress_session_id ON app.home_exercise_progress
 
 
 --
--- TOC entry 4877 (class 1259 OID 26796)
+-- TOC entry 4933 (class 1259 OID 26796)
 -- Name: idx_home_training_plans_user_id; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1660,7 +2235,7 @@ CREATE INDEX idx_home_training_plans_user_id ON app.home_training_plans USING bt
 
 
 --
--- TOC entry 4882 (class 1259 OID 26798)
+-- TOC entry 4938 (class 1259 OID 26798)
 -- Name: idx_home_training_sessions_plan_id; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1668,7 +2243,7 @@ CREATE INDEX idx_home_training_sessions_plan_id ON app.home_training_sessions US
 
 
 --
--- TOC entry 4883 (class 1259 OID 26797)
+-- TOC entry 4939 (class 1259 OID 26797)
 -- Name: idx_home_training_sessions_user_id; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1676,7 +2251,39 @@ CREATE INDEX idx_home_training_sessions_user_id ON app.home_training_sessions US
 
 
 --
--- TOC entry 4878 (class 1259 OID 27017)
+-- TOC entry 4998 (class 1259 OID 27255)
+-- Name: idx_medical_docs_user_id; Type: INDEX; Schema: app; Owner: postgres
+--
+
+CREATE INDEX idx_medical_docs_user_id ON app.medical_documents USING btree (user_id);
+
+
+--
+-- TOC entry 5013 (class 1259 OID 27282)
+-- Name: idx_methodology_plans_created_at; Type: INDEX; Schema: app; Owner: postgres
+--
+
+CREATE INDEX idx_methodology_plans_created_at ON app.methodology_plans USING btree (created_at);
+
+
+--
+-- TOC entry 5014 (class 1259 OID 27281)
+-- Name: idx_methodology_plans_methodology_type; Type: INDEX; Schema: app; Owner: postgres
+--
+
+CREATE INDEX idx_methodology_plans_methodology_type ON app.methodology_plans USING btree (methodology_type);
+
+
+--
+-- TOC entry 5015 (class 1259 OID 27280)
+-- Name: idx_methodology_plans_user_id; Type: INDEX; Schema: app; Owner: postgres
+--
+
+CREATE INDEX idx_methodology_plans_user_id ON app.methodology_plans USING btree (user_id);
+
+
+--
+-- TOC entry 4934 (class 1259 OID 27017)
 -- Name: idx_plans_user_created; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1684,7 +2291,7 @@ CREATE INDEX idx_plans_user_created ON app.home_training_plans USING btree (user
 
 
 --
--- TOC entry 4879 (class 1259 OID 27030)
+-- TOC entry 4935 (class 1259 OID 27030)
 -- Name: idx_plans_user_time; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1692,7 +2299,7 @@ CREATE INDEX idx_plans_user_time ON app.home_training_plans USING btree (user_id
 
 
 --
--- TOC entry 4888 (class 1259 OID 27075)
+-- TOC entry 4944 (class 1259 OID 27075)
 -- Name: idx_progress_session_order; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1700,7 +2307,7 @@ CREATE INDEX idx_progress_session_order ON app.home_exercise_progress USING btre
 
 
 --
--- TOC entry 4889 (class 1259 OID 27058)
+-- TOC entry 4945 (class 1259 OID 27058)
 -- Name: idx_progress_session_status; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1708,7 +2315,7 @@ CREATE INDEX idx_progress_session_status ON app.home_exercise_progress USING btr
 
 
 --
--- TOC entry 4884 (class 1259 OID 27074)
+-- TOC entry 4940 (class 1259 OID 27074)
 -- Name: idx_sessions_user_started; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1716,7 +2323,15 @@ CREATE INDEX idx_sessions_user_started ON app.home_training_sessions USING btree
 
 
 --
--- TOC entry 4916 (class 1259 OID 27036)
+-- TOC entry 5006 (class 1259 OID 27257)
+-- Name: idx_technique_user_id; Type: INDEX; Schema: app; Owner: postgres
+--
+
+CREATE INDEX idx_technique_user_id ON app.technique_analysis USING btree (user_id);
+
+
+--
+-- TOC entry 4972 (class 1259 OID 27036)
 -- Name: idx_ueh_key; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1724,7 +2339,7 @@ CREATE INDEX idx_ueh_key ON app.user_exercise_history USING btree (exercise_key)
 
 
 --
--- TOC entry 4917 (class 1259 OID 27033)
+-- TOC entry 4973 (class 1259 OID 27033)
 -- Name: idx_ueh_user_created; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1732,7 +2347,7 @@ CREATE INDEX idx_ueh_user_created ON app.user_exercise_history USING btree (user
 
 
 --
--- TOC entry 4896 (class 1259 OID 26907)
+-- TOC entry 4952 (class 1259 OID 26907)
 -- Name: idx_user_alergias_alergia; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1740,7 +2355,7 @@ CREATE INDEX idx_user_alergias_alergia ON app.user_alergias USING btree (lower(a
 
 
 --
--- TOC entry 4902 (class 1259 OID 26933)
+-- TOC entry 4958 (class 1259 OID 26933)
 -- Name: idx_user_alimentos_excluidos_alimento; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1748,7 +2363,7 @@ CREATE INDEX idx_user_alimentos_excluidos_alimento ON app.user_alimentos_excluid
 
 
 --
--- TOC entry 4936 (class 1259 OID 27161)
+-- TOC entry 4992 (class 1259 OID 27161)
 -- Name: idx_user_custom_equipment_user; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1756,7 +2371,7 @@ CREATE INDEX idx_user_custom_equipment_user ON app.user_custom_equipment USING b
 
 
 --
--- TOC entry 4931 (class 1259 OID 27160)
+-- TOC entry 4987 (class 1259 OID 27160)
 -- Name: idx_user_equipment_equipment; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1764,7 +2379,7 @@ CREATE INDEX idx_user_equipment_equipment ON app.user_equipment USING btree (equ
 
 
 --
--- TOC entry 4932 (class 1259 OID 27159)
+-- TOC entry 4988 (class 1259 OID 27159)
 -- Name: idx_user_equipment_user; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1772,7 +2387,7 @@ CREATE INDEX idx_user_equipment_user ON app.user_equipment USING btree (user_id)
 
 
 --
--- TOC entry 4918 (class 1259 OID 27000)
+-- TOC entry 4974 (class 1259 OID 27000)
 -- Name: idx_user_exercise_history_key; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1780,7 +2395,7 @@ CREATE INDEX idx_user_exercise_history_key ON app.user_exercise_history USING bt
 
 
 --
--- TOC entry 4919 (class 1259 OID 26998)
+-- TOC entry 4975 (class 1259 OID 26998)
 -- Name: idx_user_exercise_history_user; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1788,7 +2403,7 @@ CREATE INDEX idx_user_exercise_history_user ON app.user_exercise_history USING b
 
 
 --
--- TOC entry 4891 (class 1259 OID 26800)
+-- TOC entry 4947 (class 1259 OID 26800)
 -- Name: idx_user_home_training_stats_user_id; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1796,7 +2411,7 @@ CREATE INDEX idx_user_home_training_stats_user_id ON app.user_home_training_stat
 
 
 --
--- TOC entry 4908 (class 1259 OID 26959)
+-- TOC entry 4964 (class 1259 OID 26959)
 -- Name: idx_user_limitaciones_limitacion; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1804,7 +2419,7 @@ CREATE INDEX idx_user_limitaciones_limitacion ON app.user_limitaciones USING btr
 
 
 --
--- TOC entry 4899 (class 1259 OID 26920)
+-- TOC entry 4955 (class 1259 OID 26920)
 -- Name: idx_user_medicamentos_medicamento; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1812,7 +2427,7 @@ CREATE INDEX idx_user_medicamentos_medicamento ON app.user_medicamentos USING bt
 
 
 --
--- TOC entry 4905 (class 1259 OID 26946)
+-- TOC entry 4961 (class 1259 OID 26946)
 -- Name: idx_user_suplementos_suplemento; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1820,7 +2435,7 @@ CREATE INDEX idx_user_suplementos_suplemento ON app.user_suplementos USING btree
 
 
 --
--- TOC entry 4865 (class 1259 OID 26980)
+-- TOC entry 4921 (class 1259 OID 26980)
 -- Name: idx_users_alergias_gin; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1828,7 +2443,7 @@ CREATE INDEX idx_users_alergias_gin ON app.users USING gin (alergias);
 
 
 --
--- TOC entry 4866 (class 1259 OID 26983)
+-- TOC entry 4922 (class 1259 OID 26983)
 -- Name: idx_users_alimentos_excluidos_gin; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1836,7 +2451,7 @@ CREATE INDEX idx_users_alimentos_excluidos_gin ON app.users USING gin (alimentos
 
 
 --
--- TOC entry 4867 (class 1259 OID 26699)
+-- TOC entry 4923 (class 1259 OID 26699)
 -- Name: idx_users_email; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1844,7 +2459,7 @@ CREATE INDEX idx_users_email ON app.users USING btree (email);
 
 
 --
--- TOC entry 4868 (class 1259 OID 26984)
+-- TOC entry 4924 (class 1259 OID 26984)
 -- Name: idx_users_limitaciones_fisicas_gin; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1852,7 +2467,7 @@ CREATE INDEX idx_users_limitaciones_fisicas_gin ON app.users USING gin (limitaci
 
 
 --
--- TOC entry 4869 (class 1259 OID 26981)
+-- TOC entry 4925 (class 1259 OID 26981)
 -- Name: idx_users_medicamentos_gin; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1860,7 +2475,7 @@ CREATE INDEX idx_users_medicamentos_gin ON app.users USING gin (medicamentos);
 
 
 --
--- TOC entry 4870 (class 1259 OID 26982)
+-- TOC entry 4926 (class 1259 OID 26982)
 -- Name: idx_users_suplementacion_gin; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1868,7 +2483,7 @@ CREATE INDEX idx_users_suplementacion_gin ON app.users USING gin (suplementacion
 
 
 --
--- TOC entry 4890 (class 1259 OID 27079)
+-- TOC entry 4946 (class 1259 OID 27079)
 -- Name: uidx_progress_session_order; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1876,7 +2491,7 @@ CREATE UNIQUE INDEX uidx_progress_session_order ON app.home_exercise_progress US
 
 
 --
--- TOC entry 4920 (class 1259 OID 27072)
+-- TOC entry 4976 (class 1259 OID 27072)
 -- Name: uidx_user_hist_unique; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1884,7 +2499,7 @@ CREATE UNIQUE INDEX uidx_user_hist_unique ON app.user_exercise_history USING btr
 
 
 --
--- TOC entry 4937 (class 1259 OID 27174)
+-- TOC entry 4993 (class 1259 OID 27174)
 -- Name: uq_user_custom_equipment; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1892,7 +2507,7 @@ CREATE UNIQUE INDEX uq_user_custom_equipment ON app.user_custom_equipment USING 
 
 
 --
--- TOC entry 4933 (class 1259 OID 27173)
+-- TOC entry 4989 (class 1259 OID 27173)
 -- Name: uq_user_equipment_user_key; Type: INDEX; Schema: app; Owner: postgres
 --
 
@@ -1900,7 +2515,7 @@ CREATE UNIQUE INDEX uq_user_equipment_user_key ON app.user_equipment USING btree
 
 
 --
--- TOC entry 4958 (class 2620 OID 26962)
+-- TOC entry 5038 (class 2620 OID 26962)
 -- Name: users set_timestamp_users; Type: TRIGGER; Schema: app; Owner: postgres
 --
 
@@ -1908,7 +2523,7 @@ CREATE TRIGGER set_timestamp_users BEFORE UPDATE ON app.users FOR EACH ROW EXECU
 
 
 --
--- TOC entry 4961 (class 2620 OID 26802)
+-- TOC entry 5042 (class 2620 OID 26802)
 -- Name: home_training_plans trg_home_training_plans_updated_at; Type: TRIGGER; Schema: app; Owner: postgres
 --
 
@@ -1916,7 +2531,15 @@ CREATE TRIGGER trg_home_training_plans_updated_at BEFORE UPDATE ON app.home_trai
 
 
 --
--- TOC entry 4959 (class 2620 OID 26716)
+-- TOC entry 5039 (class 2620 OID 27261)
+-- Name: users trg_save_body_composition; Type: TRIGGER; Schema: app; Owner: postgres
+--
+
+CREATE TRIGGER trg_save_body_composition AFTER UPDATE ON app.users FOR EACH ROW EXECUTE FUNCTION app.save_body_composition();
+
+
+--
+-- TOC entry 5040 (class 2620 OID 26716)
 -- Name: users trg_update_timestamp; Type: TRIGGER; Schema: app; Owner: postgres
 --
 
@@ -1924,7 +2547,7 @@ CREATE TRIGGER trg_update_timestamp BEFORE UPDATE ON app.users FOR EACH ROW EXEC
 
 
 --
--- TOC entry 4962 (class 2620 OID 26805)
+-- TOC entry 5043 (class 2620 OID 26805)
 -- Name: home_training_sessions trg_update_user_home_stats; Type: TRIGGER; Schema: app; Owner: postgres
 --
 
@@ -1932,7 +2555,7 @@ CREATE TRIGGER trg_update_user_home_stats AFTER UPDATE ON app.home_training_sess
 
 
 --
--- TOC entry 4963 (class 2620 OID 26803)
+-- TOC entry 5044 (class 2620 OID 26803)
 -- Name: user_home_training_stats trg_user_home_training_stats_updated_at; Type: TRIGGER; Schema: app; Owner: postgres
 --
 
@@ -1940,7 +2563,7 @@ CREATE TRIGGER trg_user_home_training_stats_updated_at BEFORE UPDATE ON app.user
 
 
 --
--- TOC entry 4960 (class 2620 OID 26706)
+-- TOC entry 5041 (class 2620 OID 26706)
 -- Name: users update_users_updated_at; Type: TRIGGER; Schema: app; Owner: postgres
 --
 
@@ -1948,7 +2571,16 @@ CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON app.users FOR EACH ROW E
 
 
 --
--- TOC entry 4954 (class 2606 OID 27115)
+-- TOC entry 5036 (class 2606 OID 27250)
+-- Name: body_composition_history fk_body_comp_user_id; Type: FK CONSTRAINT; Schema: app; Owner: postgres
+--
+
+ALTER TABLE ONLY app.body_composition_history
+    ADD CONSTRAINT fk_body_comp_user_id FOREIGN KEY (user_id) REFERENCES app.users(id) ON DELETE CASCADE;
+
+
+--
+-- TOC entry 5030 (class 2606 OID 27115)
 -- Name: user_exercise_feedback fk_feedback_session; Type: FK CONSTRAINT; Schema: app; Owner: postgres
 --
 
@@ -1957,7 +2589,7 @@ ALTER TABLE ONLY app.user_exercise_feedback
 
 
 --
--- TOC entry 4952 (class 2606 OID 27053)
+-- TOC entry 5028 (class 2606 OID 27053)
 -- Name: user_exercise_history fk_hist_plan; Type: FK CONSTRAINT; Schema: app; Owner: postgres
 --
 
@@ -1966,7 +2598,7 @@ ALTER TABLE ONLY app.user_exercise_history
 
 
 --
--- TOC entry 4953 (class 2606 OID 27048)
+-- TOC entry 5029 (class 2606 OID 27048)
 -- Name: user_exercise_history fk_hist_session; Type: FK CONSTRAINT; Schema: app; Owner: postgres
 --
 
@@ -1975,7 +2607,25 @@ ALTER TABLE ONLY app.user_exercise_history
 
 
 --
--- TOC entry 4945 (class 2606 OID 26770)
+-- TOC entry 5034 (class 2606 OID 27195)
+-- Name: medical_documents fk_medical_docs_user_id; Type: FK CONSTRAINT; Schema: app; Owner: postgres
+--
+
+ALTER TABLE ONLY app.medical_documents
+    ADD CONSTRAINT fk_medical_docs_user_id FOREIGN KEY (user_id) REFERENCES app.users(id) ON DELETE CASCADE;
+
+
+--
+-- TOC entry 5035 (class 2606 OID 27230)
+-- Name: technique_analysis fk_technique_user_id; Type: FK CONSTRAINT; Schema: app; Owner: postgres
+--
+
+ALTER TABLE ONLY app.technique_analysis
+    ADD CONSTRAINT fk_technique_user_id FOREIGN KEY (user_id) REFERENCES app.users(id) ON DELETE CASCADE;
+
+
+--
+-- TOC entry 5021 (class 2606 OID 26770)
 -- Name: home_exercise_progress home_exercise_progress_home_training_session_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: postgres
 --
 
@@ -1984,7 +2634,7 @@ ALTER TABLE ONLY app.home_exercise_progress
 
 
 --
--- TOC entry 4942 (class 2606 OID 26730)
+-- TOC entry 5018 (class 2606 OID 26730)
 -- Name: home_training_plans home_training_plans_user_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: postgres
 --
 
@@ -1993,7 +2643,7 @@ ALTER TABLE ONLY app.home_training_plans
 
 
 --
--- TOC entry 4943 (class 2606 OID 26754)
+-- TOC entry 5019 (class 2606 OID 26754)
 -- Name: home_training_sessions home_training_sessions_home_training_plan_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: postgres
 --
 
@@ -2002,7 +2652,7 @@ ALTER TABLE ONLY app.home_training_sessions
 
 
 --
--- TOC entry 4944 (class 2606 OID 26749)
+-- TOC entry 5020 (class 2606 OID 26749)
 -- Name: home_training_sessions home_training_sessions_user_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: postgres
 --
 
@@ -2011,7 +2661,16 @@ ALTER TABLE ONLY app.home_training_sessions
 
 
 --
--- TOC entry 4947 (class 2606 OID 26902)
+-- TOC entry 5037 (class 2606 OID 27275)
+-- Name: methodology_plans methodology_plans_user_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: postgres
+--
+
+ALTER TABLE ONLY app.methodology_plans
+    ADD CONSTRAINT methodology_plans_user_id_fkey FOREIGN KEY (user_id) REFERENCES app.users(id) ON DELETE CASCADE;
+
+
+--
+-- TOC entry 5023 (class 2606 OID 26902)
 -- Name: user_alergias user_alergias_user_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: postgres
 --
 
@@ -2020,7 +2679,7 @@ ALTER TABLE ONLY app.user_alergias
 
 
 --
--- TOC entry 4949 (class 2606 OID 26928)
+-- TOC entry 5025 (class 2606 OID 26928)
 -- Name: user_alimentos_excluidos user_alimentos_excluidos_user_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: postgres
 --
 
@@ -2029,7 +2688,7 @@ ALTER TABLE ONLY app.user_alimentos_excluidos
 
 
 --
--- TOC entry 4957 (class 2606 OID 27154)
+-- TOC entry 5033 (class 2606 OID 27154)
 -- Name: user_custom_equipment user_custom_equipment_user_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: postgres
 --
 
@@ -2038,7 +2697,7 @@ ALTER TABLE ONLY app.user_custom_equipment
 
 
 --
--- TOC entry 4955 (class 2606 OID 27141)
+-- TOC entry 5031 (class 2606 OID 27141)
 -- Name: user_equipment user_equipment_equipment_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: postgres
 --
 
@@ -2047,7 +2706,7 @@ ALTER TABLE ONLY app.user_equipment
 
 
 --
--- TOC entry 4956 (class 2606 OID 27136)
+-- TOC entry 5032 (class 2606 OID 27136)
 -- Name: user_equipment user_equipment_user_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: postgres
 --
 
@@ -2056,7 +2715,7 @@ ALTER TABLE ONLY app.user_equipment
 
 
 --
--- TOC entry 4946 (class 2606 OID 26791)
+-- TOC entry 5022 (class 2606 OID 26791)
 -- Name: user_home_training_stats user_home_training_stats_user_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: postgres
 --
 
@@ -2065,7 +2724,7 @@ ALTER TABLE ONLY app.user_home_training_stats
 
 
 --
--- TOC entry 4951 (class 2606 OID 26954)
+-- TOC entry 5027 (class 2606 OID 26954)
 -- Name: user_limitaciones user_limitaciones_user_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: postgres
 --
 
@@ -2074,7 +2733,7 @@ ALTER TABLE ONLY app.user_limitaciones
 
 
 --
--- TOC entry 4948 (class 2606 OID 26915)
+-- TOC entry 5024 (class 2606 OID 26915)
 -- Name: user_medicamentos user_medicamentos_user_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: postgres
 --
 
@@ -2083,7 +2742,7 @@ ALTER TABLE ONLY app.user_medicamentos
 
 
 --
--- TOC entry 4950 (class 2606 OID 26941)
+-- TOC entry 5026 (class 2606 OID 26941)
 -- Name: user_suplementos user_suplementos_user_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: postgres
 --
 
@@ -2092,14 +2751,14 @@ ALTER TABLE ONLY app.user_suplementos
 
 
 --
--- TOC entry 2163 (class 826 OID 26963)
+-- TOC entry 2189 (class 826 OID 26963)
 -- Name: DEFAULT PRIVILEGES FOR TABLES; Type: DEFAULT ACL; Schema: app; Owner: postgres
 --
 
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA app GRANT SELECT,INSERT,DELETE,UPDATE ON TABLES TO postgres;
 
 
--- Completed on 2025-08-22 19:55:38
+-- Completed on 2025-08-24 19:47:49
 
 --
 -- PostgreSQL database dump complete

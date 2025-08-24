@@ -5,7 +5,7 @@ import { getPrompt } from './lib/promptRegistry.js';
 console.log('🧪 Iniciando pruebas de módulos IA...\n');
 
 async function testAIModules() {
-    const features = ['video', 'photo', 'home'];
+    const features = ['video', 'photo', 'home', 'methodologie'];
     
     for (const feature of features) {
         try {

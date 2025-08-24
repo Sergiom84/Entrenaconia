@@ -1,15 +1,22 @@
 import { motion } from 'framer-motion';
-import { LogOut, User, Home, Dumbbell, UserCircle, BookOpen } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { LogOut, User, Home, Dumbbell, UserCircle, BookOpen, Calendar } from 'lucide-react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
 const Navigation = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, isAuthenticated, logout } = useAuth();
+
+  // Verificar si hay rutinas disponibles
+  const hasRoutines = localStorage.getItem('currentRoutinePlan');
 
   if (!isAuthenticated) {
     return null; // No mostrar navegación si no está autenticado
   }
+
+  // Helper para determinar si un botón está activo
+  const isActive = (path) => location.pathname === path;
 
   const handleLogout = () => {
     if (confirm('¿Estás seguro de que quieres cerrar sesión?')) {
@@ -91,21 +98,47 @@ const Navigation = () => {
         <div className="flex justify-around items-center py-2">
           <button
             onClick={() => navigate('/')}
-            className="flex flex-col items-center gap-1 py-2 px-4 text-gray-300 hover:text-yellow-400 transition-colors"
+            className={`flex flex-col items-center gap-1 py-2 px-4 transition-colors ${
+              isActive('/') 
+                ? 'text-yellow-400' 
+                : 'text-gray-300 hover:text-yellow-400'
+            }`}
           >
             <Home size={24} />
             <span className="text-xs font-medium">Inicio</span>
           </button>
           <button
             onClick={() => navigate('/methodologies')}
-            className="flex flex-col items-center gap-1 py-2 px-4 text-gray-300 hover:text-yellow-400 transition-colors"
+            className={`flex flex-col items-center gap-1 py-2 px-4 transition-colors ${
+              isActive('/methodologies') 
+                ? 'text-yellow-400' 
+                : 'text-gray-300 hover:text-yellow-400'
+            }`}
           >
             <BookOpen size={24} />
             <span className="text-xs font-medium">Metodologías</span>
           </button>
           <button
+            onClick={() => navigate('/routines')}
+            className={`flex flex-col items-center gap-1 py-2 px-4 transition-colors relative ${
+              isActive('/routines') 
+                ? 'text-yellow-400' 
+                : 'text-gray-300 hover:text-yellow-400'
+            }`}
+          >
+            <Calendar size={24} />
+            <span className="text-xs font-medium">Rutinas</span>
+            {hasRoutines && (
+              <div className="absolute -top-1 -right-1 w-2 h-2 bg-yellow-400 rounded-full"></div>
+            )}
+          </button>
+          <button
             onClick={() => navigate('/profile')}
-            className="flex flex-col items-center gap-1 py-2 px-4 text-gray-300 hover:text-yellow-400 transition-colors"
+            className={`flex flex-col items-center gap-1 py-2 px-4 transition-colors ${
+              isActive('/profile') 
+                ? 'text-yellow-400' 
+                : 'text-gray-300 hover:text-yellow-400'
+            }`}
           >
             <UserCircle size={24} />
             <span className="text-xs font-medium">Perfil</span>

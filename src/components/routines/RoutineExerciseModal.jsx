@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Play, Pause, Square, SkipForward, X, Clock, Target, RotateCcw, CheckCircle, Star } from 'lucide-react';
 import { getExerciseGifUrl } from '../../config/exerciseGifs';
-import ExerciseFeedbackModal from './ExerciseFeedbackModal';
+import ExerciseFeedbackModal from './ExerciseFeedbackModal.jsx';
 
-const HomeTrainingExerciseModal = ({
+const RoutineExerciseModal = ({
   exercise,
   exerciseIndex,
   totalExercises,
@@ -11,10 +11,7 @@ const HomeTrainingExerciseModal = ({
   onSkip,
   onCancel,
   onClose,
-  onUpdateProgress,
-  overrideSeriesTotal,
-  sessionId,
-  onFeedbackSubmitted
+  sessionData
 }) => {
   const [currentPhase, setCurrentPhase] = useState('ready'); // ready, exercise, rest, completed
   const [timeLeft, setTimeLeft] = useState(0);
@@ -24,8 +21,7 @@ const HomeTrainingExerciseModal = ({
   const [totalTimeSpent, setTotalTimeSpent] = useState(0);
   const [showFeedback, setShowFeedback] = useState(false);
   const intervalRef = useRef(null);
-  const lastPhaseHandledRef = useRef(''); // evita manejar la misma transición dos veces
-  const lastReportedSeriesRef = useRef(''); // evita PUT duplicados para la misma serie
+  const lastPhaseHandledRef = useRef('');
 
   // Configurar tiempo inicial y GIF basado en el ejercicio
   useEffect(() => {
@@ -34,27 +30,30 @@ const HomeTrainingExerciseModal = ({
     setIsRunning(false);
     setTotalTimeSpent(0);
     lastPhaseHandledRef.current = '';
-    lastReportedSeriesRef.current = '';
-    const durValueInit = Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos);
-    if (Number.isFinite(durValueInit) && durValueInit > 0) {
-      setTimeLeft(durValueInit);
-    } else {
-      setTimeLeft(45);
+    
+    // Obtener duración del ejercicio (puede venir como repeticiones o tiempo)
+    let duration = 45; // valor por defecto
+    if (exercise?.repeticiones && typeof exercise.repeticiones === 'string') {
+      // Si son repeticiones como "8-10" o "12", usar tiempo estimado
+      const repsMatch = exercise.repeticiones.match(/(\d+)/);
+      if (repsMatch) {
+        const reps = parseInt(repsMatch[1]);
+        duration = Math.max(30, reps * 3); // 3 segundos por repetición
+      }
     }
-    if (exercise?.gif_url) {
-      setExerciseGif(exercise.gif_url);
-    } else {
-      setExerciseGif(getExerciseGifUrl(exercise?.nombre));
-    }
+    
+    setTimeLeft(duration);
+    
+    // Configurar GIF del ejercicio
+    setExerciseGif(getExerciseGifUrl(exercise?.nombre));
   }, [exercise]);
 
-  // Timer principal con guardas para evitar dobles disparos
+  // Timer principal
   useEffect(() => {
     if (isRunning && timeLeft > 0 && !intervalRef.current) {
       intervalRef.current = setInterval(() => {
         setTimeLeft(prev => {
           if (prev <= 1) {
-            // Cerrar intervalo ANTES de completar fase
             if (intervalRef.current) {
               clearInterval(intervalRef.current);
               intervalRef.current = null;
@@ -79,37 +78,41 @@ const HomeTrainingExerciseModal = ({
   }, [isRunning, timeLeft, currentPhase]);
 
   const handlePhaseComplete = () => {
-    // Evitar manejar la misma fase más de una vez
     const signature = `${currentPhase}-${currentSeries}`;
     if (lastPhaseHandledRef.current === signature) return;
     lastPhaseHandledRef.current = signature;
 
-    // Cortar el intervalo inmediatamente
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
     setIsRunning(false);
 
-    if (currentPhase === 'exercise') {
-      const reportSig = `${exerciseIndex}-${currentSeries}`;
-      if (lastReportedSeriesRef.current !== reportSig) {
-        lastReportedSeriesRef.current = reportSig;
-        onUpdateProgress(exerciseIndex, currentSeries, seriesTotal);
-      }
+    const seriesTotal = exercise?.series || 3;
 
+    if (currentPhase === 'exercise') {
       if (currentSeries < seriesTotal) {
         setCurrentPhase('rest');
-        setTimeLeft(Math.min(60, Math.max(45, Number(exercise.descanso_seg) || 60)));
+        setTimeLeft(Math.min(70, Math.max(30, Number(exercise.descanso_seg) || 60)));
         setTimeout(() => { lastPhaseHandledRef.current = ''; setIsRunning(true); }, 200);
       } else {
         setCurrentPhase('completed');
         setTimeout(() => { onComplete(totalTimeSpent); }, 500);
       }
     } else if (currentPhase === 'rest') {
-      setCurrentSeries(prev => Math.min(prev + 1, seriesTotal || prev + 1));
+      setCurrentSeries(prev => Math.min(prev + 1, seriesTotal));
       setCurrentPhase('exercise');
-      setTimeLeft((Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos) || 45));
+      
+      // Calcular duración para la siguiente serie
+      let duration = 45;
+      if (exercise?.repeticiones && typeof exercise.repeticiones === 'string') {
+        const repsMatch = exercise.repeticiones.match(/(\d+)/);
+        if (repsMatch) {
+          const reps = parseInt(repsMatch[1]);
+          duration = Math.max(30, reps * 3);
+        }
+      }
+      setTimeLeft(duration);
       setTimeout(() => { lastPhaseHandledRef.current = ''; setIsRunning(true); }, 200);
     }
   };
@@ -134,28 +137,23 @@ const HomeTrainingExerciseModal = ({
     setCurrentPhase('ready');
     setCurrentSeries(1);
     setTotalTimeSpent(0);
-    setTimeLeft((Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos) || 45));
+    
+    let duration = 45;
+    if (exercise?.repeticiones && typeof exercise.repeticiones === 'string') {
+      const repsMatch = exercise.repeticiones.match(/(\d+)/);
+      if (repsMatch) {
+        const reps = parseInt(repsMatch[1]);
+        duration = Math.max(30, reps * 3);
+      }
+    }
+    setTimeLeft(duration);
   };
 
   const handleCancelExercise = () => {
-    // Marca el ejercicio como cancelado desde el modal
     if (typeof onCancel === 'function') onCancel();
     setIsRunning(false);
-    setCurrentPhase('completed'); // cerramos el flujo localmente
+    setCurrentPhase('completed');
   };
-
-  // Reservado para futura UI de saltar solo una serie
-  // const handleSkipSeries = () => {
-  //   if (currentSeries < seriesTotal) {
-  //     setCurrentSeries(prev => prev + 1);
-  //     setCurrentPhase('exercise');
-  //     setTimeLeft((Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos) || 45));
-  //     setIsRunning(false);
-  //   } else {
-  //     onSkip();
-  //   }
-  // };
-
 
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
@@ -164,11 +162,12 @@ const HomeTrainingExerciseModal = ({
   };
 
   const getPhaseTitle = () => {
+    const seriesTotal = exercise?.series || 3;
     switch (currentPhase) {
       case 'ready':
         return 'Preparado para comenzar';
       case 'exercise':
-        return `Serie ${Math.min(currentSeries, seriesTotal || currentSeries)} de ${seriesTotal}`;
+        return `Serie ${Math.min(currentSeries, seriesTotal)} de ${seriesTotal}`;
       case 'rest':
         return 'Tiempo de descanso';
       case 'completed':
@@ -177,15 +176,6 @@ const HomeTrainingExerciseModal = ({
         return '';
     }
   };
-
-  // helpers para pintar métricas
-  const repsValue = Number(exercise?.repeticiones ?? exercise?.reps ?? exercise?.repeticiones_por_serie);
-  const durValue  = Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos);
-  const baseDuration = Math.max(1, (durValue || 45));
-  const rawSeries = Number(exercise?.series ?? exercise?.total_series ?? exercise?.totalSeries ?? exercise?.series_totales);
-  const seriesTotal = Number.isFinite(Number(overrideSeriesTotal)) && Number(overrideSeriesTotal) > 0
-    ? Number(overrideSeriesTotal)
-    : ((Number.isFinite(rawSeries) && rawSeries > 0) ? rawSeries : 4);
 
   const getPhaseColor = () => {
     switch (currentPhase) {
@@ -202,21 +192,21 @@ const HomeTrainingExerciseModal = ({
     }
   };
 
-  // Safety check: if exercise is undefined, don't render the modal
-  if (!exercise || !exercise.nombre) {
-    console.error('HomeTrainingExerciseModal: ejercicio no válido:', exercise);
-    return null;
-  }
+  const seriesTotal = exercise?.series || 3;
+  const baseDuration = timeLeft + totalTimeSpent;
 
   return (
     <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-800 border border-gray-600 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-gray-800 border border-yellow-400/40 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-700">
+        <div className="flex items-center justify-between p-6 border-b border-yellow-400/30">
           <div>
             <h2 className="text-xl font-bold text-white">{exercise.nombre}</h2>
             <p className="text-sm text-gray-400">
               Ejercicio {exerciseIndex + 1} de {totalExercises}
+            </p>
+            <p className="text-sm text-yellow-400 mt-1">
+              {sessionData?.dayName} - Semana {sessionData?.weekNumber}
             </p>
           </div>
           <button
@@ -244,7 +234,7 @@ const HomeTrainingExerciseModal = ({
                   currentPhase === 'rest' ? 'border-yellow-400' : 'border-blue-400'
                 }`}
                 style={{
-                  transform: `rotate(${(((baseDuration) - timeLeft) / (baseDuration)) * 360}deg)`
+                  transform: `rotate(${((baseDuration - timeLeft) / baseDuration) * 360}deg)`
                 }}
               ></div>
               <div className="absolute inset-0 flex items-center justify-center">
@@ -259,40 +249,53 @@ const HomeTrainingExerciseModal = ({
           </div>
 
           {/* Información del ejercicio */}
-          <div className="bg-gray-700/50 rounded-lg p-4 mb-6">
+          <div className="bg-yellow-400/10 border border-yellow-400/30 rounded-lg p-4 mb-6">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
               <div>
                 <div className="text-2xl font-bold text-white">{seriesTotal}</div>
                 <div className="text-sm text-gray-400">Series</div>
               </div>
               <div>
-                <div className="text-2xl font-bold text-white">
-                  {Number.isFinite(repsValue) && repsValue > 0
-                    ? repsValue
-                    : Number.isFinite(durValue) && durValue > 0
-                      ? `${durValue}s`
-                      : '—'}
-                </div>
-                <div className="text-sm text-gray-400">
-                  {Number.isFinite(repsValue) && repsValue > 0
-                    ? 'Repeticiones'
-                    : Number.isFinite(durValue) && durValue > 0
-                      ? 'Duración'
-                      : 'Repeticiones'}
-                </div>
+                <div className="text-2xl font-bold text-white">{exercise?.repeticiones || '8-10'}</div>
+                <div className="text-sm text-gray-400">Repeticiones</div>
               </div>
               <div>
-                <div className="text-2xl font-bold text-white">{(Number(exercise?.descanso_seg) || 45)}s</div>
+                <div className="text-2xl font-bold text-white">{exercise?.descanso_seg || 60}s</div>
                 <div className="text-sm text-gray-400">Descanso</div>
               </div>
               <div>
-                <div className="text-2xl font-bold text-green-400">{currentSeries}</div>
+                <div className="text-2xl font-bold text-yellow-400">{currentSeries}</div>
                 <div className="text-sm text-gray-400">Serie Actual</div>
               </div>
             </div>
+            {/* Línea patrón/implemento + botón Valorar */}
+            <div className="mt-4 flex items-center gap-4">
+              {exercise?.patron && (
+                <div className="flex items-center">
+                  <span className="w-2 h-2 bg-green-400 rounded-full mr-2"></span>
+                  <span className="text-gray-300">Patrón:</span>
+                  <span className="text-white font-medium ml-1 capitalize">{String(exercise.patron).replaceAll('_',' ')}</span>
+                </div>
+              )}
+              {exercise?.implemento && (
+                <div className="flex items-center">
+                  <span className="w-2 h-2 bg-blue-400 rounded-full mr-2"></span>
+                  <span className="text-gray-300">Implemento:</span>
+                  <span className="text-white font-medium ml-1 capitalize">{String(exercise.implemento).replaceAll('_',' ')}</span>
+                </div>
+              )}
+              <button
+                onClick={() => setShowFeedback(true)}
+                className="ml-auto flex items-center gap-2 text-yellow-300 hover:text-yellow-200 border border-yellow-400/30 px-3 py-1 rounded-md"
+                title="¿Cómo has sentido este ejercicio?"
+              >
+                <Star size={16} />
+                Valorar
+              </button>
+            </div>
           </div>
 
-          {/* Notas del ejercicio y consejos de ejecución */}
+          {/* Notas del ejercicio */}
           {exercise.notas && (
             <div className="bg-blue-900/20 border border-blue-700/50 rounded-lg p-4 mb-6">
               <div className="flex items-start mb-3">
@@ -303,38 +306,18 @@ const HomeTrainingExerciseModal = ({
             </div>
           )}
 
-          {/* Información adicional */}
-          {(exercise.patron || exercise.implemento) && (
-            <div className="bg-gray-700/30 rounded-lg p-3 mb-6">
-              <div className="flex flex-wrap gap-4 text-sm">
-                {exercise.patron && (
-                  <div className="flex items-center">
-                    <span className="w-2 h-2 bg-green-400 rounded-full mr-2"></span>
-                    <span className="text-gray-300">Patrón:</span>
-                    <span className="text-white font-medium ml-1 capitalize">{String(exercise.patron).replaceAll('_',' ')}</span>
-                  </div>
-                )}
-                {exercise.implemento && (
-                  <div className="flex items-center">
-                    <span className="w-2 h-2 bg-blue-400 rounded-full mr-2"></span>
-                    <span className="text-gray-300">Implemento:</span>
-                    <span className="text-white font-medium ml-1 capitalize">{String(exercise.implemento).replaceAll('_',' ')}</span>
-                  </div>
-                )}
-                {/* Botón de feedback */}
-                <button
-                  onClick={() => setShowFeedback(true)}
-                  className="ml-auto flex items-center gap-2 text-yellow-300 hover:text-yellow-200 border border-yellow-400/30 px-3 py-1 rounded-md"
-                  title="Cómo has sentido este ejercicio?"
-                >
-                  <Star size={16} />
-                  Valorar
-                </button>
+          {/* Intensidad */}
+          {exercise.intensidad && (
+            <div className="bg-red-900/20 border border-red-700/50 rounded-lg p-4 mb-6">
+              <div className="flex items-center mb-2">
+                <Target size={16} className="text-red-400 mr-2" />
+                <h4 className="text-red-200 font-semibold text-sm">Intensidad</h4>
               </div>
+              <p className="text-red-200 text-sm">{exercise.intensidad}</p>
             </div>
           )}
 
-          {/* Área de media del ejercicio mejorada */}
+          {/* Área del GIF */}
           <div className="bg-gray-700/30 rounded-lg p-4 mb-6">
             <div className="text-center mb-4">
               <h4 className="text-white font-semibold mb-2">Demostración del Ejercicio</h4>
@@ -343,7 +326,7 @@ const HomeTrainingExerciseModal = ({
                   <img
                     src={exerciseGif}
                     alt={exercise.nombre}
-                    className="mx-auto max-h-64 rounded-md shadow-lg border border-gray-600"
+                    className="mx-auto max-h-64 rounded-md shadow-lg border border-yellow-400/30"
                     onError={(e) => {
                       e.currentTarget.style.display = 'none';
                       e.currentTarget.nextSibling.style.display = 'block';
@@ -363,43 +346,9 @@ const HomeTrainingExerciseModal = ({
                 </div>
               )}
             </div>
-
-            {/* Input para URL de GIF personalizada */}
-            <div className="bg-gray-800/50 rounded-md p-3">
-              <div className="text-xs text-gray-400 mb-2">¿Tienes un GIF mejor? Pégalo aquí:</div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="url"
-                  placeholder="https://ejemplo.com/ejercicio.gif"
-                  className="flex-1 bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-white placeholder-gray-400 focus:border-yellow-400 focus:outline-none transition-colors"
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      const v = e.currentTarget.value.trim();
-                      if (v) {
-
-                        setExerciseGif(v);
-                        e.currentTarget.value = '';
-                      }
-                    }
-                  }}
-                />
-                <button
-                  onClick={(e) => {
-                    const input = e.currentTarget.previousSibling;
-                    if (input && input.value.trim()) {
-                      setExerciseGif(input.value.trim());
-                      input.value = '';
-                    }
-                  }}
-                  className="bg-yellow-400 hover:bg-yellow-500 text-black text-sm font-semibold px-3 py-2 rounded-md transition-colors"
-                >
-                  Aplicar
-                </button>
-              </div>
-            </div>
           </div>
 
-          {/* Controles mejorados */}
+          {/* Controles */}
           <div className="flex gap-3 justify-center">
             {currentPhase === 'ready' && (
               <button
@@ -447,65 +396,33 @@ const HomeTrainingExerciseModal = ({
                   className="flex items-center gap-2 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
                 >
                   <SkipForward size={20} />
-                  Saltar Ejercicio
+                  Saltar
                 </button>
                 <button
                   onClick={handleCancelExercise}
                   className="flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
                 >
                   <Square size={20} />
-                  Cancelar Ejercicio
+                  Cancelar
                 </button>
               </>
             )}
           </div>
         </div>
+
         {/* Modal de feedback */}
         {showFeedback && (
           <ExerciseFeedbackModal
             show={showFeedback}
             exerciseName={exercise?.nombre}
             onClose={() => setShowFeedback(false)}
-            onSubmit={async (payload) => {
-              try {
-                console.log('Feedback ejercicio:', payload);
-              } finally {
-                setShowFeedback(false);
-              }
-            }}
+            onSubmit={() => setShowFeedback(false)}
           />
         )}
-      {/* Modal de feedback */}
-      {showFeedback && (
-        <ExerciseFeedbackModal
-          show={showFeedback}
-          exerciseName={exercise?.nombre}
-          onClose={() => setShowFeedback(false)}
-          onSubmit={async (payload) => {
-            try {
-              if (sessionId != null) {
-                const token = localStorage.getItem('token');
-                await fetch(`/api/home-training/sessions/${sessionId}/exercise/${exerciseIndex}/feedback`, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                  },
-                  body: JSON.stringify({ sentiment: payload.sentiment, comment: payload.comment, exercise_name: exercise?.nombre })
-                });
-                onFeedbackSubmitted?.();
-              }
-            } finally {
-              setShowFeedback(false);
-            }
-          }}
-        />
-      )}
-
-
       </div>
     </div>
   );
 };
 
-export default HomeTrainingExerciseModal;
+export default RoutineExerciseModal;
+

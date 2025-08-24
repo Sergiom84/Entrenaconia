@@ -11,6 +11,9 @@ import iaHomeTrainingRoutes from './routes/IAHomeTraining.js';
 import equipmentRoutes from './routes/equipment.js';
 import aiVideoCorrection from './routes/aiVideoCorrection.js';
 import aiPhotoCorrection from './routes/aiPhotoCorrection.js';
+import aiMethodologie from './routes/aiMethodologie.js';
+import methodologyManualRoutes from './routes/methodologyManual.js';
+import bodyCompositionRoutes from './routes/bodyComposition.js';
 import uploadsRoutes from './routes/uploads.js';
 import exercisesRoutes from './routes/exercises.js';
 import techniqueRoutes from './routes/technique.js';
@@ -90,6 +93,9 @@ app.use('/api/ia-home-training', iaHomeTrainingRoutes);
 app.use('/api/equipment', equipmentRoutes);
 app.use('/api/ai', aiVideoCorrection);
 app.use('/api/ai-photo-correction', aiPhotoCorrection);
+app.use('/api/methodologie', aiMethodologie);
+app.use('/api/methodology-manual', methodologyManualRoutes);
+app.use('/api/body-composition', bodyCompositionRoutes);
 app.use('/api/uploads', uploadsRoutes);
 app.use('/api/exercises', exercisesRoutes);
 app.use('/api/technique', techniqueRoutes);
@@ -112,7 +118,7 @@ app.get('/api/test-ai-modules', async (req, res) => {
     const { getOpenAIClient } = await import('./lib/openaiClient.js');
     const { getPrompt } = await import('./lib/promptRegistry.js');
     
-    const features = ['video', 'photo', 'home'];
+    const features = ['video', 'photo', 'home', 'methodologie'];
     const results = [];
     
     for (const feature of features) {

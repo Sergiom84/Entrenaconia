@@ -4,13 +4,15 @@ import path from "path";
 export const FeatureKey = {
   PHOTO: "photo",
   VIDEO: "video", 
-  HOME: "home"
+  HOME: "home",
+  METHODOLOGIE: "methodologie"
 };
 
 const FILE_BY_FEATURE = {
   [FeatureKey.VIDEO]: "correction_video_ia.md",
   [FeatureKey.PHOTO]: "correction_photo_ia.md",
-  [FeatureKey.HOME]: "home_training.md"
+  [FeatureKey.HOME]: "home_training.md",
+  [FeatureKey.METHODOLOGIE]: "Methodologie_(Auto).md"
 };
 
 const cache = new Map();

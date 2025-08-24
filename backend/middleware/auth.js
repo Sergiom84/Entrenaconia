@@ -8,12 +8,17 @@ const authenticateToken = (req, res, next) => {
     return res.status(401).json({ error: 'Token de acceso requerido' });
   }
 
-  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
     if (err) {
       return res.status(403).json({ error: 'Token inválido' });
     }
-    
-    req.user = user;
+    // Normaliza para que siempre haya req.user.id disponible
+    const normalized = {
+      ...decoded,
+      id: decoded?.userId ?? decoded?.id,
+      userId: decoded?.userId ?? decoded?.id,
+    };
+    req.user = normalized;
     next();
   });
 };

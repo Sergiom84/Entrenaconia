@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -8,15 +8,29 @@ import {
 } from '@/components/ui/card'
 import { Calculator, X } from 'lucide-react'
 
-export const BodyCompositionCalculator = ({ isOpen, onClose, onCalculate }) => {
+export const BodyCompositionCalculator = ({ isOpen, onClose, onCalculate, userProfile }) => {
   const [formData, setFormData] = useState({
-    sexo: 'masculino',
-    edad: '',
-    peso: '',
-    altura: '',
-    cintura: '',
-    cuello: ''
+    sexo: userProfile?.sexo || 'masculino',
+    edad: userProfile?.edad || '',
+    peso: userProfile?.peso || '',
+    altura: userProfile?.altura || '',
+    cintura: userProfile?.cintura || '',
+    cuello: userProfile?.cuello || ''
   })
+
+  // Actualizar formData cuando cambie userProfile
+  useEffect(() => {
+    if (userProfile && isOpen) {
+      setFormData({
+        sexo: userProfile.sexo || 'masculino',
+        edad: userProfile.edad || '',
+        peso: userProfile.peso || '',
+        altura: userProfile.altura || '',
+        cintura: userProfile.cintura || '',
+        cuello: userProfile.cuello || ''
+      })
+    }
+  }, [userProfile, isOpen])
 
   const handleInputChange = (field, value) => {
     setFormData(prev => ({

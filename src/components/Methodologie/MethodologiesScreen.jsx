@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.j
 import { METHODOLOGIES, sanitizeProfile } from './methodologiesData.js';
 import MethodologyCard from './MethodologyCard.jsx';
 import MethodologyDetailsDialog from './MethodologyDetailsDialog.jsx';
+import MethodologyConfirmationModal from './MethodologyConfirmationModal.jsx';
 
 export default function MethodologiesScreen() {
   const navigate = useNavigate();
@@ -32,22 +33,33 @@ export default function MethodologiesScreen() {
     setIsLoading(true);
     setError(null);
     const fullProfile = sanitizeProfile({ ...userData, ...user, ...currentUser });
+    
     try {
-      const response = await fetch('/api/ia/recommend-and-generate', {
+      console.log('🤖 Activando IA para generar plan metodológico...');
+      
+      const response = await fetch('/api/methodologie/generate-plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          userId: (currentUser || user)?.id,
-          profile: fullProfile,
-          forcedMethodology
+          perfil: fullProfile,
+          metodologia_forzada: forcedMethodology
         })
       });
+      
       const result = await response.json();
+      
       if (!response.ok || !result.success) {
-        throw new Error(result.error || 'No se pudo generar la rutina.');
+        throw new Error(result.message || result.error || 'No se pudo generar el plan de entrenamiento.');
       }
-      setSuccessData(result.data);
+      
+      console.log('✅ Plan generado exitosamente:', result.plan);
+      setSuccessData({
+        plan: result.plan,
+        metadata: result.metadata
+      });
+      
     } catch (err) {
+      console.error('❌ Error generando plan:', err);
       setError(err.message);
     } finally {
       setIsLoading(false);
@@ -61,9 +73,49 @@ export default function MethodologiesScreen() {
     }
   };
 
-  const confirmManualSelection = () => {
-    if (pendingMethodology) {
-      handleActivateIA(pendingMethodology.name);
+  const confirmManualSelection = async () => {
+    if (!pendingMethodology) return;
+    
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      console.log(`🎯 Generando plan manual para metodología: ${pendingMethodology.name}`);
+      
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/methodology-manual/generate-manual', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          metodologia_solicitada: pendingMethodology.name
+        })
+      });
+      
+      const result = await response.json();
+      
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Error al generar el plan');
+      }
+      
+      console.log('✅ Plan de metodología manual generado exitosamente');
+      
+      // Navegar directamente a rutinas con el plan generado
+      navigate('/routines', {
+        state: {
+          routinePlan: result.plan,
+          planSource: 'manual_methodology',
+          planId: result.planId
+        }
+      });
+      
+    } catch (error) {
+      console.error('❌ Error generando plan manual:', error);
+      setError(error.message || 'Error al generar el plan de entrenamiento');
+    } finally {
+      setIsLoading(false);
       setShowManualSelectionModal(false);
       setPendingMethodology(null);
     }
@@ -75,8 +127,13 @@ export default function MethodologiesScreen() {
   };
 
   const handleCloseSuccessDialog = () => {
+    // Pasar los datos del plan generado a la pantalla de rutinas
+    navigate('/routines', { 
+      state: { 
+        routinePlan: successData 
+      } 
+    });
     setSuccessData(null);
-    navigate('/routines');
   };
 
   return (
@@ -182,34 +239,20 @@ export default function MethodologiesScreen() {
           </div>
         </div>
       )}
-      <Dialog open={showManualSelectionModal} onOpenChange={setShowManualSelectionModal}>
-        <DialogContent className="max-w-md bg-black/95 border-yellow-400/20 text-white">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-bold flex items-center">
-              <UserIcon className="w-5 h-5 mr-2 text-yellow-400" />
-              Confirmar selección
-            </DialogTitle>
-            <DialogDescription className="text-gray-400">
-              Has elegido <span className="font-semibold text-white">{pendingMethodology?.name}</span>. ¿Deseas continuar?
-            </DialogDescription>
-          </DialogHeader>
-          {pendingMethodology && (
-            <div className="mt-2 text-sm grid grid-cols-2 gap-2">
-              <p><span className="text-gray-400">Nivel:</span> {pendingMethodology.level}</p>
-              <p><span className="text-gray-400">Frecuencia:</span> {pendingMethodology.frequency}</p>
-              <p><span className="text-gray-400">Volumen:</span> {pendingMethodology.volume}</p>
-              <p><span className="text-gray-400">Intensidad:</span> {pendingMethodology.intensity}</p>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowManualSelectionModal(false)}>Cancelar</Button>
-            <Button className="bg-yellow-400 text-black hover:bg-yellow-300" onClick={confirmManualSelection}>
-              <CheckCircle className="w-4 h-4 mr-2" />
-              Confirmar selección
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      
+      {/* Modal de confirmación para selección manual */}
+      {showManualSelectionModal && pendingMethodology && (
+        <MethodologyConfirmationModal
+          methodology={pendingMethodology.name}
+          onConfirm={confirmManualSelection}
+          onCancel={() => {
+            setShowManualSelectionModal(false);
+            setPendingMethodology(null);
+          }}
+          isGenerating={isLoading}
+        />
+      )}
+      
       <MethodologyDetailsDialog
         open={showDetails}
         onOpenChange={setShowDetails}
@@ -219,26 +262,78 @@ export default function MethodologiesScreen() {
         onSelect={handleManualCardClick}
       />
       <Dialog open={!!successData} onOpenChange={(open) => { if (!open) handleCloseSuccessDialog(); }}>
-        <DialogContent className="max-w-lg bg-black/95 border-yellow-400/20 text-white">
+        <DialogContent className="max-w-2xl bg-black/95 border-yellow-400/20 text-white">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold flex items-center">
               <Brain className="w-5 h-5 mr-2 text-yellow-400" />
-              ¡Rutina generada!
+              ¡Plan de Entrenamiento Generado!
             </DialogTitle>
             <DialogDescription className="text-gray-400">
-              Hemos guardado tu metodología activa y su rutina semanal.
+              La IA ha creado un plan personalizado basado en tu perfil.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2 text-sm">
-            <p>
-              <span className="text-gray-400">Metodología:</span>{' '}
-              <span className="text-white font-semibold">{successData?.methodology_name || '—'}</span>
-            </p>
-            <p className="text-gray-300">
-              {successData?.methodology_description}
-            </p>
-          </div>
-          <DialogFooter className="mt-2">
+          
+          {successData?.plan && (
+            <div className="space-y-4 max-h-96 overflow-y-auto">
+              {/* Información del plan */}
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="text-gray-400">Metodología:</span>{' '}
+                  <span className="text-yellow-400 font-semibold">{successData.plan.selected_style}</span>
+                </div>
+                <div>
+                  <span className="text-gray-400">Duración:</span>{' '}
+                  <span className="text-white font-semibold">{successData.plan.duracion_total_semanas} semanas</span>
+                </div>
+                <div>
+                  <span className="text-gray-400">Frecuencia:</span>{' '}
+                  <span className="text-white font-semibold">{successData.plan.frecuencia_por_semana} sesiones/semana</span>
+                </div>
+                <div>
+                  <span className="text-gray-400">Progresión:</span>{' '}
+                  <span className="text-white font-semibold">{successData.plan.progresion?.metodo}</span>
+                </div>
+              </div>
+
+              {/* Razón de la selección */}
+              {successData.plan.rationale && (
+                <div className="p-3 bg-yellow-400/10 border border-yellow-400/20 rounded-lg">
+                  <h4 className="text-yellow-400 font-semibold text-sm mb-1">¿Por qué esta metodología?</h4>
+                  <p className="text-gray-300 text-sm">{successData.plan.rationale}</p>
+                </div>
+              )}
+
+              {/* Vista previa del plan */}
+              <div>
+                <h4 className="text-white font-semibold mb-2">Vista previa del plan:</h4>
+                <div className="space-y-2 text-sm">
+                  {successData.plan.semanas?.slice(0, 2).map((semana, idx) => (
+                    <div key={idx} className="p-2 bg-gray-800/50 rounded border border-gray-700">
+                      <div className="text-yellow-400 font-medium">Semana {semana.semana}</div>
+                      <div className="text-gray-400 text-xs">
+                        {semana.sesiones?.length || 0} sesiones programadas
+                      </div>
+                    </div>
+                  ))}
+                  {successData.plan.semanas?.length > 2 && (
+                    <div className="text-center text-gray-400 text-xs">
+                      ... y {successData.plan.semanas.length - 2} semanas más
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Consideraciones de seguridad */}
+              {successData.plan.safety_notes && (
+                <div className="p-3 bg-red-400/10 border border-red-400/20 rounded-lg">
+                  <h4 className="text-red-400 font-semibold text-sm mb-1">⚠️ Consideraciones importantes:</h4>
+                  <p className="text-gray-300 text-sm">{successData.plan.safety_notes}</p>
+                </div>
+              )}
+            </div>
+          )}
+          
+          <DialogFooter className="mt-4">
             <Button className="bg-yellow-400 text-black hover:bg-yellow-300" onClick={handleCloseSuccessDialog}>
               <CheckCircle className="w-4 h-4 mr-2" />
               Ir a Rutinas

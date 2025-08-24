@@ -1,16 +1,19 @@
-import React from 'react';
+import React, { createContext, useContext } from 'react';
+
+const RadioCtx = createContext({ value: undefined, onValueChange: () => {} });
 
 export const RadioGroup = ({ value, onValueChange, children, ...props }) => {
   return (
     <div {...props}>
-      {React.Children.map(children, (child) =>
-        React.cloneElement(child, { value, onValueChange })
-      )}
+      <RadioCtx.Provider value={{ value, onValueChange }}>
+        {children}
+      </RadioCtx.Provider>
     </div>
   );
 };
 
-export const RadioGroupItem = ({ value: itemValue, id, value, onValueChange, ...props }) => {
+export const RadioGroupItem = ({ value: itemValue, id, ...props }) => {
+  const { value, onValueChange } = useContext(RadioCtx);
   return (
     <input
       type="radio"

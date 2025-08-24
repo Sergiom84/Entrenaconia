@@ -440,19 +440,3 @@ MAX_FILE_SIZE=26214400  # 25MB en bytes
 - **Metabolismo basal**: Harris-Benedict
 - **Agua corporal**: 60% hombres, 55% mujeres
 
-## 🚀 Próximos Pasos
-
-1. **Configurar backend**: Instalar dependencias y configurar rutas
-2. **Conectar base de datos**: Ejecutar script SQL
-3. **Configurar OpenAI**: API key y prompts
-4. **Probar funcionalidades**: Perfil, calculadora, documentos
-5. **Implementar autenticación**: Sistema de usuarios real
-6. **Generar rutinas**: Integración completa con IA
-
-## 📞 Soporte
-
-Para problemas o preguntas sobre la configuración:
-1. Verificar que PostgreSQL esté ejecutándose
-2. Confirmar que la base de datos `entrenaconia` existe
-3. Revisar logs del servidor para errores
-4. Verificar variables de entorno

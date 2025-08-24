@@ -165,6 +165,7 @@ router.post('/generate', authenticateToken, async (req, res) => {
       .replace(/\$\{imc \|\| ''\}/g, imc || '')
       .replace(/\$\{u\.nivel_actividad \|\| ''\}/g, u.nivel || '')
       .replace(/\$\{u\.anos_entrenando \|\| ''\}/g, u.anos_entrenando || '')
+      .replace(/\$\{u\.años_entrenando \|\| ''\}/g, u.anos_entrenando || '')
       .replace(/\$\{u\.objetivo_principal \|\| ''\}/g, u.objetivo_principal || '')
       .replace(/\$\{u\.limitaciones_fisicas\?\.join\(', '\) \|\| 'Ninguna'\}/g, u.limitaciones_fisicas?.join(', ') || 'Ninguna')
       .replace(/\$\{equipment_type\}/g, equipment_type)
