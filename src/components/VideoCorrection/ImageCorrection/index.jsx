@@ -19,56 +19,8 @@ import ExerciseSelector from '../shared/ExerciseSelector';
 import AnalysisResult from '../shared/AnalysisResult';
 import VoiceFeedback from '../shared/VoiceFeedback';
 
-const FALLBACK_EXERCISES = [
-  {
-    id: 'squat',
-    name: 'Sentadilla',
-    commonErrors: [
-      'Rodillas hacia adentro (valgo)',
-      'Inclinación excesiva del torso',
-      'Falta de profundidad',
-      'Peso en puntas de pies',
-    ],
-    keyPoints: [
-      'Rodillas alineadas con pies',
-      'Descender hasta ~90° de flexión',
-      'Pecho erguido',
-      'Peso en talones',
-    ],
-  },
-  {
-    id: 'deadlift',
-    name: 'Peso Muerto',
-    commonErrors: [
-      'Espalda redondeada',
-      'Barra alejada del cuerpo',
-      'Hiperextensión lumbar',
-      'Rodillas bloqueadas prematuramente',
-    ],
-    keyPoints: [
-      'Columna neutra',
-      'Barra pegada al cuerpo',
-      'Activar glúteos en la subida',
-      'Extensión simultánea cadera-rodilla',
-    ],
-  },
-  {
-    id: 'pushup',
-    name: 'Flexión de Brazos',
-    commonErrors: [
-      'Cadera elevada o hundida',
-      'ROM incompleto',
-      'Manos mal posicionadas',
-      'Cabeza adelantada',
-    ],
-    keyPoints: [
-      'Línea recta cabeza-talones',
-      'Descender hasta tocar suelo',
-      'Manos bajo hombros',
-      'Mirada neutra',
-    ],
-  },
-];
+// NO ejercicios hardcodeados - deben venir de la API de ejercicios
+const FALLBACK_EXERCISES = [];
 
 /**
  * Componente de Corrección por Imagen

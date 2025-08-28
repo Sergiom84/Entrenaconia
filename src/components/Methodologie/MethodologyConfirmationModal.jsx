@@ -24,7 +24,7 @@ const methodologyDescriptions = {
   },
   'Powerlifting': {
     description: 'Enfoque en fuerza máxima en los tres ejercicios básicos.',
-    characteristics: ['Sentadilla, Press banca, Peso muerto', 'Cargas altas', 'Técnica específica', 'Competición'],
+    characteristics: ['Ejercicios básicos generados por IA', 'Cargas altas', 'Técnica específica', 'Competición'],
     duration: '4-5 días/semana',
     intensity: 'Alta',
     target: 'Fuerza máxima'

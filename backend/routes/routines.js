@@ -8,100 +8,88 @@ const router = express.Router();
 // RUTAS PARA SESIONES DE RUTINAS
 // ========================================
 
-// Crear una nueva sesión de rutina
+// Crear/hidratar sesión de rutina (idempotente)
 router.post('/sessions', authenticateToken, async (req, res) => {
   try {
-    const { routinePlanId, weekNumber, dayName } = req.body;
+    const { routinePlanId, weekNumber, dayName, totalExpected } = req.body;
     const userId = req.user?.userId || req.user?.id;
 
-    // Obtener datos de la rutina desde routine_plans o migrar desde methodology_plans
-    const routineQuery = `
-      SELECT plan_data FROM app.routine_plans
-      WHERE id = $1 AND user_id = $2
-    `;
-    let effectivePlanId = routinePlanId;
-    let planData = null;
+    console.log('[POST /api/routines/sessions]', { userId, routinePlanId, weekNumber, dayName, totalExpected });
 
-    const routineResult = await pool.query(routineQuery, [routinePlanId, userId]);
-
-    if (routineResult.rows.length === 0) {
-      // Intentar con methodology_plans (compatibilidad: el plan se generó allí)
-      const methQuery = `
-        SELECT plan_data FROM app.methodology_plans
-        WHERE id = $1 AND user_id = $2
-      `;
-      const methRes = await pool.query(methQuery, [routinePlanId, userId]);
-
-      if (methRes.rows.length === 0) {
-        return res.status(404).json({ success: false, error: 'Rutina no encontrada' });
-      }
-
-      planData = methRes.rows[0].plan_data;
-
-      // Crear entrada en routine_plans a partir del plan de metodología
-      const insertQuery = `
-        INSERT INTO app.routine_plans (user_id, methodology_type, plan_data, generation_mode, created_at)
-        VALUES ($1, $2, $3, 'automatic', NOW())
-        RETURNING id
-      `;
-      const methodologyType = (planData && planData.selected_style) ? planData.selected_style : 'Rutina';
-      const insertRes = await pool.query(insertQuery, [userId, methodologyType, JSON.stringify(planData)]);
-      effectivePlanId = insertRes.rows[0].id;
-    } else {
-      planData = routineResult.rows[0].plan_data;
+    // Validar parámetros
+    if (!Number.isInteger(routinePlanId) || !Number.isInteger(weekNumber) || !dayName) {
+      console.log('[POST /api/routines/sessions] error - parámetros inválidos');
+      return res.status(400).json({ success: false, error: 'Parámetros inválidos' });
     }
 
-    // Crear sesiones para esta rutina si no existen
-    const createSessionsQuery = `
-      SELECT app.create_routine_sessions($1, $2, $3)
-    `;
-    await pool.query(createSessionsQuery, [
-      userId,
-      effectivePlanId,
-      JSON.stringify(planData)
-    ]);
-
-    // Obtener la sesión específica
-    const sessionQuery = `
-      SELECT * FROM app.routine_sessions
-      WHERE user_id = $1 AND routine_plan_id = $2 AND week_number = $3 AND day_name = $4
-    `;
-    const sessionResult = await pool.query(sessionQuery, [userId, effectivePlanId, weekNumber, dayName]);
-
-    if (sessionResult.rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        error: 'Sesión no encontrada'
-      });
+    // Verificar que el plan existe y no está archivado
+    const planQ = await pool.query(
+      `SELECT id, archived_at FROM app.routine_plans WHERE id = $1 AND user_id = $2`,
+      [routinePlanId, userId]
+    );
+    
+    if (planQ.rowCount === 0) {
+      console.log('[POST /api/routines/sessions] error - plan no encontrado');
+      return res.status(404).json({ success: false, error: 'Plan no encontrado' });
+    }
+    
+    if (planQ.rows[0].archived_at) {
+      console.log('[POST /api/routines/sessions] error - plan archivado', { archived_at: planQ.rows[0].archived_at });
+      return res.status(409).json({ success: false, error: 'Plan archivado' });
     }
 
-    // Actualizar status a in_progress
-    const updateQuery = `
-      UPDATE app.routine_sessions 
-      SET status = 'in_progress', started_at = CURRENT_TIMESTAMP 
-      WHERE id = $1
-    `;
-    await pool.query(updateQuery, [sessionResult.rows[0].id]);
+    // Lock para evitar multi-click concurrente
+    await pool.query(`SELECT pg_advisory_xact_lock($1, $2)`, [userId, routinePlanId]);
 
-    res.json({
+    const total = Number.isInteger(totalExpected) ? Math.max(0, totalExpected) : 0;
+
+    // Upsert de la sesión
+    const upsert = await pool.query(
+      `INSERT INTO app.routine_sessions (user_id, routine_plan_id, week_number, day_name, total_exercises, exercises_completed, status)
+       VALUES ($1,$2,$3,$4,$5,0,'pending')
+       ON CONFLICT (user_id, routine_plan_id, week_number, day_name)
+       DO UPDATE SET 
+         total_exercises = CASE WHEN app.routine_sessions.total_exercises = 0 THEN EXCLUDED.total_exercises ELSE app.routine_sessions.total_exercises END,
+         updated_at = NOW()
+       RETURNING *;`,
+      [userId, routinePlanId, weekNumber, dayName, total]
+    );
+
+    console.log('[POST /api/routines/sessions] success', { sessionId: upsert.rows[0].id });
+    return res.status(200).json({
       success: true,
-      session: sessionResult.rows[0]
+      session: upsert.rows[0]
     });
-
-  } catch (error) {
-    console.error('Error creando sesión de rutina:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Error interno del servidor'
-    });
+    
+  } catch (err) {
+    console.error('[POST /api/routines/sessions] error', err);
+    return res.status(500).json({ success: false, error: 'internal_error' });
   }
 });
 
-// Obtener progreso de una rutina
+// Obtener progreso de una rutina (filtrar archivados)
 router.get('/progress/:routinePlanId', authenticateToken, async (req, res) => {
   try {
     const { routinePlanId } = req.params;
     const userId = req.user?.userId || req.user?.id;
+
+    console.log('[GET /api/routines/progress]', { userId, routinePlanId });
+
+    // Verificar plan no archivado
+    const planCheck = await pool.query(
+      `SELECT id, archived_at FROM app.routine_plans WHERE id = $1 AND user_id = $2`,
+      [routinePlanId, userId]
+    );
+    
+    if (planCheck.rowCount === 0) {
+      console.log('[GET /api/routines/progress] plan no encontrado');
+      return res.status(404).json({ success: false, error: 'Plan no encontrado' });
+    }
+    
+    if (planCheck.rows[0].archived_at) {
+      console.log('[GET /api/routines/progress] plan archivado', { archived_at: planCheck.rows[0].archived_at });
+      return res.status(409).json({ success: false, error: 'Plan archivado' });
+    }
 
     const progressQuery = `
       SELECT * FROM app.get_routine_progress($1, $2)
@@ -131,15 +119,18 @@ router.get('/progress/:routinePlanId', authenticateToken, async (req, res) => {
   }
 });
 
-// Obtener detalles de una sesión específica
+// Obtener detalles de una sesión específica (hidratación controlada)
 router.get('/sessions/:sessionId', authenticateToken, async (req, res) => {
   try {
     const { sessionId } = req.params;
     const userId = req.user?.userId || req.user?.id;
 
+    console.log('[GET /api/routines/sessions/:sessionId]', { userId, sessionId });
+
     const sessionQuery = `
       SELECT 
         rs.*,
+        rp.archived_at,
         array_agg(
           json_build_object(
             'exercise_order', rep.exercise_order,
@@ -153,25 +144,33 @@ router.get('/sessions/:sessionId', authenticateToken, async (req, res) => {
           ) ORDER BY rep.exercise_order
         ) as exercises
       FROM app.routine_sessions rs
+      JOIN app.routine_plans rp ON rs.routine_plan_id = rp.id
       LEFT JOIN app.routine_exercise_progress rep ON rs.id = rep.routine_session_id
       LEFT JOIN app.routine_exercise_feedback ref ON rs.id = ref.routine_session_id 
         AND rep.exercise_order = ref.exercise_order
       WHERE rs.id = $1 AND rs.user_id = $2
-      GROUP BY rs.id
+      GROUP BY rs.id, rp.archived_at
     `;
 
     const sessionResult = await pool.query(sessionQuery, [sessionId, userId]);
 
     if (sessionResult.rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        error: 'Sesión no encontrada'
-      });
+      console.log('[GET /api/routines/sessions/:sessionId] no encontrada');
+      return res.status(204).end();
     }
+
+    const session = sessionResult.rows[0];
+    if (session.archived_at) {
+      console.log('[GET /api/routines/sessions/:sessionId] plan archivado', { archived_at: session.archived_at });
+      return res.status(204).end();
+    }
+
+    // Remover archived_at del resultado
+    delete session.archived_at;
 
     res.json({
       success: true,
-      session: sessionResult.rows[0]
+      session: session
     });
 
   } catch (error) {
@@ -416,11 +415,13 @@ router.get('/stats', authenticateToken, async (req, res) => {
   }
 });
 
-// Obtener historial de rutinas del usuario
+// Obtener historial de rutinas del usuario (filtrar archivados)
 router.get('/history', authenticateToken, async (req, res) => {
   try {
     const userId = req.user?.userId || req.user?.id;
     const { limit = 10, offset = 0 } = req.query;
+
+    console.log('[GET /api/routines/history]', { userId, limit, offset });
 
     const historyQuery = `
       SELECT 
@@ -430,17 +431,20 @@ router.get('/history', authenticateToken, async (req, res) => {
         rp.total_weeks,
         rp.created_at,
         rp.is_active,
+        rp.archived_at,
         COUNT(rs.id) as total_sessions,
         COUNT(CASE WHEN rs.status = 'completed' THEN 1 END) as completed_sessions
       FROM app.routine_plans rp
       LEFT JOIN app.routine_sessions rs ON rp.id = rs.routine_plan_id
-      WHERE rp.user_id = $1
-      GROUP BY rp.id, rp.methodology_type, rp.frequency_per_week, rp.total_weeks, rp.created_at, rp.is_active
+      WHERE rp.user_id = $1 AND rp.archived_at IS NULL
+      GROUP BY rp.id, rp.methodology_type, rp.frequency_per_week, rp.total_weeks, rp.created_at, rp.is_active, rp.archived_at
       ORDER BY rp.created_at DESC
       LIMIT $2 OFFSET $3
     `;
 
     const historyResult = await pool.query(historyQuery, [userId, parseInt(limit), parseInt(offset)]);
+
+    console.log('[GET /api/routines/history] found:', historyResult.rowCount, 'routines');
 
     res.json({
       success: true,
@@ -456,60 +460,33 @@ router.get('/history', authenticateToken, async (req, res) => {
   }
 });
 
-// Obtener estadísticas de un plan de rutina específico
+// Obtener estadísticas de un plan de rutina específico (filtrar archivados)
 router.get('/plans/:planId/stats', authenticateToken, async (req, res) => {
   try {
     const { planId } = req.params;
     const userId = req.user?.userId || req.user?.id;
 
-    console.log(`🔍 DEBUG Stats - planId: ${planId}, userId: ${userId}`);
+    console.log('[GET /api/routines/plans/:planId/stats]', { planId, userId });
 
-    // Obtener o migrar plan para asegurar que existe en routine_plans
-    const routineQuery = `
-      SELECT id FROM app.routine_plans
-      WHERE id = $1 AND user_id = $2
-    `;
-    let effectivePlanId = parseInt(planId);
-    
-    const routineResult = await pool.query(routineQuery, [planId, userId]);
+    // Verificar plan y estado archivado
+    const planCheck = await pool.query(
+      `SELECT id, archived_at, is_active FROM app.routine_plans WHERE id = $1 AND user_id = $2`,
+      [planId, userId]
+    );
 
-    if (routineResult.rows.length === 0) {
-      console.log(`⚠️ Plan ${planId} no encontrado en routine_plans, usando función helper...`);
-      
-      // Usar función helper que previene duplicados
-      const helperQuery = `SELECT app.get_or_create_routine_plan($1, $2) as routine_plan_id`;
-      const helperResult = await pool.query(helperQuery, [planId, userId]);
-      
-      if (helperResult.rows.length > 0) {
-        effectivePlanId = helperResult.rows[0].routine_plan_id;
-        console.log(`✅ Plan obtenido/creado: methodology_plan ${planId} -> routine_plan ${effectivePlanId}`);
-      } else {
-        console.log(`❌ No se pudo obtener/crear plan para methodology_plan ${planId}`);
-        return res.status(404).json({ success: false, error: 'Plan no encontrado' });
-      }
-    } else {
-      console.log(`✅ Plan ${planId} encontrado en routine_plans`);
+    if (planCheck.rowCount === 0) {
+      console.log('[GET /api/routines/plans/:planId/stats] plan no encontrado');
+      return res.status(404).json({ success: false, error: 'Plan no encontrado' });
     }
 
-    // Verificar que el plan esté activo antes de obtener estadísticas
-    const activeCheckQuery = `
-      SELECT id, is_active FROM app.routine_plans 
-      WHERE id = $1 AND user_id = $2
-    `;
+    const plan = planCheck.rows[0];
+    console.log('[GET /api/routines/plans/:planId/stats] plan check', { archived_at: plan.archived_at, is_active: plan.is_active });
     
-    const activeResult = await pool.query(activeCheckQuery, [effectivePlanId, userId]);
-    
-    if (activeResult.rows.length === 0) {
-      console.log(`❌ Plan ${effectivePlanId} no encontrado para userId: ${userId}`);
-      return res.status(404).json({
-        success: false,
-        error: 'Plan de rutina no encontrado'
-      });
+    if (plan.archived_at) {
+      return res.status(409).json({ success: false, error: 'Plan archivado' });
     }
-    
-    const planData = activeResult.rows[0];
-    if (planData.is_active === false) {
-      console.log(`❌ Plan ${effectivePlanId} está inactivo para userId: ${userId}`);
+
+    if (plan.is_active === false) {
       return res.status(410).json({
         success: false,
         error: 'Este plan de rutina ha sido cancelado',
@@ -517,17 +494,15 @@ router.get('/plans/:planId/stats', authenticateToken, async (req, res) => {
       });
     }
 
-    // Usar la nueva función mejorada para obtener estadísticas con el plan efectivo
+    // Usar la nueva función mejorada para obtener estadísticas
     const statsQuery = `
       SELECT * FROM app.get_enhanced_routine_plan_stats($1, $2)
     `;
 
-    const statsResult = await pool.query(statsQuery, [userId, effectivePlanId]);
-    
-    console.log(`🔍 DEBUG Stats Result:`, statsResult.rows);
+    const statsResult = await pool.query(statsQuery, [userId, parseInt(planId)]);
     
     if (statsResult.rows.length === 0) {
-      console.log(`❌ No stats found for planId: ${planId}, userId: ${userId}`);
+      console.log('[GET /api/routines/plans/:planId/stats] no stats found');
       return res.status(404).json({
         success: false,
         error: 'Plan de rutina no encontrado'
@@ -535,13 +510,13 @@ router.get('/plans/:planId/stats', authenticateToken, async (req, res) => {
     }
 
     const stats = statsResult.rows[0];
-    console.log(`🔍 DEBUG Processed Stats:`, stats);
+    console.log('[GET /api/routines/plans/:planId/stats] success', { total_exercises: stats.total_exercises_attempted });
 
     res.json({
       success: true,
       stats: {
         completed_sessions: stats.completed_sessions,
-        completed_exercises: stats.total_exercises_attempted, // Todos los ejercicios realizados
+        completed_exercises: stats.total_exercises_attempted,
         total_training_time: stats.total_training_time_minutes,
         current_streak: stats.current_streak_days,
         methodology_type: stats.methodology_type,
@@ -572,38 +547,32 @@ router.post('/plans/:planId/activity', authenticateToken, async (req, res) => {
     const userId = req.user?.userId || req.user?.id;
     const { activityType = 'continue_training' } = req.body;
 
-    // Obtener o migrar plan para asegurar que existe en routine_plans
-    const routineQuery = `
-      SELECT id FROM app.routine_plans
-      WHERE id = $1 AND user_id = $2
-    `;
-    let effectivePlanId = parseInt(planId);
-    
-    const routineResult = await pool.query(routineQuery, [planId, userId]);
+    console.log('[POST /api/routines/plans/:planId/activity]', { planId, userId, activityType });
 
-    if (routineResult.rows.length === 0) {
-      console.log(`⚠️ Plan ${planId} no encontrado en routine_plans para activity, usando función helper...`);
-      
-      // Usar función helper que previene duplicados
-      const helperQuery = `SELECT app.get_or_create_routine_plan($1, $2) as routine_plan_id`;
-      const helperResult = await pool.query(helperQuery, [planId, userId]);
-      
-      if (helperResult.rows.length > 0) {
-        effectivePlanId = helperResult.rows[0].routine_plan_id;
-        console.log(`✅ Plan obtenido/creado para activity: methodology_plan ${planId} -> routine_plan ${effectivePlanId}`);
-      } else {
-        console.log(`❌ No se pudo obtener/crear plan para activity methodology_plan ${planId}`);
-        return res.status(404).json({ success: false, error: 'Plan no encontrado' });
-      }
+    // Verificar plan y estado archivado
+    const planCheck = await pool.query(
+      `SELECT id, archived_at FROM app.routine_plans WHERE id = $1 AND user_id = $2`,
+      [planId, userId]
+    );
+
+    if (planCheck.rowCount === 0) {
+      console.log('[POST /api/routines/plans/:planId/activity] plan no encontrado');
+      return res.status(404).json({ success: false, error: 'Plan no encontrado' });
     }
 
-    // Registrar la actividad diaria con el plan correcto
+    if (planCheck.rows[0].archived_at) {
+      console.log('[POST /api/routines/plans/:planId/activity] plan archivado', { archived_at: planCheck.rows[0].archived_at });
+      return res.status(409).json({ success: false, error: 'Plan archivado' });
+    }
+
+    // Registrar la actividad diaria
     const registerQuery = `
       SELECT app.register_daily_activity($1, $2, $3)
     `;
 
-    await pool.query(registerQuery, [userId, effectivePlanId, activityType]);
+    await pool.query(registerQuery, [userId, parseInt(planId), activityType]);
 
+    console.log('[POST /api/routines/plans/:planId/activity] success');
     res.json({
       success: true,
       message: 'Actividad registrada exitosamente'
@@ -630,9 +599,9 @@ router.delete('/plans/:planId', authenticateToken, async (req, res) => {
     
     console.log(`🗑️ [Routines] Cancelando rutina planId: ${planId}, userId: ${userId}`);
 
-    // Verificar que el plan pertenezca al usuario
+    // Verificar que el plan pertenezca al usuario y no esté archivado
     const checkQuery = `
-      SELECT id, methodology_type FROM app.routine_plans 
+      SELECT id, methodology_type, archived_at FROM app.routine_plans 
       WHERE id = $1 AND user_id = $2
     `;
     
@@ -642,6 +611,14 @@ router.delete('/plans/:planId', authenticateToken, async (req, res) => {
       return res.status(404).json({ 
         success: false, 
         error: 'Rutina no encontrada o no tienes permisos' 
+      });
+    }
+
+    const plan = checkResult.rows[0];
+    if (plan.archived_at) {
+      return res.status(409).json({ 
+        success: false, 
+        error: 'La rutina ya está archivada' 
       });
     }
 
@@ -680,10 +657,10 @@ router.delete('/plans/:planId', authenticateToken, async (req, res) => {
         RETURNING id
       `, [planId, userId]);
 
-      // 5. Marcar plan como inactivo (en lugar de eliminar para auditoría)
-      const deactivateResult = await pool.query(`
+      // 5. Archivar plan (marcar como archived_at para que no reaparezca)
+      const archiveResult = await pool.query(`
         UPDATE app.routine_plans 
-        SET is_active = false, updated_at = CURRENT_TIMESTAMP 
+        SET archived_at = CURRENT_TIMESTAMP, is_active = false, updated_at = CURRENT_TIMESTAMP 
         WHERE id = $1 AND user_id = $2
         RETURNING id, methodology_type
       `, [planId, userId]);
@@ -692,14 +669,14 @@ router.delete('/plans/:planId', authenticateToken, async (req, res) => {
 
       console.log(`✅ [Routines] Rutina ${planId} cancelada exitosamente:`);
       console.log(`   - Sesiones eliminadas: ${deleteSessionsResult.rowCount}`);
-      console.log(`   - Plan desactivado: ${deactivateResult.rowCount}`);
+      console.log(`   - Plan archivado: ${archiveResult.rowCount}`);
 
       res.json({
         success: true,
         message: 'Rutina cancelada exitosamente',
         deleted: {
           sessions: deleteSessionsResult.rowCount,
-          plan_deactivated: deactivateResult.rowCount > 0
+          plan_archived: archiveResult.rowCount > 0
         }
       });
 

@@ -54,10 +54,13 @@
       "Bash(npm i:*)",
       "Read(C:\\Users\\Sergio\\Pictures\\EntranaconIA\\Procedimientos/**)",
       "Bash(git log:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Read(c:\\Users\\Sergio\\Pictures\\EntranaconIA\\Procedimientos/**)",
+      "Bash(node server.js)"
     ],
     "additionalDirectories": [
-      "C:\\"
+      "C:\\",
+      "C:\\c\\Users\\Sergio\\Documents\\augment-projects\\Entrena_con_IA"
     ]
   }
 }

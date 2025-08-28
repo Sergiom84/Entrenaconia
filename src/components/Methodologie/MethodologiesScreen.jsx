@@ -80,9 +80,16 @@ export default function MethodologiesScreen() {
       setGeneratedRoutinePlan({
         plan: result.plan,
         planSource: 'automatic',
-        planId: result.planId,
+        planId: result.planId, // ID original de methodology_plans
+        routinePlanId: result.routinePlanId, // ID para routine_plans
         metadata: result.metadata,
         metodologia: result.plan.selected_style
+      });
+      
+      console.log('🛤️ Plan automático generado:', {
+        methodologyPlanId: result.planId,
+        routinePlanId: result.routinePlanId,
+        migrationInfo: result.metadata?.migrationInfo
       });
       
       // Construir mensaje personalizado para mostrar directamente en el modal del plan
@@ -164,8 +171,15 @@ export default function MethodologiesScreen() {
       setGeneratedRoutinePlan({
         plan: result.plan,
         planSource: 'manual_methodology', 
-        planId: result.planId,
+        planId: result.planId, // ID original de methodology_plans
+        routinePlanId: result.routinePlanId, // ID para routine_plans
         metodologia: pendingMethodology.name
+      });
+      
+      console.log('🛤️ Plan manual generado:', {
+        methodologyPlanId: result.planId,
+        routinePlanId: result.routinePlanId,
+        migrationInfo: result.migrationInfo
       });
       
       // Mostrar mensaje personalizado con tips incluidos
@@ -219,12 +233,21 @@ export default function MethodologiesScreen() {
   // Función para navegar a rutinas con el plan
   const navigateToRoutines = () => {
     const model = generatedRoutinePlan?.metadata?.model;
+    // Usar routinePlanId para Rutinas, fallback a planId si no existe
+    const correctPlanId = generatedRoutinePlan?.routinePlanId || generatedRoutinePlan?.planId;
+    
+    console.log('🛤️ Navegando a Rutinas:', {
+      methodologyPlanId: generatedRoutinePlan?.planId,
+      routinePlanId: generatedRoutinePlan?.routinePlanId,
+      usingPlanId: correctPlanId
+    });
+    
     navigate('/routines', {
       state: {
         routinePlan: generatedRoutinePlan.plan,
         planSource: { label: 'OpenAI', detail: model ? `(${model})` : '' },
         planMetadata: generatedRoutinePlan.metadata,
-        planId: generatedRoutinePlan.planId
+        planId: correctPlanId // Usar el ID correcto para routine_plans
       }
     });
     // Limpiar estado después de navegar

@@ -93,7 +93,7 @@ const HomeTrainingProgress = ({
         </div>
 
         {/* Información del entrenamiento */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-300 mb-6">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-gray-300 mb-6">
           <div className="flex items-center">
             <Calendar size={16} className="mr-2" />
             <span>Fecha: {new Date().toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' })}</span>
@@ -146,15 +146,22 @@ const HomeTrainingProgress = ({
                         {ejercicio.nombre}
                         {isCompleted && (
                           <span className="ml-2 text-xs">
-                            ✓ Completado{sentiment ? `, ${sentiment === 'love' ? 'Me encanta' : sentiment === 'hard' ? 'Es difícil' : 'No me gusta'}` : ''}
+                            ✓ Completado
+                            {sentiment && <span className="ml-1 text-yellow-300 font-medium">• {sentiment === 'love' ? 'Me encanta' : sentiment === 'hard' ? 'Es difícil' : 'No me gusta'}</span>}
                           </span>
                         )}
                         {!isCompleted && isCurrent && <span className="ml-2 text-xs text-blue-300">• En progreso</span>}
                         {!isCompleted && !isCurrent && status === 'skipped' && (
-                          <span className="ml-2 text-xs text-gray-300">• Saltado{sentiment ? `, ${sentiment === 'love' ? 'Me encanta' : sentiment === 'hard' ? 'Es difícil' : 'No me gusta'}` : ''}</span>
+                          <span className="ml-2 text-xs text-gray-300">
+                            • Saltado
+                            {sentiment && <span className="ml-1 text-yellow-300 font-medium">• {sentiment === 'love' ? 'Me encanta' : sentiment === 'hard' ? 'Es difícil' : 'No me gusta'}</span>}
+                          </span>
                         )}
                         {!isCompleted && !isCurrent && status === 'cancelled' && (
-                          <span className="ml-2 text-xs text-red-300">• Cancelado{sentiment ? `, ${sentiment === 'love' ? 'Me encanta' : sentiment === 'hard' ? 'Es difícil' : 'No me gusta'}` : ''}</span>
+                          <span className="ml-2 text-xs text-red-300">
+                            • Cancelado
+                            {sentiment && <span className="ml-1 text-yellow-300 font-medium">• {sentiment === 'love' ? 'Me encanta' : sentiment === 'hard' ? 'Es difícil' : 'No me gusta'}</span>}
+                          </span>
                         )}
                       </h5>
                     </div>

@@ -1,10 +1,15 @@
 import React from 'react';
 import { TrendingUp, Calendar, Clock, Target, Zap } from 'lucide-react';
 
-const RoutineStatsCard = ({ routineStats, plan, totalProgress }) => {
+const RoutineStatsCard = ({ routineStats, plan, totalProgress, session }) => {
   if (!routineStats && !plan) return null;
 
   const stats = routineStats || {};
+  
+  // Usar totales de la sesión si están disponibles
+  const total = session?.total_exercises ?? 0;
+  const done = session?.exercises_completed ?? 0;
+  const sessionProgress = total ? Math.round((done/total)*100) : 0;
   
   const formatTime = (minutes) => {
     if (!minutes || minutes === 0) return '0m';
@@ -51,15 +56,22 @@ const RoutineStatsCard = ({ routineStats, plan, totalProgress }) => {
       {/* Barra de progreso total */}
       <div className="mb-6">
         <div className="flex justify-between items-center mb-2">
-          <span className="text-white font-medium">Progreso Total</span>
-          <span className="text-white">{Math.round(totalProgress || 0)}%</span>
+          <span className="text-white font-medium">{session ? 'Progreso de Sesión' : 'Progreso Total'}</span>
+          <span className="text-white">{Math.round(session ? sessionProgress : (totalProgress || 0))}%</span>
         </div>
         <div className="w-full bg-gray-700 rounded-full h-2">
           <div 
-            className="bg-yellow-400 h-2 rounded-full transition-all duration-300" 
-            style={{ width: `${totalProgress || 0}%` }}
+            className={`h-2 rounded-full transition-all duration-300 ${
+              session ? 'bg-blue-400' : 'bg-yellow-400'
+            }`}
+            style={{ width: `${session ? sessionProgress : (totalProgress || 0)}%` }}
           ></div>
         </div>
+        {session && total > 0 && (
+          <div className="text-xs text-gray-400 mt-1 text-center">
+            {done} de {total} ejercicios completados en esta sesión
+          </div>
+        )}
       </div>
 
       {/* Estadísticas en grid */}
@@ -77,10 +89,10 @@ const RoutineStatsCard = ({ routineStats, plan, totalProgress }) => {
         {/* Ejercicios Completados */}
         <div className="text-center">
           <div className="text-2xl font-bold text-blue-400 mb-1">
-            {stats.completed_exercises || 0}
+            {session ? `${done}/${total}` : (stats.completed_exercises || 0)}
           </div>
           <div className="text-xs text-gray-300">
-            Ejercicios<br />Completados
+            Ejercicios<br />{session ? 'Sesión Actual' : 'Completados'}
           </div>
         </div>
 

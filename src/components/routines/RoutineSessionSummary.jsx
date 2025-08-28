@@ -107,7 +107,7 @@ const RoutineSessionSummary = ({
           <span className="font-medium">Fuente del plan:</span> {planSourceLabel} {planSourceDetail && <span className="text-gray-400">{planSourceDetail}</span>}
         </p>
         <p>
-          <span className="font-medium">Perfil:</span> {perfil?.nombre || '—'} — Edad: {perfil?.edad ?? '—'}, Peso: {fmt2(perfil?.peso)} kg, Altura: {fmt2(perfil?.altura)} cm, Nivel: {perfil?.nivel || '—'}, IMC: {fmt1(perfil?.imc)}
+          <span className="font-medium">Perfil:</span> {perfil?.nombre ? `${perfil.nombre} — Edad: ${perfil.edad ?? 'N/A'}, Peso: ${fmt2(perfil.peso)} kg, Altura: ${fmt2(perfil.altura)} cm, Nivel: ${perfil.nivel || 'N/A'}, IMC: ${fmt1(perfil.imc)}` : 'Perfil no disponible'}
         </p>
       </div>
 

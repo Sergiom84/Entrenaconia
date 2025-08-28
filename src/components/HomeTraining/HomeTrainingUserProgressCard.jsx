@@ -25,7 +25,7 @@ const HomeTrainingUserProgressCard = ({ userStats }) => {
       <div className="flex items-center mb-4">
         <TrendingUp className="text-yellow-400 mr-2" size={24} />
         <h3 className="text-xl font-semibold text-white">
-          Tu Progreso en Casa - {userStats.userName || 'Usuario'}
+          Tu Progreso en Casa
         </h3>
       </div>
 

@@ -516,7 +516,7 @@ const HomeTrainingSection = () => {
       title: 'Equipamiento Mínimo',
       icon: Home,
       equipment: ['Peso corporal', 'Toallas', 'Silla/Sofá', 'Pared'],
-      exercises: ['Flexiones variadas', 'Sentadillas', 'Plancha'],
+      exercises: [], // Ejercicios generados por IA según perfil
       borderColor: 'border-green-500'
     },
     {
@@ -524,7 +524,7 @@ const HomeTrainingSection = () => {
       title: 'Equipamiento Básico',
       icon: Target,
       equipment: ['Mancuernas ajustables', 'Bandas elásticas', 'Esterilla', 'Banco/Step'],
-      exercises: ['Press de pecho', 'Remo con banda', 'Peso muerto'],
+      exercises: [], // Ejercicios generados por IA según perfil
       borderColor: 'border-blue-500'
     },
     {
@@ -532,7 +532,7 @@ const HomeTrainingSection = () => {
       title: 'Equipamiento Avanzado',
       icon: Dumbbell,
       equipment: ['Barra dominadas', 'Kettlebells', 'TRX', 'Discos olímpicos'],
-      exercises: ['Dominadas', 'Swing kettlebell', 'Sentadilla goblet'],
+      exercises: [], // Ejercicios generados por IA según perfil
       borderColor: 'border-purple-500'
     }
   ];

@@ -2,7 +2,7 @@ import express from 'express';
 import authenticateToken from '../middleware/auth.js';
 import { AI_MODULES } from '../config/aiConfigs.js';
 import { getModuleOpenAI } from '../lib/openaiClient.js';
-import db from '../db.js';
+import { pool } from '../db.js';
 import { 
   logSeparator, 
   logUserProfile, 
@@ -230,14 +230,54 @@ router.post('/generate-manual', authenticateToken, async (req, res) => {
       console.log('⚠️ No se pudieron registrar ejercicios en historial:', registerError.message);
     }
 
-    console.log(`✅ Plan de ${metodologia_solicitada} generado exitosamente`);
-
-    res.json({
-      success: true,
-      plan: planData,
-      planId: insertResult.rows[0].id,
-      message: `Plan de ${metodologia_solicitada} generado exitosamente`
-    });
+    console.log(`✅ Plan de ${metodologia_solicitada} guardado en methodology_plans`);
+    
+    const methodologyPlanId = insertResult.rows[0].id;
+    
+    // MIGRACIÓN AUTOMÁTICA: Crear plan en routine_plans para que Rutinas pueda usarlo
+    try {
+      const routinePlanQuery = `
+        INSERT INTO app.routine_plans (
+          user_id, methodology_type, plan_data, generation_mode, 
+          frequency_per_week, total_weeks, created_at, updated_at
+        ) VALUES ($1, $2, $3, 'manual', $4, $5, NOW(), NOW())
+        RETURNING id
+      `;
+      
+      const routinePlanResult = await db.query(routinePlanQuery, [
+        userId,
+        canonical,
+        JSON.stringify(planData),
+        planData.frecuencia_por_semana || 3,
+        planData.duracion_total_semanas || 4
+      ]);
+      
+      const routinePlanId = routinePlanResult.rows[0].id;
+      console.log(`✅ Plan migrado automáticamente: methodology_plans(${methodologyPlanId}) -> routine_plans(${routinePlanId})`);
+      
+      res.json({
+        success: true,
+        plan: planData,
+        planId: methodologyPlanId, // ID original de methodology_plans
+        routinePlanId: routinePlanId, // ID nuevo de routine_plans para usar en Rutinas
+        message: `Plan de ${metodologia_solicitada} generado exitosamente`,
+        migrationInfo: {
+          methodology_plan_id: methodologyPlanId,
+          routine_plan_id: routinePlanId
+        }
+      });
+      
+    } catch (migrationError) {
+      console.error('❌ Error en migración automática:', migrationError.message);
+      // Aún devolver respuesta exitosa pero sin routine_plan_id
+      res.json({
+        success: true,
+        plan: planData,
+        planId: methodologyPlanId,
+        message: `Plan de ${metodologia_solicitada} generado exitosamente`,
+        migrationError: migrationError.message
+      });
+    }
 
   } catch (error) {
     console.error('❌ Error en generate-manual:', error);
@@ -266,6 +306,58 @@ router.get('/available-methodologies', (req, res) => {
     success: true,
     metodologias
   });
+});
+
+// Obtener el plan de metodología más reciente del usuario
+router.get('/latest-plan', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Usuario no autenticado' });
+    }
+
+    // Buscar el plan más reciente del usuario
+    const query = `
+      SELECT id, user_id, methodology_type, plan_data, generation_mode, created_at
+      FROM app.methodology_plans
+      WHERE user_id = $1
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+    
+    const result = await pool.query(query, [userId]);
+    
+    if (result.rows.length === 0) {
+      return res.json({
+        success: false,
+        message: 'No se encontraron planes de metodología para este usuario'
+      });
+    }
+    
+    const plan = result.rows[0];
+    
+    console.log(`📋 Plan más reciente encontrado para userId ${userId}: ${plan.methodology_type} (ID: ${plan.id})`);
+    
+    res.json({
+      success: true,
+      plan: {
+        id: plan.id,
+        user_id: plan.user_id,
+        methodology_type: plan.methodology_type,
+        plan_data: plan.plan_data,
+        generation_mode: plan.generation_mode,
+        created_at: plan.created_at
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Error obteniendo plan más reciente:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error interno del servidor'
+    });
+  }
 });
 
 export default router;

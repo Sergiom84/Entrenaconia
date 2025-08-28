@@ -3,59 +3,13 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { AlertTriangle, CheckCircle } from 'lucide-react';
 
-const FALLBACK_EXERCISES = [
-  {
-    id: 'squat',
-    name: 'Sentadilla',
-    commonErrors: [
-      'Rodillas hacia adentro (valgo)',
-      'Inclinación excesiva del torso',
-      'Falta de profundidad',
-      'Peso en puntas de pies',
-    ],
-    keyPoints: [
-      'Rodillas alineadas con pies',
-      'Descender hasta ~90° de flexión',
-      'Pecho erguido',
-      'Peso en talones',
-    ],
-  },
-  {
-    id: 'deadlift',
-    name: 'Peso Muerto',
-    commonErrors: [
-      'Espalda redondeada',
-      'Barra alejada del cuerpo',
-      'Hiperextensión lumbar',
-      'Rodillas bloqueadas prematuramente',
-    ],
-    keyPoints: [
-      'Columna neutra',
-      'Barra pegada al cuerpo',
-      'Activar glúteos en la subida',
-      'Extensión simultánea cadera-rodilla',
-    ],
-  },
-  {
-    id: 'pushup',
-    name: 'Flexión de Brazos',
-    commonErrors: [
-      'Cadera elevada o hundida',
-      'ROM incompleto',
-      'Manos mal posicionadas',
-      'Cabeza adelantada',
-    ],
-    keyPoints: [
-      'Línea recta cabeza-talones',
-      'Descender hasta tocar suelo',
-      'Manos bajo hombros',
-      'Mirada neutra',
-    ],
-  },
-];
+// NO ejercicios hardcodeados - deben venir de la API de ejercicios
+const FALLBACK_EXERCISES = [];
 
 export default function ExerciseSelector({ selectedExerciseId, onExerciseChange }) {
-  const [exercises, setExercises] = useState(FALLBACK_EXERCISES);
+  const [exercises, setExercises] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   // Cargar biblioteca de ejercicios desde el backend
   useEffect(() => {
@@ -74,13 +28,44 @@ export default function ExerciseSelector({ selectedExerciseId, onExerciseChange 
           if (mapped.length) setExercises(mapped);
         }
       } catch (e) {
-        console.warn('Usando ejercicios fallback - API no disponible:', e.message);
+        console.error('Error cargando ejercicios:', e.message);
+        setError('No se pudo cargar la biblioteca de ejercicios. Todos los ejercicios deben obtenerse de la base de datos.');
+        setExercises([]);
+      } finally {
+        setLoading(false);
       }
     };
     loadExercises();
   }, []);
 
   const selectedExercise = exercises.find((e) => e.id === selectedExerciseId) || exercises[0];
+
+  if (loading) {
+    return (
+      <Card className="bg-black/80 border-yellow-400/20 mb-8">
+        <CardContent className="p-4">
+          <div className="text-center">
+            <div className="animate-spin w-6 h-6 border-2 border-yellow-400 border-t-transparent rounded-full mx-auto mb-2"></div>
+            <p className="text-gray-400">Cargando ejercicios desde la base de datos...</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (error || exercises.length === 0) {
+    return (
+      <Card className="bg-black/80 border-yellow-400/20 mb-8">
+        <CardContent className="p-4">
+          <div className="text-center text-red-400">
+            <AlertTriangle className="w-6 h-6 mx-auto mb-2" />
+            <p>{error || 'No hay ejercicios disponibles en la base de datos.'}</p>
+            <p className="text-sm text-gray-400 mt-2">Todos los ejercicios deben cargarse dinámicamente desde la API.</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className="bg-black/80 border-yellow-400/20 mb-8">

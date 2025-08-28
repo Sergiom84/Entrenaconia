@@ -88,24 +88,20 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
     // Validar y sanitizar datos del perfil
     const profileData = validateProfileData(perfil);
 
-    // ===== OBTENER EJERCICIOS RECIENTES DE METODOLOGÍAS (TABLA ESPECÍFICA) =====
+    // ===== OBTENER EJERCICIOS RECIENTES USANDO LA NUEVA FUNCIÓN =====
     let exercisesFromDB = [];
     try {
-      // Obtener ejercicios realizados en los últimos 60 días SOLO DE METODOLOGÍAS
+      // Usar la nueva función optimizada que incluye feedback del usuario
       const recentExercisesResult = await pool.query(
         `SELECT 
-          eh.exercise_name,
-          eh.methodology_type,
-          COUNT(*) as usage_count,
-          MAX(eh.used_at) as last_used,
-          STRING_AGG(DISTINCT eh.methodology_type, ', ') as methodologies_used
-        FROM app.exercise_history eh
-        WHERE eh.user_id = $1 
-          AND eh.used_at >= NOW() - INTERVAL '60 days'
-          AND eh.exercise_name IS NOT NULL
-        GROUP BY eh.exercise_name, eh.methodology_type
-        ORDER BY MAX(eh.used_at) DESC, COUNT(*) DESC
-        LIMIT 30`,
+          exercise_name,
+          methodology_type,
+          times_used as usage_count,
+          last_used_at as last_used,
+          avg_sentiment,
+          last_sentiment,
+          methodology_type as methodologies_used
+        FROM app.get_methodology_exercise_history($1, 30)`,
         [userId]
       );
       
@@ -170,10 +166,38 @@ ${exercisesFromDB.map(ex => {
   const lastUsed = ex.last_used ? new Date(ex.last_used).toISOString().split('T')[0] : 'reciente';
   const methodologyType = ex.methodology_type || 'Metodología desconocida';
   
-  return `- ${ex.exercise_name}: Usado ${usageCount} veces en ${methodologyType} (último: ${lastUsed})`;
+  // Añadir información de feedback del usuario
+  let feedbackInfo = '';
+  if (ex.last_sentiment) {
+    const sentimentMap = {
+      'love': '❤️ Le encanta',
+      'normal': '👍 Normal',
+      'hard': '😓 Difícil'
+    };
+    feedbackInfo = ` [${sentimentMap[ex.last_sentiment] || ex.last_sentiment}]`;
+  }
+  
+  return `- ${ex.exercise_name}: ${usageCount} veces en ${methodologyType} (último: ${lastUsed})${feedbackInfo}`;
 }).join('\n')}
 
-IMPORTANTE: El usuario ya ha realizado estos ejercicios en metodologías anteriores. Puedes incluir algunos pero PRIORIZA VARIACIONES Y PROGRESIONES. Evita repetir los más usados recientemente.`;
+🚨 REGLAS CRÍTICAS DE VARIACIÓN:
+1. ❌ TOTALMENTE PROHIBIDO repetir ejercicios usados más de 4 veces
+2. ⚠️ EVITAR ejercicios usados 3-4 veces, solo si es absolutamente necesario
+3. ✅ PRIORIZAR ejercicios nuevos o usados menos de 3 veces
+4. 💡 Si DEBES usar ejercicio similar, usa VARIACIONES ESPECÍFICAS:
+   • Sentadilla → Sentadilla sumo, Sentadilla hack, Sentadilla búlgara, Sentadilla frontal
+   • Press banca → Press inclinado, Press declinado, Press con mancuernas, Press con agarre cerrado
+   • Peso muerto → Peso muerto sumo, Peso muerto rumano, Peso muerto con déficit, Peso muerto trap bar
+5. 🎯 CONSIDERA FEEDBACK: Evita ejercicios marcados como "Difícil", prioriza los que "Le encantan"
+
+⛔ EJERCICIOS TOTALMENTE PROHIBIDOS (usados >4 veces):
+${exercisesFromDB.filter(ex => ex.usage_count > 4).map(ex => `• ${ex.exercise_name} (${ex.usage_count} veces)`).join('\n')}
+
+⚠️ EJERCICIOS A EVITAR (usados 3-4 veces):
+${exercisesFromDB.filter(ex => ex.usage_count >= 3 && ex.usage_count <= 4).map(ex => `• ${ex.exercise_name} (${ex.usage_count} veces)`).join('\n')}
+
+✅ EJERCICIOS FAVORITOS DEL USUARIO (priorizar si es posible):
+${exercisesFromDB.filter(ex => ex.last_sentiment === 'love').map(ex => `• ${ex.exercise_name} (Le encanta)`).join('\n')}`;
       } else {
         exercisesContext = `\n\nEJERCICIOS DE GIMNASIO SUGERIDOS DEL CATÁLOGO (usuario sin historial en metodologías):
 ${exercisesFromDB.map(ex => `- ${ex.exercise_name} (${ex.category || 'General'}) - ${ex.difficulty_level || 'Nivel estándar'}`).join('\n')}
@@ -430,20 +454,65 @@ Por favor, responde únicamente con el JSON solicitado según las especificacion
         JSON.stringify(parsedPlan)
       ]);
 
-      console.log('✅ Plan automático guardado en base de datos');
-
-      // Respuesta exitosa con planId
-      res.json({
-        success: true,
-        plan: parsedPlan,
-        planId: insertResult.rows[0].id,
-        metadata: {
-          generatedAt: new Date().toISOString(),
-          model: METHODOLOGIE_CONFIG.model,
-          promptVersion: METHODOLOGIE_CONFIG.promptVersion,
-          profileProcessed: profileData
-        }
-      });
+      console.log('✅ Plan automático guardado en methodology_plans');
+      
+      const methodologyPlanId = insertResult.rows[0].id;
+      
+      // MIGRACIÓN AUTOMÁTICA: Crear plan en routine_plans para que Rutinas pueda usarlo
+      try {
+        const routinePlanQuery = `
+          INSERT INTO app.routine_plans (
+            user_id, methodology_type, plan_data, generation_mode, 
+            frequency_per_week, total_weeks, created_at, updated_at
+          ) VALUES ($1, $2, $3, 'automatic', $4, $5, NOW(), NOW())
+          RETURNING id
+        `;
+        
+        const routinePlanResult = await pool.query(routinePlanQuery, [
+          userId,
+          parsedPlan.selected_style,
+          JSON.stringify(parsedPlan),
+          parsedPlan.frecuencia_por_semana || 3,
+          parsedPlan.duracion_total_semanas || 4
+        ]);
+        
+        const routinePlanId = routinePlanResult.rows[0].id;
+        console.log(`✅ Plan migrado automáticamente: methodology_plans(${methodologyPlanId}) -> routine_plans(${routinePlanId})`);
+        
+        // Respuesta exitosa con AMBOS IDs
+        res.json({
+          success: true,
+          plan: parsedPlan,
+          planId: methodologyPlanId, // ID original de methodology_plans
+          routinePlanId: routinePlanId, // ID nuevo de routine_plans para usar en Rutinas
+          metadata: {
+            generatedAt: new Date().toISOString(),
+            model: METHODOLOGIE_CONFIG.model,
+            promptVersion: METHODOLOGIE_CONFIG.promptVersion,
+            profileProcessed: profileData,
+            migrationInfo: {
+              methodology_plan_id: methodologyPlanId,
+              routine_plan_id: routinePlanId
+            }
+          }
+        });
+        
+      } catch (migrationError) {
+        console.error('❌ Error en migración automática:', migrationError.message);
+        // Aún devolver respuesta exitosa pero sin routine_plan_id
+        res.json({
+          success: true,
+          plan: parsedPlan,
+          planId: methodologyPlanId,
+          metadata: {
+            generatedAt: new Date().toISOString(),
+            model: METHODOLOGIE_CONFIG.model,
+            promptVersion: METHODOLOGIE_CONFIG.promptVersion,
+            profileProcessed: profileData,
+            migrationError: migrationError.message
+          }
+        });
+      }
 
     } catch (saveError) {
       console.error('⚠️ Error guardando plan automático en BD:', saveError.message);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUserContext } from '@/contexts/UserContext';
@@ -40,6 +40,100 @@ export default function RoutineScreen() {
   const [routineStats, setRoutineStats] = useState(null);
   const [isLoadingStats, setIsLoadingStats] = useState(false);
   const [lastStatsUpdate, setLastStatsUpdate] = useState(0);
+  const [hasTriedLoadingPlan, setHasTriedLoadingPlan] = useState(false);
+  const [initialLoad, setInitialLoad] = useState(true);
+  const [hydrated, setHydrated] = useState(null);
+  const [uiState, setUIState] = useState('LOADING'); // 'LOADING', 'READY', 'ARCHIVED', 'ERROR'
+  const didInit = useRef(false);
+
+  // Función para cargar el plan más reciente desde la BD
+  const loadLatestRoutinePlan = async () => {
+    try {
+      setIsLoading(true);
+      setError(null); // Limpiar errores previos
+      console.log('🔍 Intentando cargar plan más reciente desde BD...');
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setError('No hay sesión activa. Por favor, inicia sesión.');
+        return;
+      }
+
+      // Crear una sesión temporal para activar la lógica de migración del backend
+      console.log('🔄 Activando migración de plan desde metodología...');
+      
+      // Buscar el plan más reciente del usuario
+      const plansResponse = await fetch('/api/routines/history?limit=1', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (!plansResponse.ok) {
+        setError('No se pudo cargar el historial de rutinas.');
+        return;
+      }
+      
+      const plansData = await plansResponse.json();
+      if (!plansData.success || !plansData.routines || plansData.routines.length === 0) {
+        setError('No hay plan de rutina disponible. Por favor, genere un nuevo plan desde Metodologías.');
+        return;
+      }
+      
+      const latestPlan = plansData.routines[0];
+      
+      // El backend tiene lógica que automáticamente migra desde methodology_plans si no encuentra en routine_plans
+      const response = await fetch('/api/routines/sessions', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` 
+        },
+        body: JSON.stringify({
+          routinePlanId: latestPlan.id,
+          weekNumber: 1,
+          dayName: 'Lun',
+          totalExpected: 0
+        })
+      });
+
+      if (response.ok) {
+        const sessionData = await response.json();
+        console.log('✅ Sesión creada, plan migrado automáticamente');
+        
+        // Ahora intentar obtener las estadísticas que nos darán acceso al plan
+        const statsResponse = await fetch(`/api/routines/plans/${latestPlan.id}/stats`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (statsResponse.ok) {
+          console.log('❌ No se puede crear un plan hardcodeado. Todos los planes deben generarse por IA basándose en el perfil del usuario.');
+          setError('No hay plan de rutina válido disponible. Por favor, genere un nuevo plan desde Metodologías usando IA.');
+          return;
+        }
+      }
+      
+      // Si no se pudo cargar, mostrar error
+      setError('No hay plan de rutina disponible. Por favor, genere un nuevo plan desde Metodologías.');
+    } catch (error) {
+      console.error('❌ Error cargando plan más reciente:', error);
+      setError('No hay plan de rutina disponible. Por favor, genere un nuevo plan desde Metodologías.');
+    } finally {
+      setIsLoading(false);
+      setHasTriedLoadingPlan(true);
+      setInitialLoad(false);
+    }
+  };
+
+  // Limpiar localStorage al entrar o si no hay usuario
+  useEffect(() => {
+    if (!currentUser) {
+      localStorage.removeItem('routinePlan');
+      localStorage.removeItem('routineSessionId');
+      localStorage.removeItem('routineState');
+      localStorage.removeItem('currentRoutinePlan');
+      localStorage.removeItem('currentRoutinePlanId');
+      localStorage.removeItem('currentRoutineSessionId');
+      localStorage.removeItem('currentRoutineSessionStartAt');
+    }
+  }, [currentUser]);
 
   useEffect(() => {
     const planFromNavigation = location.state?.routinePlan;
@@ -66,13 +160,35 @@ export default function RoutineScreen() {
       const enhancedPlan = { plan: planFromNavigation, metadata: planMetadataFromNavigation };
       setRoutinePlan(enhancedPlan);
       localStorage.setItem('currentRoutinePlan', JSON.stringify(enhancedPlan));
+      setHasTriedLoadingPlan(true); // Plan cargado desde navegación
+      setInitialLoad(false);
       
       console.log('✅ Estado de sesión limpiado para nuevo plan');
     } else if (planFromStorage) {
-      try { setRoutinePlan(JSON.parse(planFromStorage)); } catch (error) { console.error('Error parsing routine plan from storage:', error); setError('Error cargando el plan de rutina guardado'); }
+      try { 
+        setRoutinePlan(JSON.parse(planFromStorage)); 
+        setHasTriedLoadingPlan(true); // Plan cargado desde localStorage
+        setInitialLoad(false);
+      } catch (error) { 
+        console.error('Error parsing routine plan from storage:', error); 
+        setError('Error cargando el plan de rutina guardado');
+        setHasTriedLoadingPlan(true);
+        setInitialLoad(false);
+      }
     } else {
-      setError('No hay plan de rutina disponible. Por favor, genere un nuevo plan desde Metodologías.');
+      // Limpiar localStorage huérfano antes de cargar desde BD
+      localStorage.removeItem('currentRoutineSessionId');
+      localStorage.removeItem('currentRoutineSessionStartAt');
+      setRoutineSessionId(null);
+      setCurrentSessionData(null);
+      setTrainingInProgress(false);
+      
+      // Intentar cargar el plan más reciente desde BD (asíncrono)
+      loadLatestRoutinePlan().catch(console.error);
     }
+    
+    // Marcar que ya no estamos en carga inicial después de un breve delay
+    setTimeout(() => setInitialLoad(false), 100);
 
     if (planIdFromNavigation) {
       setRoutinePlanId(planIdFromNavigation);
@@ -81,21 +197,106 @@ export default function RoutineScreen() {
       setRoutinePlanId(Number(planIdFromStorage));
     }
 
-    // Solo hidratar sesión si NO hay un plan nuevo desde navegación
-    if (!planFromNavigation && sessionIdFromStorage) {
+    // Solo hidratar sesión si NO hay un plan nuevo desde navegación Y si el plan viene del storage o navegación
+    if (!planFromNavigation && sessionIdFromStorage && (planFromStorage || planFromNavigation)) {
       console.log('🔄 Hidratando sesión existente...');
       setRoutineSessionId(Number(sessionIdFromStorage));
       if (sessionStartFromStorage) setSessionStartAtMs(Number(sessionStartFromStorage));
-      hydrateSession(Number(sessionIdFromStorage));
+      hydrateSession(Number(sessionIdFromStorage)).catch(error => {
+        console.warn('⚠️ Error hidratando sesión antigua, limpiando localStorage:', error.message);
+        // Si la sesión no existe, limpiar localStorage
+        localStorage.removeItem('currentRoutineSessionId');
+        localStorage.removeItem('currentRoutineSessionStartAt');
+        setRoutineSessionId(null);
+        setCurrentSessionData(null);
+        setTrainingInProgress(false);
+      });
+    } else if (sessionIdFromStorage && !planFromStorage && !planFromNavigation) {
+      // Si hay sessionId pero no plan, limpiar datos huérfanos
+      console.log('🧹 Limpiando datos de sesión huérfanos...');
+      localStorage.removeItem('currentRoutineSessionId');
+      localStorage.removeItem('currentRoutineSessionStartAt');
     }
   }, [location.state]);
 
+  // Un solo POST con useRef para evitar doble POST
+  useEffect(() => {
+    if (!currentUser || didInit.current || !routinePlanId) return;
+    didInit.current = true;
+
+    // Solo hacer POST si tenemos los datos necesarios
+    const selectedWeek = currentWeek || 1;
+    const selectedDayName = selectedDay?.dia || 'Lun'; // Default day
+    const dayExercises = selectedDay?.ejercicios || [];
+
+    console.log('[RoutineScreen] Iniciando POST de sesión:', { routinePlanId, selectedWeek, selectedDayName });
+
+    const payload = {
+      routinePlanId: routinePlanId,
+      weekNumber: selectedWeek,
+      dayName: selectedDayName,
+      totalExpected: Array.isArray(dayExercises) ? dayExercises.length : 0
+    };
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setUIState('ERROR');
+      return;
+    }
+
+    fetch('/api/routines/sessions', { 
+      method: 'POST', 
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      }, 
+      body: JSON.stringify(payload) 
+    })
+    .then(async r => {
+      console.log('[RoutineScreen] POST response status:', r.status);
+      if (r.status === 204) {
+        setHydrated(null);
+        setUIState('ARCHIVED');
+        return null;
+      }
+      if (r.status === 409) {
+        setUIState('ARCHIVED');
+        throw new Error('PLAN_ARCHIVED');
+      }
+      if (!r.ok) {
+        const errorData = await r.json().catch(() => ({}));
+        throw new Error(`UpsertFailed: ${r.status} - ${errorData.error || r.statusText}`);
+      }
+      return r.json();
+    })
+    .then(data => {
+      if (!data) { 
+        setHydrated(null); 
+        setUIState('ARCHIVED');
+        return; 
+      }
+      console.log('[RoutineScreen] Session upsert success:', data);
+      setHydrated(data);
+      setUIState('READY');
+      localStorage.setItem('routineSessionId', data.id);
+    })
+    .catch(err => {
+      console.error('[RoutineScreen] POST session error:', err);
+      if (err.message === 'PLAN_ARCHIVED') { 
+        setUIState('ARCHIVED'); 
+        return; 
+      }
+      console.error('hydrate session error', err); 
+      setUIState('ERROR');
+    });
+  }, [currentUser, routinePlanId, currentWeek, selectedDay]);
+
   // Efecto separado para cargar estadísticas cuando routinePlanId esté disponible
   useEffect(() => {
-    if (routinePlanId) {
+    if (routinePlanId && uiState === 'READY') {
       fetchRoutineStats();
     }
-  }, [routinePlanId]);
+  }, [routinePlanId, uiState]);
 
   // Función para limpiar rutina cancelada/inválida
   const handleInvalidRoutine = (errorCode) => {
@@ -106,6 +307,9 @@ export default function RoutineScreen() {
     localStorage.removeItem('currentRoutinePlanId');
     localStorage.removeItem('currentRoutineSessionId');
     localStorage.removeItem('currentRoutineSessionStartAt');
+    localStorage.removeItem('routinePlan');
+    localStorage.removeItem('routineSessionId');
+    localStorage.removeItem('routineState');
     
     // Limpiar estado
     setRoutinePlan(null);
@@ -117,11 +321,14 @@ export default function RoutineScreen() {
     setSessionExerciseStatuses([]);
     setCurrentExerciseIndex(0);
     setRoutineStats(null);
+    setHydrated(null);
     
     if (errorCode === 'ROUTINE_CANCELLED') {
       setError('La rutina ha sido cancelada. No hay rutinas disponibles.');
+      setUIState('ARCHIVED');
     } else {
       setError('No hay rutinas disponibles. Por favor, genere una nueva rutina desde Metodologías.');
+      setUIState('ERROR');
     }
   };
 
@@ -146,6 +353,11 @@ export default function RoutineScreen() {
         setRoutineStats(data.stats);
         setLastStatsUpdate(now);
         console.log('✅ Estadísticas actualizadas');
+      } else if (response.status === 409) {
+        // Plan archivado
+        console.warn('Plan archivado detectado');
+        handleInvalidRoutine('PLAN_ARCHIVED');
+        return;
       } else if (response.status === 410) {
         // Rutina cancelada
         const data = await response.json();
@@ -169,16 +381,65 @@ export default function RoutineScreen() {
 
   const handleBackToMethodologies = () => { navigate('/methodologies'); };
 
-  const handleCancelRoutine = () => {
+  const handleCancelRoutine = async () => {
     const confirmed = window.confirm('¿Estás seguro de que quieres cancelar esta rutina?\n\nSe eliminará tu plan actual y tendrás que generar uno nuevo desde Metodologías.');
     if (confirmed) {
-      localStorage.removeItem('currentRoutinePlan');
-      setRoutinePlan(null);
-      setSelectedDay(null);
-      setShowDayModal(false);
-      setCurrentWeek(1);
-      setError('Rutina cancelada. Puedes generar una nueva desde Metodologías.');
-      console.log('✅ Rutina cancelada por el usuario');
+      try {
+        setIsLoading(true);
+        
+        // Obtener planId actual
+        const currentRoutinePlanId = routinePlanId || Number(localStorage.getItem('currentRoutinePlanId'));
+        if (!currentRoutinePlanId) {
+          throw new Error('No se encontró el ID del plan a cancelar');
+        }
+        
+        console.log('🗑️ Cancelando rutina con planId:', currentRoutinePlanId);
+        
+        // Llamar al backend para cancelar la rutina
+        const token = localStorage.getItem('token');
+        const response = await fetch(`/api/routines/plans/${currentRoutinePlanId}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Error cancelando rutina');
+        }
+        
+        const result = await response.json();
+        console.log('✅ Rutina cancelada exitosamente:', result);
+        
+        // Limpiar estado local después del éxito en backend
+        localStorage.removeItem('currentRoutinePlan');
+        localStorage.removeItem('currentRoutinePlanId');
+        setRoutinePlan(null);
+        setRoutinePlanId(null);
+        setSelectedDay(null);
+        setShowDayModal(false);
+        setCurrentWeek(1);
+        setCurrentSessionData(null);
+        setRoutineSessionId(null);
+        setSessionStartAtMs(null);
+        setTrainingInProgress(false);
+        setCompletedExercises([]);
+        setSessionExerciseStatuses([]);
+        setRoutineStats(null);
+        setShowExerciseModal(false);
+        setCurrentExerciseIndex(0);
+        setHydrated(null);
+        setUIState('READY');
+        setError('Rutina cancelada exitosamente. Puedes generar una nueva desde Metodologías.');
+        
+      } catch (error) {
+        console.error('❌ Error cancelando rutina:', error);
+        setError(`Error cancelando rutina: ${error.message}`);
+      } finally {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -206,6 +467,9 @@ export default function RoutineScreen() {
       if (!resp.ok) {
         if (resp.status === 401 || resp.status === 403) {
           throw new Error('Sesión expirada. Por favor, inicia sesión de nuevo.');
+        } else if (resp.status === 204) {
+          // Sin contenido - sesión vacía o plan archivado
+          throw new Error('La sesión no está disponible o el plan ha sido archivado');
         } else if (resp.status === 404) {
           throw new Error('Sesión de entrenamiento no encontrada');
         } else {
@@ -342,6 +606,10 @@ export default function RoutineScreen() {
           throw new Error('Sesión expirada. Por favor, inicia sesión de nuevo.');
         } else if (resp.status === 403) {
           throw new Error('Token inválido. Por favor, inicia sesión de nuevo.');
+        } else if (resp.status === 204) {
+          throw new Error('La sesión no está disponible o el plan ha sido archivado');
+        } else if (resp.status === 409) {
+          throw new Error('El plan ha sido archivado. Genera un nuevo plan desde Metodologías.');
         } else if (resp.status === 404) {
           throw new Error(`Plan de rutina no encontrado (ID: ${currentRoutinePlanId}). Genera un nuevo plan desde Metodologías.`);
         } else {
@@ -521,7 +789,52 @@ export default function RoutineScreen() {
     );
   }
 
-  if (error || !routinePlan) {
+  // Manejar estados especiales de UI
+  if (uiState === 'ARCHIVED') {
+    return (
+      <div className="min-h-screen bg-black p-6">
+        <div className="max-w-4xl mx-auto">
+          <Button onClick={handleBackToMethodologies} variant="outline" className="mb-6 border-yellow-400/50 text-yellow-400 hover:border-yellow-400 hover:bg-yellow-400/10">
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Volver a Metodologías
+          </Button>
+          <div className="text-center py-16">
+            <Calendar className="w-20 h-20 mx-auto mb-6 text-gray-600" />
+            <h2 className="text-2xl font-bold text-white mb-4">Plan Archivado</h2>
+            <p className="text-gray-400 mb-8 max-w-md mx-auto">Este plan de rutina ha sido archivado. Genera un nuevo plan para continuar entrenando.</p>
+            <Button onClick={handleBackToMethodologies} className="bg-yellow-400 text-black hover:bg-yellow-300">
+              <Zap className="w-4 h-4 mr-2" />
+              Crear nuevo plan
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (hydrated === null && uiState !== 'LOADING') {
+    return (
+      <div className="min-h-screen bg-black p-6">
+        <div className="max-w-4xl mx-auto">
+          <Button onClick={handleBackToMethodologies} variant="outline" className="mb-6 border-yellow-400/50 text-yellow-400 hover:border-yellow-400 hover:bg-yellow-400/10">
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Volver a Metodologías
+          </Button>
+          <div className="text-center py-16">
+            <Calendar className="w-20 h-20 mx-auto mb-6 text-gray-600" />
+            <h2 className="text-2xl font-bold text-white mb-4">No hay sesión disponible</h2>
+            <p className="text-gray-400 mb-8 max-w-md mx-auto">No se pudo crear una sesión de entrenamiento. Genera una nueva sesión.</p>
+            <Button onClick={handleBackToMethodologies} className="bg-yellow-400 text-black hover:bg-yellow-300">
+              <Zap className="w-4 h-4 mr-2" />
+              Generar sesión
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error && !routinePlan && hasTriedLoadingPlan) {
     return (
       <div className="min-h-screen bg-black p-6">
         <div className="max-w-4xl mx-auto">
@@ -548,6 +861,30 @@ export default function RoutineScreen() {
   // - Manual: routinePlan = plan
   const plan = routinePlan?.plan ?? routinePlan;
 
+  // Si aún no hay plan y se está cargando, mostrar loading
+  if (!plan && isLoading) {
+    return (
+      <div className="min-h-screen bg-black p-6 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin w-8 h-8 border-4 border-yellow-400 border-t-transparent rounded-full mx-auto mb-4"></div>
+          <p className="text-white">Cargando rutina...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Si no hay plan y no se está cargando, pero tampoco se ha intentado cargar, esperar
+  if (!plan && (initialLoad || (!hasTriedLoadingPlan && !isLoading))) {
+    return (
+      <div className="min-h-screen bg-black p-6 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin w-8 h-8 border-4 border-yellow-400 border-t-transparent rounded-full mx-auto mb-4"></div>
+          <p className="text-white">Inicializando...</p>
+        </div>
+      </div>
+    );
+  }
+
   // Ejercicios para el resumen (si no hay sesión, usar día seleccionado o primer día con ejercicios de la semana actual)
   const weekIdxForSummary = (currentWeek || 1) - 1;
   const firstDayWithExercises = plan?.semanas?.[weekIdxForSummary]?.sesiones?.find(s => Array.isArray(s?.ejercicios) && s.ejercicios.length > 0);
@@ -568,7 +905,7 @@ export default function RoutineScreen() {
   const calculateTotalProgress = () => {
     if (!plan?.semanas || !routineStats) return 0;
     
-    const totalSessions = plan.semanas.reduce((total, semana) => {
+    const totalSessions = plan?.semanas?.reduce((total, semana) => {
       return total + (semana.sesiones?.length || 0);
     }, 0);
     
@@ -607,25 +944,25 @@ export default function RoutineScreen() {
         <Card className="bg-black/80 border-yellow-400/40 mb-8">
           <CardHeader>
             <CardTitle className="text-white flex items-center"><Target className="w-5 h-5 mr-2 text-yellow-400" />Resumen del Plan</CardTitle>
-            <CardDescription className="text-gray-400">{plan.rationale}</CardDescription>
+            <CardDescription className="text-gray-400">{plan?.rationale || 'Rutina generada por IA basada en tu perfil'}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="p-4 rounded-lg bg-yellow-400/10 border border-yellow-400/30">
                 <div className="flex items-center gap-2 mb-2"><Dumbbell className="w-4 h-4 text-yellow-400" /><span className="text-xs uppercase tracking-wide text-yellow-400">Metodología</span></div>
-                <div className="text-lg font-semibold text-white">{plan.selected_style}</div>
+                <div className="text-lg font-semibold text-white">{plan?.selected_style || 'Personalizada'}</div>
               </div>
               <div className="p-4 rounded-lg bg-blue-400/10 border border-blue-400/30">
                 <div className="flex items-center gap-2 mb-2"><Calendar className="w-4 h-4 text-blue-400" /><span className="text-xs uppercase tracking-wide text-blue-400">Duración</span></div>
-                <div className="text-lg font-semibold text-white">{plan.duracion_total_semanas} semanas</div>
+                <div className="text-lg font-semibold text-white">{plan?.duracion_total_semanas || 4} semanas</div>
               </div>
               <div className="p-4 rounded-lg bg-green-400/10 border border-green-400/30">
                 <div className="flex items-center gap-2 mb-2"><Users className="w-4 h-4 text-green-400" /><span className="text-xs uppercase tracking-wide text-green-400">Frecuencia</span></div>
-                <div className="text-lg font-semibold text-white">{plan.frecuencia_por_semana}x por semana</div>
+                <div className="text-lg font-semibold text-white">{plan?.frecuencia_por_semana || 3}x por semana</div>
               </div>
               <div className="p-4 rounded-lg bg-purple-400/10 border border-purple-400/30">
                 <div className="flex items-center gap-2 mb-2"><TrendingUp className="w-4 h-4 text-purple-400" /><span className="text-xs uppercase tracking-wide text-purple-400">Progresión</span></div>
-                <div className="text-lg font-semibold text-white">{plan.progresion?.metodo || 'Progresiva'}</div>
+                <div className="text-lg font-semibold text-white">{plan?.progresion?.metodo || 'Progresiva'}</div>
               </div>
             </div>
           </CardContent>
@@ -633,7 +970,7 @@ export default function RoutineScreen() {
 
         <div className="flex items-center justify-center mb-6">
           <div className="flex bg-black/50 rounded-lg border border-yellow-400/30 p-1">
-            {Array.from({ length: plan.duracion_total_semanas }, (_, i) => i + 1).map(weekNum => (
+            {Array.from({ length: plan?.duracion_total_semanas || 4 }, (_, i) => i + 1).map(weekNum => (
               <Button key={weekNum} variant={currentWeek === weekNum ? 'default' : 'ghost'} size="sm" onClick={() => setCurrentWeek(weekNum)} className={currentWeek === weekNum ? 'bg-yellow-400 text-black hover:bg-yellow-300' : 'text-gray-400 hover:text-white hover:bg-yellow-400/10'}>
                 Semana {weekNum}
               </Button>
@@ -642,7 +979,11 @@ export default function RoutineScreen() {
         </div>
 
         {trainingInProgress && currentSessionData && (
-          <SessionProgress total={currentSessionData.exercises.length} completed={completedExercises.length} />
+          <SessionProgress 
+            total={currentSessionData.exercises.length} 
+            completed={completedExercises.length}
+            session={hydrated}
+          />
         )}
 
         {/* Dashboard de estadísticas */}
@@ -650,6 +991,7 @@ export default function RoutineScreen() {
           routineStats={routineStats}
           plan={plan}
           totalProgress={totalProgress}
+          session={hydrated}
         />
 
         <RoutineCalendar plan={plan} currentWeek={currentWeek} onDayClick={handleDayClick} />
@@ -657,9 +999,9 @@ export default function RoutineScreen() {
         {/* Resumen fijo de la sesión actual - siempre visible */}
         <RoutineSessionSummary
           currentRoutine={{
-            methodology_type: plan.selected_style,
+            methodology_type: plan?.selected_style || 'Personalizada',
             exercises: summaryExercises || [],
-            estimated_duration: plan.estimated_duration || 45,
+            estimated_duration: plan?.estimated_duration || 45,
             planSource: location.state?.planSource || { label: 'OpenAI', detail: '' },
             perfil: (() => {
               // Debug: Revisar datos disponibles
@@ -691,7 +1033,7 @@ export default function RoutineScreen() {
                 return { nombre, edad, peso, altura, nivel, imc };
               }
               
-              return { nombre: '—', edad: '—', peso: '—', altura: '—', nivel: '—', imc: '—' };
+              return null; // No mostrar datos de ejemplo - requiere perfil real
             })()
           }}
           sessionExercises={sessionExerciseStatuses}

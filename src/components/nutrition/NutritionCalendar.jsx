@@ -54,12 +54,7 @@ export default function NutritionCalendar({ nutritionPlan, userMacros, onPlanUpd
         protein: Math.round(protein * 0.25),
         carbs: Math.round(carbs * 0.30),
         fat: Math.round(fat * 0.25),
-        foods: [
-          '3 huevos enteros',
-          '60g avena',
-          '1 plátano mediano',
-          '10ml aceite oliva'
-        ]
+        foods: [] // Comidas generadas por IA según perfil nutricional
       },
       almuerzo: {
         name: 'Almuerzo',
@@ -68,12 +63,7 @@ export default function NutritionCalendar({ nutritionPlan, userMacros, onPlanUpd
         protein: Math.round(protein * 0.40),
         carbs: Math.round(carbs * 0.35),
         fat: Math.round(fat * 0.30),
-        foods: [
-          '150g pechuga pollo',
-          '100g arroz integral',
-          'Ensalada mixta',
-          '15ml aceite oliva'
-        ]
+        foods: [] // Comidas generadas por IA según perfil nutricional
       },
       merienda: {
         name: 'Merienda',
@@ -82,11 +72,7 @@ export default function NutritionCalendar({ nutritionPlan, userMacros, onPlanUpd
         protein: Math.round(protein * 0.20),
         carbs: Math.round(carbs * 0.15),
         fat: Math.round(fat * 0.15),
-        foods: [
-          '1 yogur griego',
-          '30g frutos secos',
-          '1 manzana'
-        ]
+        foods: [] // Comidas generadas por IA según perfil nutricional
       },
       cena: {
         name: 'Cena',
@@ -95,12 +81,7 @@ export default function NutritionCalendar({ nutritionPlan, userMacros, onPlanUpd
         protein: Math.round(protein * 0.15),
         carbs: Math.round(carbs * 0.20),
         fat: Math.round(fat * 0.30),
-        foods: [
-          '120g salmón',
-          'Verduras al vapor',
-          '50g boniato',
-          'Ensalada con aguacate'
-        ]
+        foods: [] // Comidas generadas por IA según perfil nutricional
       }
     };
   };

@@ -439,7 +439,7 @@ const RoutineExerciseModal = ({
               <div className="flex items-center gap-2">
                 <input
                   type="url"
-                  placeholder="https://ejemplo.com/ejercicio.gif"
+                  placeholder="URL del gif del ejercicio"
                   className="flex-1 bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-white placeholder-gray-400 focus:border-yellow-400 focus:outline-none transition-colors"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
