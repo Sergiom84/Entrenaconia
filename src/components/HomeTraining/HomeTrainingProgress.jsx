@@ -124,6 +124,7 @@ const HomeTrainingProgress = ({
                 const isCompleted = status === 'completed';
                 const isCurrent = status === 'in_progress' || progress.currentExercise === idx;
                 const sentiment = exSession.feedback_sentiment;
+                const comment = exSession.feedback_comment || exSession.comment;
 
                 return (
                   <div
@@ -167,6 +168,14 @@ const HomeTrainingProgress = ({
 
                     {ejercicio.notas && (
                       <p className="text-xs text-gray-400 italic mt-2">{ejercicio.notas}</p>
+                    )}
+
+                    {/* Mostrar comentario del usuario si existe */}
+                    {comment && comment.trim() && (
+                      <div className="mt-2 p-2 bg-yellow-400/10 border border-yellow-400/20 rounded text-xs">
+                        <span className="text-yellow-400 font-medium">Mi comentario: </span>
+                        <span className="text-yellow-200">{comment}</span>
+                      </div>
                     )}
                   </div>
                 );

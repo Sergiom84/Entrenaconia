@@ -14,6 +14,8 @@ import { METHODOLOGIES, sanitizeProfile } from './methodologiesData.js';
 import MethodologyCard from './MethodologyCard.jsx';
 import MethodologyDetailsDialog from './MethodologyDetailsDialog.jsx';
 import MethodologyConfirmationModal from './MethodologyConfirmationModal.jsx';
+import MethodologyVersionSelectionModal from './MethodologyVersionSelectionModal.jsx';
+import { RoutinePlanModal } from '../routines';
 
 export default function MethodologiesScreen() {
   const navigate = useNavigate();
@@ -26,10 +28,25 @@ export default function MethodologiesScreen() {
   const [pendingMethodology, setPendingMethodology] = useState(null);
   const [showDetails, setShowDetails] = useState(false);
   const [detailsMethod, setDetailsMethod] = useState(null);
-  const [successData, setSuccessData] = useState(null);
+  const [showPersonalizedMessage, setShowPersonalizedMessage] = useState(false);
+  const [personalizedMessage, setPersonalizedMessage] = useState('');
+  const [generatedRoutinePlan, setGeneratedRoutinePlan] = useState(null);
+  const [showVersionSelection, setShowVersionSelection] = useState(false);
+  const [versionSelectionData, setVersionSelectionData] = useState(null);
 
   const handleActivateIA = async (forcedMethodology = null) => {
     if (!currentUser && !user) return;
+    
+    // Mostrar modal de selección de versión
+    setVersionSelectionData({
+      isAutomatic: true,
+      forcedMethodology
+    });
+    setShowVersionSelection(true);
+  };
+
+  const handleVersionSelectionConfirm = async (versionConfig) => {
+    setShowVersionSelection(false);
     setIsLoading(true);
     setError(null);
     const fullProfile = sanitizeProfile({ ...userData, ...user, ...currentUser });
@@ -37,12 +54,17 @@ export default function MethodologiesScreen() {
     try {
       console.log('🤖 Activando IA para generar plan metodológico...');
       
+      const token = localStorage.getItem('token');
       const response = await fetch('/api/methodologie/generate-plan', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({
           perfil: fullProfile,
-          metodologia_forzada: forcedMethodology
+          metodologia_forzada: versionSelectionData?.forcedMethodology,
+          versionConfig: versionConfig
         })
       });
       
@@ -53,11 +75,40 @@ export default function MethodologiesScreen() {
       }
       
       console.log('✅ Plan generado exitosamente:', result.plan);
-      setSuccessData({
+      
+      // Guardar plan y mostrar mensaje personalizado (como en HomeTraining)
+      setGeneratedRoutinePlan({
         plan: result.plan,
-        metadata: result.metadata
+        planSource: 'automatic',
+        planId: result.planId,
+        metadata: result.metadata,
+        metodologia: result.plan.selected_style
       });
       
+      // Construir mensaje personalizado para mostrar directamente en el modal del plan
+      const baseMessage = result.plan.rationale ||
+                          `La IA ha seleccionado ${result.plan.selected_style} como la metodología ideal para ti. ` +
+                          `Plan de ${result.plan.duracion_total_semanas} semanas con ${result.plan.frecuencia_por_semana} entrenamientos por semana.`;
+      
+      // Obtener objetivo principal para personalizar los tips
+      const objetivo = fullProfile?.objetivo_principal || userData?.objetivo_principal || 'general';
+      let tip = '';
+      
+      if (objetivo === 'perder_peso' || objetivo === 'perdida_grasa') {
+        tip = 'El objetivo principal es perder peso, lo que sugiere un enfoque en la quema de grasa con ejercicios de alta intensidad combinados con trabajo de fuerza.';
+      } else if (objetivo === 'ganar_musculo' || objetivo === 'hipertrofia') {
+        tip = 'El objetivo principal es ganar músculo, lo que sugiere un enfoque en la hipertrofia. Dado tu nivel de experiencia, se puede aplicar un plan avanzado y variado.';
+      } else if (objetivo === 'fuerza') {
+        tip = 'El objetivo principal es mejorar la fuerza, lo que requiere entrenamientos con cargas progresivas y movimientos básicos fundamentales.';
+      } else if (objetivo === 'resistencia') {
+        tip = 'El objetivo principal es mejorar la resistencia cardiovascular, combinando trabajo aeróbico con entrenamientos funcionales.';
+      } else {
+        tip = 'Plan equilibrado diseñado para mejorar tu condición física general con ejercicios variados y progresivos.';
+      }
+      
+      const enhancedMessage = `${baseMessage}\n\n💡 ${tip}`;
+      setPersonalizedMessage(enhancedMessage);
+
     } catch (err) {
       console.error('❌ Error generando plan:', err);
       setError(err.message);
@@ -69,13 +120,19 @@ export default function MethodologiesScreen() {
   const handleManualCardClick = (methodology) => {
     if (selectionMode === 'manual') {
       setPendingMethodology(methodology);
-      setShowManualSelectionModal(true);
+      // Mostrar modal de selección de versión para manual también
+      setVersionSelectionData({
+        isAutomatic: false,
+        selectedMethodology: methodology.name
+      });
+      setShowVersionSelection(true);
     }
   };
 
-  const confirmManualSelection = async () => {
+  const confirmManualSelection = async (versionConfig) => {
     if (!pendingMethodology) return;
     
+    setShowVersionSelection(false);
     setIsLoading(true);
     setError(null);
     
@@ -90,7 +147,8 @@ export default function MethodologiesScreen() {
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          metodologia_solicitada: pendingMethodology.name
+          metodologia_solicitada: pendingMethodology.name,
+          versionConfig: versionConfig
         })
       });
       
@@ -102,15 +160,40 @@ export default function MethodologiesScreen() {
       
       console.log('✅ Plan de metodología manual generado exitosamente');
       
-      // Navegar directamente a rutinas con el plan generado
-      navigate('/routines', {
-        state: {
-          routinePlan: result.plan,
-          planSource: 'manual_methodology',
-          planId: result.planId
-        }
+      // Guardar plan y mostrar mensaje personalizado (como en HomeTraining)
+      setGeneratedRoutinePlan({
+        plan: result.plan,
+        planSource: 'manual_methodology', 
+        planId: result.planId,
+        metodologia: pendingMethodology.name
       });
       
+      // Mostrar mensaje personalizado con tips incluidos
+      const baseMessage = result.plan.consideraciones || 
+                          `Tu rutina de ${pendingMethodology.name} ha sido generada exitosamente. ` +
+                          `Plan de ${result.plan.duracion_total_semanas} semanas con ` + 
+                          `${result.plan.frecuencia_por_semana} entrenamientos por semana.`;
+      
+      // Obtener objetivo principal para personalizar los tips
+      const fullProfile = sanitizeProfile({ ...userData, ...user, ...currentUser });
+      const objetivo = fullProfile?.objetivo_principal || userData?.objetivo_principal || 'general';
+      let tip = '';
+      
+      if (objetivo === 'perder_peso' || objetivo === 'perdida_grasa') {
+        tip = 'El objetivo principal es perder peso, lo que sugiere un enfoque en la quema de grasa con ejercicios de alta intensidad combinados con trabajo de fuerza.';
+      } else if (objetivo === 'ganar_musculo' || objetivo === 'hipertrofia') {
+        tip = 'El objetivo principal es ganar músculo, lo que sugiere un enfoque en la hipertrofia. Dado tu nivel de experiencia, se puede aplicar un plan avanzado y variado.';
+      } else if (objetivo === 'fuerza') {
+        tip = 'El objetivo principal es mejorar la fuerza, lo que requiere entrenamientos con cargas progresivas y movimientos básicos fundamentales.';
+      } else if (objetivo === 'resistencia') {
+        tip = 'El objetivo principal es mejorar la resistencia cardiovascular, combinando trabajo aeróbico con entrenamientos funcionales.';
+      } else {
+        tip = 'Plan equilibrado diseñado para mejorar tu condición física general con ejercicios variados y progresivos.';
+      }
+      
+      const enhancedMessage = `${baseMessage}\n\n💡 ${tip}`;
+      setPersonalizedMessage(enhancedMessage);
+
     } catch (error) {
       console.error('❌ Error generando plan manual:', error);
       setError(error.message || 'Error al generar el plan de entrenamiento');
@@ -126,14 +209,27 @@ export default function MethodologiesScreen() {
     setShowDetails(true);
   };
 
-  const handleCloseSuccessDialog = () => {
-    // Pasar los datos del plan generado a la pantalla de rutinas
-    navigate('/routines', { 
-      state: { 
-        routinePlan: successData 
-      } 
+
+  // Función para proceder del mensaje personalizado al modal del plan (como en HomeTraining)
+  const proceedToRoutinePlan = () => {
+    setShowPersonalizedMessage(false);
+    // Ahora se mostrará el RoutinePlanModal porque generatedRoutinePlan está seteado
+  };
+
+  // Función para navegar a rutinas con el plan
+  const navigateToRoutines = () => {
+    const model = generatedRoutinePlan?.metadata?.model;
+    navigate('/routines', {
+      state: {
+        routinePlan: generatedRoutinePlan.plan,
+        planSource: { label: 'OpenAI', detail: model ? `(${model})` : '' },
+        planMetadata: generatedRoutinePlan.metadata,
+        planId: generatedRoutinePlan.planId
+      }
     });
-    setSuccessData(null);
+    // Limpiar estado después de navegar
+    setGeneratedRoutinePlan(null);
+    setShowPersonalizedMessage(false);
   };
 
   return (
@@ -261,86 +357,41 @@ export default function MethodologiesScreen() {
         onClose={() => setShowDetails(false)}
         onSelect={handleManualCardClick}
       />
-      <Dialog open={!!successData} onOpenChange={(open) => { if (!open) handleCloseSuccessDialog(); }}>
-        <DialogContent className="max-w-2xl bg-black/95 border-yellow-400/20 text-white">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-bold flex items-center">
-              <Brain className="w-5 h-5 mr-2 text-yellow-400" />
-              ¡Plan de Entrenamiento Generado!
-            </DialogTitle>
-            <DialogDescription className="text-gray-400">
-              La IA ha creado un plan personalizado basado en tu perfil.
-            </DialogDescription>
-          </DialogHeader>
-          
-          {successData?.plan && (
-            <div className="space-y-4 max-h-96 overflow-y-auto">
-              {/* Información del plan */}
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <span className="text-gray-400">Metodología:</span>{' '}
-                  <span className="text-yellow-400 font-semibold">{successData.plan.selected_style}</span>
-                </div>
-                <div>
-                  <span className="text-gray-400">Duración:</span>{' '}
-                  <span className="text-white font-semibold">{successData.plan.duracion_total_semanas} semanas</span>
-                </div>
-                <div>
-                  <span className="text-gray-400">Frecuencia:</span>{' '}
-                  <span className="text-white font-semibold">{successData.plan.frecuencia_por_semana} sesiones/semana</span>
-                </div>
-                <div>
-                  <span className="text-gray-400">Progresión:</span>{' '}
-                  <span className="text-white font-semibold">{successData.plan.progresion?.metodo}</span>
-                </div>
-              </div>
 
-              {/* Razón de la selección */}
-              {successData.plan.rationale && (
-                <div className="p-3 bg-yellow-400/10 border border-yellow-400/20 rounded-lg">
-                  <h4 className="text-yellow-400 font-semibold text-sm mb-1">¿Por qué esta metodología?</h4>
-                  <p className="text-gray-300 text-sm">{successData.plan.rationale}</p>
-                </div>
-              )}
+      {/* Modal de selección de versión */}
+      <MethodologyVersionSelectionModal
+        isOpen={showVersionSelection}
+        onClose={() => {
+          setShowVersionSelection(false);
+          setVersionSelectionData(null);
+        }}
+        onConfirm={versionSelectionData?.isAutomatic ? handleVersionSelectionConfirm : confirmManualSelection}
+        userProfile={{...userData, ...user, ...currentUser}}
+        isAutomatic={versionSelectionData?.isAutomatic}
+        selectedMethodology={versionSelectionData?.selectedMethodology}
+      />
 
-              {/* Vista previa del plan */}
-              <div>
-                <h4 className="text-white font-semibold mb-2">Vista previa del plan:</h4>
-                <div className="space-y-2 text-sm">
-                  {successData.plan.semanas?.slice(0, 2).map((semana, idx) => (
-                    <div key={idx} className="p-2 bg-gray-800/50 rounded border border-gray-700">
-                      <div className="text-yellow-400 font-medium">Semana {semana.semana}</div>
-                      <div className="text-gray-400 text-xs">
-                        {semana.sesiones?.length || 0} sesiones programadas
-                      </div>
-                    </div>
-                  ))}
-                  {successData.plan.semanas?.length > 2 && (
-                    <div className="text-center text-gray-400 text-xs">
-                      ... y {successData.plan.semanas.length - 2} semanas más
-                    </div>
-                  )}
-                </div>
-              </div>
 
-              {/* Consideraciones de seguridad */}
-              {successData.plan.safety_notes && (
-                <div className="p-3 bg-red-400/10 border border-red-400/20 rounded-lg">
-                  <h4 className="text-red-400 font-semibold text-sm mb-1">⚠️ Consideraciones importantes:</h4>
-                  <p className="text-gray-300 text-sm">{successData.plan.safety_notes}</p>
-                </div>
-              )}
-            </div>
-          )}
-          
-          <DialogFooter className="mt-4">
-            <Button className="bg-yellow-400 text-black hover:bg-yellow-300" onClick={handleCloseSuccessDialog}>
-              <CheckCircle className="w-4 h-4 mr-2" />
-              Ir a Rutinas
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Modal del plan de rutina (sin paso intermedio) */}
+      {generatedRoutinePlan && (
+        <RoutinePlanModal
+          plan={generatedRoutinePlan.plan}
+          planSource={{ 
+            label: 'OpenAI', 
+            detail: '(gpt-4.1-nano)' 
+          }}
+          personalizedMessage={personalizedMessage || `Rutina de ${generatedRoutinePlan.metodologia} generada específicamente para tus objetivos.`}
+          onStart={navigateToRoutines}
+          onGenerateAnother={() => {
+            setGeneratedRoutinePlan(null);
+            setShowPersonalizedMessage(false);
+          }}
+          onClose={() => {
+            setGeneratedRoutinePlan(null);
+            setShowPersonalizedMessage(false);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -30,6 +30,7 @@ export const BodyCompositionCard = (props) => {
 
   const handleCalculatorResults = async (results) => {
     setIsSaving(true)
+    console.log('🔄 Procesando resultados de calculadora:', results)
     
     try {
       // Usar los resultados calculados directamente por la calculadora
@@ -40,24 +41,35 @@ export const BodyCompositionCard = (props) => {
         metabolismo_basal: results.metabolismo_basal
       }
 
-      // Actualizar inmediatamente la UI
-      setUserProfile(prev => ({
-        ...prev,
-        ...compositionData
-      }))
+      console.log('📊 Datos a guardar:', compositionData)
+
+      // Actualizar inmediatamente la UI local
+      setUserProfile(prev => {
+        const updated = { ...prev, ...compositionData }
+        console.log('🔄 Perfil actualizado localmente:', updated)
+        return updated
+      })
 
       // Guardar en base de datos automáticamente
       const success = await updateUserProfile(compositionData)
       
       if (success) {
-        console.log('✅ Composición corporal guardada automáticamente')
+        console.log('✅ Composición corporal guardada automáticamente en BD')
+        // Cerrar calculadora
+        setShowCalculator(false)
+        
+        // Mostrar mensaje de éxito visual
+        setTimeout(() => {
+          console.log('📊 Composición corporal actualizada exitosamente')
+        }, 100)
       } else {
-        console.error('❌ Error guardando composición corporal')
-        // Opcional: mostrar notificación de error
+        console.error('❌ Error guardando composición corporal en BD')
+        alert('Error guardando los datos. Por favor, inténtalo de nuevo.')
       }
       
     } catch (error) {
-      console.error('Error procesando resultados de calculadora:', error)
+      console.error('❌ Error procesando resultados de calculadora:', error)
+      alert('Error procesando los resultados del cálculo.')
     } finally {
       setIsSaving(false)
     }
@@ -138,6 +150,23 @@ export const BodyCompositionCard = (props) => {
       </CardHeader>
 
       <CardContent className="space-y-4">
+        {/* Mostrar si hay datos calculados */}
+        {userProfile.grasa_corporal || userProfile.masa_muscular || userProfile.agua_corporal || userProfile.metabolismo_basal ? (
+          <div className="mb-4 p-3 bg-green-900/20 border border-green-500/30 rounded-lg">
+            <p className="text-green-400 text-sm flex items-center">
+              <Activity className="w-4 h-4 mr-2" />
+              ✅ Composición corporal calculada automáticamente
+            </p>
+          </div>
+        ) : (
+          <div className="mb-4 p-3 bg-gray-800/50 border border-gray-600/30 rounded-lg">
+            <p className="text-gray-400 text-sm flex items-center">
+              <Calculator className="w-4 h-4 mr-2" />
+              Usa la calculadora para obtener tu composición corporal automáticamente
+            </p>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <EditableField
             label="Grasa Corporal"

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, User, Activity, Target, Heart, Settings, Ruler, Dumbbell } from 'lucide-react';
+import { ArrowLeft, User, Activity, Target, Heart, Settings, Ruler, Dumbbell, Music } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useProfileState } from '../../hooks/useProfileState';
 import { useAuth } from '../../contexts/AuthContext';
@@ -12,6 +12,7 @@ import { GoalsTab } from './GoalsTab';
 import { HealthTab } from './HealthTab';
 import { SettingsTab } from './SettingsTab';
 import { EquipmentTab } from './EquipmentTab';
+import MusicConfigTab from './MusicConfigTab';
 
 const ProfileSection = () => {
   // Leer ?tab=... para navegación directa
@@ -69,6 +70,12 @@ const ProfileSection = () => {
       label: 'Mi equipamiento',
       icon: Dumbbell,
       component: EquipmentTab
+    },
+    {
+      id: 'music',
+      label: 'Configuración de Música',
+      icon: Music,
+      component: MusicConfigTab
     }
   ];
 
@@ -180,6 +187,7 @@ const ProfileSection = () => {
             <ActiveComponent
               {...profileState}
               currentUser={JSON.parse(localStorage.getItem('user') || '{}')}
+              userId={JSON.parse(localStorage.getItem('user') || '{}').id}
             />
           )}
         </div>

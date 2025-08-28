@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Pause, Square, SkipForward, X, Clock, Target, RotateCcw, CheckCircle, Star } from 'lucide-react';
+import { Play, Pause, Square, SkipForward, X, Clock, Target, RotateCcw, CheckCircle, Star, Info } from 'lucide-react';
 import { getExerciseGifUrl } from '../../config/exerciseGifs';
 import ExerciseFeedbackModal from './ExerciseFeedbackModal';
+import ExerciseInfoModal from '../routines/ExerciseInfoModal';
 
 const HomeTrainingExerciseModal = ({
   exercise,
@@ -23,6 +24,7 @@ const HomeTrainingExerciseModal = ({
   const [exerciseGif, setExerciseGif] = useState(null);
   const [totalTimeSpent, setTotalTimeSpent] = useState(0);
   const [showFeedback, setShowFeedback] = useState(false);
+  const [showExerciseInfo, setShowExerciseInfo] = useState(false);
   const intervalRef = useRef(null);
   const lastPhaseHandledRef = useRef(''); // evita manejar la misma transición dos veces
   const lastReportedSeriesRef = useRef(''); // evita PUT duplicados para la misma serie
@@ -79,10 +81,15 @@ const HomeTrainingExerciseModal = ({
   }, [isRunning, timeLeft, currentPhase]);
 
   const handlePhaseComplete = () => {
-    // Evitar manejar la misma fase más de una vez
-    const signature = `${currentPhase}-${currentSeries}`;
-    if (lastPhaseHandledRef.current === signature) return;
-    lastPhaseHandledRef.current = signature;
+    console.log(`🔄 [HomeTraining] Phase complete: ${currentPhase}, Series: ${currentSeries}/${seriesTotal}`);
+    
+    // Evitar manejar la misma fase más de una vez con timestamp más específico
+    const currentSignatureBase = `${currentPhase}-${currentSeries}`;
+    if (lastPhaseHandledRef.current === currentSignatureBase) {
+      console.log('🚫 [HomeTraining] Duplicate phase transition blocked:', currentSignatureBase);
+      return;
+    }
+    lastPhaseHandledRef.current = currentSignatureBase;
 
     // Cortar el intervalo inmediatamente
     if (intervalRef.current) {
@@ -92,6 +99,7 @@ const HomeTrainingExerciseModal = ({
     setIsRunning(false);
 
     if (currentPhase === 'exercise') {
+      console.log('✅ [HomeTraining] Exercise phase completed');
       const reportSig = `${exerciseIndex}-${currentSeries}`;
       if (lastReportedSeriesRef.current !== reportSig) {
         lastReportedSeriesRef.current = reportSig;
@@ -99,18 +107,37 @@ const HomeTrainingExerciseModal = ({
       }
 
       if (currentSeries < seriesTotal) {
+        console.log(`🔄 [HomeTraining] Starting rest phase, series ${currentSeries}/${seriesTotal}`);
         setCurrentPhase('rest');
-        setTimeLeft(Math.min(60, Math.max(45, Number(exercise.descanso_seg) || 60)));
-        setTimeout(() => { lastPhaseHandledRef.current = ''; setIsRunning(true); }, 200);
+        const restTime = Math.min(60, Math.max(45, Number(exercise.descanso_seg) || 60));
+        setTimeLeft(restTime);
+        // Iniciar descanso automáticamente sin delay
+        setTimeout(() => { 
+          lastPhaseHandledRef.current = '';
+          setIsRunning(true); 
+        }, 100);
       } else {
+        console.log('🎉 [HomeTraining] All series completed, finishing exercise');
         setCurrentPhase('completed');
         setTimeout(() => { onComplete(totalTimeSpent); }, 500);
       }
     } else if (currentPhase === 'rest') {
-      setCurrentSeries(prev => Math.min(prev + 1, seriesTotal || prev + 1));
+      console.log('⏰ [HomeTraining] Rest phase completed, moving to next series');
+      // Incrementar serie y cambiar a ejercicio
+      const nextSeries = Math.min(currentSeries + 1, seriesTotal);
+      setCurrentSeries(nextSeries);
       setCurrentPhase('exercise');
-      setTimeLeft((Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos) || 45));
-      setTimeout(() => { lastPhaseHandledRef.current = ''; setIsRunning(true); }, 200);
+      
+      // Configurar tiempo del próximo ejercicio
+      const exerciseTime = Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos) || 45;
+      setTimeLeft(exerciseTime);
+      
+      // Pequeño delay para evitar problemas de renderizado, luego iniciar automáticamente
+      setTimeout(() => { 
+        lastPhaseHandledRef.current = '';
+        setIsRunning(true); 
+        console.log(`🏃‍♂️ [HomeTraining] Starting series ${nextSeries}/${seriesTotal} automatically`);
+      }, 150);
     }
   };
 
@@ -127,6 +154,44 @@ const HomeTrainingExerciseModal = ({
 
   const handleResume = () => {
     setIsRunning(true);
+  };
+
+  const handleForceNext = () => {
+    console.log('🔄 [HomeTraining] Force next phase triggered');
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    setIsRunning(false);
+    
+    if (currentPhase === 'rest') {
+      // Forzar avance a siguiente serie
+      const nextSeries = Math.min(currentSeries + 1, seriesTotal);
+      setCurrentSeries(nextSeries);
+      setCurrentPhase('exercise');
+      const exerciseTime = Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos) || 45;
+      setTimeLeft(exerciseTime);
+      lastPhaseHandledRef.current = '';
+      console.log(`🏃‍♂️ [HomeTraining] Forced advance to series ${nextSeries}/${seriesTotal}`);
+    } else if (currentPhase === 'exercise') {
+      // Forzar avance a descanso o completar
+      const reportSig = `${exerciseIndex}-${currentSeries}`;
+      if (lastReportedSeriesRef.current !== reportSig) {
+        lastReportedSeriesRef.current = reportSig;
+        onUpdateProgress(exerciseIndex, currentSeries, seriesTotal);
+      }
+
+      if (currentSeries < seriesTotal) {
+        setCurrentPhase('rest');
+        const restTime = Math.min(60, Math.max(45, Number(exercise.descanso_seg) || 60));
+        setTimeLeft(restTime);
+        lastPhaseHandledRef.current = '';
+        console.log(`⏰ [HomeTraining] Forced advance to rest, series ${currentSeries}/${seriesTotal}`);
+      } else {
+        setCurrentPhase('completed');
+        setTimeout(() => { onComplete(totalTimeSpent); }, 500);
+      }
+    }
   };
 
   const handleReset = () => {
@@ -247,12 +312,18 @@ const HomeTrainingExerciseModal = ({
                   transform: `rotate(${(((baseDuration) - timeLeft) / (baseDuration)) * 360}deg)`
                 }}
               ></div>
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-3xl font-bold text-white">
-                  {formatTime(timeLeft)}
+              <div className="absolute inset-0 flex items-center justify-center flex-col">
+                <span className={`text-3xl font-bold ${timeLeft === 0 ? 'text-green-400 animate-pulse' : 'text-white'}`}>
+                  {timeLeft === 0 ? '¡Listo!' : formatTime(timeLeft)}
                 </span>
-                {!isRunning && (currentPhase === 'exercise' || currentPhase === 'rest') && (
+                {!isRunning && (currentPhase === 'exercise' || currentPhase === 'rest') && timeLeft > 0 && (
                   <div className="text-xs text-gray-400 mt-1">Pausado</div>
+                )}
+                {timeLeft === 0 && currentPhase === 'rest' && (
+                  <div className="text-xs text-green-400 mt-1 animate-pulse">Descanso terminado</div>
+                )}
+                {timeLeft === 0 && currentPhase === 'exercise' && (
+                  <div className="text-xs text-green-400 mt-1 animate-pulse">Serie completada</div>
                 )}
               </div>
             </div>
@@ -290,6 +361,18 @@ const HomeTrainingExerciseModal = ({
                 <div className="text-sm text-gray-400">Serie Actual</div>
               </div>
             </div>
+          </div>
+
+          {/* Botón de información del ejercicio */}
+          <div className="text-center mb-6">
+            <button
+              onClick={() => setShowExerciseInfo(true)}
+              className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+              title="Ver información detallada del ejercicio"
+            >
+              <Info size={20} />
+              Información del Ejercicio
+            </button>
           </div>
 
           {/* Notas del ejercicio y consejos de ejecución */}
@@ -400,7 +483,7 @@ const HomeTrainingExerciseModal = ({
           </div>
 
           {/* Controles mejorados */}
-          <div className="flex gap-3 justify-center">
+          <div className="flex flex-wrap gap-3 justify-center">
             {currentPhase === 'ready' && (
               <button
                 onClick={handleStart}
@@ -434,9 +517,22 @@ const HomeTrainingExerciseModal = ({
                 <button
                   onClick={handleReset}
                   className="flex items-center gap-2 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-3 px-4 rounded-lg transition-colors"
+                  title="Reiniciar ejercicio actual"
                 >
                   <RotateCcw size={20} />
                 </button>
+
+                {/* Botón para forzar avance solo cuando hay problemas */}
+                {(timeLeft === 0 && !isRunning) && (
+                  <button
+                    onClick={handleForceNext}
+                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors animate-pulse"
+                    title={currentPhase === 'rest' ? 'Continuar (si no avanza automáticamente)' : 'Continuar ejercicio'}
+                  >
+                    <CheckCircle size={20} />
+                    Continuar
+                  </button>
+                )}
               </>
             )}
 
@@ -468,39 +564,40 @@ const HomeTrainingExerciseModal = ({
             onClose={() => setShowFeedback(false)}
             onSubmit={async (payload) => {
               try {
-                console.log('Feedback ejercicio:', payload);
+                console.log('Enviando feedback ejercicio:', payload);
+                if (sessionId != null) {
+                  const token = localStorage.getItem('token');
+                  await fetch(`/api/home-training/sessions/${sessionId}/exercise/${exerciseIndex}/feedback`, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ 
+                      sentiment: payload.sentiment, 
+                      comment: payload.comment, 
+                      exercise_name: exercise?.nombre 
+                    })
+                  });
+                  onFeedbackSubmitted?.();
+                }
+              } catch (error) {
+                console.error('Error enviando feedback:', error);
               } finally {
                 setShowFeedback(false);
               }
             }}
           />
         )}
-      {/* Modal de feedback */}
-      {showFeedback && (
-        <ExerciseFeedbackModal
-          show={showFeedback}
-          exerciseName={exercise?.nombre}
-          onClose={() => setShowFeedback(false)}
-          onSubmit={async (payload) => {
-            try {
-              if (sessionId != null) {
-                const token = localStorage.getItem('token');
-                await fetch(`/api/home-training/sessions/${sessionId}/exercise/${exerciseIndex}/feedback`, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                  },
-                  body: JSON.stringify({ sentiment: payload.sentiment, comment: payload.comment, exercise_name: exercise?.nombre })
-                });
-                onFeedbackSubmitted?.();
-              }
-            } finally {
-              setShowFeedback(false);
-            }
-          }}
-        />
-      )}
+
+        {/* Modal de información del ejercicio */}
+        {showExerciseInfo && (
+          <ExerciseInfoModal
+            show={showExerciseInfo}
+            exercise={exercise}
+            onClose={() => setShowExerciseInfo(false)}
+          />
+        )}
 
 
       </div>

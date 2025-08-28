@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.j
 export default function MethodologyDetailsDialog({ open, onOpenChange, detailsMethod, selectionMode, onClose, onSelect }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl bg-black/95 border-yellow-400/20 text-white max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-6xl bg-black/95 border-yellow-400/20 text-white max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-2xl font-bold flex items-center">
             {detailsMethod?.icon && React.createElement(detailsMethod.icon, { className: 'w-6 h-6 mr-3 text-yellow-400' })}

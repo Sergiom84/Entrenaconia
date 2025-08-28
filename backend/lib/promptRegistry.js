@@ -5,17 +5,33 @@ export const FeatureKey = {
   PHOTO: "photo",
   VIDEO: "video", 
   HOME: "home",
-  METHODOLOGIE: "methodologie"
+  METHODOLOGIE: "methodologie",
+  NUTRITION: "nutrition"
 };
 
 const FILE_BY_FEATURE = {
   [FeatureKey.VIDEO]: "correction_video_ia.md",
   [FeatureKey.PHOTO]: "correction_photo_ia.md",
   [FeatureKey.HOME]: "home_training.md",
-  [FeatureKey.METHODOLOGIE]: "Methodologie_(Auto).md"
+  [FeatureKey.METHODOLOGIE]: "Methodologie_(Auto).md",
+  [FeatureKey.NUTRITION]: "Nutrition_AI.md"
 };
 
 const cache = new Map();
+
+/**
+ * Limpia el cache de prompts
+ * @param {string} feature - Feature específico a limpiar, o undefined para limpiar todo
+ */
+export function clearPromptCache(feature = undefined) {
+  if (feature) {
+    cache.delete(feature);
+    console.log(`🧹 Cache limpiado para feature: ${feature}`);
+  } else {
+    cache.clear();
+    console.log(`🧹 Cache de prompts completamente limpiado`);
+  }
+}
 
 /**
  * Obtiene el prompt de un feature específico desde archivos markdown
@@ -26,7 +42,14 @@ const cache = new Map();
 export async function getPrompt(feature) {
   if (cache.has(feature)) {
     console.log(`📋 Prompt cache HIT para feature: ${feature}`);
-    return cache.get(feature);
+    const cachedContent = cache.get(feature);
+    // Debug: Verificar contenido del cache
+    const preview = cachedContent.substring(0, 100).toLowerCase();
+    if (preview.includes('entrenamiento en casa')) {
+      console.warn(`⚠️ DETECTADO "entrenamiento en casa" en cache para feature ${feature}!`);
+      console.log(`Cache preview: ${preview}...`);
+    }
+    return cachedContent;
   }
 
   const fileName = FILE_BY_FEATURE[feature];
@@ -45,6 +68,16 @@ export async function getPrompt(feature) {
       throw new Error(`El archivo de prompt ${fileName} está vacío`);
     }
 
+    // Debug: Verificar contenido del archivo
+    const preview = content.substring(0, 100).toLowerCase();
+    if (preview.includes('entrenamiento en casa')) {
+      console.warn(`⚠️ DETECTADO "entrenamiento en casa" en archivo para feature ${feature}!`);
+      console.log(`Archivo: ${fileName}`);
+      console.log(`Preview: ${preview}...`);
+    } else {
+      console.log(`✅ Prompt correcto para ${feature} - NO contiene "entrenamiento en casa"`);
+    }
+
     cache.set(feature, content);
     console.log(`✅ Prompt cargado y cacheado para feature: ${feature} (${content.length} caracteres)`);
     
@@ -55,19 +88,6 @@ export async function getPrompt(feature) {
   }
 }
 
-/**
- * Limpia la caché de prompts (útil para desarrollo)
- * @param {string} [feature] - Feature específico a limpiar, o undefined para limpiar todo
- */
-export function clearPromptCache(feature) {
-  if (feature) {
-    cache.delete(feature);
-    console.log(`🗑️ Cache limpiado para feature: ${feature}`);
-  } else {
-    cache.clear();
-    console.log(`🗑️ Cache de prompts completamente limpiado`);
-  }
-}
 
 /**
  * Obtiene el estado actual de la caché

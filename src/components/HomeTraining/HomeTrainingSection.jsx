@@ -325,10 +325,21 @@ const HomeTrainingSection = () => {
         }
       }
 
+      // Verificar si todos los ejercicios están completados
+      if (sessionProgress && sessionProgress.allCompleted) {
+        alert('¡Felicitaciones! Has completado todos los ejercicios de este entrenamiento.');
+        setShowProgress(false);
+        setShowExerciseModal(false);
+        await loadUserStats();
+        return;
+      }
+
       // Validar que el ejercicio actual tiene los datos necesarios
       const currentExercise = exercises[currentExerciseIndex];
       if (!currentExercise || !currentExercise.nombre) {
         console.error('Ejercicio actual no válido:', currentExercise);
+        console.error('CurrentExerciseIndex:', currentExerciseIndex, 'Total ejercicios:', exercises.length);
+        console.error('Session progress:', sessionProgress);
         alert('Error: Datos del ejercicio no válidos. Por favor, genera un nuevo plan.');
         return;
       }
@@ -743,15 +754,14 @@ const HomeTrainingSection = () => {
 
         {/* Modal de carga (Paso 4) */}
         {isGenerating && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
-            <div className="bg-gray-800 border border-gray-600 rounded-2xl p-8 max-w-md mx-4 text-center">
-              <div className="w-16 h-16 border-4 border-yellow-400 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-              <h3 className="text-xl font-semibold text-white mb-2">
-                La IA está comprobando tu perfil...
-              </h3>
-              <p className="text-gray-300">
-                Preparando tu mejor entrenamiento para hoy según tu equipamiento y nivel.
-              </p>
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+            <div className="bg-black/90 border border-yellow-400/30 rounded-lg p-8 text-center shadow-xl">
+              <svg className="w-12 h-12 text-yellow-400 animate-spin mx-auto mb-4" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+              </svg>
+              <p className="text-white font-semibold text-lg">La IA está generando tu entrenamiento</p>
+              <p className="text-gray-400 text-sm mt-2">Analizando tu perfil para crear la rutina idónea…</p>
             </div>
           </div>
         )}

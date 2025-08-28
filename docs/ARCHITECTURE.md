@@ -137,3 +137,149 @@ ProfileForm → Validation → API Route → Supabase Update → Refresh Store
 - **RESTful Design**: Endpoints semánticos
 - **Error Handling**: Manejo consistente de errores
 - **Type Safety**: Tipos compartidos entre cliente y servidor
+
+## 🔄 Flujo Técnico Detallado Usuario → IA
+
+### 1. Estructura de Datos del Usuario
+```typescript
+interface UserProfile {
+  id: string;
+  email: string;
+  nombre: string;
+  edad: number;
+  peso: number;
+  altura: number;
+  genero: 'masculino' | 'femenino' | 'otro';
+  nivel_actividad: 'sedentario' | 'ligero' | 'moderado' | 'activo' | 'muy_activo';
+  objetivo: 'perder_peso' | 'mantener' | 'ganar_musculo' | 'mejorar_resistencia';
+  experiencia: 'principiante' | 'intermedio' | 'avanzado';
+  lesiones: string[];
+  preferencias_alimentarias: string[];
+  dias_disponibles: number;
+  tiempo_por_sesion: number;
+  equipamiento_disponible: string[];
+  created_at: Date;
+  updated_at: Date;
+}
+```
+
+### 2. Proceso de Análisis y Generación
+```javascript
+// server/api/generate-training - Endpoint principal de generación
+app.post('/api/generate-training', async (req, res) => {
+  const { userId, trainingType } = req.body;
+  
+  // PASO 1: Obtener perfil completo del usuario
+  const { data: userProfile } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .single();
+  
+  // PASO 2: Obtener historial de entrenamiento
+  const { data: trainingHistory } = await supabase
+    .from('training_history')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(10);
+  
+  // PASO 3: Obtener datos nutricionales recientes
+  const { data: nutritionData } = await supabase
+    .from('nutrition_logs')
+    .select('*')
+    .eq('user_id', userId)
+    .order('date', { ascending: false })
+    .limit(7);
+  
+  // PASO 4: Construir contexto personalizado para IA
+  const context = {
+    usuario: {
+      perfil: userProfile,
+      historial_entrenamiento: trainingHistory,
+      datos_nutricionales: nutritionData,
+      progreso_reciente: calculateRecentProgress(trainingHistory)
+    },
+    tipo_entrenamiento: trainingType,
+    timestamp: new Date().toISOString()
+  };
+  
+  // PASO 5: Generar plan con OpenAI
+  const aiResponse = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: buildPersonalizedPrompt(context),
+    temperature: 0.7,
+    max_tokens: 2000
+  });
+  
+  // PASO 6: Procesar y guardar respuesta
+  const generatedPlan = JSON.parse(aiResponse.choices[0].message.content);
+  
+  // PASO 7: Persistir en base de datos
+  const { data: savedPlan } = await supabase
+    .from('training_plans')
+    .insert({
+      user_id: userId,
+      plan_data: generatedPlan,
+      type: trainingType,
+      ai_model: 'gpt-4o-mini'
+    })
+    .select()
+    .single();
+  
+  return res.json({ 
+    success: true, 
+    plan: savedPlan,
+    metadata: {
+      generated_at: new Date(),
+      ai_confidence: aiResponse.usage.total_tokens
+    }
+  });
+});
+```
+
+### 3. Integración con Frontend
+```typescript
+// hooks/useAI.ts - Hook personalizado para gestión de IA
+export function useAI() {
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generatedPlan, setGeneratedPlan] = useState(null);
+  const [error, setError] = useState(null);
+
+  const generateTrainingPlan = async (trainingType: string) => {
+    setIsGenerating(true);
+    setError(null);
+    
+    try {
+      const response = await fetch('/api/generate-training', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          userId: user.id, 
+          trainingType 
+        })
+      });
+      
+      if (!response.ok) throw new Error('Error generating plan');
+      
+      const result = await response.json();
+      setGeneratedPlan(result.plan);
+      
+      // Actualizar estado global
+      useTrainingStore.getState().addPlan(result.plan);
+      
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  return { 
+    generateTrainingPlan, 
+    isGenerating, 
+    generatedPlan, 
+    error 
+  };
+}
+```

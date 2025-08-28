@@ -91,7 +91,7 @@ export default function MethodologyConfirmationModal({
 
   return (
     <Dialog open={true} onOpenChange={onCancel}>
-      <DialogContent className="max-w-2xl bg-black border-yellow-400/40 text-white">
+      <DialogContent className="max-w-6xl bg-gray-800 border border-gray-600 rounded-2xl text-white">
         <DialogHeader>
           <div className="flex items-center justify-between">
             <div>
@@ -117,25 +117,25 @@ export default function MethodologyConfirmationModal({
 
         <div className="space-y-6">
           {/* Metodología seleccionada */}
-          <div className="p-4 rounded-lg bg-yellow-400/10 border border-yellow-400/30">
-            <h3 className="text-xl font-semibold text-yellow-400 mb-2">
+          <div className="p-6 rounded-2xl bg-gray-700/50 border border-gray-600">
+            <h3 className="text-2xl font-bold text-yellow-400 mb-4">
               {methodology}
             </h3>
-            <p className="text-gray-300 text-sm leading-relaxed">
+            <p className="text-gray-300 text-base leading-relaxed">
               {methodologyData.description}
             </p>
           </div>
 
           {/* Características principales */}
-          <div>
-            <h4 className="text-lg font-semibold text-white mb-3 flex items-center">
+          <div className="p-4 rounded-lg bg-gray-700/30">
+            <h4 className="text-lg font-semibold text-white mb-4 flex items-center">
               <CheckCircle className="w-5 h-5 mr-2 text-green-400" />
               Características Principales
             </h4>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-4">
               {methodologyData.characteristics.map((char, index) => (
                 <div key={index} className="flex items-center text-sm text-gray-300">
-                  <div className="w-2 h-2 rounded-full bg-yellow-400 mr-2"></div>
+                  <div className="w-2 h-2 rounded-full bg-yellow-400 mr-3"></div>
                   {char}
                 </div>
               ))}
@@ -143,34 +143,34 @@ export default function MethodologyConfirmationModal({
           </div>
 
           {/* Información del plan */}
-          <div className="grid grid-cols-3 gap-4">
-            <div className="p-3 rounded-lg bg-blue-400/10 border border-blue-400/30">
-              <div className="flex items-center gap-2 mb-1">
-                <Clock className="w-4 h-4 text-blue-400" />
-                <span className="text-xs uppercase tracking-wide text-blue-400">Frecuencia</span>
+          <div className="grid grid-cols-3 gap-6">
+            <div className="p-4 rounded-lg bg-gray-700/40 text-center">
+              <div className="flex items-center justify-center gap-2 mb-3">
+                <Clock className="w-5 h-5 text-blue-400" />
+                <span className="text-sm font-medium text-blue-400">Frecuencia</span>
               </div>
-              <div className="text-sm font-semibold text-white">{methodologyData.duration}</div>
+              <div className="text-lg font-bold text-white">{methodologyData.duration}</div>
             </div>
 
-            <div className="p-3 rounded-lg bg-red-400/10 border border-red-400/30">
-              <div className="flex items-center gap-2 mb-1">
-                <Zap className="w-4 h-4 text-red-400" />
-                <span className="text-xs uppercase tracking-wide text-red-400">Intensidad</span>
+            <div className="p-4 rounded-lg bg-gray-700/40 text-center">
+              <div className="flex items-center justify-center gap-2 mb-3">
+                <Zap className="w-5 h-5 text-red-400" />
+                <span className="text-sm font-medium text-red-400">Intensidad</span>
               </div>
-              <div className="text-sm font-semibold text-white">{methodologyData.intensity}</div>
+              <div className="text-lg font-bold text-white">{methodologyData.intensity}</div>
             </div>
 
-            <div className="p-3 rounded-lg bg-green-400/10 border border-green-400/30">
-              <div className="flex items-center gap-2 mb-1">
-                <Target className="w-4 h-4 text-green-400" />
-                <span className="text-xs uppercase tracking-wide text-green-400">Objetivo</span>
+            <div className="p-4 rounded-lg bg-gray-700/40 text-center">
+              <div className="flex items-center justify-center gap-2 mb-3">
+                <Target className="w-5 h-5 text-green-400" />
+                <span className="text-sm font-medium text-green-400">Objetivo</span>
               </div>
-              <div className="text-sm font-semibold text-white">{methodologyData.target}</div>
+              <div className="text-lg font-bold text-white">{methodologyData.target}</div>
             </div>
           </div>
 
           {/* Información importante */}
-          <div className="p-4 rounded-lg bg-amber-900/20 border border-amber-700/50">
+          <div className="p-4 rounded-lg bg-gray-700/30 border border-gray-600">
             <div className="flex items-start mb-2">
               <AlertCircle className="w-5 h-5 text-amber-400 mr-2 mt-0.5" />
               <h4 className="text-amber-200 font-semibold text-sm">Información Importante</h4>
@@ -212,7 +212,7 @@ export default function MethodologyConfirmationModal({
                 ) : (
                   <>
                     <CheckCircle className="w-4 h-4 mr-2" />
-                    Confirmar y Generar
+                    Generar
                   </>
                 )}
               </Button>

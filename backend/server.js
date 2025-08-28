@@ -17,6 +17,9 @@ import bodyCompositionRoutes from './routes/bodyComposition.js';
 import uploadsRoutes from './routes/uploads.js';
 import exercisesRoutes from './routes/exercises.js';
 import techniqueRoutes from './routes/technique.js';
+import routinesRoutes from './routes/routines.js';
+import nutritionRoutes from './routes/nutrition.js';
+import musicRoutes from './routes/music.js';
 import { pool } from './db.js';
 
 // Cargar variables de entorno
@@ -56,7 +59,7 @@ const PORT = process.env.PORT || 3002;
     const apiKeyStatus = validateAPIKeys();
     if (apiKeyStatus.allConfigured) {
       console.log('✅ Todas las API keys configuradas correctamente');
-      console.log('🤖 Features disponibles: photo, video, home');
+      console.log('🤖 Features disponibles: photo, video, home, methodologie, nutrition');
     } else {
       console.warn('⚠️ API keys faltantes:', apiKeyStatus.missing.join(', '));
       console.log('🔍 Estado detallado:', apiKeyStatus.features);
@@ -99,6 +102,9 @@ app.use('/api/body-composition', bodyCompositionRoutes);
 app.use('/api/uploads', uploadsRoutes);
 app.use('/api/exercises', exercisesRoutes);
 app.use('/api/technique', techniqueRoutes);
+app.use('/api/routines', routinesRoutes);
+app.use('/api/nutrition', nutritionRoutes);
+app.use('/api/music', musicRoutes);
 
 // Ruta de prueba
 app.use('/api/uploads', uploadsRoutes);
@@ -118,7 +124,7 @@ app.get('/api/test-ai-modules', async (req, res) => {
     const { getOpenAIClient } = await import('./lib/openaiClient.js');
     const { getPrompt } = await import('./lib/promptRegistry.js');
     
-    const features = ['video', 'photo', 'home', 'methodologie'];
+    const features = ['video', 'photo', 'home', 'methodologie', 'nutrition'];
     const results = [];
     
     for (const feature of features) {
@@ -157,6 +163,53 @@ app.get('/api/test-ai-modules', async (req, res) => {
       error: 'Error ejecutando tests de IA',
       details: error.message
     });
+  }
+});
+
+// Debug endpoint para limpiar cache de prompts
+app.post('/api/debug/clear-prompt-cache', async (req, res) => {
+  try {
+    const { feature } = req.body;
+    
+    // Importar funciones de prompt registry
+    const { clearPromptCache, getCacheStatus } = await import('./lib/promptRegistry.js');
+    
+    const beforeStatus = getCacheStatus();
+    clearPromptCache(feature);
+    const afterStatus = getCacheStatus();
+    
+    res.json({
+      success: true,
+      message: `Cache ${feature ? `para feature ${feature}` : 'completo'} limpiado`,
+      before: beforeStatus,
+      after: afterStatus
+    });
+  } catch (error) {
+    console.error('Error clearing prompt cache:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Debug endpoint para verificar contenido de prompts
+app.get('/api/debug/prompt-content/:feature', async (req, res) => {
+  try {
+    const { feature } = req.params;
+    const { getPrompt } = await import('./lib/promptRegistry.js');
+    
+    const content = await getPrompt(feature);
+    const preview = content.substring(0, 200);
+    const containsTraining = content.toLowerCase().includes('entrenamiento en casa');
+    
+    res.json({
+      feature,
+      contentLength: content.length,
+      preview,
+      containsTraining,
+      firstLine: content.split('\n')[0]
+    });
+  } catch (error) {
+    console.error('Error getting prompt content:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 

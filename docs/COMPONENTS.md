@@ -1,81 +1,146 @@
-# Guía de Componentes y Funcionalidades
+# Guía de Componentes y Funcionalidades - Entrena con IA
 
 ## 🎯 Componentes Principales
 
-### Dashboard Components
+### Sistema de Metodologías
 
-#### 📊 StatsCard
-**Ubicación**: `/src/components/dashboard/StatsCard.tsx`
-**Función**: Muestra estadísticas del usuario en tarjetas visuales
+#### 🧠 MethodologiesScreen
+**Ubicación**: `src/components/Methodologie/MethodologiesScreen.jsx`
+**Función**: Pantalla principal para selección de metodologías de entrenamiento
 
-**Props**:
-```typescript
-interface StatsCardProps {
-  title: string;
-  value: string | number;
-  icon?: React.ReactNode;
-  trend?: 'up' | 'down' | 'neutral';
-  className?: string;
-}
-```
+**Estados principales**:
+- `selectionMode`: 'automatico' | 'manual'
+- `isLoading`: Estado de generación de plan
+- `showDetails`: Control de modal de detalles
 
 **Botones/Acciones**:
-- Click en tarjeta: Navega a detalles de la estadística
-- Hover: Muestra tooltip con información adicional
+- **Selector Automático**: Activa modo IA con botón "Activar IA"
+- **Selector Manual**: Permite selección directa de metodología
+- **Cards de metodología**: Click abre modal de confirmación (solo modo manual)
+- **Botón "Ver Detalles"**: Abre información completa de metodología
 
 ---
 
-#### 🏋️ TrainingPlanCard
-**Ubicación**: `/src/components/dashboard/TrainingPlanCard.tsx`
-**Función**: Visualiza planes de entrenamiento individuales
+#### 🏋️ MethodologyCard
+**Ubicación**: `src/components/Methodologie/MethodologyCard.jsx`
+**Función**: Tarjeta individual de metodología con información e interacciones
 
 **Props**:
-```typescript
-interface TrainingPlanCardProps {
-  plan: TrainingPlan;
-  onEdit?: () => void;
-  onDelete?: () => void;
-  onStart?: () => void;
+```jsx
+{
+  methodology: Object,    // Datos de la metodología
+  manualActive: boolean,  // Si el modo manual está activo
+  onDetails: Function,    // Callback para abrir detalles
+  onSelect: Function      // Callback para selección
 }
 ```
 
-**Botones/Acciones**:
-- **Botón "Iniciar"** (`onStart`): Comienza la sesión de entrenamiento
-- **Botón "Editar"** (`onEdit`): Abre modal de edición del plan
-- **Botón "Eliminar"** (`onDelete`): Elimina el plan con confirmación
-- **Botón "Ver Detalles"**: Expande/colapsa información adicional
+**Estructura visual**:
+- **Header**: Icono + título + badge de nivel
+- **Descripción**: Texto explicativo de la metodología
+- **Métricas**: Frecuencia, volumen, intensidad
+- **Acciones**: Botones "Ver Detalles" y "Seleccionar Metodología"
+
+**Estados interactivos**:
+- **Manual activo**: Cursor pointer, hover effects, seleccionable
+- **Manual inactivo**: Solo botón "Ver Detalles" funcional
 
 ---
 
-#### 🎯 MethodologySelector
-**Ubicación**: `/src/components/dashboard/MethodologySelector.tsx`
-**Función**: Permite seleccionar metodologías de entrenamiento
+#### 💬 MethodologyDetailsDialog
+**Ubicación**: `src/components/Methodologie/MethodologyDetailsDialog.jsx`
+**Función**: Modal completo con información detallada de metodología
 
-**Metodologías Disponibles**:
-1. **HIIT (High Intensity Interval Training)**
-   - Función: Entrenamientos de alta intensidad con intervalos
-   - Ideal para: Pérdida de grasa, mejora cardiovascular
+**Props**:
+```jsx
+{
+  open: boolean,
+  onOpenChange: Function,
+  detailsMethod: Object,
+  selectionMode: string,
+  onClose: Function,
+  onSelect: Function
+}
+```
 
-2. **Fuerza Progresiva**
-   - Función: Incremento gradual de cargas
-   - Ideal para: Ganancia muscular, fuerza
+**Estructura de información**:
+- **Descripción completa**: Texto detallado de la metodología
+- **Video placeholder**: Preparado para contenido multimedia futuro
+- **Tabs informativos**: 4 pestañas con información específica
 
-3. **Entrenamiento Funcional**
-   - Función: Movimientos naturales del cuerpo
-   - Ideal para: Movilidad, equilibrio, vida diaria
-
-4. **Calistenia**
-   - Función: Ejercicios con peso corporal
-   - Ideal para: Entrenamiento en casa, flexibilidad
-
-5. **Powerlifting**
-   - Función: Levantamientos de potencia
-   - Ideal para: Fuerza máxima, competición
+**Tabs disponibles**:
+1. **Principios**: Fundamentos básicos de la metodología
+2. **Beneficios**: Ventajas y resultados esperados  
+3. **Dirigido a**: Público objetivo y especificaciones
+4. **Ciencia**: Base científica y fundamentos teóricos
 
 **Botones/Acciones**:
-- **Selector de Metodología**: Dropdown con descripción
-- **Botón "Aplicar"**: Genera plan con metodología seleccionada
-- **Botón "Más Info"**: Abre modal con detalles completos
+- **Botón "Cerrar"**: Cierra modal sin acción
+- **Botón "Seleccionar"**: Solo activo en modo manual, ejecuta selección
+
+---
+
+#### ✅ MethodologyConfirmationModal
+**Ubicación**: `src/components/Methodologie/MethodologyConfirmationModal.jsx`
+**Función**: Modal de confirmación para selección manual de metodología
+
+**Información mostrada**:
+- **Metodología seleccionada**: Nombre y descripción en card destacada
+- **Características principales**: Grid con puntos clave (2 columnas)
+- **Métricas del plan**: Frecuencia, Intensidad, Objetivo (cards con iconos)
+- **Información importante**: Warning sobre personalización del plan
+
+**Estados**:
+- **Normal**: Información estática con botones activos
+- **Generando**: Spinner, botones deshabilitados, texto dinámico
+- **Success**: Navegación automática a rutinas
+
+**Botones/Acciones**:
+- **"Cancelar"** (Outline): Cierra sin acción
+- **"Confirmar y Generar"** (Amarillo): Inicia generación del plan
+
+---
+
+### 🏠 HomeTrainingSection
+**Ubicación**: `src/components/HomeTraining/HomeTrainingSection.jsx`
+**Función**: Componente principal de entrenamiento en casa
+
+**Estructura técnica**:
+```typescript
+interface HomeTrainingSectionProps {
+  userId: string;
+  userProfile: UserProfile;
+}
+
+const HomeTrainingSection = () => {
+  // Estados principales
+  const [selectedEquipment, setSelectedEquipment] = useState(null);
+  const [selectedTrainingType, setSelectedTrainingType] = useState(null);
+  const [generatedPlan, setGeneratedPlan] = useState(null);
+  const [currentSession, setCurrentSession] = useState(null);
+  const [showExerciseModal, setShowExerciseModal] = useState(false);
+  
+  // Funciones clave
+  const generateTraining = async () => {
+    // Genera rutina basada en equipamiento y tipo seleccionado
+  };
+  
+  const startTraining = async () => {
+    // Inicia nueva sesión de entrenamiento
+  };
+  
+  const handleExerciseComplete = async (durationSeconds) => {
+    // Completa ejercicio y actualiza progreso
+  };
+}
+```
+
+**Botones/Acciones principales**:
+- **"Generar Mi Entrenamiento"**: Ejecuta `generateTraining()` con IA
+- **"Comenzar Entrenamiento"**: Inicia sesión con `startTraining()`
+- **"Continuar Entrenamiento"**: Reanuda sesión en progreso
+- **Cards de equipamiento**: Selección de tipo de equipamiento disponible
+- **Botones tipo entrenamiento**: Funcional, HIIT, Fuerza
 
 ---
 

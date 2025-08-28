@@ -3,6 +3,16 @@ import multer from 'multer';
 import { getOpenAIClient } from '../lib/openaiClient.js';
 import { getPrompt, FeatureKey } from '../lib/promptRegistry.js';
 import { AI_MODULES } from '../config/aiConfigs.js';
+import { 
+  logSeparator, 
+  logUserProfile, 
+  logRecentExercises, 
+  logAIPayload, 
+  logAIResponse, 
+  logError, 
+  logAPICall, 
+  logTokens 
+} from '../utils/aiLogger.js';
 
 const router = express.Router();
 
@@ -44,6 +54,10 @@ router.post('/analyze', upload.array('photos', 5), async (req, res) => {
     const { exercise_name, exercise_description, user_context } = req.body;
     const photos = req.files;
 
+    // ====== INICIO DEL LOGGING DETALLADO ======
+    logSeparator(`Análisis de Fotos - ${exercise_name || 'Ejercicio no especificado'}`, 'blue');
+    logAPICall('/api/ai-photo-correction/analyze', 'POST', 'usuario_foto');
+
     // Obtener cliente específico para photo correction
     const client = getOpenAIClient("photo");
 
@@ -65,6 +79,18 @@ router.post('/analyze', upload.array('photos', 5), async (req, res) => {
     const exerciseContext = exercise_name || 'Ejercicio no especificado';
     const exerciseDesc = exercise_description || '';
     const userInfo = safeJSON(user_context) || {};
+    
+    // Log del contexto del usuario (simulando perfil)
+    const mockUser = {
+      ejercicio: exerciseContext,
+      nivel: userInfo.nivel || 'No especificado',
+      objetivo: userInfo.objetivo || 'No especificado',
+      lesiones: userInfo.lesiones?.join(', ') || 'Ninguna'
+    };
+    logUserProfile(mockUser, 'usuario_foto');
+
+    // Log de ejercicios recientes (no aplicable para análisis de fotos)
+    logRecentExercises([]);
     
     // Obtener system prompt desde archivo y construir mensaje dinámico
     const basePrompt = await getPrompt(FeatureKey.PHOTO);
@@ -105,6 +131,15 @@ Proporciona un análisis detallado siguiendo el formato JSON especificado.`
       }
     ];
 
+    // Log del payload completo enviado a la IA
+    logAIPayload(exerciseContext, {
+      exercise_name: exerciseContext,
+      exercise_description: exerciseDesc,
+      user_context: userInfo,
+      photos_count: photos.length,
+      system_message_length: systemMessage.length
+    });
+
     const completion = await client.chat.completions.create({
       model: MODEL,
       messages: messages,
@@ -115,6 +150,13 @@ Proporciona un análisis detallado siguiendo el formato JSON especificado.`
     });
 
     const content = completion?.choices?.[0]?.message?.content || '{}';
+    
+    // Log de tokens consumidos
+    logTokens(completion);
+    
+    // Log de la respuesta completa de la IA
+    logAIResponse(content, exerciseContext);
+
     let aiResponse;
     
     try {
@@ -140,6 +182,8 @@ Proporciona un análisis detallado siguiendo el formato JSON especificado.`
       }
     };
 
+    console.log('✅ Análisis de fotos completado exitosamente');
+    
     res.json(enrichedResponse);
 
   } catch (error) {

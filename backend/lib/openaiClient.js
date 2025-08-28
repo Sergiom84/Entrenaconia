@@ -11,6 +11,7 @@ const ENV_BY_FEATURE = {
   video: "OPENAI_API_KEY_CORRECTION_VIDEO", 
   home: "OPENAI_API_KEY_HOME_TRAINING",
   methodologie: "OPENAI_API_KEY_METHODOLOGIE",
+  nutrition: "OPENAI_API_KEY_NUTRITION",
 };
 
 /**
@@ -31,7 +32,7 @@ export function getOpenAI(apiKey) {
 
 /**
  * Obtiene cliente OpenAI específico por feature
- * @param {"photo"|"video"|"home"} feature - Feature específico
+ * @param {"photo"|"video"|"home"|"methodologie"|"nutrition"} feature - Feature específico
  * @returns {OpenAI} Cliente OpenAI configurado
  */
 export function getOpenAIClient(feature) {

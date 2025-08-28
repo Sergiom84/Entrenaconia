@@ -3,6 +3,16 @@ import authenticateToken from '../middleware/auth.js';
 import { AI_MODULES } from '../config/aiConfigs.js';
 import { getModuleOpenAI } from '../lib/openaiClient.js';
 import db from '../db.js';
+import { 
+  logSeparator, 
+  logUserProfile, 
+  logRecentExercises, 
+  logAIPayload, 
+  logAIResponse, 
+  logError, 
+  logAPICall, 
+  logTokens 
+} from '../utils/aiLogger.js';
 
 const router = express.Router();
 
@@ -19,8 +29,15 @@ const getMethodologieManualClient = () => {
 // Generar plan de metodología manual
 router.post('/generate-manual', authenticateToken, async (req, res) => {
   try {
-    const { metodologia_solicitada } = req.body;
+    const { metodologia_solicitada, versionConfig } = req.body;
     const userId = req.user?.userId || req.user?.id;
+
+    // Configuración de versión por defecto si no se proporciona
+    const version = versionConfig || {
+      selectionMode: 'automatic',
+      version: 'adapted',
+      userLevel: 'intermedio'
+    };
 
     // Normalizar metodología (tolerante a mayúsculas/acentos/espacios)
     const normalize = (s = '') => s
@@ -55,9 +72,11 @@ router.post('/generate-manual', authenticateToken, async (req, res) => {
       });
     }
 
-    console.log(`🤖 Generando plan manual de ${canonical} para usuario ${userId}`);
+    // ====== INICIO DEL LOGGING DETALLADO ======
+    logSeparator(`Generación de Plan Manual - ${canonical}`, 'blue');
+    logAPICall('/api/methodology-manual/generate-manual', 'POST', userId);
 
-    // Obtener perfil del usuario
+    // Obtener perfil del usuario y ejercicios recientes
     const userQuery = `
       SELECT 
         edad, peso, altura, sexo, nivel_actividad, suplementacion,
@@ -67,19 +86,46 @@ router.post('/generate-manual', authenticateToken, async (req, res) => {
       WHERE id = $1
     `;
     
+    const recentExercisesQuery = `
+      SELECT * FROM app.get_recent_exercises($1, $2, 60)
+    `;
+    
     const userResult = await db.query(userQuery, [userId]);
     const user = userResult.rows[0];
     
     if (!user) {
+      logError(new Error('Usuario no encontrado'), 'BASE DE DATOS');
       return res.status(404).json({
         success: false,
         error: 'Usuario no encontrado'
       });
     }
 
+    // Log del perfil del usuario
+    logUserProfile(user, userId);
+
+    // Obtener ejercicios recientes para evitar repeticiones
+    let recentExercises = [];
+    try {
+      const recentExercisesResult = await db.query(recentExercisesQuery, [userId, canonical]);
+      recentExercises = recentExercisesResult.rows;
+    } catch (exerciseError) {
+      console.log('⚠️ No se pudieron obtener ejercicios recientes (tabla puede no existir):', exerciseError.message);
+    }
+
+    // Log de ejercicios recientes
+    logRecentExercises(recentExercises);
+
     // Preparar datos para la IA
     const userData = {
       metodologia_solicitada: canonical,
+      versionConfig: {
+        selectionMode: version.selectionMode,
+        version: version.version,
+        userLevel: version.userLevel,
+        isRecommended: version.isRecommended || true,
+        customWeeks: version.customWeeks || 4
+      },
       edad: user.edad,
       peso: user.peso,
       estatura: user.altura, // mapear altura→estatura
@@ -94,8 +140,16 @@ router.post('/generate-manual', authenticateToken, async (req, res) => {
       anos_entrenando: user.anos_entrenando,
       "años_entrenando": user.anos_entrenando,
       objetivo_principal: user.objetivo_principal,
-      medicamentos: user.medicamentos
+      medicamentos: user.medicamentos,
+      ejercicios_recientes: recentExercises.length > 0 ? recentExercises.map(ex => ({
+        nombre: ex.exercise_name,
+        veces_usado: ex.usage_count,
+        ultimo_uso: ex.last_used
+      })) : []
     };
+
+    // Log del payload completo enviado a la IA
+    logAIPayload(canonical, userData);
 
     // Llamar a la IA
     const client = getMethodologieManualClient();
@@ -120,7 +174,12 @@ router.post('/generate-manual', authenticateToken, async (req, res) => {
     });
 
     const aiResponse = response.choices[0].message.content;
-    console.log('📋 Respuesta de IA recibida, parseando JSON...');
+    
+    // Log de tokens consumidos
+    logTokens(response);
+    
+    // Log de la respuesta completa de la IA
+    logAIResponse(aiResponse, canonical);
 
     let planData;
     try {
@@ -156,6 +215,20 @@ router.post('/generate-manual', authenticateToken, async (req, res) => {
       canonical,
       JSON.stringify(planData)
     ]);
+
+    // Registrar ejercicios del plan en el historial para evitar repeticiones futuras
+    try {
+      const registerExercisesQuery = `SELECT app.register_plan_exercises($1, $2, $3, $4)`;
+      await db.query(registerExercisesQuery, [
+        userId,
+        canonical,
+        JSON.stringify(planData),
+        insertResult.rows[0].id
+      ]);
+      console.log('✅ Ejercicios registrados en historial para evitar repeticiones');
+    } catch (registerError) {
+      console.log('⚠️ No se pudieron registrar ejercicios en historial:', registerError.message);
+    }
 
     console.log(`✅ Plan de ${metodologia_solicitada} generado exitosamente`);
 

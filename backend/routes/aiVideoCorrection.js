@@ -3,6 +3,16 @@ import multer from 'multer';
 import { getOpenAIClient } from '../lib/openaiClient.js';
 import { getPrompt, FeatureKey } from '../lib/promptRegistry.js';
 import { AI_MODULES } from '../config/aiConfigs.js';
+import { 
+  logSeparator, 
+  logUserProfile, 
+  logRecentExercises, 
+  logAIPayload, 
+  logAIResponse, 
+  logError, 
+  logAPICall, 
+  logTokens 
+} from '../utils/aiLogger.js';
 
 const router = express.Router();
 
@@ -40,13 +50,15 @@ router.post(
   ]),
   async (req, res) => {
     try {
-
-
       const { exerciseId, userId, perfilUsuario: perfilStr } = req.body || {};
       
       if (!userId) {
         return res.status(400).json({ error: 'userId requerido' });
       }
+
+      // ====== INICIO DEL LOGGING DETALLADO ======
+      logSeparator(`Corrección de Video - ${exerciseId || 'Ejercicio no especificado'}`, 'blue');
+      logAPICall('/api/ai-video-correction/advanced-correction', 'POST', userId);
 
       const perfil = safeJSON(perfilStr) || {};
       const allFiles = [...(req.files?.frame || []), ...(req.files?.images || [])];
@@ -54,6 +66,12 @@ router.post(
       if (!allFiles.length) {
         return res.status(400).json({ error: 'Se requiere al menos una imagen' });
       }
+
+      // Log del perfil del usuario
+      logUserProfile(perfil, userId);
+
+      // Log de ejercicios recientes (no aplicable para corrección de video)
+      logRecentExercises([]);
 
       // Construir mensajes para Chat Completions con imágenes
       const imageContents = allFiles.map(file => ({
@@ -79,7 +97,14 @@ router.post(
         }
       ];
 
-      console.log('🎯 Enviando a OpenAI (video)...');
+      // Log del payload completo enviado a la IA
+      logAIPayload(exerciseId || 'Video Correction', {
+        exercise_id: exerciseId,
+        user_id: userId,
+        perfil_usuario: perfil,
+        images_count: allFiles.length,
+        system_message_from_prompt: true
+      });
 
       // Cliente OpenAI específico para video
       const client = getOpenAIClient('video');
@@ -93,10 +118,13 @@ router.post(
         top_p: VC_CONFIG.top_p
       });
 
-      console.log('🤖 Respuesta de OpenAI recibida');
-
       const content = completion?.choices?.[0]?.message?.content || '{}';
-      console.log('📝 Texto extraído:', content.substring(0, 500) + '...');
+      
+      // Log de tokens consumidos
+      logTokens(completion);
+      
+      // Log de la respuesta completa de la IA
+      logAIResponse(content, exerciseId || 'Video Correction');
 
       let analysis;
       try {
@@ -129,7 +157,7 @@ router.post(
         confidence: analysis.confianza_global || 'unknown'
       };
 
-      console.log('✅ Análisis completado exitosamente');
+      console.log('✅ Análisis de video completado exitosamente');
       res.json(analysis);
 
     } catch (error) {

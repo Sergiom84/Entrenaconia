@@ -121,9 +121,76 @@ Modalidad multifuncional que permite entrenar desde casa utilizando equipamiento
 - **Tipografía clara**: Inter para legibilidad óptima
 - **Animaciones suaves**: Transiciones fluidas sin distracciones
 
+## 💪 Metodologías de Entrenamiento - Detalles Técnicos
+
+### 1. HIIT (High Intensity Interval Training)
+
+#### Configuración Técnica
+```typescript
+interface HIITConfig {
+  workTime: number; // segundos (20-60)
+  restTime: number; // segundos (10-30)
+  rounds: number; // (4-10)
+  exercises: Exercise[];
+  warmup: boolean;
+  cooldown: boolean;
+}
+```
+
+#### Características
+- **Duración**: 15-30 minutos
+- **Estructura**: Intervalos trabajo/descanso
+- **Beneficios**: Quema grasa, mejora cardiovascular
+
+### 2. Fuerza Progresiva
+
+#### Fases de Periodización
+1. **Hipertrofia** (8-12 reps, 70-80% 1RM)
+2. **Fuerza** (3-6 reps, 80-90% 1RM)
+3. **Potencia** (1-3 reps, 90-100% 1RM)
+
+#### Características
+- **Periodización**: Lineal o ondulante
+- **Progresión**: +2.5-5kg por semana
+- **Descanso**: 2-5 minutos entre series
+
+### 3. Entrenamiento Funcional
+
+#### Patrones de Movimiento
+- **Movimientos multiarticulares**
+- **Patrones de movimiento natural**
+- **Trabajo de estabilidad y coordinación**
+
+## 🏠 Entrenamiento en Casa - Especificaciones Técnicas
+
+### Estructura de Datos
+```typescript
+interface HomeExercise {
+  id: string;
+  name: string;
+  muscleGroups: string[];
+  difficulty: 'beginner' | 'intermediate' | 'advanced';
+  spaceRequired: 'minimal' | 'moderate' | 'large';
+  equipment: 'none' | 'minimal'; // banda elástica, esterilla
+  videoUrl: string;
+  instructions: string[];
+  commonMistakes: string[];
+}
+```
+
+### Planes Progresivos
+- **Semana 1-4**: Adaptación y técnica
+- **Semana 5-8**: Incremento de volumen
+- **Semana 9-12**: Intensidad y variaciones avanzadas
+
+### Botones y Acciones Específicas
+- **"Generar Plan Casero"**: Crea rutina personalizada
+- **"Ajustar Espacio"**: Define limitaciones del área
+- **"Ver Alternativas"**: Muestra ejercicios sustitutos
+
 ---
 
-**Estado actual**: Pantalla de inicio implementada
-**Próximo desarrollo**: Módulo de Entrenamiento en Casa
-**Última actualización**: 16 de agosto de 2025
-**Versión del documento**: 1.0
+**Estado actual**: Sistema completo de metodologías y entrenamiento en casa implementado
+**Próximo desarrollo**: Expansión de análisis por video IA
+**Última actualización**: Agosto 2025
+**Versión del documento**: 2.0

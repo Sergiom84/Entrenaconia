@@ -252,10 +252,10 @@ router.put('/sessions/:sessionId/exercise/:exerciseOrder', authenticateToken, as
       const exKey = (exName || '').toLowerCase().replace(/[^a-z0-9]+/g, '_');
 
       await client.query(
-        `INSERT INTO app.user_exercise_history
+        `INSERT INTO app.home_exercise_history
            (user_id, exercise_name, exercise_key, reps, series, duration_seconds, session_id, plan_id)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-         ON CONFLICT DO NOTHING`,
+         ON CONFLICT (user_id, exercise_name, session_id) DO NOTHING`,
         [user_id, exName, exKey, null, series_completed, (duration_seconds ?? null), sessionId, planId]
       );
     }
@@ -304,11 +304,11 @@ router.get('/stats', authenticateToken, async (req, res) => {
       stats = createResult.rows[0];
     }
 
-    // Agregar métricas basadas en ejercicios completados (sin descansos)
+    // Agregar métricas basadas en ejercicios completados (SOLO entrenamiento en casa)
     const exAgg = await pool.query(
       `SELECT COUNT(*)::int AS total_exercises_completed,
               COALESCE(SUM(duration_seconds), 0)::int AS total_exercise_duration_seconds
-         FROM app.user_exercise_history
+         FROM app.home_exercise_history
         WHERE user_id = $1`,
       [user_id]
     );
@@ -375,14 +375,28 @@ router.get('/sessions/:sessionId/progress', authenticateToken, async (req, res) 
     const currentExerciseIndex = exercises.findIndex(ex => ex.status === 'pending' || ex.status === 'in_progress');
     const completedExercises = exercises.filter(ex => ex.status === 'completed').map(ex => ex.exercise_order);
 
+    // Determinar el ejercicio actual de manera más segura
+    let safeCurrentExercise;
+    if (currentExerciseIndex >= 0) {
+      // Hay un ejercicio pendiente o en progreso
+      safeCurrentExercise = currentExerciseIndex;
+    } else if (exercises.length > 0) {
+      // Todos completados, usar el último índice válido
+      safeCurrentExercise = Math.max(0, exercises.length - 1);
+    } else {
+      // No hay ejercicios
+      safeCurrentExercise = 0;
+    }
+
     res.json({
       success: true,
       session: session,
       exercises: exercises,
       progress: {
-        currentExercise: currentExerciseIndex >= 0 ? currentExerciseIndex : exercises.length,
+        currentExercise: safeCurrentExercise,
         completedExercises: completedExercises,
-        percentage: session.progress_percentage || 0
+        percentage: session.progress_percentage || 0,
+        allCompleted: currentExerciseIndex < 0 && exercises.length > 0
       }
     });
   } catch (error) {
@@ -402,7 +416,8 @@ router.post('/sessions/:sessionId/exercise/:exerciseOrder/feedback', authenticat
     const { sentiment, comment, exercise_name } = req.body || {};
     const user_id = req.user.userId || req.user.id;
 
-    if (!['dislike','hard','love'].includes(String(sentiment))) {
+    // Validar sentiment solo si está presente
+    if (sentiment !== null && sentiment !== undefined && !['dislike','hard','love'].includes(String(sentiment))) {
       return res.status(400).json({ success: false, message: 'sentiment inválido' });
     }
 

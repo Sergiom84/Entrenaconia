@@ -22,10 +22,14 @@ La estructura es:
     -   Equipamiento: "${equipment_type}"
     -   Tipo de Entrenamiento: "${training_type}"
 
-3.  **HISTORIAL RECIENTE (Ejercicios a evitar si es posible para que tenga más variedad básándote en los ejercicios que ya ha realizado tras analizar su histórico):**
-    -   ${recentExercises}
+3.  **HISTORIAL ESPECÍFICO PARA ESTA COMBINACIÓN (${equipment_type} + ${training_type}):**
+    -   Ejercicios ya usados para esta combinación específica: ${exercisesUsedForCombination}
+    -   (⚠️ EVITA ESTOS EJERCICIOS prioritariamente para dar variedad al usuario)
 
-4.  **REGLAS DE ORO PARA LA GENERACIÓN:**
+4.  **HISTORIAL GENERAL DE ENTRENAMIENTO EN CASA:**
+    -   Otros ejercicios realizados en casa: ${recentExercises}
+
+5.  **REGLAS DE ORO PARA LA GENERACIÓN:**
     -   **¡SÉ CREATIVO!**: Esta es la regla más importante. Sorprende al usuario. No uses siempre los mismos 5 ejercicios de HIIT, Funcional o Fuerza. Tienes una base de datos inmensa de movimientos, úsala.
 
     -   **EVITA LA REPETICIÓN**: El historial de ejercicios recientes es una lista de lo que NO debes usar, o al menos, no en su mayoría. Prioriza la novedad. Se creativo.
@@ -36,7 +40,7 @@ La estructura es:
 
     -   **UTILIZA EL EQUIPAMIENTO**: Si el usuario tiene 'equipo básico',  sus recursos son : peso corporal, Toallas, Silla, Sofá y/o la Pared. Si el equipamiento en básico la mayoría tendrán: Mancuernas ajustables, Bandas elásticas y / o Esterillas.  Y si es avazando: Barra dominadas, Kettlebells, TRX, Discos.
 
-5.  **GUÍA DE ESTILOS (NO REGLAS ESTRICTAS):**
+6.  **GUÍA DE ESTILOS (NO REGLAS ESTRICTAS):**
     -   **funcional**: Piensa en movimientos completos y fluidos. Combina fuerza, equilibrio y cardio.
     -   **hiit**: El objetivo es la intensidad. Alterna picos de esfuerzo máximo con descansos cortos. La estructura (ej. 30s trabajo / 30s descanso) es una guía, siéntete libre de proponer otras (ej. 45/15, Tabata, etc.).
     -   **fuerza**: Enfócate en la sobrecarga progresiva. Menos repeticiones, más peso y descansos más largos, máximo 60 segundos, para permitir la recuperación.

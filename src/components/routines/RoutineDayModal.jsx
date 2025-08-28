@@ -13,7 +13,7 @@ export default function RoutineDayModal({ dayData, onClose, onStartTraining }) {
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] bg-black border-yellow-400/40 text-white overflow-y-auto">
+      <DialogContent className="max-w-6xl max-h-[90vh] bg-black border-yellow-400/40 text-white overflow-y-auto">
         <DialogHeader>
           <div className="flex items-center justify-between">
             <div>

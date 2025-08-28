@@ -4,6 +4,16 @@ import { getPrompt } from '../lib/promptRegistry.js';
 import { AI_MODULES } from '../config/aiConfigs.js';
 import authenticateToken from '../middleware/auth.js';
 import { pool } from '../db.js';
+import { 
+  logSeparator, 
+  logUserProfile, 
+  logRecentExercises, 
+  logAIPayload, 
+  logAIResponse, 
+  logError, 
+  logAPICall, 
+  logTokens 
+} from '../utils/aiLogger.js';
 
 const router = express.Router();
 
@@ -25,20 +35,22 @@ function safeJSON(v) {
  * Función para validar y sanitizar datos del perfil de usuario
  */
 function validateProfileData(profile) {
-  // No inventar valores: pasar tal cual vienen de la BD (o null)
+  // Debug: mostrar qué datos llegan realmente
+  console.log('🔍 Raw profile data from DB:', JSON.stringify(profile, null, 2));
+  
   return {
     edad: profile.edad != null ? Number(profile.edad) : null,
     peso: profile.peso != null ? Number(profile.peso) : null,
     estatura: profile.altura != null ? Number(profile.altura) : (profile.altura_cm != null ? Number(profile.altura_cm) : (profile.estatura != null ? Number(profile.estatura) : null)),
     sexo: profile.sexo ?? null,
     nivel_actividad: profile.nivel_actividad ?? null,
-    suplementación: profile.suplementación ?? profile.suplementacion ?? null,
+    suplementación: profile.suplementación ?? profile.suplementacion ?? [],
     grasa_corporal: profile.grasa_corporal ?? null,
     masa_muscular: profile.masa_muscular ?? null,
     pecho: profile.pecho ?? null,
     brazos: profile.brazos ?? null,
-    nivel_actual_entreno: profile.nivel_entrenamiento ?? profile.nivel_actual_entreno ?? null,
-    años_entrenando: profile.años_entrenando != null ? Number(profile.años_entrenando) : (profile.anos_entrenando != null ? Number(profile.anos_entrenando) : null),
+    nivel_actual_entreno: profile.nivel ?? profile.nivel_entrenamiento ?? profile.nivel_actual_entreno ?? null,
+    años_entrenando: profile.anos_entrenando != null ? Number(profile.anos_entrenando) : null,
     objetivo_principal: profile.objetivo_principal ?? null,
     medicamentos: profile.medicamentos ?? null
   };
@@ -50,12 +62,14 @@ function validateProfileData(profile) {
  */
 router.post('/generate-plan', authenticateToken, async (req, res) => {
   try {
-    console.log('📋 Iniciando generación de plan metodológico...');
-
     const userId = req.user?.userId || req.user?.id;
     if (!userId) {
       return res.status(401).json({ error: 'TOKEN_SIN_ID' });
     }
+
+    // ====== INICIO DEL LOGGING DETALLADO ======
+    logSeparator('Generación de Plan Metodológico Automático', 'blue');
+    logAPICall('/api/methodologie/generate-plan', 'POST', userId);
 
     // Leer perfil desde BD (vista normalizada)
     const { rows } = await (await import('../db.js')).pool.query(
@@ -63,19 +77,73 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
       [userId]
     );
     if (!rows.length) {
+      logError(new Error('Usuario no encontrado'), 'BASE DE DATOS');
       return res.status(404).json({ error: 'Usuario no encontrado' });
     }
     const perfil = rows[0];
 
+    // Log del perfil del usuario
+    logUserProfile(perfil, userId);
+
     // Validar y sanitizar datos del perfil
     const profileData = validateProfileData(perfil);
 
-    console.log('👤 Perfil procesado:', {
-      edad: profileData.edad,
-      peso: profileData.peso,
-      objetivo: profileData.objetivo_principal,
-      nivel: profileData.nivel_actual_entreno
-    });
+    // ===== OBTENER EJERCICIOS RECIENTES DE METODOLOGÍAS (TABLA ESPECÍFICA) =====
+    let exercisesFromDB = [];
+    try {
+      // Obtener ejercicios realizados en los últimos 60 días SOLO DE METODOLOGÍAS
+      const recentExercisesResult = await pool.query(
+        `SELECT 
+          eh.exercise_name,
+          eh.methodology_type,
+          COUNT(*) as usage_count,
+          MAX(eh.used_at) as last_used,
+          STRING_AGG(DISTINCT eh.methodology_type, ', ') as methodologies_used
+        FROM app.exercise_history eh
+        WHERE eh.user_id = $1 
+          AND eh.used_at >= NOW() - INTERVAL '60 days'
+          AND eh.exercise_name IS NOT NULL
+        GROUP BY eh.exercise_name, eh.methodology_type
+        ORDER BY MAX(eh.used_at) DESC, COUNT(*) DESC
+        LIMIT 30`,
+        [userId]
+      );
+      
+      exercisesFromDB = recentExercisesResult.rows;
+      console.log(`📊 Ejercicios recientes encontrados (SOLO de rutinas/metodologías): ${exercisesFromDB.length}`);
+      
+      // Si no hay ejercicios recientes, intentar obtener ejercicios de gimnasio que el usuario no haya hecho en metodologías
+      if (exercisesFromDB.length === 0) {
+        const catalogResult = await pool.query(
+          `SELECT 
+            ec.name as exercise_name,
+            ec.key as exercise_key,
+            ec.category,
+            ec.muscle_groups,
+            ec.equipment_required,
+            ec.difficulty_level,
+            ec.description
+          FROM app.exercises_catalog ec
+          WHERE ec.is_active = true
+            AND ec.equipment_required != 'Ninguno'  -- Solo ejercicios que requieren equipamiento (gimnasio)
+            AND NOT EXISTS (
+              SELECT 1 FROM app.exercise_history eh
+              WHERE eh.user_id = $1 AND eh.exercise_name = ec.name
+            )
+          ORDER BY ec.difficulty_level ASC, RANDOM()
+          LIMIT 15`,
+          [userId]
+        );
+        exercisesFromDB = catalogResult.rows;
+        console.log(`📚 Ejercicios de gimnasio del catálogo obtenidos: ${exercisesFromDB.length}`);
+      }
+    } catch (error) {
+      console.error('❌ Error consultando ejercicios de BD:', error);
+      exercisesFromDB = [];
+    }
+
+    // Log de ejercicios recientes
+    logRecentExercises(exercisesFromDB);
 
     // Obtener cliente OpenAI específico para metodologías
     const openai = getOpenAIClient('methodologie');
@@ -89,8 +157,76 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
       throw new Error('Prompt no disponible para metodologías');
     }
 
+    // Preparar información de ejercicios recientes para la IA
+    let exercisesContext = '';
+    if (exercisesFromDB.length > 0) {
+      // Verificar si son ejercicios recientes o del catálogo
+      const isRecentHistory = exercisesFromDB.some(ex => ex.usage_count && ex.last_used);
+      
+      if (isRecentHistory) {
+        exercisesContext = `\n\nHISTORIAL DE EJERCICIOS EN METODOLOGÍAS (últimos 60 días):
+${exercisesFromDB.map(ex => {
+  const usageCount = ex.usage_count || 1;
+  const lastUsed = ex.last_used ? new Date(ex.last_used).toISOString().split('T')[0] : 'reciente';
+  const methodologyType = ex.methodology_type || 'Metodología desconocida';
+  
+  return `- ${ex.exercise_name}: Usado ${usageCount} veces en ${methodologyType} (último: ${lastUsed})`;
+}).join('\n')}
+
+IMPORTANTE: El usuario ya ha realizado estos ejercicios en metodologías anteriores. Puedes incluir algunos pero PRIORIZA VARIACIONES Y PROGRESIONES. Evita repetir los más usados recientemente.`;
+      } else {
+        exercisesContext = `\n\nEJERCICIOS DE GIMNASIO SUGERIDOS DEL CATÁLOGO (usuario sin historial en metodologías):
+${exercisesFromDB.map(ex => `- ${ex.exercise_name} (${ex.category || 'General'}) - ${ex.difficulty_level || 'Nivel estándar'}`).join('\n')}
+
+NOTA: El usuario no tiene historial en metodologías. Estos son ejercicios de gimnasio apropiados que puede realizar.`;
+      }
+    } else {
+      exercisesContext = `\n\nEjercicios recientes en metodologías: No hay ejercicios registrados.
+La IA tendrá libertad total para seleccionar ejercicios de gimnasio apropiados según el perfil y metodología elegida.`;
+    }
+
+    // Obtener configuración de versión desde el request
+    const versionConfig = req.body.versionConfig || {
+      selectionMode: 'automatic',
+      version: 'adapted',
+      userLevel: 'intermedio'
+    };
+
     // Crear el mensaje del usuario con los datos del perfil
-    const userMessage = `Genera un plan de entrenamiento basado en el siguiente perfil:
+    const userMessage = `IMPORTANTE: Este es el sistema de METODOLOGÍAS DE GIMNASIO. Los ejercicios deben ser para GIMNASIO con equipamiento. NO generar planes de "Entrenamiento en casa".
+
+Genera un plan de entrenamiento basado en el siguiente perfil:
+    
+CONFIGURACIÓN DE VERSIÓN SOLICITADA:
+- Modo de selección: ${versionConfig.selectionMode}
+- Versión: ${versionConfig.version === 'adapted' ? 'ADAPTADA' : 'ESTRICTA'}  
+- Nivel del usuario: ${versionConfig.userLevel}
+- Recomendada para usuario: ${versionConfig.isRecommended ? 'SÍ' : 'NO'}
+- DURACIÓN PERSONALIZADA: ${versionConfig.customWeeks || 4} SEMANAS (el usuario ha elegido específicamente esta duración)
+
+IMPORTANTE - AJUSTA EL PLAN SEGÚN LA VERSIÓN:
+
+${versionConfig.version === 'adapted' ? `
+VERSIÓN ADAPTADA (Usar estos parámetros):
+- Intensidad inicial: MODERADA (RPE 6-7, no al fallo)
+- Volumen: BAJO a MEDIO (menos series por ejercicio)
+- Descanso entre series: PERSONALIZADO (90-120 segundos mínimo)
+- Frecuencia por grupo muscular: MENOR (más días de descanso)
+- Progresión: MUY GRADUAL semana a semana
+- Ejercicios: BÁSICOS y seguros, evita ejercicios complejos
+- Duración sesión: 45-60 minutos máximo
+- DURACIÓN PLAN: EXACTAMENTE ${versionConfig.customWeeks || 4} SEMANAS (no más, no menos)
+` : `
+VERSIÓN ESTRICTA (Usar estos parámetros):
+- Intensidad inicial: ALTA (RPE 8-9, cerca del fallo)
+- Volumen: MEDIO a ALTO (más series por ejercicio)  
+- Descanso entre series: ESTÁNDAR de la metodología (60-90 segundos)
+- Frecuencia por grupo muscular: MAYOR (menos descanso entre sesiones)
+- Progresión: AGRESIVA semana a semana
+- Ejercicios: Incluye ejercicios avanzados y técnicas intensas
+- Duración sesión: 60-75 minutos
+- DURACIÓN PLAN: EXACTAMENTE ${versionConfig.customWeeks || 4} SEMANAS (no más, no menos)
+`}
 
 Datos del usuario:
 - Edad: ${profileData.edad} años
@@ -106,11 +242,16 @@ Datos del usuario:
 - Nivel actual de entrenamiento: ${profileData.nivel_actual_entreno}
 - Años entrenando: ${profileData.años_entrenando}
 - Objetivo principal: ${profileData.objetivo_principal}
-- Medicamentos: ${profileData.medicamentos}
+- Medicamentos: ${profileData.medicamentos}${exercisesContext}
 
 Por favor, responde únicamente con el JSON solicitado según las especificaciones del prompt.`;
 
-    console.log('🤖 Enviando solicitud a OpenAI...');
+    // Log del payload completo enviado a la IA
+    logAIPayload('Metodología Automática', {
+      profile_data: profileData,
+      system_prompt_length: systemPrompt.length,
+      user_message_length: userMessage.length
+    });
     
     // Realizar petición a OpenAI
     const response = await openai.chat.completions.create({
@@ -135,7 +276,12 @@ Por favor, responde únicamente con el JSON solicitado según las especificacion
     }
 
     let aiContent = response.choices[0].message.content.trim();
-    console.log('📄 Respuesta recibida, longitud:', aiContent.length);
+    
+    // Log de tokens consumidos
+    logTokens(response);
+    
+    // Log de la respuesta completa de la IA
+    logAIResponse(aiContent, 'Metodología Automática');
 
     // Intentar parsear el JSON de la respuesta
     let parsedPlan;
@@ -151,23 +297,41 @@ Por favor, responde únicamente con el JSON solicitado según las especificacion
       if (!aiContent.endsWith('}') && !aiContent.endsWith(']}')) {
         console.warn('⚠️ JSON parece truncado, intentando reparar...');
         
-        // Intentar cerrar estructuras abiertas
         let fixedContent = aiContent;
         
-        // Contar llaves abiertas vs cerradas
+        // Si termina con una estructura incompleta, intentar repararla
+        if (fixedContent.endsWith('"tempo":')) {
+          // Caso específico: campo tempo incompleto
+          fixedContent = fixedContent.replace(/"tempo":$/, '"tempo": "2-0-2"');
+          console.log('🔧 Reparando campo tempo incompleto...');
+        } else if (fixedContent.endsWith('"tempo":]')) {
+          // Caso específico: campo tempo con array mal cerrado
+          fixedContent = fixedContent.replace(/"tempo":\]$/, '"tempo": "2-0-2"');
+          console.log('🔧 Reparando campo tempo con array...');
+        } else if (fixedContent.match(/"tempo":\].*\}\}\}\}$/)) {
+          // Caso específico: campo tempo con múltiples estructuras mal cerradas
+          fixedContent = fixedContent.replace(/"tempo":\].*/g, '"tempo": "2-0-2"');
+          console.log('🔧 Reparando campo tempo con múltiples estructuras...');
+        }
+        
+        // Contar y cerrar estructuras abiertas
         const openBraces = (fixedContent.match(/\{/g) || []).length;
         const closeBraces = (fixedContent.match(/\}/g) || []).length;
         const openBrackets = (fixedContent.match(/\[/g) || []).length;
         const closeBrackets = (fixedContent.match(/\]/g) || []).length;
         
+        console.log(`🔍 Estructuras: {${openBraces} vs ${closeBraces}} [${openBrackets} vs ${closeBrackets}]`);
+        
         // Cerrar arrays abiertos
         for (let i = 0; i < (openBrackets - closeBrackets); i++) {
           fixedContent += ']';
+          console.log(`🔧 Cerrando array ${i + 1}`);
         }
         
         // Cerrar objetos abiertos
         for (let i = 0; i < (openBraces - closeBraces); i++) {
           fixedContent += '}';
+          console.log(`🔧 Cerrando objeto ${i + 1}`);
         }
         
         console.log('🔧 JSON reparado, intentando parsear...');
@@ -177,19 +341,67 @@ Por favor, responde únicamente con el JSON solicitado según las especificacion
       parsedPlan = JSON.parse(aiContent);
     } catch (parseError) {
       console.error('❌ Error parseando JSON:', parseError.message);
+      console.log('📄 Longitud del contenido:', aiContent.length);
       console.log('📄 Contenido que falló (primeros 1000 chars):', aiContent.substring(0, 1000));
       console.log('📄 Final del contenido (últimos 500 chars):', aiContent.substring(Math.max(0, aiContent.length - 500)));
+      console.log('🔍 Termina con:', aiContent.slice(-50));
       
-      return res.status(500).json({
-        error: 'Error procesando respuesta de IA',
-        message: 'La IA no devolvió un JSON válido - posible truncamiento',
-        details: {
-          parseError: parseError.message,
-          contentLength: aiContent.length,
-          contentPreview: aiContent.substring(0, 200) + '...',
-          contentEnd: '...' + aiContent.substring(Math.max(0, aiContent.length - 200))
+      // Intentar una reparación más agresiva para casos extremos
+      if (parseError.message.includes('tempo') || aiContent.includes('"tempo":')) {
+        console.log('🔧 Intentando reparación agresiva para problema de tempo...');
+        try {
+          // Buscar la última posición válida antes del error de tempo
+          const lastValidIndex = aiContent.lastIndexOf('},');
+          if (lastValidIndex > 0) {
+            let repairedContent = aiContent.substring(0, lastValidIndex + 1);
+            
+            // Contar estructuras abiertas desde esta posición
+            const openBraces = (repairedContent.match(/\{/g) || []).length;
+            const closeBraces = (repairedContent.match(/\}/g) || []).length;
+            const openBrackets = (repairedContent.match(/\[/g) || []).length;
+            const closeBrackets = (repairedContent.match(/\]/g) || []).length;
+            
+            // Cerrar estructuras
+            for (let i = 0; i < (openBrackets - closeBrackets); i++) {
+              repairedContent += ']';
+            }
+            for (let i = 0; i < (openBraces - closeBraces); i++) {
+              repairedContent += '}';
+            }
+            
+            console.log('🔧 Contenido reparado agresivamente, longitud:', repairedContent.length);
+            parsedPlan = JSON.parse(repairedContent);
+            console.log('✅ Reparación agresiva exitosa');
+            
+          } else {
+            throw new Error('No se pudo reparar el JSON');
+          }
+        } catch (repairError) {
+          console.error('❌ Reparación agresiva falló:', repairError.message);
+          return res.status(500).json({
+            error: 'Error procesando respuesta de IA',
+            message: 'La IA no devolvió un JSON válido - posible truncamiento severo',
+            details: {
+              parseError: parseError.message,
+              repairError: repairError.message,
+              contentLength: aiContent.length,
+              contentPreview: aiContent.substring(0, 200) + '...',
+              contentEnd: '...' + aiContent.substring(Math.max(0, aiContent.length - 200))
+            }
+          });
         }
-      });
+      } else {
+        return res.status(500).json({
+          error: 'Error procesando respuesta de IA',
+          message: 'La IA no devolvió un JSON válido - posible truncamiento',
+          details: {
+            parseError: parseError.message,
+            contentLength: aiContent.length,
+            contentPreview: aiContent.substring(0, 200) + '...',
+            contentEnd: '...' + aiContent.substring(Math.max(0, aiContent.length - 200))
+          }
+        });
+      }
     }
 
     // Validar estructura básica del plan
@@ -201,24 +413,54 @@ Por favor, responde únicamente con el JSON solicitado según las especificacion
       });
     }
 
-    console.log('✅ Plan generado exitosamente:', {
-      metodologia: parsedPlan.selected_style,
-      duracion: parsedPlan.duracion_total_semanas,
-      frecuencia: parsedPlan.frecuencia_por_semana,
-      semanas: parsedPlan.semanas?.length
-    });
+    console.log('✅ Plan de metodología automática generado exitosamente');
 
-    // Respuesta exitosa
-    res.json({
-      success: true,
-      plan: parsedPlan,
-      metadata: {
-        generatedAt: new Date().toISOString(),
-        model: METHODOLOGIE_CONFIG.model,
-        promptVersion: METHODOLOGIE_CONFIG.promptVersion,
-        profileProcessed: profileData
-      }
-    });
+    // Guardar en base de datos (como en metodología manual)
+    try {
+      const insertQuery = `
+        INSERT INTO app.methodology_plans (
+          user_id, methodology_type, plan_data, generation_mode, created_at
+        ) VALUES ($1, $2, $3, 'automatic', NOW())
+        RETURNING id
+      `;
+      
+      const insertResult = await pool.query(insertQuery, [
+        userId,
+        parsedPlan.selected_style,
+        JSON.stringify(parsedPlan)
+      ]);
+
+      console.log('✅ Plan automático guardado en base de datos');
+
+      // Respuesta exitosa con planId
+      res.json({
+        success: true,
+        plan: parsedPlan,
+        planId: insertResult.rows[0].id,
+        metadata: {
+          generatedAt: new Date().toISOString(),
+          model: METHODOLOGIE_CONFIG.model,
+          promptVersion: METHODOLOGIE_CONFIG.promptVersion,
+          profileProcessed: profileData
+        }
+      });
+
+    } catch (saveError) {
+      console.error('⚠️ Error guardando plan automático en BD:', saveError.message);
+      
+      // Respuesta exitosa sin planId si falla el guardado
+      res.json({
+        success: true,
+        plan: parsedPlan,
+        planId: null,
+        metadata: {
+          generatedAt: new Date().toISOString(),
+          model: METHODOLOGIE_CONFIG.model,
+          promptVersion: METHODOLOGIE_CONFIG.promptVersion,
+          profileProcessed: profileData
+        }
+      });
+    }
 
   } catch (error) {
     console.error('❌ Error en generación de plan metodológico:', error);

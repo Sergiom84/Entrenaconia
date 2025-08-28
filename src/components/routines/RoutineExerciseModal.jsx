@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Pause, Square, SkipForward, X, Clock, Target, RotateCcw, CheckCircle, Star } from 'lucide-react';
+import { Play, Pause, Square, SkipForward, X, Clock, Target, RotateCcw, CheckCircle, Star, Info } from 'lucide-react';
 import { getExerciseGifUrl } from '../../config/exerciseGifs';
-import ExerciseFeedbackModal from './ExerciseFeedbackModal.jsx';
+import RoutineExerciseFeedbackModal from './RoutineExerciseFeedbackModal';
+import ExerciseInfoModal from './ExerciseInfoModal';
 
 const RoutineExerciseModal = ({
   exercise,
@@ -11,7 +12,10 @@ const RoutineExerciseModal = ({
   onSkip,
   onCancel,
   onClose,
-  sessionData
+  onUpdateProgress,
+  overrideSeriesTotal,
+  routineSessionId,
+  onFeedbackSubmitted
 }) => {
   const [currentPhase, setCurrentPhase] = useState('ready'); // ready, exercise, rest, completed
   const [timeLeft, setTimeLeft] = useState(0);
@@ -20,45 +24,49 @@ const RoutineExerciseModal = ({
   const [exerciseGif, setExerciseGif] = useState(null);
   const [totalTimeSpent, setTotalTimeSpent] = useState(0);
   const [showFeedback, setShowFeedback] = useState(false);
+  const [showExerciseInfo, setShowExerciseInfo] = useState(false);
   const intervalRef = useRef(null);
-  const lastPhaseHandledRef = useRef('');
+  const lastPhaseHandledRef = useRef(''); // evita manejar la misma transición dos veces
+  const lastReportedSeriesRef = useRef(''); // evita PUT duplicados para la misma serie
 
   // Configurar tiempo inicial y GIF basado en el ejercicio
   useEffect(() => {
     setCurrentPhase('ready');
-    setCurrentSeries(1);
+    // Si se proporciona initialSeries desde el progreso, usarlo; si no, 1 por defecto
+    const providedInitial = Number(exercise?.initialSeries) || null;
+    setCurrentSeries(providedInitial && providedInitial > 0 ? providedInitial : 1);
     setIsRunning(false);
     setTotalTimeSpent(0);
     lastPhaseHandledRef.current = '';
-    
-    // Obtener duración del ejercicio (puede venir como repeticiones o tiempo)
-    let duration = 45; // valor por defecto
-    if (exercise?.repeticiones && typeof exercise.repeticiones === 'string') {
-      // Si son repeticiones como "8-10" o "12", usar tiempo estimado
-      const repsMatch = exercise.repeticiones.match(/(\d+)/);
-      if (repsMatch) {
-        const reps = parseInt(repsMatch[1]);
-        duration = Math.max(30, reps * 3); // 3 segundos por repetición
-      }
+    lastReportedSeriesRef.current = '';
+    const durValueInit = Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos);
+    if (Number.isFinite(durValueInit) && durValueInit > 0) {
+      setTimeLeft(durValueInit);
+    } else {
+      setTimeLeft(45);
     }
-    
-    setTimeLeft(duration);
-    
-    // Configurar GIF del ejercicio
-    setExerciseGif(getExerciseGifUrl(exercise?.nombre));
-  }, [exercise]);
+    if (exercise?.gif_url) {
+      setExerciseGif(exercise.gif_url);
+    } else {
+      setExerciseGif(getExerciseGifUrl(exercise?.nombre));
+    }
+  }, [exercise, overrideSeriesTotal]);
 
-  // Timer principal
+  // Timer principal mejorado para flujo automático
   useEffect(() => {
     if (isRunning && timeLeft > 0 && !intervalRef.current) {
       intervalRef.current = setInterval(() => {
         setTimeLeft(prev => {
           if (prev <= 1) {
+            // Cerrar intervalo ANTES de completar fase
             if (intervalRef.current) {
               clearInterval(intervalRef.current);
               intervalRef.current = null;
             }
-            handlePhaseComplete();
+            // Pequeño delay para asegurar que el estado se actualice
+            setTimeout(() => {
+              handlePhaseComplete();
+            }, 50);
             return 0;
           }
           return prev - 1;
@@ -78,42 +86,66 @@ const RoutineExerciseModal = ({
   }, [isRunning, timeLeft, currentPhase]);
 
   const handlePhaseComplete = () => {
-    const signature = `${currentPhase}-${currentSeries}`;
-    if (lastPhaseHandledRef.current === signature) return;
-    lastPhaseHandledRef.current = signature;
+    console.log(`🔄 Phase complete: ${currentPhase}, Series: ${currentSeries}/${seriesTotal}`);
+    
+    // Evitar manejar la misma fase más de una vez con timestamp más específico
+    // const signature = `${currentPhase}-${currentSeries}-${Date.now()}`;
+    const currentSignatureBase = `${currentPhase}-${currentSeries}`;
+    if (lastPhaseHandledRef.current === currentSignatureBase) {
+      console.log('🚫 Duplicate phase transition blocked:', currentSignatureBase);
+      return;
+    }
+    lastPhaseHandledRef.current = currentSignatureBase;
 
+    // Cortar el intervalo inmediatamente
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
     setIsRunning(false);
 
-    const seriesTotal = exercise?.series || 3;
-
     if (currentPhase === 'exercise') {
+      console.log('✅ Exercise phase completed');
+      const reportSig = `${exerciseIndex}-${currentSeries}`;
+      if (lastReportedSeriesRef.current !== reportSig) {
+        lastReportedSeriesRef.current = reportSig;
+        if (typeof onUpdateProgress === 'function') {
+          onUpdateProgress(exerciseIndex, currentSeries, seriesTotal);
+        }
+      }
+
       if (currentSeries < seriesTotal) {
+        console.log(`🔄 Starting rest phase, series ${currentSeries}/${seriesTotal}`);
         setCurrentPhase('rest');
-        setTimeLeft(Math.min(70, Math.max(30, Number(exercise.descanso_seg) || 60)));
-        setTimeout(() => { lastPhaseHandledRef.current = ''; setIsRunning(true); }, 200);
+        const restTime = Math.min(70, Math.max(30, Number(exercise.descanso_seg) || 60));
+        setTimeLeft(restTime);
+        // Iniciar descanso automáticamente (igual que HomeTraining)
+        setTimeout(() => { 
+          lastPhaseHandledRef.current = '';
+          setIsRunning(true); 
+        }, 150);
       } else {
+        console.log('🎉 All series completed, finishing exercise');
         setCurrentPhase('completed');
         setTimeout(() => { onComplete(totalTimeSpent); }, 500);
       }
     } else if (currentPhase === 'rest') {
-      setCurrentSeries(prev => Math.min(prev + 1, seriesTotal));
+      console.log('⏰ Rest phase completed, moving to next series');
+      // Incrementar serie y cambiar a ejercicio (igual que HomeTraining)
+      const nextSeries = Math.min(currentSeries + 1, seriesTotal);
+      setCurrentSeries(nextSeries);
       setCurrentPhase('exercise');
       
-      // Calcular duración para la siguiente serie
-      let duration = 45;
-      if (exercise?.repeticiones && typeof exercise.repeticiones === 'string') {
-        const repsMatch = exercise.repeticiones.match(/(\d+)/);
-        if (repsMatch) {
-          const reps = parseInt(repsMatch[1]);
-          duration = Math.max(30, reps * 3);
-        }
-      }
-      setTimeLeft(duration);
-      setTimeout(() => { lastPhaseHandledRef.current = ''; setIsRunning(true); }, 200);
+      // Configurar tiempo del próximo ejercicio
+      const exerciseTime = Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos) || 45;
+      setTimeLeft(exerciseTime);
+      
+      // Iniciar automáticamente la siguiente serie (igual que HomeTraining)
+      setTimeout(() => { 
+        lastPhaseHandledRef.current = '';
+        setIsRunning(true); 
+        console.log(`🏃‍♂️ Starting series ${nextSeries}/${seriesTotal} automatically`);
+      }, 150);
     }
   };
 
@@ -132,27 +164,59 @@ const RoutineExerciseModal = ({
     setIsRunning(true);
   };
 
+  const handleForceNext = () => {
+    console.log('🔄 Force next phase triggered');
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    setIsRunning(false);
+    
+    if (currentPhase === 'rest') {
+      // Forzar avance a siguiente serie
+      const nextSeries = Math.min(currentSeries + 1, seriesTotal);
+      setCurrentSeries(nextSeries);
+      setCurrentPhase('exercise');
+      const exerciseTime = Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos) || 45;
+      setTimeLeft(exerciseTime);
+      lastPhaseHandledRef.current = '';
+      console.log(`🏃‍♂️ Forced advance to series ${nextSeries}/${seriesTotal}`);
+    } else if (currentPhase === 'exercise') {
+      // Forzar avance a descanso o completar
+      const reportSig = `${exerciseIndex}-${currentSeries}`;
+      if (lastReportedSeriesRef.current !== reportSig) {
+        lastReportedSeriesRef.current = reportSig;
+        if (typeof onUpdateProgress === 'function') {
+          onUpdateProgress(exerciseIndex, currentSeries, seriesTotal);
+        }
+      }
+
+      if (currentSeries < seriesTotal) {
+        setCurrentPhase('rest');
+        const restTime = Math.min(70, Math.max(30, Number(exercise.descanso_seg) || 60));
+        setTimeLeft(restTime);
+        lastPhaseHandledRef.current = '';
+        console.log(`⏰ Forced advance to rest, series ${currentSeries}/${seriesTotal}`);
+      } else {
+        setCurrentPhase('completed');
+        setTimeout(() => { onComplete(totalTimeSpent); }, 500);
+      }
+    }
+  };
+
   const handleReset = () => {
     setIsRunning(false);
     setCurrentPhase('ready');
     setCurrentSeries(1);
     setTotalTimeSpent(0);
-    
-    let duration = 45;
-    if (exercise?.repeticiones && typeof exercise.repeticiones === 'string') {
-      const repsMatch = exercise.repeticiones.match(/(\d+)/);
-      if (repsMatch) {
-        const reps = parseInt(repsMatch[1]);
-        duration = Math.max(30, reps * 3);
-      }
-    }
-    setTimeLeft(duration);
+    setTimeLeft((Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos) || 45));
   };
 
   const handleCancelExercise = () => {
+    // Marca el ejercicio como cancelado desde el modal
     if (typeof onCancel === 'function') onCancel();
     setIsRunning(false);
-    setCurrentPhase('completed');
+    setCurrentPhase('completed'); // cerramos el flujo localmente
   };
 
   const formatTime = (seconds) => {
@@ -162,12 +226,11 @@ const RoutineExerciseModal = ({
   };
 
   const getPhaseTitle = () => {
-    const seriesTotal = exercise?.series || 3;
     switch (currentPhase) {
       case 'ready':
         return 'Preparado para comenzar';
       case 'exercise':
-        return `Serie ${Math.min(currentSeries, seriesTotal)} de ${seriesTotal}`;
+        return `Serie ${Math.min(currentSeries, seriesTotal || currentSeries)} de ${seriesTotal}`;
       case 'rest':
         return 'Tiempo de descanso';
       case 'completed':
@@ -176,6 +239,15 @@ const RoutineExerciseModal = ({
         return '';
     }
   };
+
+  // helpers para pintar métricas
+  const repsValue = Number(exercise?.repeticiones ?? exercise?.reps ?? exercise?.repeticiones_por_serie);
+  const durValue  = Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos);
+  const baseDuration = Math.max(1, (durValue || 45));
+  const rawSeries = Number(exercise?.series ?? exercise?.total_series ?? exercise?.totalSeries ?? exercise?.series_totales);
+  const seriesTotal = Number.isFinite(Number(overrideSeriesTotal)) && Number(overrideSeriesTotal) > 0
+    ? Number(overrideSeriesTotal)
+    : ((Number.isFinite(rawSeries) && rawSeries > 0) ? rawSeries : 4);
 
   const getPhaseColor = () => {
     switch (currentPhase) {
@@ -192,21 +264,21 @@ const RoutineExerciseModal = ({
     }
   };
 
-  const seriesTotal = exercise?.series || 3;
-  const baseDuration = timeLeft + totalTimeSpent;
+  // Safety check: if exercise is undefined, don't render the modal
+  if (!exercise || !exercise.nombre) {
+    console.error('RoutineExerciseModal: ejercicio no válido:', exercise);
+    return null;
+  }
 
   return (
     <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-800 border border-yellow-400/40 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-gray-800 border border-gray-600 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-yellow-400/30">
+        <div className="flex items-center justify-between p-6 border-b border-gray-700">
           <div>
             <h2 className="text-xl font-bold text-white">{exercise.nombre}</h2>
             <p className="text-sm text-gray-400">
               Ejercicio {exerciseIndex + 1} de {totalExercises}
-            </p>
-            <p className="text-sm text-yellow-400 mt-1">
-              {sessionData?.dayName} - Semana {sessionData?.weekNumber}
             </p>
           </div>
           <button
@@ -234,90 +306,104 @@ const RoutineExerciseModal = ({
                   currentPhase === 'rest' ? 'border-yellow-400' : 'border-blue-400'
                 }`}
                 style={{
-                  transform: `rotate(${((baseDuration - timeLeft) / baseDuration) * 360}deg)`
+                  transform: `rotate(${(((baseDuration) - timeLeft) / (baseDuration)) * 360}deg)`
                 }}
               ></div>
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-3xl font-bold text-white">
-                  {formatTime(timeLeft)}
+              <div className="absolute inset-0 flex items-center justify-center flex-col">
+                <span className={`text-3xl font-bold ${timeLeft === 0 ? 'text-green-400 animate-pulse' : 'text-white'}`}>
+                  {timeLeft === 0 ? '¡Listo!' : formatTime(timeLeft)}
                 </span>
-                {!isRunning && (currentPhase === 'exercise' || currentPhase === 'rest') && (
+                {!isRunning && (currentPhase === 'exercise' || currentPhase === 'rest') && timeLeft > 0 && (
                   <div className="text-xs text-gray-400 mt-1">Pausado</div>
+                )}
+                {timeLeft === 0 && currentPhase === 'rest' && (
+                  <div className="text-xs text-green-400 mt-1 animate-pulse">Descanso terminado</div>
+                )}
+                {timeLeft === 0 && currentPhase === 'exercise' && (
+                  <div className="text-xs text-green-400 mt-1 animate-pulse">Serie completada</div>
                 )}
               </div>
             </div>
           </div>
 
           {/* Información del ejercicio */}
-          <div className="bg-yellow-400/10 border border-yellow-400/30 rounded-lg p-4 mb-6">
+          <div className="bg-gray-700/50 rounded-lg p-4 mb-6">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
               <div>
                 <div className="text-2xl font-bold text-white">{seriesTotal}</div>
                 <div className="text-sm text-gray-400">Series</div>
               </div>
               <div>
-                <div className="text-2xl font-bold text-white">{exercise?.repeticiones || '8-10'}</div>
-                <div className="text-sm text-gray-400">Repeticiones</div>
+                <div className="text-2xl font-bold text-white">
+                  {Number.isFinite(repsValue) && repsValue > 0
+                    ? repsValue
+                    : Number.isFinite(durValue) && durValue > 0
+                      ? `${durValue}s`
+                      : exercise?.repeticiones || '—'}
+                </div>
+                <div className="text-sm text-gray-400">
+                  {Number.isFinite(repsValue) && repsValue > 0
+                    ? 'Repeticiones'
+                    : Number.isFinite(durValue) && durValue > 0
+                      ? 'Duración'
+                      : 'Repeticiones'}
+                </div>
               </div>
               <div>
-                <div className="text-2xl font-bold text-white">{exercise?.descanso_seg || 60}s</div>
+                <div className="text-2xl font-bold text-white">{(Number(exercise?.descanso_seg) || 45)}s</div>
                 <div className="text-sm text-gray-400">Descanso</div>
               </div>
               <div>
-                <div className="text-2xl font-bold text-yellow-400">{currentSeries}</div>
+                <div className="text-2xl font-bold text-green-400">{currentSeries}</div>
                 <div className="text-sm text-gray-400">Serie Actual</div>
               </div>
             </div>
-            {/* Línea patrón/implemento + botón Valorar */}
-            <div className="mt-4 flex items-center gap-4">
-              {exercise?.patron && (
+          </div>
+
+          {/* Botón de información del ejercicio */}
+          <div className="text-center mb-6">
+            <button
+              onClick={() => setShowExerciseInfo(true)}
+              className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+              title="Ver información detallada del ejercicio"
+            >
+              <Info size={20} />
+              Información del Ejercicio
+            </button>
+          </div>
+
+          {/* Información adicional y botón de valorar */}
+          <div className="bg-gray-700/30 rounded-lg p-3 mb-6">
+            <div className="flex flex-wrap gap-4 text-sm">
+              {exercise.intensidad && (
                 <div className="flex items-center">
-                  <span className="w-2 h-2 bg-green-400 rounded-full mr-2"></span>
-                  <span className="text-gray-300">Patrón:</span>
-                  <span className="text-white font-medium ml-1 capitalize">{String(exercise.patron).replaceAll('_',' ')}</span>
+                  <span className="w-2 h-2 bg-red-400 rounded-full mr-2"></span>
+                  <span className="text-gray-300">Intensidad:</span>
+                  <span className="text-white font-medium ml-1">{exercise.intensidad}</span>
                 </div>
               )}
-              {exercise?.implemento && (
+              {exercise.tempo && (
                 <div className="flex items-center">
-                  <span className="w-2 h-2 bg-blue-400 rounded-full mr-2"></span>
-                  <span className="text-gray-300">Implemento:</span>
-                  <span className="text-white font-medium ml-1 capitalize">{String(exercise.implemento).replaceAll('_',' ')}</span>
+                  <span className="w-2 h-2 bg-purple-400 rounded-full mr-2"></span>
+                  <span className="text-gray-300">Tempo:</span>
+                  <span className="text-white font-medium ml-1">{exercise.tempo}</span>
                 </div>
               )}
-              <button
-                onClick={() => setShowFeedback(true)}
-                className="ml-auto flex items-center gap-2 text-yellow-300 hover:text-yellow-200 border border-yellow-400/30 px-3 py-1 rounded-md"
-                title="¿Cómo has sentido este ejercicio?"
-              >
-                <Star size={16} />
-                Valorar
-              </button>
+              {/* Botón de feedback */}
+              <div className="ml-auto flex items-center gap-2">
+                <button
+                  onClick={() => setShowFeedback(true)}
+                  className="flex items-center gap-2 text-yellow-300 hover:text-yellow-200 border border-yellow-400/30 px-3 py-1 rounded-md"
+                  title="Cómo has sentido este ejercicio?"
+                >
+                  <Star size={16} />
+                  Valorar
+                </button>
+              </div>
             </div>
           </div>
 
-          {/* Notas del ejercicio */}
-          {exercise.notas && (
-            <div className="bg-blue-900/20 border border-blue-700/50 rounded-lg p-4 mb-6">
-              <div className="flex items-start mb-3">
-                <Target size={16} className="text-blue-400 mr-2 mt-1 flex-shrink-0" />
-                <h4 className="text-blue-200 font-semibold text-sm">Consejos de Ejecución</h4>
-              </div>
-              <p className="text-blue-200 text-sm leading-relaxed">{exercise.notas}</p>
-            </div>
-          )}
-
-          {/* Intensidad */}
-          {exercise.intensidad && (
-            <div className="bg-red-900/20 border border-red-700/50 rounded-lg p-4 mb-6">
-              <div className="flex items-center mb-2">
-                <Target size={16} className="text-red-400 mr-2" />
-                <h4 className="text-red-200 font-semibold text-sm">Intensidad</h4>
-              </div>
-              <p className="text-red-200 text-sm">{exercise.intensidad}</p>
-            </div>
-          )}
-
-          {/* Área del GIF */}
+          {/* Área de media del ejercicio mejorada */}
           <div className="bg-gray-700/30 rounded-lg p-4 mb-6">
             <div className="text-center mb-4">
               <h4 className="text-white font-semibold mb-2">Demostración del Ejercicio</h4>
@@ -326,7 +412,7 @@ const RoutineExerciseModal = ({
                   <img
                     src={exerciseGif}
                     alt={exercise.nombre}
-                    className="mx-auto max-h-64 rounded-md shadow-lg border border-yellow-400/30"
+                    className="mx-auto max-h-64 rounded-md shadow-lg border border-gray-600"
                     onError={(e) => {
                       e.currentTarget.style.display = 'none';
                       e.currentTarget.nextSibling.style.display = 'block';
@@ -346,10 +432,43 @@ const RoutineExerciseModal = ({
                 </div>
               )}
             </div>
+
+            {/* Input para URL de GIF personalizada */}
+            <div className="bg-gray-800/50 rounded-md p-3">
+              <div className="text-xs text-gray-400 mb-2">¿Tienes un GIF mejor? Pégalo aquí:</div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="url"
+                  placeholder="https://ejemplo.com/ejercicio.gif"
+                  className="flex-1 bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-white placeholder-gray-400 focus:border-yellow-400 focus:outline-none transition-colors"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      const v = e.currentTarget.value.trim();
+                      if (v) {
+                        setExerciseGif(v);
+                        e.currentTarget.value = '';
+                      }
+                    }
+                  }}
+                />
+                <button
+                  onClick={(e) => {
+                    const input = e.currentTarget.previousSibling;
+                    if (input && input.value.trim()) {
+                      setExerciseGif(input.value.trim());
+                      input.value = '';
+                    }
+                  }}
+                  className="bg-yellow-400 hover:bg-yellow-500 text-black text-sm font-semibold px-3 py-2 rounded-md transition-colors"
+                >
+                  Aplicar
+                </button>
+              </div>
+            </div>
           </div>
 
-          {/* Controles */}
-          <div className="flex gap-3 justify-center">
+          {/* Controles mejorados */}
+          <div className="flex flex-wrap gap-3 justify-center">
             {currentPhase === 'ready' && (
               <button
                 onClick={handleStart}
@@ -383,9 +502,22 @@ const RoutineExerciseModal = ({
                 <button
                   onClick={handleReset}
                   className="flex items-center gap-2 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-3 px-4 rounded-lg transition-colors"
+                  title="Reiniciar ejercicio actual"
                 >
                   <RotateCcw size={20} />
                 </button>
+
+                {/* Botón para forzar avance solo cuando hay problemas */}
+                {(timeLeft === 0 && !isRunning) && (
+                  <button
+                    onClick={handleForceNext}
+                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors animate-pulse"
+                    title={currentPhase === 'rest' ? 'Continuar (si no avanza automáticamente)' : 'Continuar ejercicio'}
+                  >
+                    <CheckCircle size={20} />
+                    Continuar
+                  </button>
+                )}
               </>
             )}
 
@@ -396,27 +528,65 @@ const RoutineExerciseModal = ({
                   className="flex items-center gap-2 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
                 >
                   <SkipForward size={20} />
-                  Saltar
+                  Saltar Ejercicio
                 </button>
                 <button
                   onClick={handleCancelExercise}
                   className="flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
                 >
                   <Square size={20} />
-                  Cancelar
+                  Cancelar Ejercicio
                 </button>
               </>
             )}
           </div>
         </div>
-
         {/* Modal de feedback */}
         {showFeedback && (
-          <ExerciseFeedbackModal
+          <RoutineExerciseFeedbackModal
             show={showFeedback}
             exerciseName={exercise?.nombre}
             onClose={() => setShowFeedback(false)}
-            onSubmit={() => setShowFeedback(false)}
+            onSubmit={async (payload) => {
+              try {
+                console.log('Enviando feedback ejercicio rutina:', payload);
+                if (routineSessionId != null) {
+                  const token = localStorage.getItem('token');
+                  await fetch(`/api/routines/sessions/${routineSessionId}/exercise/${exerciseIndex}/feedback`, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ 
+                      sentiment: payload.sentiment, 
+                      comment: payload.comment, 
+                      exercise_name: exercise?.nombre 
+                    })
+                  });
+                  
+                  console.log('Respuesta feedback:', response.status);
+                  
+                  // Actualizar el estado local para mostrar el comentario inmediatamente
+                  if (response.ok && typeof onFeedbackSubmitted === 'function') {
+                    onFeedbackSubmitted(exerciseIndex, payload.comment);
+                  }
+                }
+              } catch (error) {
+                console.error('Error enviando feedback:', error);
+              } finally {
+                setShowFeedback(false);
+              }
+            }}
+          />
+        )}
+        
+        {/* Modal de información del ejercicio */}
+        {showExerciseInfo && (
+          <ExerciseInfoModal
+            show={showExerciseInfo}
+            exercise={exercise}
+            onClose={() => setShowExerciseInfo(false)}
           />
         )}
       </div>
@@ -425,4 +595,3 @@ const RoutineExerciseModal = ({
 };
 
 export default RoutineExerciseModal;
-

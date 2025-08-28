@@ -1,27 +1,34 @@
-# Sistema de Estilos y Diseño
+# Sistema de Estilos y Diseño - Entrena con IA
 
 ## 🎨 Paleta de Colores
 
 ### Colores Principales
 ```css
-/* Variables CSS en globals.css */
+/* Sistema de colores basado en Tailwind */
 :root {
   /* Primarios */
-  --primary: #3B82F6;        /* Azul principal */
-  --primary-hover: #2563EB;  /* Azul hover */
-  --primary-light: #93C5FD;  /* Azul claro */
+  --primary-yellow: #FACC15;     /* Amarillo principal (yellow-400) */
+  --primary-yellow-300: #FDE047; /* Amarillo claro hover */
+  --primary-yellow-500: #EAB308; /* Amarillo intenso */
   
-  /* Secundarios */
-  --secondary: #10B981;      /* Verde éxito */
-  --warning: #F59E0B;        /* Naranja advertencia */
-  --danger: #EF4444;         /* Rojo peligro */
+  /* Fondos oscuros */
+  --background: #000000;         /* Negro absoluto */
+  --surface: #1F2937;            /* Gris oscuro (gray-800) */
+  --surface-light: #374151;      /* Gris medio (gray-700) */
   
-  /* Neutros */
-  --background: #0F172A;     /* Fondo oscuro */
-  --surface: #1E293B;        /* Superficie tarjetas */
-  --border: #334155;         /* Bordes */
-  --text-primary: #F1F5F9;   /* Texto principal */
-  --text-secondary: #94A3B8; /* Texto secundario */
+  /* Bordes */
+  --border: rgba(250, 204, 21, 0.2);  /* Amarillo con opacidad */
+  --border-hover: rgba(250, 204, 21, 0.4);
+  
+  /* Textos */
+  --text-primary: #F1F5F9;       /* Blanco/gris muy claro */
+  --text-secondary: #D1D5DB;      /* Gris claro (gray-300) */
+  --text-muted: #9CA3AF;         /* Gris medio (gray-400) */
+  
+  /* Estados */
+  --success: #10B981;            /* Verde éxito */
+  --warning: #F59E0B;            /* Naranja advertencia */
+  --danger: #EF4444;             /* Rojo peligro */
 }
 ```
 
@@ -30,84 +37,150 @@
 ### Tarjetas (Cards)
 ```css
 .card {
+  /* Colores del proyecto */
+  background: rgb(31 41 55 / 0.8);      /* bg-gray-800/80 */
+  border: 1px solid rgba(250, 204, 21, 0.2);  /* border-yellow-400/20 */
+  border-radius: 0.75rem;               /* rounded-xl */
+  
   /* Dimensiones */
-  padding: 1.5rem;           /* 24px */
-  border-radius: 0.75rem;    /* 12px */
+  padding: 1.5rem;                      /* p-6 */
   
-  /* Colores */
-  background: var(--surface);
-  border: 1px solid var(--border);
-  
-  /* Sombras */
-  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
-  
-  /* Transiciones */
+  /* Transiciones suaves */
   transition: all 0.3s ease;
 }
 
 .card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.2);
+  border-color: rgba(250, 204, 21, 0.4);  /* hover:border-yellow-400/40 */
+  transform: scale(1.01);                   /* hover:scale-[1.01] */
+}
+
+/* Card específica de metodología */
+.methodology-card {
+  background: rgba(0, 0, 0, 0.8);         /* bg-black/80 */
+  border: 1px solid rgb(55 65 81);        /* border-gray-700 */
+}
+
+.methodology-card.manual-active {
+  cursor: pointer;
+}
+
+.methodology-card.manual-active:hover {
+  border-color: rgba(250, 204, 21, 0.6); /* hover:border-yellow-400/60 */
 }
 ```
 
 ### Modales
 ```css
 .modal {
-  /* Dimensiones */
-  min-width: 400px;
-  max-width: 600px;
-  max-height: 90vh;
-  padding: 2rem;
-  border-radius: 1rem;
+  /* Fondo principal del proyecto */
+  background: rgba(0, 0, 0, 0.95);        /* bg-black/95 */
+  border: 1px solid rgba(250, 204, 21, 0.2); /* border-yellow-400/20 */
+  border-radius: 1rem;                     /* rounded-xl */
   
-  /* Colores */
-  background: var(--surface);
-  border: 1px solid var(--border);
+  /* Dimensiones responsivas */
+  max-width: 32rem;                        /* max-w-2xl para diálogos básicos */
+  max-width: 56rem;                        /* max-w-4xl para detalles */
+  max-height: 90vh;                        /* max-h-[90vh] */
+  padding: 1.5rem;                         /* p-6 */
   
-  /* Overlay */
-  backdrop-filter: blur(5px);
+  /* Texto */
+  color: white;
+  
+  /* Scroll */
+  overflow-y: auto;
 }
 
 .modal-overlay {
-  background: rgba(0, 0, 0, 0.7);
+  /* Overlay del proyecto */
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);         /* bg-black/80 */
+  backdrop-filter: blur(2px);             /* backdrop-blur-sm */
+  z-index: 50;
+  
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+/* Modal de confirmación específico */
+.confirmation-modal {
+  background: #000000;                     /* bg-black */
+  border: 1px solid rgba(250, 204, 21, 0.4); /* border-yellow-400/40 */
+  max-width: 32rem;                        /* max-w-2xl */
 }
 ```
 
 ### Botones
 ```css
 .button {
-  /* Dimensiones base */
-  padding: 0.5rem 1rem;
-  border-radius: 0.5rem;
-  font-size: 0.875rem;
-  font-weight: 500;
+  /* Base común */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;                   /* rounded-md */
+  font-size: 0.875rem;                     /* text-sm */
+  font-weight: 500;                        /* font-medium */
+  transition: all 0.2s ease;              /* transition-colors */
   
-  /* Transiciones */
-  transition: all 0.2s ease;
+  /* Estados disabled */
+  &:disabled {
+    opacity: 0.5;
+    pointer-events: none;
+  }
 }
 
-/* Variantes */
+/* Variante primaria - Amarillo del proyecto */
 .button-primary {
-  background: var(--primary);
-  color: white;
+  background: #FACC15;                     /* bg-yellow-400 */
+  color: black;                            /* text-black */
+  padding: 0.75rem 1.5rem;               /* py-3 px-6 */
 }
 
+.button-primary:hover {
+  background: #FDE047;                     /* hover:bg-yellow-300 */
+}
+
+/* Variante secundaria - Gris con borde amarillo */
 .button-secondary {
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text-primary);
+  background: #374151;                     /* bg-gray-700 */
+  color: #F3F4F6;                         /* text-gray-100 */
+  border: 1px solid rgba(250, 204, 21, 0.2); /* border-yellow-400/20 */
+  padding: 0.75rem 1.5rem;               /* py-3 px-6 */
 }
 
-.button-danger {
-  background: var(--danger);
-  color: white;
+.button-secondary:hover {
+  background: #4B5563;                     /* hover:bg-gray-600 */
+}
+
+/* Variante outline */
+.button-outline {
+  background: transparent;
+  border: 1px solid #6B7280;              /* border-gray-600 */
+  color: #9CA3AF;                         /* text-gray-300 */
+}
+
+.button-outline:hover {
+  background: #1F2937;                     /* hover:bg-gray-800 */
+  color: white;                           /* hover:text-white */
 }
 
 /* Tamaños */
-.button-sm { padding: 0.25rem 0.75rem; }
-.button-md { padding: 0.5rem 1rem; }
-.button-lg { padding: 0.75rem 1.5rem; }
+.button-sm { 
+  height: 2.25rem;                        /* h-9 */
+  padding: 0 0.75rem;                     /* px-3 */
+}
+
+.button-md { 
+  height: 2.5rem;                         /* h-10 */
+  padding: 0 1rem;                        /* px-4 */
+}
+
+.button-lg { 
+  height: 2.75rem;                        /* h-11 */
+  padding: 0 2rem;                        /* px-8 */
+}
 ```
 
 ## 📝 Tipografía
