@@ -24,7 +24,8 @@
       "Bash(psql:*)",
       "WebSearch",
       "Bash(npx @modelcontextprotocol/server-postgres:*)",
-      "Bash(npx @modelcontextprotocol/server-filesystem:*)"
+      "Bash(npx @modelcontextprotocol/server-filesystem:*)",
+      "Bash(git commit:*)"
     ]
   }
 }
