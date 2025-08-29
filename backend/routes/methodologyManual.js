@@ -236,11 +236,31 @@ router.post('/generate-manual', authenticateToken, async (req, res) => {
     
     // MIGRACIÓN AUTOMÁTICA: Crear plan en routine_plans para que Rutinas pueda usarlo
     try {
+      // PASO 1: Archivar todos los planes anteriores del usuario para empezar desde 0
+      console.log('🗄️ Archivando planes anteriores del usuario...');
+      await db.query(
+        `UPDATE app.routine_plans 
+         SET archived_at = NOW(), is_active = false, updated_at = NOW() 
+         WHERE user_id = $1 AND archived_at IS NULL`,
+        [userId]
+      );
+      
+      // PASO 2: Marcar methodology_plans anteriores como inactivos (no tiene archived_at)
+      await db.query(
+        `UPDATE app.methodology_plans 
+         SET updated_at = NOW() 
+         WHERE user_id = $1`,
+        [userId]
+      );
+      
+      console.log('✅ Planes anteriores archivados - Empezando desde 0');
+      
+      // PASO 3: Crear nuevo plan en routine_plans
       const routinePlanQuery = `
         INSERT INTO app.routine_plans (
           user_id, methodology_type, plan_data, generation_mode, 
-          frequency_per_week, total_weeks, created_at, updated_at
-        ) VALUES ($1, $2, $3, 'manual', $4, $5, NOW(), NOW())
+          frequency_per_week, total_weeks, is_active, created_at, updated_at
+        ) VALUES ($1, $2, $3, 'manual', $4, $5, true, NOW(), NOW())
         RETURNING id
       `;
       

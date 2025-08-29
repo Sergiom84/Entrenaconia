@@ -1,5 +1,6 @@
 import express from 'express';
 import multer from 'multer';
+import authenticateToken from '../middleware/auth.js';
 import { getOpenAI } from '../lib/openaiClient.js';
 
 const router = express.Router();
@@ -24,9 +25,10 @@ const upload = multer({
  * POST /api/uploads/images
  * Subida y análisis básico de múltiples imágenes
  */
-router.post('/images', upload.array('images', 10), async (req, res) => {
+router.post('/images', authenticateToken, upload.array('images', 10), async (req, res) => {
   try {
-    const { exerciseId, userId } = req.body;
+    const { exerciseId } = req.body;
+    const userId = req.user.userId; // Usar userId del token JWT
 
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({

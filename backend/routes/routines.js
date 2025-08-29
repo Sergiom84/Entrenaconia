@@ -43,6 +43,41 @@ router.post('/sessions', authenticateToken, async (req, res) => {
 
     const total = Number.isInteger(totalExpected) ? Math.max(0, totalExpected) : 0;
 
+    // Obtener el plan con los ejercicios del JSON para este día específico
+    const planWithDataQ = await pool.query(
+      `SELECT plan_data FROM app.routine_plans WHERE id = $1`,
+      [routinePlanId]
+    );
+
+    let exercisesForThisDay = [];
+    if (planWithDataQ.rowCount > 0 && planWithDataQ.rows[0].plan_data) {
+      try {
+        const planData = planWithDataQ.rows[0].plan_data;
+        console.log('[POST /api/routines/sessions] DEBUG planData keys:', Object.keys(planData || {}));
+        if (planData && planData.semanas) {
+          console.log('[POST /api/routines/sessions] DEBUG semanas count:', planData.semanas.length);
+          const semanaActual = planData.semanas.find(s => s.semana === weekNumber);
+          console.log('[POST /api/routines/sessions] DEBUG looking for week:', weekNumber, 'found:', !!semanaActual);
+          if (semanaActual && semanaActual.sesiones) {
+            console.log('[POST /api/routines/sessions] DEBUG sesiones count:', semanaActual.sesiones.length);
+            const sessionForDay = semanaActual.sesiones.find(ses => ses.dia === dayName);
+            console.log('[POST /api/routines/sessions] DEBUG looking for day:', dayName, 'found:', !!sessionForDay);
+            if (sessionForDay && sessionForDay.ejercicios) {
+              exercisesForThisDay = sessionForDay.ejercicios;
+              console.log('[POST /api/routines/sessions] DEBUG ejercicios count:', exercisesForThisDay.length);
+            }
+          }
+        }
+      } catch (parseError) {
+        console.warn('[POST /api/routines/sessions] error parsing plan_data:', parseError);
+      }
+    }
+
+    // Calcular el total de ejercicios basado en el JSON si no se proporcionó
+    const actualTotal = Number.isInteger(totalExpected) && totalExpected > 0 
+      ? totalExpected 
+      : exercisesForThisDay.length;
+
     // Upsert de la sesión
     const upsert = await pool.query(
       `INSERT INTO app.routine_sessions (user_id, routine_plan_id, week_number, day_name, total_exercises, exercises_completed, status)
@@ -52,10 +87,62 @@ router.post('/sessions', authenticateToken, async (req, res) => {
          total_exercises = CASE WHEN app.routine_sessions.total_exercises = 0 THEN EXCLUDED.total_exercises ELSE app.routine_sessions.total_exercises END,
          updated_at = NOW()
        RETURNING *;`,
-      [userId, routinePlanId, weekNumber, dayName, total]
+      [userId, routinePlanId, weekNumber, dayName, actualTotal]
     );
 
-    console.log('[POST /api/routines/sessions] success', { sessionId: upsert.rows[0].id });
+    const sessionId = upsert.rows[0].id;
+    const wasInserted = upsert.rows[0].created_at === upsert.rows[0].updated_at;
+    
+    console.log('[POST /api/routines/sessions] DEBUG Session result:', {
+      sessionId,
+      wasInserted,
+      total_exercises: upsert.rows[0].total_exercises,
+      actualTotal,
+      exercisesForThisDayLength: exercisesForThisDay.length
+    });
+
+    // Crear ejercicios SIEMPRE que tengamos ejercicios del JSON y no existan ya
+    if (exercisesForThisDay.length > 0) {
+      console.log('[POST /api/routines/sessions] Creating exercise progress records:', exercisesForThisDay.length);
+      
+      // Verificar si ya existen ejercicios para esta sesión
+      const existingExercises = await pool.query(
+        `SELECT COUNT(*) FROM app.routine_exercise_progress WHERE routine_session_id = $1`,
+        [sessionId]
+      );
+      
+      const exerciseCount = parseInt(existingExercises.rows[0].count);
+      console.log('[POST /api/routines/sessions] Existing exercises count:', exerciseCount);
+      
+      // Solo crear si no existen ejercicios
+      if (exerciseCount === 0) {
+        for (let i = 0; i < exercisesForThisDay.length; i++) {
+          const ejercicio = exercisesForThisDay[i];
+          try {
+            await pool.query(
+              `INSERT INTO app.routine_exercise_progress 
+               (user_id, routine_session_id, exercise_order, exercise_name, series_total, status) 
+               VALUES ($1, $2, $3, $4, $5, 'pending')`,
+              [userId, sessionId, i + 1, ejercicio.nombre, ejercicio.series || 0] // i + 1 para empezar en 1
+            );
+          } catch (progressError) {
+            console.warn('[POST /api/routines/sessions] error creating exercise progress:', progressError);
+          }
+        }
+        
+        // Actualizar el total_exercises de la sesión también
+        await pool.query(
+          `UPDATE app.routine_sessions SET total_exercises = $1, updated_at = NOW() WHERE id = $2`,
+          [exercisesForThisDay.length, sessionId]
+        );
+        
+        console.log('[POST /api/routines/sessions] Exercise progress records created successfully');
+      } else {
+        console.log('[POST /api/routines/sessions] Exercises already exist, skipping creation');
+      }
+    }
+
+    console.log('[POST /api/routines/sessions] success', { sessionId: sessionId });
     return res.status(200).json({
       success: true,
       session: upsert.rows[0]
@@ -127,29 +214,15 @@ router.get('/sessions/:sessionId', authenticateToken, async (req, res) => {
 
     console.log('[GET /api/routines/sessions/:sessionId]', { userId, sessionId });
 
+    // Primera consulta: obtener sesión básica y plan
     const sessionQuery = `
       SELECT 
         rs.*,
         rp.archived_at,
-        array_agg(
-          json_build_object(
-            'exercise_order', rep.exercise_order,
-            'exercise_name', rep.exercise_name,
-            'status', rep.status,
-            'series_completed', rep.series_completed,
-            'series_total', rep.series_total,
-            'time_spent_seconds', rep.time_spent_seconds,
-            'feedback_sentiment', ref.sentiment,
-            'feedback_comment', ref.comment
-          ) ORDER BY rep.exercise_order
-        ) as exercises
+        rp.plan_data
       FROM app.routine_sessions rs
       JOIN app.routine_plans rp ON rs.routine_plan_id = rp.id
-      LEFT JOIN app.routine_exercise_progress rep ON rs.id = rep.routine_session_id
-      LEFT JOIN app.routine_exercise_feedback ref ON rs.id = ref.routine_session_id 
-        AND rep.exercise_order = ref.exercise_order
       WHERE rs.id = $1 AND rs.user_id = $2
-      GROUP BY rs.id, rp.archived_at
     `;
 
     const sessionResult = await pool.query(sessionQuery, [sessionId, userId]);
@@ -165,8 +238,73 @@ router.get('/sessions/:sessionId', authenticateToken, async (req, res) => {
       return res.status(204).end();
     }
 
-    // Remover archived_at del resultado
+    // Obtener ejercicios del plan JSON para la semana y día actual
+    let exercises = [];
+    if (session.plan_data && session.plan_data.semanas) {
+      const semanaActual = session.plan_data.semanas.find(s => s.semana === session.week_number);
+      if (semanaActual && semanaActual.sesiones) {
+        const sesionActual = semanaActual.sesiones.find(s => s.dia === session.day_name);
+        if (sesionActual && sesionActual.ejercicios) {
+          exercises = sesionActual.ejercicios.map((ejercicio, index) => ({
+            exercise_order: index + 1, // Coincidir con BD que empieza en 1
+            exercise_name: ejercicio.nombre,
+            status: 'pending',
+            series_completed: 0,
+            series_total: ejercicio.series || 0,
+            repetitions: ejercicio.repeticiones,
+            rest_time: ejercicio.descanso_seg,
+            intensity: ejercicio.intensidad,
+            tempo: ejercicio.tempo,
+            notes: ejercicio.notas,
+            detailed_info: ejercicio.informacion_detallada,
+            time_spent_seconds: 0,
+            feedback_sentiment: null,
+            feedback_comment: null
+          }));
+        }
+      }
+    }
+
+    // Obtener progreso real de la base de datos para sobrescribir valores predeterminados
+    if (exercises.length > 0) {
+      const progressQuery = `
+        SELECT 
+          rep.exercise_order,
+          rep.status,
+          rep.series_completed,
+          rep.time_spent_seconds,
+          ref.sentiment as feedback_sentiment,
+          ref.comment as feedback_comment
+        FROM app.routine_exercise_progress rep
+        LEFT JOIN app.routine_exercise_feedback ref ON rep.routine_session_id = ref.routine_session_id 
+          AND rep.exercise_order = ref.exercise_order
+        WHERE rep.routine_session_id = $1
+        ORDER BY rep.exercise_order
+      `;
+      
+      const progressResult = await pool.query(progressQuery, [sessionId]);
+      
+      // Merge con el progreso real
+      progressResult.rows.forEach(progress => {
+        const exerciseIndex = exercises.findIndex(e => e.exercise_order === progress.exercise_order);
+        if (exerciseIndex >= 0) {
+          exercises[exerciseIndex].status = progress.status;
+          exercises[exerciseIndex].series_completed = progress.series_completed;
+          exercises[exerciseIndex].time_spent_seconds = progress.time_spent_seconds;
+          exercises[exerciseIndex].feedback_sentiment = progress.feedback_sentiment;
+          exercises[exerciseIndex].feedback_comment = progress.feedback_comment;
+        }
+      });
+    }
+
+    // Remover campos internos
     delete session.archived_at;
+    delete session.plan_data;
+
+    // Añadir ejercicios a la sesión
+    session.exercises = exercises;
+
+    console.log(`[GET /api/routines/sessions/:sessionId] devolviendo ${exercises.length} ejercicios`);
 
     res.json({
       success: true,

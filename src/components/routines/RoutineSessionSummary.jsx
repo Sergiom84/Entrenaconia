@@ -35,7 +35,7 @@ const RoutineSessionSummary = ({
     const session = sessionExercises?.[exerciseIndex];
     if (session?.status) return session.status;
     if (progress.completedExercises.includes(exerciseIndex)) return 'completed';
-    if (progress.currentExercise === exerciseIndex) return 'in_progress';
+    if (progress.currentExercise != null && progress.currentExercise >= 0 && progress.currentExercise === exerciseIndex) return 'in_progress';
     return 'pending';
   };
 

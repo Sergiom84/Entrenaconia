@@ -3,6 +3,7 @@ import multer from 'multer';
 import { getOpenAIClient } from '../lib/openaiClient.js';
 import { getPrompt, FeatureKey } from '../lib/promptRegistry.js';
 import { AI_MODULES } from '../config/aiConfigs.js';
+import authenticateToken from '../middleware/auth.js';
 import { 
   logSeparator, 
   logUserProfile, 
@@ -49,7 +50,7 @@ function imageToBase64(buffer, mimetype) {
 }
 
 // POST /api/ai-photo-correction/analyze - Análisis de fotos para corrección técnica
-router.post('/analyze', upload.array('photos', 5), async (req, res) => {
+router.post('/analyze', authenticateToken, upload.array('photos', 5), async (req, res) => {
   try {
     const { exercise_name, exercise_description, user_context } = req.body;
     const photos = req.files;
@@ -197,7 +198,7 @@ Proporciona un análisis detallado siguiendo el formato JSON especificado.`
 });
 
 // POST /api/ai-photo-correction/quick-check - Análisis rápido de una sola foto
-router.post('/quick-check', upload.single('photo'), async (req, res) => {
+router.post('/quick-check', authenticateToken, upload.single('photo'), async (req, res) => {
   try {
     const { exercise_name } = req.body;
     const photo = req.file;

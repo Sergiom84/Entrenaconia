@@ -37,23 +37,29 @@ function safeJSON(v) {
 function validateProfileData(profile) {
   // Debug: mostrar qué datos llegan realmente
   console.log('🔍 Raw profile data from DB:', JSON.stringify(profile, null, 2));
-  
-  return {
+
+  // Mapeo mejorado considerando todos los posibles nombres de campos
+  const mappedProfile = {
     edad: profile.edad != null ? Number(profile.edad) : null,
-    peso: profile.peso != null ? Number(profile.peso) : null,
+    peso: profile.peso != null ? Number(profile.peso) : (profile.peso_kg != null ? Number(profile.peso_kg) : null),
     estatura: profile.altura != null ? Number(profile.altura) : (profile.altura_cm != null ? Number(profile.altura_cm) : (profile.estatura != null ? Number(profile.estatura) : null)),
     sexo: profile.sexo ?? null,
     nivel_actividad: profile.nivel_actividad ?? null,
-    suplementación: profile.suplementación ?? profile.suplementacion ?? [],
-    grasa_corporal: profile.grasa_corporal ?? null,
-    masa_muscular: profile.masa_muscular ?? null,
-    pecho: profile.pecho ?? null,
-    brazos: profile.brazos ?? null,
-    nivel_actual_entreno: profile.nivel ?? profile.nivel_entrenamiento ?? profile.nivel_actual_entreno ?? null,
-    años_entrenando: profile.anos_entrenando != null ? Number(profile.anos_entrenando) : null,
+    suplementación: profile.suplementacion ?? profile.suplementación ?? (Array.isArray(profile.suplementacion) ? profile.suplementacion : []),
+    grasa_corporal: profile.grasa_corporal != null ? Number(profile.grasa_corporal) : null,
+    masa_muscular: profile.masa_muscular != null ? Number(profile.masa_muscular) : null,
+    pecho: profile.pecho != null ? Number(profile.pecho) : null,
+    brazos: profile.brazos != null ? Number(profile.brazos) : null,
+    nivel_actual_entreno: profile.nivel_entrenamiento ?? profile.nivel ?? profile.nivel_actual_entreno ?? null,
+    años_entrenando: profile.anos_entrenando != null ? Number(profile.anos_entrenando) : (profile["años_entrenando"] != null ? Number(profile["años_entrenando"]) : null),
     objetivo_principal: profile.objetivo_principal ?? null,
-    medicamentos: profile.medicamentos ?? null
+    medicamentos: profile.medicamentos ?? (Array.isArray(profile.medicamentos) ? profile.medicamentos.join(', ') : null)
   };
+
+  // Log del perfil procesado para debugging
+  console.log('✅ Processed profile data:', JSON.stringify(mappedProfile, null, 2));
+
+  return mappedProfile;
 }
 
 /**
@@ -71,9 +77,19 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
     logSeparator('Generación de Plan Metodológico Automático', 'blue');
     logAPICall('/api/methodologie/generate-plan', 'POST', userId);
 
-    // Leer perfil desde BD (vista normalizada)
+    // Leer perfil completo desde BD (incluye composición corporal)
     const { rows } = await (await import('../db.js')).pool.query(
-      `SELECT * FROM app.v_user_profile_normalized WHERE id = $1`,
+      `SELECT 
+        u.id, u.nombre, u.apellido, u.email, u.edad, u.sexo, u.peso, u.altura,
+        u.nivel_entrenamiento, u.anos_entrenando, u.frecuencia_semanal,
+        u.grasa_corporal, u.masa_muscular, u.agua_corporal, u.metabolismo_basal,
+        u.cintura, u.pecho, u.brazos, u.muslos, u.cuello, u.antebrazos, u.cadera,
+        u.objetivo_principal, u.limitaciones_fisicas, u.alergias, u.medicamentos,
+        u.metodologia_preferida, u.nivel_actividad, u.horario_preferido,
+        u.comidas_por_dia, u.suplementacion, u.alimentos_excluidos, u.meta_peso,
+        u.meta_grasa_corporal, u.enfoque_entrenamiento, u.historial_medico
+      FROM app.users u 
+      WHERE u.id = $1`,
       [userId]
     );
     if (!rows.length) {
@@ -88,20 +104,23 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
     // Validar y sanitizar datos del perfil
     const profileData = validateProfileData(perfil);
 
-    // ===== OBTENER EJERCICIOS RECIENTES USANDO LA NUEVA FUNCIÓN =====
+    // ===== OBTENER EJERCICIOS RECIENTES DE RUTINAS/METODOLOGÍAS =====
     let exercisesFromDB = [];
     try {
-      // Usar la nueva función optimizada que incluye feedback del usuario
+      // Consultar directamente exercise_history (rutinas/metodologías reales)
       const recentExercisesResult = await pool.query(
         `SELECT 
           exercise_name,
           methodology_type,
-          times_used as usage_count,
-          last_used_at as last_used,
-          avg_sentiment,
-          last_sentiment,
+          COUNT(*) as usage_count,
+          MAX(used_at) as last_used,
           methodology_type as methodologies_used
-        FROM app.get_methodology_exercise_history($1, 30)`,
+        FROM app.exercise_history 
+        WHERE user_id = $1 
+          AND used_at >= NOW() - INTERVAL '60 days'
+        GROUP BY exercise_name, methodology_type
+        ORDER BY MAX(used_at) DESC, COUNT(*) DESC
+        LIMIT 30`,
         [userId]
       );
       
@@ -147,7 +166,11 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
       throw new Error('Cliente OpenAI no disponible para metodologías');
     }
 
-    // Obtener prompt específico para metodologías
+    // FORZAR RECARGA DEL PROMPT (para debugging variabilidad)
+    const { clearPromptCache } = await import('../lib/promptRegistry.js');
+    clearPromptCache('methodologie');
+
+    // Obtener prompt específico para metodologías (recargado)
     const systemPrompt = await getPrompt('methodologie');
     if (!systemPrompt) {
       throw new Error('Prompt no disponible para metodologías');
@@ -217,7 +240,12 @@ La IA tendrá libertad total para seleccionar ejercicios de gimnasio apropiados 
     };
 
     // Crear el mensaje del usuario con los datos del perfil
+    const currentTimestamp = new Date().toISOString();
+    const randomSeed = Math.floor(Math.random() * 10000);
+    
     const userMessage = `IMPORTANTE: Este es el sistema de METODOLOGÍAS DE GIMNASIO. Los ejercicios deben ser para GIMNASIO con equipamiento. NO generar planes de "Entrenamiento en casa".
+
+SOLICITUD ÚNICA: Timestamp=${currentTimestamp}, Seed=${randomSeed} (usa esto para generar variación en cada petición)
 
 Genera un plan de entrenamiento basado en el siguiente perfil:
     
@@ -460,11 +488,31 @@ Por favor, responde únicamente con el JSON solicitado según las especificacion
       
       // MIGRACIÓN AUTOMÁTICA: Crear plan en routine_plans para que Rutinas pueda usarlo
       try {
+        // PASO 1: Archivar todos los planes anteriores del usuario para empezar desde 0
+        console.log('🗄️ Archivando planes anteriores del usuario...');
+        await pool.query(
+          `UPDATE app.routine_plans 
+           SET archived_at = NOW(), is_active = false, updated_at = NOW() 
+           WHERE user_id = $1 AND archived_at IS NULL`,
+          [userId]
+        );
+        
+        // PASO 2: Marcar methodology_plans anteriores como inactivos (no tiene archived_at)
+        await pool.query(
+          `UPDATE app.methodology_plans 
+           SET updated_at = NOW() 
+           WHERE user_id = $1`,
+          [userId]
+        );
+        
+        console.log('✅ Planes anteriores archivados - Empezando desde 0');
+        
+        // PASO 3: Crear nuevo plan en routine_plans
         const routinePlanQuery = `
           INSERT INTO app.routine_plans (
             user_id, methodology_type, plan_data, generation_mode, 
-            frequency_per_week, total_weeks, created_at, updated_at
-          ) VALUES ($1, $2, $3, 'automatic', $4, $5, NOW(), NOW())
+            frequency_per_week, total_weeks, is_active, created_at, updated_at
+          ) VALUES ($1, $2, $3, 'automatic', $4, $5, true, NOW(), NOW())
           RETURNING id
         `;
         

@@ -49,7 +49,18 @@ export default function MethodologiesScreen() {
     setShowVersionSelection(false);
     setIsLoading(true);
     setError(null);
-    const fullProfile = sanitizeProfile({ ...userData, ...user, ...currentUser });
+
+    // Construir perfil completo con mapeo mejorado
+    const rawProfile = { ...userData, ...user, ...currentUser };
+    const fullProfile = sanitizeProfile({
+      ...rawProfile,
+      // Asegurar campos críticos con nombres correctos
+      peso_kg: rawProfile.peso || rawProfile.peso_kg,
+      altura_cm: rawProfile.altura || rawProfile.altura_cm,
+      años_entrenando: rawProfile.años_entrenando || rawProfile.anos_entrenando,
+      nivel_entrenamiento: rawProfile.nivel || rawProfile.nivel_entrenamiento,
+      objetivo_principal: rawProfile.objetivo_principal || rawProfile.objetivoPrincipal
+    });
     
     try {
       console.log('🤖 Activando IA para generar plan metodológico...');
@@ -189,7 +200,15 @@ export default function MethodologiesScreen() {
                           `${result.plan.frecuencia_por_semana} entrenamientos por semana.`;
       
       // Obtener objetivo principal para personalizar los tips
-      const fullProfile = sanitizeProfile({ ...userData, ...user, ...currentUser });
+      const rawProfile = { ...userData, ...user, ...currentUser };
+      const fullProfile = sanitizeProfile({
+        ...rawProfile,
+        peso_kg: rawProfile.peso || rawProfile.peso_kg,
+        altura_cm: rawProfile.altura || rawProfile.altura_cm,
+        años_entrenando: rawProfile.años_entrenando || rawProfile.anos_entrenando,
+        nivel_entrenamiento: rawProfile.nivel || rawProfile.nivel_entrenamiento,
+        objetivo_principal: rawProfile.objetivo_principal || rawProfile.objetivoPrincipal
+      });
       const objetivo = fullProfile?.objetivo_principal || userData?.objetivo_principal || 'general';
       let tip = '';
       
