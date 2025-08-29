@@ -104,11 +104,10 @@ const GoalsStep = ({ formData, onInputChange }) => {
               className="w-full bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-accent-400 transition-colors"
             >
               <option value="">Seleccionar horario</option>
-              <option value="manana">Mañana (6:00 - 10:00)</option>
-              <option value="mediodia">Mediodía (10:00 - 14:00)</option>
+              <option value="mañana">Mañana (6:00 - 10:00)</option>
+              <option value="media_mañana">Media mañana (10:00 - 14:00)</option>
               <option value="tarde">Tarde (14:00 - 18:00)</option>
               <option value="noche">Noche (18:00 - 22:00)</option>
-              <option value="flexible">Flexible</option>
             </select>
           </div>
 

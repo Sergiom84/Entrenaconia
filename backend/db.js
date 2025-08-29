@@ -5,11 +5,11 @@ dotenv.config();
 
 const { Pool } = pkg;
 
-// Configuración de la base de datos
+// Configuración de la base de datos para Supabase
 export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: `postgresql://postgres.lhsnmjgdtjalfcsurxvg:${encodeURIComponent('Xe05Klm563kkjL')}@aws-1-eu-north-1.pooler.supabase.com:6543/postgres`,
   application_name: 'EntrenaConIA',
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  ssl: { rejectUnauthorized: false }, // Supabase siempre requiere SSL
   options: '-c search_path=app,public'
 });
 
@@ -50,7 +50,7 @@ export const testConnection = async () => {
     client.release();
   } catch (error) {
     console.error('❌ Error conectando a PostgreSQL:', error.message);
-    console.log('💡 Asegúrate de que PostgreSQL esté ejecutándose y la base de datos "entrenaconia" exista');
+    console.log('💡 Revisa la configuración de Supabase en el archivo .env');
   }
 };
 

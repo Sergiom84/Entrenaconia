@@ -528,7 +528,13 @@ export default function RoutineScreen() {
 
         console.log('📡 Respuesta del servidor:', resp.status, resp.statusText);
 
-        const data = await resp.json();
+        let data = null;
+        try {
+          data = await resp.json();
+        } catch (e) {
+          if (!resp.ok) { throw e; }
+          data = {};
+        }
         console.log('📦 Datos recibidos:', data);
 
         if (!resp.ok) {
@@ -1048,4 +1054,3 @@ export default function RoutineScreen() {
     </div>
   );
 }
-
