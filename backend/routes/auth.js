@@ -80,6 +80,19 @@ router.post('/register', async (req, res) => {
       return isNaN(num) ? null : num;
     };
 
+    // Normalizar horarioPreferido a los valores permitidos en BD
+    const normalizeHorarioPreferido = (val) => {
+      if (val === '' || val === undefined || val === null) return null;
+      const v = String(val).toLowerCase();
+      // Aceptar variantes del registro y mapear a: 'mañana', 'media_mañana', 'tarde', 'noche'
+      if (v === 'manana' || v === 'mañana' || v === 'morning') return 'mañana';
+      if (v === 'mediodia' || v === 'medio_dia' || v === 'media_mañana' || v === 'media_manana' || v === 'noon') return 'media_mañana';
+      if (v === 'tarde' || v === 'afternoon') return 'tarde';
+      if (v === 'noche' || v === 'night') return 'noche';
+      if (v === 'flexible') return null; // no permitido por constraint; guardamos NULL
+      return null; // cualquier otro valor inválido -> NULL
+    };
+
     // Procesar valores numéricos
     const anosEntrenamientoValue = toNumberOrNull(anosEntrenando);
     const frecuenciaSemanalValue = toNumberOrNull(frecuenciaSemanal);
@@ -159,7 +172,7 @@ router.post('/register', async (req, res) => {
         toNullIfEmpty(historialMedico), toNullIfEmpty(limitacionesFisicas),
         alergiasValue, medicamentosValue, toNullIfEmpty(objetivoPrincipal),
         toNumberOrNull(metaPeso), toNumberOrNull(metaGrasaCorporal), toNullIfEmpty(enfoqueEntrenamiento),
-        toNullIfEmpty(horarioPreferido), toNumberOrNull(comidasPorDia), suplementacionValue,
+        normalizeHorarioPreferido(horarioPreferido), toNumberOrNull(comidasPorDia), suplementacionValue,
         alimentosExcluidosValue
       ]
     );

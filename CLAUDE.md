@@ -1,352 +1,264 @@
-# CLAUDE.md - Entrena con IA
+# 🤖 CLAUDE AI Assistant - Entrena con IA Project Documentation
 
-**Fecha de creación**: 26 de agosto de 2025  
-**Última actualización**: 26 de agosto de 2025  
-**Versión**: 1.0  
-**Estado del proyecto**: En desarrollo activo  
+## 📋 Project Overview
 
-## 🎯 Resumen del Proyecto
+**Entrena con IA** is a comprehensive AI-powered fitness application that provides personalized training plans, nutrition guidance, exercise correction, and progress tracking. The app combines modern web technologies with AI capabilities to deliver a complete fitness experience.
 
-**Entrena con IA** es una aplicación de fitness personalizada que utiliza inteligencia artificial para generar rutinas de entrenamiento adaptativas. Combina análisis de perfil del usuario, metodologías científicas de entrenamiento, y corrección técnica mediante IA para proporcionar una experiencia de entrenamiento completa y segura.
+## 🏗️ Technology Stack
 
-### Características Principales
-- **Generación de rutinas con IA**: Planes personalizados usando OpenAI GPT-4
-- **Entrenamiento en casa**: Sistema especializado para entrenar sin gimnasio
-- **Metodologías científicas**: 8 metodologías validadas (HIIT, Powerlifting, Funcional, etc.)
-- **Corrección por foto/video**: Análisis de técnica mediante visión artificial
-- **Sistema de rutinas**: Calendario de entrenamientos con seguimiento de progreso
-- **Perfil completo**: Gestión detallada de datos biométricos, objetivos y limitaciones
+### Frontend (React + Vite)
+- **Framework**: React 19.1.0 with Vite 6.3.5
+- **Routing**: React Router DOM 7.6.1
+- **UI Components**: 
+  - Radix UI components (@radix-ui/react-*)
+  - Tailwind CSS 3.4.17
+  - Framer Motion 12.23.12
+  - Lucide React icons
+- **State Management**: React Context API
+- **Form Handling**: React Hook Form 7.56.3
+- **Charts**: Recharts 2.15.3
+- **Validation**: Zod 3.24.4
 
-## 🏗️ Arquitectura Técnica
+### Backend (Node.js + Express)
+- **Runtime**: Node.js with ES modules
+- **Framework**: Express 4.21.2
+- **Database**: PostgreSQL with pg 8.16.3
+- **Authentication**: JWT + bcryptjs
+- **AI Integration**: OpenAI 4.104.0
+- **File Handling**: Multer 2.0.2, PDF Parse 1.1.1
+- **Environment**: dotenv 16.6.1
+- **CORS**: cors 2.8.5
 
-### Stack Tecnológico
-- **Frontend**: React 19 + Vite + Tailwind CSS
-- **Backend**: Node.js + Express 
-- **Base de datos**: PostgreSQL (esquema `app`)
-- **IA**: OpenAI API (múltiples keys específicas por feature)
-- **UI**: Radix UI + Lucide Icons + Framer Motion
+### Database
+- **Type**: PostgreSQL (local instance)
+- **Schema**: `app` (main schema with search_path configuration)
+- **Connection**: Pool-based with automatic schema switching
 
-### Estructura de Directorios
+## 📁 Project Structure
+
 ```
-├── backend/
-│   ├── config/aiConfigs.js          # Configuración IA centralizada
-│   ├── lib/
-│   │   ├── openaiClient.js          # Cliente OpenAI con múltiples keys
-│   │   └── promptRegistry.js        # Gestión de prompts centralizados
-│   ├── routes/                      # 16 rutas API especializadas
-│   ├── prompts/                     # Prompts de IA en archivos .md
-│   └── server.js                    # Servidor principal
-├── src/
-│   ├── components/
-│   │   ├── HomeTraining/           # Entrenamiento en casa
-│   │   ├── Methodologie/           # Sistema de metodologías
-│   │   ├── routines/               # Sistema de rutinas
-│   │   ├── profile/                # Gestión de perfil
-│   │   ├── auth/                   # Autenticación
-│   │   └── ui/                     # Componentes base
-│   ├── contexts/                   # AuthContext + UserContext
-│   └── hooks/                      # Custom hooks
-├── docs/                           # Documentación técnica completa
-└── database_scripts/               # Scripts SQL de BD
-```
-
-## 🤖 Sistema de IA
-
-### Configuración por Módulos
-La aplicación utiliza **5 módulos de IA independientes**, cada uno con su propia API key y configuración:
-
-1. **VIDEO_CORRECTION**: Análisis de técnica por video
-   - Modelo: `gpt-4.1-nano`
-   - Temperatura: 0.43
-   - Max tokens: 2048
-
-2. **PHOTO_CORRECTION**: Análisis de técnica por foto
-   - Modelo: `gpt-4o-mini`
-   - Temperatura: 0.3
-   - Max tokens: 1500
-
-3. **HOME_TRAINING**: Generación de rutinas caseras
-   - Modelo: `gpt-4.1-nano`
-   - Temperatura: 1.0
-   - Max tokens: 2048
-
-4. **METHODOLOGIE**: Generación automática de metodologías
-   - Modelo: `gpt-4o-mini`
-   - Temperatura: 0.7
-   - Max tokens: 12000
-
-5. **METHODOLOGIE_MANUAL**: Generación manual de metodologías
-   - Modelo: `gpt-4o-mini`
-   - Temperatura: 0.7
-   - Max tokens: 12000
-
-### Gestión de Prompts
-- **Archivo**: `/backend/lib/promptRegistry.js`
-- **Caché**: Prompts cargados en memoria al iniciar servidor
-- **Fuente**: Archivos `.md` en `/backend/prompts/`
-- **Features soportadas**: `photo`, `video`, `home`, `methodologie`
-
-## 📊 Base de Datos
-
-### Esquema Principal (`app`)
-```sql
--- Tablas principales
-app.users                    # Usuarios registrados
-app.user_profiles            # Perfiles detallados
-app.home_training_plans      # Planes de entrenamiento en casa
-app.home_training_sessions   # Sesiones de entrenamiento en casa
-app.home_exercise_history    # ✅ Historial ESPECÍFICO de entrenamiento en casa
-app.exercise_history         # ✅ Historial ESPECÍFICO de metodologías/rutinas
-app.methodology_plans        # Planes de metodologías
-app.routines                 # Rutinas del sistema
-app.routine_sessions         # Sesiones de rutinas
-app.user_exercise_history    # ⚠️ DEPRECADA - No usar para nuevos desarrollos
+Entrena_con_IA/
+├── src/                          # Frontend source code
+│   ├── components/               # React components
+│   │   ├── auth/                # Authentication components
+│   │   ├── HomeTraining/        # Home training modules
+│   │   ├── Methodologie/        # Training methodologies
+│   │   ├── nutrition/           # Nutrition tracking
+│   │   ├── profile/             # User profile management
+│   │   ├── routines/            # Routine management
+│   │   ├── VideoCorrection/     # AI video analysis
+│   │   └── ui/                  # Reusable UI components
+│   ├── contexts/                # React contexts
+│   ├── hooks/                   # Custom React hooks
+│   ├── config/                  # Configuration files
+│   └── lib/                     # Utility libraries
+├── backend/                     # Backend API server
+│   ├── routes/                  # API endpoints
+│   ├── lib/                     # Backend libraries
+│   ├── middleware/              # Express middleware
+│   ├── prompts/                 # AI prompts
+│   ├── sql/                     # Database migration scripts
+│   └── utils/                   # Backend utilities
+├── database_scripts/            # Database setup scripts
+└── dist/                        # Build output
 ```
 
-### ⚠️ SEPARACIÓN CRÍTICA DE MÓDULOS - NUNCA MEZCLAR
-- **`app.home_exercise_history`**: SOLO para entrenamiento en casa
-- **`app.exercise_history`**: SOLO para metodologías/rutinas de gimnasio
-- **`app.user_exercise_history`**: ⚠️ DEPRECADA - NO usar en nuevos desarrollos
-- **REGLA DE ORO**: Los módulos están completamente separados. Entrenamiento en casa y metodologías/rutinas son mundos diferentes con historiales, tablas, rutas y componentes propios.
+## 🔗 Main API Endpoints
 
-### Características de BD
-- **PostgreSQL 16**: Base de datos principal
-- **search_path**: `app,public` (configurado automáticamente)
-- **Funciones**: `can_use_exercise()` para control de repetición
-- **Triggers**: Validaciones automáticas
-- **JSONB**: Almacenamiento flexible para datos de entrenamientos
+### Authentication & Users
+- `POST /api/auth/login` - User authentication
+- `POST /api/auth/register` - User registration
+- `GET /api/users/profile` - Get user profile
+- `PUT /api/users/profile` - Update user profile
 
-## 🔧 API Endpoints
+### Training Systems
+- `/api/home-training/*` - Home training plans and sessions
+- `/api/ia-home-training/*` - AI-powered home training
+- `/api/routines/*` - Gym routines and methodology plans
+- `/api/methodologie/*` - AI methodology generation
+- `/api/methodology-manual/*` - Manual methodology configuration
 
-### Rutas Principales
-```
-/api/auth/*                    # Autenticación (login, register)
-/api/users/*                   # Gestión de usuarios
-/api/home-training/*           # Entrenamiento en casa
-/api/ia-home-training/*        # IA para entrenamiento casero
-/api/methodologie/*            # Metodologías automáticas
-/api/methodology-manual/*      # Metodologías manuales
-/api/ai-photo-correction/*     # Corrección por foto
-/api/ai/*                      # Corrección por video
-/api/routines/*                # Sistema de rutinas
-/api/body-composition/*        # Composición corporal
-/api/equipment/*               # Equipamiento
-/api/exercises/*               # Base de datos de ejercicios
-```
+### AI Features
+- `/api/ai/*` - Video correction analysis
+- `/api/ai-photo-correction/*` - Photo analysis
+- `/api/nutrition/*` - AI nutrition guidance
 
-### Funcionalidades por Endpoint
-- **Health check**: `/api/health`
-- **Test IA**: `/api/test-ai-modules` (validación de módulos)
-- **Upload**: `/api/uploads/*` (subida de archivos)
+### Data Management
+- `/api/equipment/*` - Equipment management
+- `/api/exercises/*` - Exercise catalog
+- `/api/body-composition/*` - Body composition tracking
+- `/api/uploads/*` - File upload handling
 
-## 🧩 Componentes Frontend
+## 🎯 Key Features
 
-### Sistema de Metodologías
-- **MethodologiesScreen**: Pantalla principal con selección automática/manual
-- **MethodologyCard**: Tarjetas de metodologías con información
-- **MethodologyDetailsDialog**: Modal detallado con tabs informativos
-- **MethodologyConfirmationModal**: Confirmación de selección
+### 1. **Home Training System** (`/home-training`)
+- AI-generated personalized home workouts
+- Equipment-based exercise selection
+- Progress tracking and history
+- Combination-based training plans (12 combinations: equipment × training type)
+- Exercise feedback and difficulty adjustment
 
-### Entrenamiento en Casa
-- **HomeTrainingSection**: Componente principal
-- **HomeTrainingCard**: Tarjetas de planes generados
-- **HomeTrainingProgress**: Seguimiento de progreso
-- **HomeTrainingExerciseModal**: Modal de ejecución de ejercicios
+### 2. **Methodology System** (`/methodologies`)
+- **Weider**: Muscle group split training
+- **Full Body**: Complete body workouts
+- **Push/Pull/Legs**: Functional movement patterns
+- **Upper/Lower**: Upper and lower body split
+- **HIIT**: High-intensity interval training
+- **Functional**: Movement-based training
 
-### Sistema de Rutinas
-- **RoutineScreen**: Pantalla principal del sistema
-- **RoutineCalendar**: Calendario de entrenamientos
-- **RoutineDayModal**: Modal de días específicos
-- **RoutineExerciseModal**: Ejecución de ejercicios
+### 3. **Routine Management** (`/routines`)
+- Structured gym routines with progression
+- Session tracking and exercise logging
+- Performance analytics and statistics
+- Custom routine creation and modification
 
-### Perfil de Usuario
-- **ProfileSection**: Gestión completa del perfil
-- **BasicInfoTab**: Información básica
-- **BodyCompositionTab**: Composición corporal
-- **GoalsTab**: Objetivos de entrenamiento
-- **EquipmentTab**: Equipamiento disponible
+### 4. **Nutrition Tracking** (`/nutrition`)
+- Macro and calorie tracking
+- AI-powered meal recommendations
+- Food database integration
+- Supplement tracking
 
-## 📱 Rutas de Navegación
+### 5. **AI Video/Photo Correction** (`/video-correction`)
+- Real-time exercise form analysis
+- Video upload and processing
+- Photo-based posture correction
+- AI feedback and recommendations
 
-```javascript
-'/'                    # HomePage (dashboard principal)
-'/home-training'       # Entrenamiento en casa
-'/methodologies'       # Sistema de metodologías  
-'/routines'           # Sistema de rutinas
-'/video-correction'   # Corrección por video
-'/profile'            # Perfil de usuario
-'/login'              # Inicio de sesión
-'/register'           # Registro de usuario
-```
+### 6. **User Profile Management** (`/profile`)
+- Comprehensive user data management
+- Body composition tracking
+- Goal setting and progress monitoring
+- Equipment and preference configuration
 
-## 🎨 Sistema de Diseño
-
-### Colores
-- **Fondo**: Gradientes oscuros (`from-gray-950 to-gray-900`)
-- **Acento principal**: Amarillo (`bg-yellow-400`, `text-yellow-400`)
-- **Texto**: Blanco y grises (`text-white`, `text-gray-300`)
-- **Bordes**: Grises sutiles (`border-gray-800`)
-
-### Componentes UI Base
-- **Button**: Variantes primary, secondary, outline, ghost
-- **Card**: Contenedores con bordes y fondos
-- **Dialog**: Modales con overlay
-- **Tabs**: Sistema de pestañas
-- **Input**: Campos de formulario
-- **Badge**: Etiquetas informativas
-
-## 🔄 Flujos Principales
-
-### 1. Generación de Rutina en Casa
-```
-Usuario selecciona equipamiento 
-→ Elige tipo de entrenamiento (HIIT/Funcional/Fuerza)
-→ Backend consulta perfil + historial
-→ IA genera plan personalizado
-→ Se guarda en BD
-→ Usuario puede iniciar sesión
-```
-
-### 2. Metodología Automática
-```
-Usuario activa "Activar IA"
-→ Backend analiza perfil completo
-→ IA selecciona mejor metodología
-→ Genera plan de 4-5 semanas
-→ Usuario confirma y se guarda
-→ Navegación a rutinas
-```
-
-### 3. Metodología Manual
-```
-Usuario selecciona metodología específica
-→ Modal de confirmación con detalles
-→ IA genera plan según metodología elegida
-→ Respeta restricciones específicas
-→ Plan guardado y navegación
-```
-
-## ⚙️ Variables de Entorno
-
-### Backend (.env)
-```bash
-# Base de datos
-DATABASE_URL=postgresql://...
-DB_SEARCH_PATH=app,public
-
-# OpenAI API Keys (específicas por módulo)
-OPENAI_API_KEY_CORRECTION_VIDEO=sk-...
-OPENAI_API_KEY_HOME_TRAINING=sk-...
-OPENAI_API_KEY_CORRECTION_PHOTO=sk-...
-OPENAI_API_KEY_METHODOLOGIE=sk-...
-OPENAI_API_KEY_METHODOLOGIE_MANUAL=sk-...
-
-# Servidor
-PORT=3002
-NODE_ENV=development
-```
-
-## 🚀 Comandos de Desarrollo
+## 🔧 Development Commands
 
 ### Frontend
 ```bash
-npm run dev          # Servidor desarrollo (puerto 5173)
-npm run build        # Build de producción
-npm run preview      # Preview del build
-npm run lint         # Linting con ESLint
+npm run dev      # Start development server
+npm run build    # Build for production
+npm run lint     # Run ESLint
+npm run preview  # Preview production build
 ```
 
 ### Backend
 ```bash
-cd backend
-npm start           # Servidor backend (puerto 3002)
+npm run dev      # Start backend with nodemon
+npm start        # Start backend server
 ```
 
-## 📝 Estado Actual del Desarrollo
+### Database
+- **Supabase PostgreSQL** (cloud hosted)
+- Project ID: `lhsnmjgdtjalfcsurxvg`
+- Database: `postgres`
+- Main schema: `app`
+- Connection: Pool-based with SSL
 
-### ✅ Funcionalidades Completadas
-- [x] Sistema de autenticación completo
-- [x] Perfil de usuario con BD
-- [x] Entrenamiento en casa con IA
-- [x] Sistema de metodologías (automático + manual)
-- [x] Sistema de rutinas y calendario
-- [x] Corrección por foto/video
-- [x] Gestión de equipamiento
-- [x] Composición corporal
-- [x] Sistema de progreso
+## 🗄️ Database Schema Highlights
 
-### 🔄 En Desarrollo
-- [ ] Análisis avanzado por video
-- [ ] Gamificación y logros
-- [ ] Nutrición personalizada
-- [ ] Sistema de estadísticas
-- [ ] Notificaciones push
+### Core Tables
+- `users` - User accounts and authentication
+- `user_profiles` - Extended user information
+- `exercise_history` - Training session records
+- `home_exercise_history` - Home training records
+- `methodology_plans` - AI-generated training plans
+- `routine_plans` - Structured routine definitions
 
-### 📋 Archivos Clave para Modificaciones
+### AI Integration Tables
+- `exercise_ai_info` - Exercise metadata for AI
+- `user_exercise_feedback` - User feedback on exercises
+- `methodology_exercise_feedback` - Methodology-specific feedback
 
-#### Para añadir nuevos ejercicios:
-- `/backend/routes/exercises.js`
-- `/src/config/exerciseGifs.js`
+### Supporting Systems
+- `equipment_catalog` / `user_equipment` - Equipment management
+- `food_database` / `daily_nutrition_log` - Nutrition tracking
+- `body_composition_history` - Progress tracking
 
-#### Para modificar prompts de IA:
-- `/backend/prompts/*.md`
-- `/backend/lib/promptRegistry.js`
+## 🎨 UI/UX Components
 
-#### Para nueva funcionalidad en perfil:
-- `/src/components/profile/*`
-- `/backend/routes/users.js`
+### Custom Hooks
+- `useRoutinePlan` - Routine plan state management
+- `useRoutineSession` - Active session handling  
+- `useRoutineStats` - Performance statistics
+- `useMusicSync` - Music integration
+- `useProfileState` - Profile data management
 
-#### Para nuevas metodologías:
-- `/src/components/Methodologie/methodologiesData.js`
-- `/backend/routes/aiMethodologie.js`
+### Context Providers
+- `AuthContext` - Authentication state
+- `UserContext` - User data management
+- `VideoAnalysisContext` - Video correction state
 
-## 🔍 Debugging y Logs
+### Reusable UI Components
+- Custom form components with validation
+- Modal dialogs and overlays
+- Progress indicators and charts
+- Audio/music integration components
+- Error handling and success notifications
 
-### Backend Logs
-- Inicialización: Validación de API keys y prompts
-- Requests: Logging automático de todas las peticiones
-- Errores: Stack traces en desarrollo
+## 🤖 AI Integration
 
-### Frontend Debugging
-- React DevTools disponible
-- Console logs para estados importantes
-- Error boundaries implementados
+### OpenAI Features
+- **Video Analysis**: Exercise form correction
+- **Photo Analysis**: Posture and form evaluation
+- **Home Training**: Personalized workout generation
+- **Methodology**: Training plan creation
+- **Nutrition**: Meal planning and macro guidance
 
-## 📚 Documentación Adicional
+### Prompt System
+- Modular prompt management in `/backend/prompts/`
+- Feature-specific prompt files
+- Cached prompt loading for performance
+- Dynamic prompt generation based on user data
 
-### Archivos de Documentación
-- `docs/README.md`: Índice general
-- `docs/ARCHITECTURE.md`: Arquitectura detallada
-- `docs/COMPONENTS.md`: Guía de componentes
-- `docs/FUNCIONALIDADES.md`: Funcionalidades implementadas
-- `docs/DATABASE.md`: Esquema de base de datos
-- `docs/IA_INTEGRATION.md`: Integración con IA
+## 🔐 Security & Authentication
 
-### Instrucciones de Implementación
-- `INSTRUCCIONES_IMPLEMENTACION.md`: Guía paso a paso
-- `SISTEMA_IA_OPTIMIZADO.md`: Sistema de IA optimizado
+- JWT-based authentication with refresh tokens
+- bcrypt password hashing
+- Protected routes with middleware
+- Input validation and sanitization
+- CORS configuration for cross-origin requests
+
+## 🎵 Additional Features
+
+- **Music Integration**: Spotify/local music sync during workouts
+- **Audio Feedback**: Voice-guided workout instructions
+- **Progress Analytics**: Comprehensive workout statistics
+- **Equipment Management**: Personal equipment tracking
+- **Medical Documentation**: Health history integration
+
+## 📊 Current Development Status
+
+- ✅ Core authentication and user management
+- ✅ Home training system with AI integration
+- ✅ Methodology system with multiple training types
+- ✅ Routine management and session tracking
+- ✅ Nutrition tracking and AI recommendations
+- ✅ Video/photo correction with AI analysis
+- ✅ Profile management and progress tracking
+- 🔄 Recent refactor: Extracted routine hooks for better modularity
+- 🔄 Active branch: `feat/refactor-routine-hooks`
+
+## 🛠️ Development Notes
+
+### Recent Changes
+- Refactored routine system with custom hooks (`useRoutinePlan`, `useRoutineSession`, `useRoutineStats`)
+- Improved error handling and loading states
+- Enhanced session management and persistence
+- Fixed methodology plan integration issues
+
+### Code Conventions
+- ES6+ modules throughout
+- Functional components with hooks
+- Tailwind CSS for styling
+- Consistent error handling patterns
+- Comprehensive logging system
+
+### Testing & Quality
+- ESLint configuration for code quality
+- Environment-based configuration
+- Comprehensive error boundaries
+- API health check endpoints
 
 ---
 
-## 💡 Notas para Claude
-
-### Patrones Comunes del Código
-1. **Componentes React**: Usan hooks personalizados para lógica de estado
-2. **API calls**: Centralizadas con manejo de errores consistente
-3. **Modales**: Patrón consistente con Radix UI Dialog
-4. **Formularios**: React Hook Form + validación personalizada
-5. **Estados**: Context API para estado global, useState para local
-
-### Convenciones de Naming
-- **Archivos**: PascalCase para componentes, camelCase para utilities
-- **Variables**: camelCase para JS, snake_case para BD
-- **CSS**: Tailwind classes, sem custom CSS
-- **API**: RESTful con prefijo `/api/`
-
-### Arquitectura de Decisiones
-- **Monorepo**: Frontend y backend en mismo repo
-- **Database First**: Esquema PostgreSQL como fuente de verdad  
-- **Component Composition**: Componentes reutilizables sobre duplicación
-- **Type Safety**: PropTypes + validación manual (no TypeScript aún)
-
-Este documento debe actualizarse cada vez que se realicen cambios significativos en la arquitectura, nuevas funcionalidades, o modificaciones en el sistema de IA.
+*Last updated: August 29, 2025*
+*Project: Entrena con IA - AI-Powered Fitness Application*

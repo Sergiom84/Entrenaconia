@@ -1,12 +1,7 @@
 import express from 'express';
-import { Pool } from 'pg';
+import { pool } from '../db.js';
 
 const router = express.Router();
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-});
 
 // Get user music configuration
 router.get('/config/:userId', async (req, res) => {
