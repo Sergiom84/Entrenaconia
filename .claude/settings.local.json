@@ -56,7 +56,11 @@
       "Bash(git log:*)",
       "Bash(git add:*)",
       "Read(c:\\Users\\Sergio\\Pictures\\EntranaconIA\\Procedimientos/**)",
-      "Bash(node server.js)"
+      "Bash(node server.js)",
+      "Bash(git tag:*)",
+      "Bash(git push:*)",
+      "Read(c:\\Users\\Sergio\\Pictures\\EntranaconIA\\Procedimientos/**)",
+      "Read(c:\\Users\\Sergio\\Pictures\\EntranaconIA\\Procedimientos/**)"
     ],
     "additionalDirectories": [
       "C:\\",

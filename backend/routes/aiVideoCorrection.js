@@ -3,6 +3,7 @@ import multer from 'multer';
 import { getOpenAIClient } from '../lib/openaiClient.js';
 import { getPrompt, FeatureKey } from '../lib/promptRegistry.js';
 import { AI_MODULES } from '../config/aiConfigs.js';
+import authenticateToken from '../middleware/auth.js';
 import { 
   logSeparator, 
   logUserProfile, 
@@ -44,17 +45,15 @@ const upload = multer({
 // Endpoint principal de Corrección IA Avanzada
 router.post(
   '/advanced-correction',
+  authenticateToken,
   upload.fields([
     { name: 'frame', maxCount: 1 },
     { name: 'images', maxCount: 10 },
   ]),
   async (req, res) => {
     try {
-      const { exerciseId, userId, perfilUsuario: perfilStr } = req.body || {};
-      
-      if (!userId) {
-        return res.status(400).json({ error: 'userId requerido' });
-      }
+      const { exerciseId, perfilUsuario: perfilStr } = req.body || {};
+      const userId = req.user.userId; // Usar userId del token JWT
 
       // ====== INICIO DEL LOGGING DETALLADO ======
       logSeparator(`Corrección de Video - ${exerciseId || 'Ejercicio no especificado'}`, 'blue');

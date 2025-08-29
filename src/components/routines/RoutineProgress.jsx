@@ -133,7 +133,8 @@ const RoutineProgress = ({
                             • {comment}
                           </span>
                         )}
-                        {!isCompleted && isCurrent && <span className="ml-2 text-xs text-blue-300">• En progreso</span>}
+                        {!isCompleted && isCurrent && status === 'in_progress' && <span className="ml-2 text-xs text-blue-300">• En progreso</span>}
+                        {!isCompleted && isCurrent && status === 'pending' && <span className="ml-2 text-xs text-yellow-300">• Próximo</span>}
                         {!isCompleted && !isCurrent && status === 'skipped' && (
                           <span className="ml-2 text-xs text-gray-300">• Saltado{sentiment ? `, ${sentiment === 'love' ? 'Me encanta' : sentiment === 'hard' ? 'Es difícil' : 'No me gusta'}` : ''}</span>
                         )}
@@ -146,8 +147,10 @@ const RoutineProgress = ({
                       <div className="text-sm">
                         {isCompleted ? (
                           <span className="text-green-400">Completado</span>
-                        ) : isCurrent ? (
+                        ) : isCurrent && status === 'in_progress' ? (
                           <span className="text-blue-400">En progreso</span>
+                        ) : isCurrent && status === 'pending' ? (
+                          <span className="text-yellow-400">Pendiente</span>
                         ) : status === 'skipped' ? (
                           <span className="text-gray-400">Saltado</span>
                         ) : status === 'cancelled' ? (

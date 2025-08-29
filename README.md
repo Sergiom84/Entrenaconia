@@ -1,13 +1,5 @@
 # 💪 Aplicación de Entrenamiento Personal con IA
 
-## 📋 Índice
-- [Descripción General](#descripción-general)
-- [Arquitectura de la Aplicación](#arquitectura-de-la-aplicación)
-- [Estructura del Proyecto](#estructura-del-proyecto)
-- [Funcionalidades Principales](#funcionalidades-principales)
-- [Guía de Estilos](#guía-de-estilos)
-- [Documentación Técnica](#documentación-técnica)
-
 ## 📝 Descripción General
 
 Esta aplicación es un sistema completo de entrenamiento personal potenciado por IA que ofrece:
@@ -23,14 +15,14 @@ Esta aplicación es un sistema completo de entrenamiento personal potenciado por
 ### Stack Tecnológico
 - **Frontend**: React con TypeScript
 - **Backend**: Node.js con Express
-- **Base de Datos**: Supabase (PostgreSQL)
+- **Base de Datos**: PostgreSQL local
 - **IA**: OpenAI GPT-4
-- **Autenticación**: Supabase Auth
-- **Estilos**: CSS Modules + Variables CSS globales
+- **Autenticación**: JWT con bcrypt
+- **Estilos**: Tailwind CSS
 
 ### Flujo de Datos
 ```
-Usuario → Frontend React → API Backend → Supabase DB
+Usuario → Frontend React → API Backend → PostgreSQL local
                          ↓
                     OpenAI API
                          ↓
@@ -51,7 +43,7 @@ Usuario → Frontend React → API Backend → Supabase DB
 │   │   ├── Nutricion.tsx    # Módulo nutricional
 │   │   └── UserProfile.tsx  # Perfil de usuario
 │   ├── hooks/               # Custom hooks
-│   ├── lib/                 # Configuraciones (Supabase)
+│   ├── lib/                 # Configuraciones (API clients)
 │   ├── services/            # Servicios API
 │   ├── styles/              # Estilos globales y módulos CSS
 │   └── types/               # Tipos TypeScript
@@ -59,7 +51,6 @@ Usuario → Frontend React → API Backend → Supabase DB
 │   ├── index.js            # Servidor Express
 │   └── routes/             # Rutas API
 ├── prompts/                # Prompts para OpenAI
-└── docs/                   # Documentación
 ```
 
 ## 🎯 Funcionalidades Principales
@@ -96,18 +87,5 @@ Usuario → Frontend React → API Backend → Supabase DB
 - Ajustes de rutinas en tiempo real
 - Resolución de dudas
 
-## 🎨 Guía de Estilos
+#
 
-Ver [STYLE_GUIDE.md](./STYLE_GUIDE.md) para detalles completos sobre:
-- Colores y temas
-- Tipografía
-- Componentes UI
-- Animaciones
-
-## 📚 Documentación Técnica
-
-- [Arquitectura Técnica](./TECHNICAL_ARCHITECTURE.md)
-- [Flujo de Datos](./DATA_FLOW.md)
-- [Guía de Componentes](./COMPONENTS_GUIDE.md)
-- [API Documentation](./API_DOCUMENTATION.md)
-- [Mejoras Propuestas](./IMPROVEMENTS.md)

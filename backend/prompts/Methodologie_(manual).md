@@ -20,18 +20,19 @@ Si falta algún dato, infiérelo razonablemente y márcalo en "assumptions".
    {"error":"metodologia_no_permitida","permitidas":["Heavy Duty","Powerlifting","Hipertrofia","Funcional","Oposiciones","Crossfit","Calistenia","Entrenamiento en casa"]}
 3) Duración total: USAR LA DURACIÓN ESPECIFICADA en versionConfig.customWeeks (1-7 semanas). Si no se especifica, usar 4-5 semanas.
 4) Frecuencia semanal: 4–6 sesiones/semana (define "frecuencia_por_semana"). MÍNIMO 4 días de entrenamiento por semana. EXCEPCIÓN ÚNICA: Heavy Duty puede usar 3-4 días/semana.
-5) Cada sesión debe incluir: duración_sesion_min (35–75), intensidad (RPE o %1RM), lista de ejercicios con MÍNIMO 4 EJERCICIOS POR SESIÓN (excepción: Heavy Duty puede usar 2-3 por su naturaleza de baja frecuencia), series, repeticiones, descanso_seg (≤70 SIEMPRE) y notas breves.
+5) Cada sesión debe incluir: duración_sesion_min (35–75), intensidad (RPE o %1RM), lista de ejercicios con MÍNIMO 5-6 EJERCICIOS POR SESIÓN (ÚNICA excepción: Heavy Duty puede usar 3-4 ejercicios por su naturaleza de alta intensidad y baja frecuencia), series, repeticiones, descanso_seg (≤70 SIEMPRE) y notas breves.
 6) Progresión semanal obligatoria (carga, repeticiones o series) sin cambiar el límite de descanso.
 
-7) VARIEDAD OBLIGATORIA CRÍTICA: 
+7) VARIEDAD OBLIGATORIA CRÍTICA:
    - Los ejercicios deben variar significativamente entre semanas. No repitas exactamente los mismos ejercicios en todas las semanas del plan.
-   - CADA DÍA DE LA SEMANA DEBE SER COMPLETAMENTE ÚNICO: 
+   - CADA DÍA DE LA SEMANA DEBE SER COMPLETAMENTE ÚNICO:
      * El Lunes de la semana 1 debe ser totalmente diferente al Lunes de la semana 2, 3, 4, etc.
      * El Martes de la semana 1 debe ser totalmente diferente al Martes de la semana 2, 3, 4, etc.
      * Y así sucesivamente para todos los días.
    - Usa progresiones, variantes y ejercicios completamente diferentes para mantener estímulo y evitar monotonía.
    - Si el usuario tiene ejercicios_recientes, EVITA usar esos ejercicios prioritariamente. Solo úsalos si has agotado las alternativas viables para la metodología.
    - CREATIVIDAD OBLIGATORIA: Tienes acceso a cientos de ejercicios. Úsalos.
+   - MÍNIMO 5-6 EJERCICIOS DIFERENTES POR SESIÓN (excepto Heavy Duty: 3-4). NO generar sesiones pobres con solo 2 ejercicios.
 
 8) No uses material no disponible; si no se menciona, prioriza peso corporal y mancuernas estándar.
 

@@ -100,7 +100,7 @@ Idioma: Español (ES). Tono profesional, constructivo y motivador.`
     envKey: 'OPENAI_API_KEY_METHODOLOGIE_MANUAL',
     model: 'gpt-4o-mini',
     temperature: 0.7,
-    max_output_tokens: 12000,
+    max_output_tokens: 16000,
     top_p: 1.0,
     store: true,
     promptId: 'pmpt_68a9a18bdfc08197965d75cd064eeb1f0a109ccbc248c9ca',
@@ -231,13 +231,13 @@ Mapeo orientativo: 3–5 reps ≈ 85–90% 1RM; 6–10 reps ≈ 70–80% 1RM; 10
   }
 }
 
-— Reglas de INFORMACIÓN DETALLADA de ejercicios:
-• CADA ejercicio DEBE incluir "informacion_detallada" completa con los 3 campos obligatorios
-• "ejecucion": Descripción técnica paso a paso (2-4 frases claras sobre posición inicial, movimiento y final)
-• "consejos": Tips específicos para optimizar técnica, respiración y resultados (2-3 consejos prácticos)
-• "errores_evitar": Errores comunes y cómo corregirlos (2-3 errores principales con soluciones)
+— Reglas de INFORMACIÓN DETALLADA de ejercicios (CONCISA):
+• CADA ejercicio DEBE incluir "informacion_detallada" con los 3 campos obligatorios
+• "ejecucion": Descripción técnica BREVE (1-2 frases sobre ejecución clave)
+• "consejos": Tips específicos ESENCIALES (1-2 consejos principales)
+• "errores_evitar": Errores comunes CRÍTICOS (1-2 errores principales)
+• Máximo 50 palabras por campo para evitar truncamiento
 • Esta información debe ser específica para cada ejercicio, NO genérica
-• Usa lenguaje claro y técnico pero accesible para el usuario
 
 — Reglas de validación CRÍTICAS antes de responder:
 • Si algún descanso > 70, AJÚSTALO a ≤ 70 y marca "descansos_validos": true.
@@ -257,8 +257,8 @@ IMPORTANTE FINAL: Este prompt está optimizado para generar planes de entrenamie
     key: 'METHODOLOGIE',
     envKey: 'OPENAI_API_KEY_METHODOLOGIE',
     model: 'gpt-4o-mini',
-    temperature: 0.7,
-    max_output_tokens: 12000,
+    temperature: 0.9,
+    max_output_tokens: 16000,
     top_p: 1.0,
     store: true,
     promptId: 'pmpt_68a9a05d7ee0819493fd342673a05b210a99044d2c5e3055',

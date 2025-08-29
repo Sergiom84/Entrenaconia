@@ -1,4 +1,5 @@
 import express from 'express';
+import authenticateToken from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -40,9 +41,9 @@ const DEFAULT_STATS = {
  * GET /api/technique/stats
  * Obtener estadísticas de técnica del usuario
  */
-router.get('/stats', (req, res) => {
+router.get('/stats', authenticateToken, (req, res) => {
   try {
-    const { userId = 'me' } = req.query;
+    const userId = req.user.userId; // Usar userId del token JWT
     
     // En un entorno real, aquí validarías el token JWT y obtendrías el userId real
     // Por ahora usamos datos mock
@@ -81,13 +82,14 @@ router.get('/stats', (req, res) => {
  * POST /api/technique/session
  * Registrar una nueva sesión de análisis de técnica
  */
-router.post('/session', (req, res) => {
+router.post('/session', authenticateToken, (req, res) => {
   try {
-    const { userId, exerciseId, puntuacion, errores_detectados, tiempo_sesion } = req.body;
+    const { exerciseId, puntuacion, errores_detectados, tiempo_sesion } = req.body;
+    const userId = req.user.userId; // Usar userId del token JWT
 
-    if (!userId || !exerciseId || puntuacion === undefined) {
+    if (!exerciseId || puntuacion === undefined) {
       return res.status(400).json({
-        error: 'Faltan parámetros requeridos: userId, exerciseId, puntuacion',
+        error: 'Faltan parámetros requeridos: exerciseId, puntuacion',
         code: 'MISSING_PARAMETERS'
       });
     }
@@ -128,9 +130,10 @@ router.post('/session', (req, res) => {
  * GET /api/technique/history
  * Obtener historial de sesiones de análisis
  */
-router.get('/history', (req, res) => {
+router.get('/history', authenticateToken, (req, res) => {
   try {
-    const { userId = 'me', limit = 10, exerciseId } = req.query;
+    const { limit = 10, exerciseId } = req.query;
+    const userId = req.user.userId; // Usar userId del token JWT
 
     // Mock data para el historial
     const mockHistory = [
@@ -203,9 +206,9 @@ router.get('/history', (req, res) => {
  * GET /api/technique/recommendations
  * Obtener recomendaciones personalizadas de técnica
  */
-router.get('/recommendations', (req, res) => {
+router.get('/recommendations', authenticateToken, (req, res) => {
   try {
-    const { userId = 'me' } = req.query;
+    const userId = req.user.userId; // Usar userId del token JWT
 
     // Mock recommendations basadas en el "análisis" del usuario
     const recommendations = [

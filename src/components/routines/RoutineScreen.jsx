@@ -12,6 +12,9 @@ import RoutineExerciseModal from './RoutineExerciseModal.jsx';
 import RoutineSessionSummary from './RoutineSessionSummary.jsx';
 import SessionProgress from './SessionProgress.jsx';
 import RoutineStatsCard from './RoutineStatsCard.jsx';
+import useRoutineSession from '@/hooks/useRoutineSession.js';
+import useRoutineStats from '@/hooks/useRoutineStats.js';
+import useRoutinePlan from '@/hooks/useRoutinePlan.js';
 
 export default function RoutineScreen() {
   const navigate = useNavigate();
@@ -19,108 +22,83 @@ export default function RoutineScreen() {
   const { currentUser, user } = useAuth();
   const { userData } = useUserContext();
 
-  const [routinePlan, setRoutinePlan] = useState(null);
+  const {
+    routinePlan, routinePlanId, setRoutinePlan, setRoutinePlanId,
+    uiState, setUIState,
+    isLoading, error,
+    hasTriedLoadingPlan, initialLoad,
+    setHasTriedLoadingPlan, setInitialLoad, setError,
+    checkForActivePlans, loadLatestRoutinePlan,
+  } = useRoutinePlan(location);
+
   const [selectedDay, setSelectedDay] = useState(null);
   const [showDayModal, setShowDayModal] = useState(false);
   const [currentWeek, setCurrentWeek] = useState(1);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState(null);
-
-  // Persistencia y progreso
-  const [routinePlanId, setRoutinePlanId] = useState(null);
-  const [routineSessionId, setRoutineSessionId] = useState(null);
-  const [sessionStartAtMs, setSessionStartAtMs] = useState(null);
-
-  const [showExerciseModal, setShowExerciseModal] = useState(false);
-  const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
-  const [currentSessionData, setCurrentSessionData] = useState(null);
-  const [trainingInProgress, setTrainingInProgress] = useState(false);
-  const [completedExercises, setCompletedExercises] = useState([]);
-  const [sessionExerciseStatuses, setSessionExerciseStatuses] = useState([]);
-  const [routineStats, setRoutineStats] = useState(null);
-  const [isLoadingStats, setIsLoadingStats] = useState(false);
-  const [lastStatsUpdate, setLastStatsUpdate] = useState(0);
-  const [hasTriedLoadingPlan, setHasTriedLoadingPlan] = useState(false);
-  const [initialLoad, setInitialLoad] = useState(true);
-  const [hydrated, setHydrated] = useState(null);
-  const [uiState, setUIState] = useState('LOADING'); // 'LOADING', 'READY', 'ARCHIVED', 'ERROR'
-  const didInit = useRef(false);
-
-  // Función para cargar el plan más reciente desde la BD
-  const loadLatestRoutinePlan = async () => {
-    try {
-      setIsLoading(true);
-      setError(null); // Limpiar errores previos
-      console.log('🔍 Intentando cargar plan más reciente desde BD...');
-      const token = localStorage.getItem('token');
-      if (!token) {
-        setError('No hay sesión activa. Por favor, inicia sesión.');
-        return;
-      }
-
-      // Crear una sesión temporal para activar la lógica de migración del backend
-      console.log('🔄 Activando migración de plan desde metodología...');
-      
-      // Buscar el plan más reciente del usuario
-      const plansResponse = await fetch('/api/routines/history?limit=1', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      
-      if (!plansResponse.ok) {
-        setError('No se pudo cargar el historial de rutinas.');
-        return;
-      }
-      
-      const plansData = await plansResponse.json();
-      if (!plansData.success || !plansData.routines || plansData.routines.length === 0) {
-        setError('No hay plan de rutina disponible. Por favor, genere un nuevo plan desde Metodologías.');
-        return;
-      }
-      
-      const latestPlan = plansData.routines[0];
-      
-      // El backend tiene lógica que automáticamente migra desde methodology_plans si no encuentra en routine_plans
-      const response = await fetch('/api/routines/sessions', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` 
-        },
-        body: JSON.stringify({
-          routinePlanId: latestPlan.id,
-          weekNumber: 1,
-          dayName: 'Lun',
-          totalExpected: 0
-        })
-      });
-
-      if (response.ok) {
-        const sessionData = await response.json();
-        console.log('✅ Sesión creada, plan migrado automáticamente');
-        
-        // Ahora intentar obtener las estadísticas que nos darán acceso al plan
-        const statsResponse = await fetch(`/api/routines/plans/${latestPlan.id}/stats`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        
-        if (statsResponse.ok) {
-          console.log('❌ No se puede crear un plan hardcodeado. Todos los planes deben generarse por IA basándose en el perfil del usuario.');
-          setError('No hay plan de rutina válido disponible. Por favor, genere un nuevo plan desde Metodologías usando IA.');
-          return;
-        }
-      }
-      
-      // Si no se pudo cargar, mostrar error
-      setError('No hay plan de rutina disponible. Por favor, genere un nuevo plan desde Metodologías.');
-    } catch (error) {
-      console.error('❌ Error cargando plan más reciente:', error);
-      setError('No hay plan de rutina disponible. Por favor, genere un nuevo plan desde Metodologías.');
-    } finally {
-      setIsLoading(false);
-      setHasTriedLoadingPlan(true);
-      setInitialLoad(false);
+  // Sesión de rutina (extraída a hook)
+  const {
+    routineSessionId,
+    sessionStartAtMs,
+    showExerciseModal,
+    currentExerciseIndex,
+    currentSessionData,
+    trainingInProgress,
+    completedExercises,
+    sessionExerciseStatuses,
+    setShowExerciseModal,
+    setCurrentExerciseIndex,
+    hydrateSession: hydrateSessionHook,
+    startTraining: startTrainingHook,
+    updateProgress: updateProgressHook,
+    completeExercise: completeExerciseHook,
+    skipExercise: skipExerciseHook,
+    cancelExercise: cancelExerciseHook,
+    completeSession: completeSessionHook,
+    setRoutineSessionId,
+    setSessionStartAtMs,
+    setCurrentSessionData,
+    setTrainingInProgress,
+    setSessionExerciseStatuses,
+    setCompletedExercises,
+  } = useRoutineSession();
+  // Estadísticas extraídas a hook
+  // Nota: onInvalidRoutine limpiará estados y marcará ARCHIVED/ERROR
+  const handleInvalidRoutine = (errorCode) => {
+    console.log('🧹 Limpiando rutina inválida...', errorCode);
+    localStorage.removeItem('currentRoutinePlan');
+    localStorage.removeItem('currentRoutinePlanId');
+    localStorage.removeItem('currentRoutineSessionId');
+    localStorage.removeItem('currentRoutineSessionStartAt');
+    localStorage.removeItem('routinePlan');
+    localStorage.removeItem('routineSessionId');
+    localStorage.removeItem('routineState');
+    setRoutinePlan(null);
+    setRoutinePlanId(null);
+    setRoutineSessionId(null);
+    setCurrentSessionData(null);
+    setTrainingInProgress(false);
+    setSessionExerciseStatuses([]);
+    setCurrentExerciseIndex(0);
+    setHydrated(null);
+    if (errorCode === 'ROUTINE_CANCELLED') {
+      setError('La rutina ha sido cancelada. No hay rutinas disponibles.');
+      setUIState('ARCHIVED');
+    } else {
+      setError('No hay rutinas disponibles. Por favor, genere una nueva rutina desde Metodologías.');
+      setUIState('ERROR');
     }
   };
+
+  const { routineStats, isLoading: isLoadingStats, fetchRoutineStats } = useRoutineStats(routinePlanId, handleInvalidRoutine);
+  const [hydrated, setHydrated] = useState(null);
+
+  // Loading local para acciones del usuario (cancelar, iniciar, etc.)
+  const [actionLoading, setActionLoading] = useState(false);
+  const runWithActionLoading = async (fn) => {
+    try { setActionLoading(true); await fn(); } finally { setActionLoading(false); }
+  };
+
+  const didInit = useRef(false);
+
 
   // Limpiar localStorage al entrar o si no hay usuario
   useEffect(() => {
@@ -146,31 +124,31 @@ export default function RoutineScreen() {
 
     if (planFromNavigation) {
       console.log('🆕 Nuevo plan desde navegación, limpiando sesión anterior...');
-      
+
       // Limpiar sesión anterior cuando llega un nuevo plan
       localStorage.removeItem('currentRoutineSessionId');
       localStorage.removeItem('currentRoutineSessionStartAt');
       setRoutineSessionId(null);
       setCurrentSessionData(null);
-      setTrainingInProgress(false);
-      setCompletedExercises([]);
+      setTrainingInProgress(false); // IMPORTANTE: Nuevo plan = NO en progreso
       setSessionExerciseStatuses([]);
       setCurrentExerciseIndex(0);
-      
+      setShowExerciseModal(false); // Asegurar que no se muestre modal de ejercicio
+
       const enhancedPlan = { plan: planFromNavigation, metadata: planMetadataFromNavigation };
       setRoutinePlan(enhancedPlan);
       localStorage.setItem('currentRoutinePlan', JSON.stringify(enhancedPlan));
       setHasTriedLoadingPlan(true); // Plan cargado desde navegación
       setInitialLoad(false);
-      
-      console.log('✅ Estado de sesión limpiado para nuevo plan');
+
+      console.log('✅ Estado de sesión limpiado para nuevo plan - LISTO PARA EMPEZAR');
     } else if (planFromStorage) {
-      try { 
-        setRoutinePlan(JSON.parse(planFromStorage)); 
+      try {
+        setRoutinePlan(JSON.parse(planFromStorage));
         setHasTriedLoadingPlan(true); // Plan cargado desde localStorage
         setInitialLoad(false);
-      } catch (error) { 
-        console.error('Error parsing routine plan from storage:', error); 
+      } catch (error) {
+        console.error('Error parsing routine plan from storage:', error);
         setError('Error cargando el plan de rutina guardado');
         setHasTriedLoadingPlan(true);
         setInitialLoad(false);
@@ -182,11 +160,23 @@ export default function RoutineScreen() {
       setRoutineSessionId(null);
       setCurrentSessionData(null);
       setTrainingInProgress(false);
-      
-      // Intentar cargar el plan más reciente desde BD (asíncrono)
-      loadLatestRoutinePlan().catch(console.error);
+
+      // Solo intentar cargar desde BD si no venimos de una cancelación
+      // Y si estamos específicamente en la ruta /routines (evitar ejecución en otras rutas)
+      if (uiState !== 'ARCHIVED' && location.pathname === '/routines') {
+        console.log('🏋️ Verificando planes porque estamos en /routines...');
+        checkForActivePlans().catch(console.error);
+      } else if (location.pathname !== '/routines') {
+        console.log('🚫 No cargando plan - no estamos en /routines, ruta actual:', location.pathname);
+        setHasTriedLoadingPlan(true);
+        setInitialLoad(false);
+      } else {
+        console.log('🚫 No cargando desde BD - rutina fue cancelada');
+        setHasTriedLoadingPlan(true);
+        setInitialLoad(false);
+      }
     }
-    
+
     // Marcar que ya no estamos en carga inicial después de un breve delay
     setTimeout(() => setInitialLoad(false), 100);
 
@@ -244,13 +234,13 @@ export default function RoutineScreen() {
       return;
     }
 
-    fetch('/api/routines/sessions', { 
-      method: 'POST', 
+    fetch('/api/routines/sessions', {
+      method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
-      }, 
-      body: JSON.stringify(payload) 
+      },
+      body: JSON.stringify(payload)
     })
     .then(async r => {
       console.log('[RoutineScreen] POST response status:', r.status);
@@ -270,10 +260,10 @@ export default function RoutineScreen() {
       return r.json();
     })
     .then(data => {
-      if (!data) { 
-        setHydrated(null); 
+      if (!data) {
+        setHydrated(null);
         setUIState('ARCHIVED');
-        return; 
+        return;
       }
       console.log('[RoutineScreen] Session upsert success:', data);
       setHydrated(data);
@@ -282,171 +272,105 @@ export default function RoutineScreen() {
     })
     .catch(err => {
       console.error('[RoutineScreen] POST session error:', err);
-      if (err.message === 'PLAN_ARCHIVED') { 
-        setUIState('ARCHIVED'); 
-        return; 
+      if (err.message === 'PLAN_ARCHIVED') {
+        setUIState('ARCHIVED');
+        return;
       }
-      console.error('hydrate session error', err); 
+      console.error('hydrate session error', err);
       setUIState('ERROR');
     });
   }, [currentUser, routinePlanId, currentWeek, selectedDay]);
 
   // Efecto separado para cargar estadísticas cuando routinePlanId esté disponible
   useEffect(() => {
-    if (routinePlanId && uiState === 'READY') {
+    if (routinePlanId) {
       fetchRoutineStats();
     }
-  }, [routinePlanId, uiState]);
-
-  // Función para limpiar rutina cancelada/inválida
-  const handleInvalidRoutine = (errorCode) => {
-    console.log('🧹 Limpiando rutina inválida...', errorCode);
-    
-    // Limpiar localStorage
-    localStorage.removeItem('currentRoutinePlan');
-    localStorage.removeItem('currentRoutinePlanId');
-    localStorage.removeItem('currentRoutineSessionId');
-    localStorage.removeItem('currentRoutineSessionStartAt');
-    localStorage.removeItem('routinePlan');
-    localStorage.removeItem('routineSessionId');
-    localStorage.removeItem('routineState');
-    
-    // Limpiar estado
-    setRoutinePlan(null);
-    setRoutinePlanId(null);
-    setRoutineSessionId(null);
-    setCurrentSessionData(null);
-    setTrainingInProgress(false);
-    setCompletedExercises([]);
-    setSessionExerciseStatuses([]);
-    setCurrentExerciseIndex(0);
-    setRoutineStats(null);
-    setHydrated(null);
-    
-    if (errorCode === 'ROUTINE_CANCELLED') {
-      setError('La rutina ha sido cancelada. No hay rutinas disponibles.');
-      setUIState('ARCHIVED');
-    } else {
-      setError('No hay rutinas disponibles. Por favor, genere una nueva rutina desde Metodologías.');
-      setUIState('ERROR');
-    }
-  };
-
-  const fetchRoutineStats = async (force = false) => {
-    // Evitar llamadas múltiples con caché de 30 segundos
-    const now = Date.now();
-    if (!force && isLoadingStats) return;
-    if (!force && lastStatsUpdate > 0 && (now - lastStatsUpdate) < 30000) return;
-
-    try {
-      setIsLoadingStats(true);
-      const token = localStorage.getItem('token');
-      if (!token || !routinePlanId) return;
-
-      console.log('📊 Cargando estadísticas de rutina...');
-      const response = await fetch(`/api/routines/plans/${routinePlanId}/stats`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setRoutineStats(data.stats);
-        setLastStatsUpdate(now);
-        console.log('✅ Estadísticas actualizadas');
-      } else if (response.status === 409) {
-        // Plan archivado
-        console.warn('Plan archivado detectado');
-        handleInvalidRoutine('PLAN_ARCHIVED');
-        return;
-      } else if (response.status === 410) {
-        // Rutina cancelada
-        const data = await response.json();
-        console.warn('Rutina cancelada detectada:', data);
-        handleInvalidRoutine(data.code);
-        return;
-      } else if (response.status === 404) {
-        // Rutina no encontrada
-        console.warn('Rutina no encontrada');
-        handleInvalidRoutine('ROUTINE_NOT_FOUND');
-        return;
-      } else {
-        console.error('Error fetching routine stats:', response.statusText);
-      }
-    } catch (error) {
-      console.error('Error obteniendo estadísticas de rutina:', error);
-    } finally {
-      setIsLoadingStats(false);
-    }
-  };
+  }, [routinePlanId]);
 
   const handleBackToMethodologies = () => { navigate('/methodologies'); };
 
   const handleCancelRoutine = async () => {
+    if (actionLoading) return;
     const confirmed = window.confirm('¿Estás seguro de que quieres cancelar esta rutina?\n\nSe eliminará tu plan actual y tendrás que generar uno nuevo desde Metodologías.');
     if (confirmed) {
-      try {
-        setIsLoading(true);
-        
-        // Obtener planId actual
-        const currentRoutinePlanId = routinePlanId || Number(localStorage.getItem('currentRoutinePlanId'));
-        if (!currentRoutinePlanId) {
-          throw new Error('No se encontró el ID del plan a cancelar');
-        }
-        
-        console.log('🗑️ Cancelando rutina con planId:', currentRoutinePlanId);
-        
-        // Llamar al backend para cancelar la rutina
-        const token = localStorage.getItem('token');
-        const response = await fetch(`/api/routines/plans/${currentRoutinePlanId}`, {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
+      await runWithActionLoading(async () => {
+        try {
+          // Obtener planId actual
+          const currentRoutinePlanId = routinePlanId || Number(localStorage.getItem('currentRoutinePlanId'));
+          if (!currentRoutinePlanId) {
+            throw new Error('No se encontró el ID del plan a cancelar');
           }
-        });
-        
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || 'Error cancelando rutina');
+
+          console.log('🗑️ Cancelando rutina con planId:', currentRoutinePlanId);
+
+          // Llamar al backend para cancelar la rutina
+          const token = localStorage.getItem('token');
+          const response = await fetch(`/api/routines/plans/${currentRoutinePlanId}`, {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Error cancelando rutina');
+          }
+
+          const result = await response.json();
+          console.log('✅ Rutina cancelada exitosamente:', result);
+
+          // Limpiar COMPLETAMENTE el estado local después del éxito en backend
+          localStorage.removeItem('currentRoutinePlan');
+          localStorage.removeItem('currentRoutinePlanId');
+          localStorage.removeItem('currentRoutineSessionId');
+          localStorage.removeItem('currentRoutineSessionStartAt');
+          localStorage.removeItem('routineSessionId');
+          localStorage.removeItem('routinePlan');
+          localStorage.removeItem('routineState');
+
+          // Resetear TODOS los estados relacionados con rutinas
+          setRoutinePlan(null);
+          setRoutinePlanId(null);
+          setSelectedDay(null);
+          setShowDayModal(false);
+          setCurrentWeek(1);
+          setCurrentSessionData(null);
+          setRoutineSessionId(null);
+          setSessionStartAtMs(null);
+          setTrainingInProgress(false);
+          setCompletedExercises([]);
+          setSessionExerciseStatuses([]);
+          setShowExerciseModal(false);
+          setCurrentExerciseIndex(0);
+          setHydrated(null);
+          setHasTriedLoadingPlan(true); // IMPORTANTE: Evitar que se recargue automáticamente
+          setInitialLoad(false); // No está en carga inicial
+          setUIState('ARCHIVED'); // Estado que indica que no hay rutina activa
+
+          console.log('🧹 Estado completamente limpiado después de cancelar rutina');
+          setError('Rutina cancelada exitosamente. Puedes generar una nueva desde Metodologías.');
+
+          // Forzar navegación a metodologías después de un breve delay
+          setTimeout(() => {
+            navigate('/methodologies');
+          }, 2000);
+        } catch (error) {
+          console.error('❌ Error cancelando rutina:', error);
+          setError(`Error cancelando rutina: ${error.message}`);
         }
-        
-        const result = await response.json();
-        console.log('✅ Rutina cancelada exitosamente:', result);
-        
-        // Limpiar estado local después del éxito en backend
-        localStorage.removeItem('currentRoutinePlan');
-        localStorage.removeItem('currentRoutinePlanId');
-        setRoutinePlan(null);
-        setRoutinePlanId(null);
-        setSelectedDay(null);
-        setShowDayModal(false);
-        setCurrentWeek(1);
-        setCurrentSessionData(null);
-        setRoutineSessionId(null);
-        setSessionStartAtMs(null);
-        setTrainingInProgress(false);
-        setCompletedExercises([]);
-        setSessionExerciseStatuses([]);
-        setRoutineStats(null);
-        setShowExerciseModal(false);
-        setCurrentExerciseIndex(0);
-        setHydrated(null);
-        setUIState('READY');
-        setError('Rutina cancelada exitosamente. Puedes generar una nueva desde Metodologías.');
-        
-      } catch (error) {
-        console.error('❌ Error cancelando rutina:', error);
-        setError(`Error cancelando rutina: ${error.message}`);
-      } finally {
-        setIsLoading(false);
-      }
+      });
     }
   };
 
   const handleDayClick = (dayData, weekNumber) => { setSelectedDay({ ...dayData, weekNumber }); setShowDayModal(true); };
   const handleCloseDayModal = () => { setShowDayModal(false); setSelectedDay(null); };
 
-  const hydrateSession = async (sessId) => {
+  const hydrateSession = async (sessId) => { /* legacy wrapper: delegate to hook */ return hydrateSessionHook(sessId, routinePlanId, fetchRoutineStats); };
+
+  const hydrateSession_LEGACY = async (sessId) => {
     try {
       const token = localStorage.getItem('token');
       if (!token) {
@@ -489,17 +413,19 @@ export default function RoutineScreen() {
       const exercises = Array.isArray(s.exercises_data) ? s.exercises_data : [];
       const progressArray = Array.isArray(s.exercises) ? s.exercises : [];
       const completedIdxs = progressArray.filter(e => e.status === 'completed').map(e => e.exercise_order);
-      const currentIdx = progressArray.findIndex(e => e.status === 'pending' || e.status === 'in_progress');
-      
+      // Solo considerar "en progreso" si realmente hay un ejercicio en progreso
+      const inProgIdx = progressArray.findIndex(e => e.status === 'in_progress');
+      const currentIdx = inProgIdx >= 0 ? inProgIdx : -1;
+
       // Normalizar estados por índice
       const normalizedStatuses = exercises.map((_, idx) => {
         const p = progressArray.find(pe => pe.exercise_order === idx);
-        return p ? { 
-          status: p.status, 
-          series_completed: p.series_completed, 
-          series_total: p.series_total, 
+        return p ? {
+          status: p.status,
+          series_completed: p.series_completed,
+          series_total: p.series_total,
           comment: p.feedback_comment || null
-        } : { 
+        } : {
           status: 'pending',
           series_completed: 0,
           series_total: 0,
@@ -536,16 +462,20 @@ export default function RoutineScreen() {
       });
 
       setCurrentSessionData(sessionData);
-      setCompletedExercises(completedIdxs);
       setSessionExerciseStatuses(normalizedStatuses);
-      setCurrentExerciseIndex(currentIdx >= 0 ? currentIdx : 0);
-      setTrainingInProgress(true);
-      
+      setCurrentExerciseIndex(currentIdx >= 0 ? currentIdx : -1);
+
+      // Solo marcar como "en progreso" si realmente hay ejercicios completados o en progreso
+      const hasActiveProgress = progressArray.some(e => e.status === 'completed' || e.status === 'in_progress');
+      setTrainingInProgress(hasActiveProgress);
+
+      console.log(`🔄 Sesión hidratada - Estado: ${hasActiveProgress ? 'EN PROGRESO' : 'LISTA PARA EMPEZAR'}`);
+
       // Actualizar estadísticas después de hidratar (sin forzar para evitar llamadas excesivas)
       if (routinePlanId) {
         await fetchRoutineStats();
       }
-      
+
     } catch (e) {
       console.error('❌ Error hidratando sesión:', e);
       alert(`Error cargando la sesión de entrenamiento: ${e.message}`);
@@ -554,99 +484,99 @@ export default function RoutineScreen() {
   };
 
   const handleStartTraining = async (dayData) => {
-    try {
-      setIsLoading(true);
-      
-      // Validar datos requeridos
-      if (!dayData || !dayData.dia) {
-        throw new Error('Datos del día de entrenamiento no válidos');
-      }
-
-      // Obtener o validar routinePlanId
-      const currentRoutinePlanId = routinePlanId || Number(localStorage.getItem('currentRoutinePlanId'));
-      if (!currentRoutinePlanId) {
-        throw new Error('No se encontró el ID del plan de rutina. Genera un nuevo plan desde Metodologías.');
-      }
-      
-      if (!routinePlanId) {
-        setRoutinePlanId(currentRoutinePlanId);
-      }
-
-      // Validar token de autenticación
-      const token = localStorage.getItem('token');
-      if (!token) {
-        throw new Error('No hay sesión activa. Por favor, inicia sesión de nuevo.');
-      }
-
-      const requestData = {
-        routinePlanId: currentRoutinePlanId,
-        weekNumber: dayData.weekNumber || currentWeek,
-        dayName: dayData.dia
-      };
-
-      console.log('🏋️ Iniciando entrenamiento con datos:', requestData);
-
-      // Crear/obtener la sesión en BD
-      const resp = await fetch('/api/routines/sessions', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json', 
-          'Authorization': `Bearer ${token}` 
-        },
-        body: JSON.stringify(requestData)
-      });
-
-      console.log('📡 Respuesta del servidor:', resp.status, resp.statusText);
-
-      const data = await resp.json();
-      console.log('📦 Datos recibidos:', data);
-
-      if (!resp.ok) {
-        if (resp.status === 401) {
-          throw new Error('Sesión expirada. Por favor, inicia sesión de nuevo.');
-        } else if (resp.status === 403) {
-          throw new Error('Token inválido. Por favor, inicia sesión de nuevo.');
-        } else if (resp.status === 204) {
-          throw new Error('La sesión no está disponible o el plan ha sido archivado');
-        } else if (resp.status === 409) {
-          throw new Error('El plan ha sido archivado. Genera un nuevo plan desde Metodologías.');
-        } else if (resp.status === 404) {
-          throw new Error(`Plan de rutina no encontrado (ID: ${currentRoutinePlanId}). Genera un nuevo plan desde Metodologías.`);
-        } else {
-          throw new Error(data.error || `Error del servidor (${resp.status}): ${resp.statusText}`);
+    if (actionLoading) return;
+    await runWithActionLoading(async () => {
+      try {
+        // Validar datos requeridos
+        if (!dayData || !dayData.dia) {
+          throw new Error('Datos del día de entrenamiento no válidos');
         }
+
+        // Obtener o validar routinePlanId
+        const currentRoutinePlanId = routinePlanId || Number(localStorage.getItem('currentRoutinePlanId'));
+        if (!currentRoutinePlanId) {
+          throw new Error('No se encontró el ID del plan de rutina. Genera un nuevo plan desde Metodologías.');
+        }
+
+        if (!routinePlanId) {
+          setRoutinePlanId(currentRoutinePlanId);
+        }
+
+        // Validar token de autenticación
+        const token = localStorage.getItem('token');
+        if (!token) {
+          throw new Error('No hay sesión activa. Por favor, inicia sesión de nuevo.');
+        }
+
+        const requestData = {
+          routinePlanId: currentRoutinePlanId,
+          weekNumber: dayData.weekNumber || currentWeek,
+          dayName: dayData.dia
+        };
+
+        console.log('🏋️ Iniciando entrenamiento con datos:', requestData);
+
+        // Crear/obtener la sesión en BD
+        const resp = await fetch('/api/routines/sessions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify(requestData)
+        });
+
+        console.log('📡 Respuesta del servidor:', resp.status, resp.statusText);
+
+        const data = await resp.json();
+        console.log('📦 Datos recibidos:', data);
+
+        if (!resp.ok) {
+          if (resp.status === 401) {
+            throw new Error('Sesión expirada. Por favor, inicia sesión de nuevo.');
+          } else if (resp.status === 403) {
+            throw new Error('Token inválido. Por favor, inicia sesión de nuevo.');
+          } else if (resp.status === 204) {
+            throw new Error('La sesión no está disponible o el plan ha sido archivado');
+          } else if (resp.status === 409) {
+            throw new Error('El plan ha sido archivado. Genera un nuevo plan desde Metodologías.');
+          } else if (resp.status === 404) {
+            throw new Error(`Plan de rutina no encontrado (ID: ${currentRoutinePlanId}). Genera un nuevo plan desde Metodologías.`);
+          } else {
+            throw new Error(data.error || `Error del servidor (${resp.status}): ${resp.statusText}`);
+          }
+        }
+
+        if (!data.success) {
+          throw new Error(data.error || 'No se pudo crear la sesión');
+        }
+
+        const sess = data.session;
+        if (!sess || !sess.id) {
+          throw new Error('Respuesta del servidor inválida - sesión no creada');
+        }
+
+        console.log('✅ Sesión creada exitosamente:', sess.id);
+
+        setRoutineSessionId(sess.id);
+        localStorage.setItem('currentRoutineSessionId', String(sess.id));
+        const startMs = Date.now();
+        setSessionStartAtMs(startMs);
+        localStorage.setItem('currentRoutineSessionStartAt', String(startMs));
+
+        // Hidratar ejercicios/progreso desde la sesión
+        await hydrateSession(sess.id);
+        // Tras hidratar, si aún no tenemos índice activo, arrancamos por el primer ejercicio
+        setCurrentExerciseIndex(prev => (prev != null && prev >= 0) ? prev : 0);
+        setShowExerciseModal(true);
+        // Cerrar modal del día solo en éxito
+        handleCloseDayModal();
+      } catch (error) {
+        console.error('❌ Error iniciando entrenamiento:', error);
+        const errorMessage = error?.message || 'Error desconocido al iniciar el entrenamiento';
+        alert(`Error: ${errorMessage}\n\nSi el problema persiste, intenta generar un nuevo plan desde Metodologías.`);
       }
-
-      if (!data.success) {
-        throw new Error(data.error || 'No se pudo crear la sesión');
-      }
-
-      const sess = data.session;
-      if (!sess || !sess.id) {
-        throw new Error('Respuesta del servidor inválida - sesión no creada');
-      }
-
-      console.log('✅ Sesión creada exitosamente:', sess.id);
-
-      setRoutineSessionId(sess.id);
-      localStorage.setItem('currentRoutineSessionId', String(sess.id));
-      const startMs = Date.now();
-      setSessionStartAtMs(startMs);
-      localStorage.setItem('currentRoutineSessionStartAt', String(startMs));
-
-      // Hidratar ejercicios/progreso desde la sesión
-      await hydrateSession(sess.id);
-      setShowExerciseModal(true);
-      // Cerrar modal del día solo en éxito
-      handleCloseDayModal();
-      
-    } catch (error) {
-      console.error('❌ Error iniciando entrenamiento:', error);
-      const errorMessage = error?.message || 'Error desconocido al iniciar el entrenamiento';
-      alert(`Error: ${errorMessage}\n\nSi el problema persiste, intenta generar un nuevo plan desde Metodologías.`);
-    } finally {
-      setIsLoading(false);
-    }
+    });
   };
 
   const persistExerciseProgress = async ({ exerciseIndex, seriesCompleted, status, timeSpent }) => {
@@ -655,18 +585,18 @@ export default function RoutineScreen() {
         console.warn('⚠️ No hay sessionId para persistir progreso');
         return false;
       }
-      
+
       const token = localStorage.getItem('token');
       const response = await fetch(`/api/routines/sessions/${routineSessionId}/exercise/${exerciseIndex}/progress`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ seriesCompleted, status, timeSpent })
       });
-      
+
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
-      
+
       console.log(`✅ Progreso persistido: ejercicio ${exerciseIndex}, series ${seriesCompleted}, status ${status}`);
       return true;
     } catch (e) {
@@ -678,24 +608,23 @@ export default function RoutineScreen() {
   const handleUpdateProgress = async (exerciseIndex, seriesCompleted, seriesTotal) => {
     const status = seriesCompleted >= seriesTotal ? 'completed' : 'in_progress';
     const success = await persistExerciseProgress({ exerciseIndex, seriesCompleted, status });
-    
+
     if (success) {
       // Actualizar estado local solo si se persistió correctamente
       setSessionExerciseStatuses(prev => {
         const next = [...prev];
         const existing = next[exerciseIndex] || {};
-        next[exerciseIndex] = { 
-          ...existing, 
-          status, 
-          series_completed: seriesCompleted, 
-          series_total: seriesTotal 
+        next[exerciseIndex] = {
+          ...existing,
+          status,
+          series_completed: seriesCompleted,
+          series_total: seriesTotal
         };
         return next;
       });
-      
+
       if (status === 'completed') {
-        setCompletedExercises(prev => prev.includes(exerciseIndex) ? prev : [...prev, exerciseIndex]);
-        // Actualizar estadísticas cuando se completa un ejercicio
+        // El hook ya actualiza completedExercises al completar
         setTimeout(() => fetchRoutineStats(true), 1000);
       }
     } else {
@@ -706,13 +635,7 @@ export default function RoutineScreen() {
   const handleExerciseComplete = async (timeSpent) => {
     console.log(`Ejercicio ${currentExerciseIndex + 1} completado en ${timeSpent}s`);
     const sc = (currentSessionData?.exercises?.[currentExerciseIndex]?.series) || 0;
-    await persistExerciseProgress({ exerciseIndex: currentExerciseIndex, seriesCompleted: sc, status: 'completed', timeSpent });
-    setSessionExerciseStatuses(prev => {
-      const next = [...prev];
-      next[currentExerciseIndex] = { ...(next[currentExerciseIndex] || {}), status: 'completed', series_completed: sc, series_total: sc };
-      return next;
-    });
-    setCompletedExercises(prev => Array.from(new Set([...prev, currentExerciseIndex])));
+    await updateProgressHook(currentExerciseIndex, sc, sc, fetchRoutineStats);
     if (currentExerciseIndex < currentSessionData.exercises.length - 1) { setCurrentExerciseIndex(prev => prev + 1); } else { handleFinishTraining(); }
   };
 
@@ -738,7 +661,7 @@ export default function RoutineScreen() {
     setShowExerciseModal(false); setTrainingInProgress(false); setCurrentSessionData(null); setCurrentExerciseIndex(0);
   };
 
-  const handleCloseExerciseModal = () => { setShowExerciseModal(false); setTrainingInProgress(false); setCurrentSessionData(null); setCurrentExerciseIndex(0); setCompletedExercises([]); };
+  const handleCloseExerciseModal = () => { setShowExerciseModal(false); setTrainingInProgress(false); setCurrentSessionData(null); setCurrentExerciseIndex(0); /* completedExercises se mantiene en el hook */ };
 
   const handleFinishTraining = async () => {
     try {
@@ -751,14 +674,14 @@ export default function RoutineScreen() {
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify({ totalDuration })
         });
-        
+
         // Actualizar estadísticas después de completar entrenamiento
         await fetchRoutineStats(true); // Forzar actualización
       }
     } catch (e) {
       console.error('Error completando sesión:', e);
     } finally {
-      setShowExerciseModal(false); setTrainingInProgress(false); setCurrentSessionData(null); setCurrentExerciseIndex(0); setCompletedExercises([]);
+      setShowExerciseModal(false); setTrainingInProgress(false); setCurrentSessionData(null); setCurrentExerciseIndex(0);
       localStorage.removeItem('currentRoutineSessionId');
       localStorage.removeItem('currentRoutineSessionStartAt');
       alert('¡Felicidades! Has completado tu entrenamiento.');
@@ -769,9 +692,9 @@ export default function RoutineScreen() {
     setSessionExerciseStatuses(prev => {
       const next = [...prev];
       const existing = next[exerciseIndex] || {};
-      next[exerciseIndex] = { 
-        ...existing, 
-        comment: comment 
+      next[exerciseIndex] = {
+        ...existing,
+        comment: comment
       };
       return next;
     });
@@ -844,7 +767,7 @@ export default function RoutineScreen() {
           </Button>
           <div className="text-center py-16">
             <Calendar className="w-20 h-20 mx-auto mb-6 text-gray-600" />
-            <h2 className="text-2xl font-bold text-white mb-4">No hay rutina disponible</h2>
+            <h2 className="text-2xl font-bold text-white mb-4">No hay rutinas programadas</h2>
             <p className="text-gray-400 mb-8 max-w-md mx-auto">{error || "Para ver tu rutina personalizada, primero necesitas generar una desde la sección de Metodologías usando el botón 'Activar IA'."}</p>
             <Button onClick={handleBackToMethodologies} className="bg-yellow-400 text-black hover:bg-yellow-300">
               <Zap className="w-4 h-4 mr-2" />
@@ -887,7 +810,10 @@ export default function RoutineScreen() {
 
   // Ejercicios para el resumen (si no hay sesión, usar día seleccionado o primer día con ejercicios de la semana actual)
   const weekIdxForSummary = (currentWeek || 1) - 1;
-  const firstDayWithExercises = plan?.semanas?.[weekIdxForSummary]?.sesiones?.find(s => Array.isArray(s?.ejercicios) && s.ejercicios.length > 0);
+  const sesionesSemanaInit = plan?.semanas?.[weekIdxForSummary]?.sesiones || [];
+  const diasOrdenInit = ['Dom','Lun','Mar','Mie','Jue','Vie','Sab'];
+  const todayNameInit = diasOrdenInit[new Date().getDay()] || 'Lun';
+  const firstDayWithExercises = sesionesSemanaInit.find(s => s.dia === todayNameInit && Array.isArray(s?.ejercicios) && s.ejercicios.length > 0) || sesionesSemanaInit.find(s => Array.isArray(s?.ejercicios) && s.ejercicios.length > 0);
   const normalizeDayExercises = (day) => (day?.ejercicios || []).map(ej => ({
     nombre: ej.nombre,
     series: ej.series,
@@ -904,13 +830,13 @@ export default function RoutineScreen() {
   // Calcular progreso total de la rutina
   const calculateTotalProgress = () => {
     if (!plan?.semanas || !routineStats) return 0;
-    
+
     const totalSessions = plan?.semanas?.reduce((total, semana) => {
       return total + (semana.sesiones?.length || 0);
     }, 0);
-    
+
     if (totalSessions === 0) return 0;
-    
+
     const completedSessions = routineStats.completed_sessions || 0;
     return Math.min(100, (completedSessions / totalSessions) * 100);
   };
@@ -979,15 +905,15 @@ export default function RoutineScreen() {
         </div>
 
         {trainingInProgress && currentSessionData && (
-          <SessionProgress 
-            total={currentSessionData.exercises.length} 
+          <SessionProgress
+            total={currentSessionData.exercises.length}
             completed={completedExercises.length}
             session={hydrated}
           />
         )}
 
         {/* Dashboard de estadísticas */}
-        <RoutineStatsCard 
+        <RoutineStatsCard
           routineStats={routineStats}
           plan={plan}
           totalProgress={totalProgress}
@@ -1009,11 +935,11 @@ export default function RoutineScreen() {
               console.log('🔍 DEBUG Perfil - userData:', userData);
               console.log('🔍 DEBUG Perfil - user:', user);
               console.log('🔍 DEBUG Perfil - currentUser:', currentUser);
-              
+
               // Priorizar datos del plan si existen
               const p = (routinePlan?.metadata?.perfil) || (routinePlan?.perfil) || null;
               if (p && (p.nombre || p.edad || p.peso)) return p;
-              
+
               // Usar datos del UserContext
               if (userData) {
                 const nombre = userData.nombre || userData.full_name || user?.displayName || currentUser?.displayName || null;
@@ -1021,7 +947,7 @@ export default function RoutineScreen() {
                 const peso = userData.peso || userData.weight || null;
                 const altura = userData.altura || userData.height || null;
                 const nivel = userData.nivel_actividad || userData.fitness_level || userData.nivel || null;
-                
+
                 // Calcular IMC si tenemos peso y altura
                 let imc = userData.imc || userData.bmi || null;
                 if ((imc == null || isNaN(imc)) && peso != null && altura != null) {
@@ -1029,10 +955,10 @@ export default function RoutineScreen() {
                   const bmi = Number(peso) / (alturaM * alturaM);
                   imc = Math.round(bmi * 10) / 10;
                 }
-                
+
                 return { nombre, edad, peso, altura, nivel, imc };
               }
-              
+
               return null; // No mostrar datos de ejemplo - requiere perfil real
             })()
           }}
@@ -1054,9 +980,9 @@ export default function RoutineScreen() {
                 const token = localStorage.getItem('token');
                 await fetch(`/api/routines/plans/${routinePlanId}/activity`, {
                   method: 'POST',
-                  headers: { 
-                    'Content-Type': 'application/json', 
-                    'Authorization': `Bearer ${token}` 
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
                   },
                   body: JSON.stringify({ activityType: 'continue_training' })
                 });
@@ -1065,9 +991,9 @@ export default function RoutineScreen() {
                 console.warn('⚠️ No se pudo registrar la actividad diaria:', error);
               }
             }
-            
+
             // Si ya hay entrenamiento en curso, solo reabrimos el modal
-            if (trainingInProgress && currentSessionData?.exercises?.[currentExerciseIndex]) {
+            if (trainingInProgress && currentExerciseIndex >= 0 && currentSessionData?.exercises?.[currentExerciseIndex]) {
               setShowExerciseModal(true);
               return;
             }
@@ -1084,7 +1010,12 @@ export default function RoutineScreen() {
             }
             // Buscar el primer día con ejercicios de la semana actual
             const weekIdx = (currentWeek || 1) - 1;
-            const candidateDay = plan?.semanas?.[weekIdx]?.sesiones?.find(s => Array.isArray(s?.ejercicios) && s.ejercicios.length > 0);
+            const todayIdx = new Date().getDay();
+            const diasOrden = ['Dom','Lun','Mar','Mie','Jue','Vie','Sab'];
+            const todayName = diasOrden[todayIdx] || 'Lun';
+            const sesionesSemana = plan?.semanas?.[weekIdx]?.sesiones || [];
+            const byName = sesionesSemana.find(s => s.dia === todayName && Array.isArray(s?.ejercicios) && s.ejercicios.length > 0);
+            const candidateDay = byName || sesionesSemana.find(s => Array.isArray(s?.ejercicios) && s.ejercicios.length > 0);
             if (candidateDay) {
               await handleStartTraining({ ...candidateDay, weekNumber: currentWeek });
             } else {
@@ -1098,10 +1029,10 @@ export default function RoutineScreen() {
           <RoutineDayModal dayData={selectedDay} onClose={handleCloseDayModal} onStartTraining={handleStartTraining} />
         )}
 
-        {showExerciseModal && currentSessionData && currentSessionData.exercises[currentExerciseIndex] && (
+        {showExerciseModal && currentSessionData && Array.isArray(currentSessionData.exercises) && currentSessionData.exercises.length > 0 && (
           <RoutineExerciseModal
-            exercise={currentSessionData.exercises[currentExerciseIndex]}
-            exerciseIndex={currentExerciseIndex}
+            exercise={currentSessionData.exercises[Math.max(0, currentExerciseIndex)]}
+            exerciseIndex={Math.max(0, currentExerciseIndex)}
             totalExercises={currentSessionData.exercises.length}
             onComplete={handleExerciseComplete}
             onSkip={handleExerciseSkip}
