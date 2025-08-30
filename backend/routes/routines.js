@@ -61,6 +61,53 @@ async function ensureMethodologySessions(client, userId, methodologyPlanId, plan
   );
 }
 
+// Utilidad: crear una sesión específica para un día que no existe en el plan
+async function createMissingDaySession(client, userId, methodologyPlanId, planDataJson, requestedDay, weekNumber = 1) {
+  const normalizedPlan = normalizePlanDays(planDataJson);
+  const normalizedRequestedDay = normalizeDayAbbrev(requestedDay);
+  
+  // Buscar si ya existe la sesión para este día
+  const existingSession = await client.query(
+    'SELECT id FROM app.methodology_exercise_sessions WHERE user_id = $1 AND methodology_plan_id = $2 AND week_number = $3 AND day_name = $4',
+    [userId, methodologyPlanId, weekNumber, normalizedRequestedDay]
+  );
+  
+  if (existingSession.rowCount > 0) {
+    return existingSession.rows[0].id;
+  }
+  
+  // Si el plan no contiene una sesión para el día solicitado, usar la primera sesión disponible
+  const semanas = normalizedPlan?.semanas || [];
+  const firstWeek = semanas.find(s => Number(s.semana) === weekNumber) || semanas[0];
+  const sesiones = firstWeek?.sesiones || [];
+  
+  if (sesiones.length === 0) {
+    throw new Error('No hay sesiones disponibles en el plan para crear una sesión de reemplazo');
+  }
+  
+  // Tomar la primera sesión como template
+  const templateSession = sesiones[0];
+  
+  // Crear la nueva sesión en la BD
+  const newSession = await client.query(
+    `INSERT INTO app.methodology_exercise_sessions 
+     (user_id, methodology_plan_id, methodology_type, session_name, week_number, day_name, total_exercises, created_at, updated_at)
+     VALUES ($1, $2, 'Adaptada', $3, $4, $5, $6, NOW(), NOW()) 
+     RETURNING id`,
+    [
+      userId, 
+      methodologyPlanId, 
+      `Sesión ${normalizedRequestedDay}`, 
+      weekNumber, 
+      normalizedRequestedDay, 
+      templateSession.ejercicios?.length || 0
+    ]
+  );
+  
+  console.log(`✅ Sesión creada para día faltante: ${normalizedRequestedDay} (usando template de ${templateSession.dia})`);
+  return newSession.rows[0].id;
+}
+
 // GET /api/routines/plan?id=...&type=routine|methodology
 router.get('/plan', authenticateToken, async (req, res) => {
   const client = await pool.connect();
@@ -196,8 +243,20 @@ router.post('/sessions/start', authenticateToken, async (req, res) => {
     }
 
     if (ses.rowCount === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ success: false, error: 'Sesión no encontrada para esa semana/día' });
+      // Si no existe la sesión, crearla usando la función de día faltante
+      console.log(`⚠️ Sesión no encontrada para ${normalizedDay}, creando sesión adaptada...`);
+      try {
+        const sessionId = await createMissingDaySession(client, userId, methodology_plan_id, planData, day_name, week_number);
+        // Obtener la sesión recién creada
+        ses = await client.query(
+          `SELECT * FROM app.methodology_exercise_sessions WHERE id = $1`,
+          [sessionId]
+        );
+      } catch (createError) {
+        console.error('Error creando sesión para día faltante:', createError);
+        await client.query('ROLLBACK');
+        return res.status(404).json({ success: false, error: 'Sesión no encontrada para esa semana/día y no se pudo crear una adaptada' });
+      }
     }
 
     const session = ses.rows[0];
@@ -205,7 +264,14 @@ router.post('/sessions/start', authenticateToken, async (req, res) => {
     // Precrear progreso por ejercicio (si no existe)
     // Encontrar la definición de ejercicios en el JSON del plan
     const semana = (planData.semanas || []).find(s => Number(s.semana) === Number(week_number));
-    const sesionDef = semana ? (semana.sesiones || []).find(s => normalizeDayAbbrev(s.dia) === normalizedDay) : null;
+    let sesionDef = semana ? (semana.sesiones || []).find(s => normalizeDayAbbrev(s.dia) === normalizedDay) : null;
+    
+    // Si no existe sesión para este día, usar la primera sesión disponible como template
+    if (!sesionDef && semana && semana.sesiones && semana.sesiones.length > 0) {
+      sesionDef = semana.sesiones[0];
+      console.log(`📋 Usando template de ${sesionDef.dia} para día faltante ${normalizedDay}`);
+    }
+    
     const ejercicios = Array.isArray(sesionDef?.ejercicios) ? sesionDef.ejercicios : [];
 
     for (let i = 0; i < ejercicios.length; i++) {
