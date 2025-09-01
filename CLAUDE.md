@@ -30,9 +30,11 @@
 - **CORS**: cors 2.8.5
 
 ### Database
-- **Type**: PostgreSQL (local instance)
+- **Type**: PostgreSQL (Supabase cloud hosted)
+- **Project ID**: `lhsnmjgdtjalfcsurxvg`
+- **Database**: `postgres`
 - **Schema**: `app` (main schema with search_path configuration)
-- **Connection**: Pool-based with automatic schema switching
+- **Connection**: Pool-based with SSL and automatic schema switching
 
 ## 📁 Project Structure
 
@@ -75,7 +77,13 @@ Entrena_con_IA/
 - `/api/home-training/*` - Home training plans and sessions
 - `/api/ia-home-training/*` - AI-powered home training
 - `/api/routines/*` - Gym routines and methodology plans
-- `/api/methodologie/*` - AI methodology generation
+  - `GET /active-plan` - **⭐ NEW**: Auto-recovery of active routine after login
+  - `GET /progress-data` - **NEW**: Real-time progress analytics for ProgressTab
+  - `GET /plan-status/:methodologyPlanId` - **NEW**: Check if routine confirmed
+  - `POST /sessions/:sessionId/exercise/:exerciseOrder/feedback` - **NEW**: Save exercise feedback
+  - `GET /sessions/:sessionId/feedback` - **NEW**: Load exercise feedback
+  - `GET /sessions/:sessionId/progress` - **ENHANCED**: Now includes exercise feedback via LEFT JOIN
+- `/api/methodologie/*` - AI methodology generation (now includes user feedback data for better recommendations)
 - `/api/methodology-manual/*` - Manual methodology configuration
 
 ### AI Features
@@ -97,6 +105,9 @@ Entrena_con_IA/
 - Progress tracking and history
 - Combination-based training plans (12 combinations: equipment × training type)
 - Exercise feedback and difficulty adjustment
+- **NEW**: Repeat training functionality with confirmation modal
+- **Complete workout reset**: Reset all series, time, and progress to start over
+- **Confirmation system**: "¿Quieres repetir el entrenamiento?" with "¿Estás seguro?" confirmation
 
 ### 2. **Methodology System** (`/methodologies`)
 - **Weider**: Muscle group split training
@@ -108,9 +119,16 @@ Entrena_con_IA/
 
 ### 3. **Routine Management** (`/routines`)
 - Structured gym routines with progression
-- Session tracking and exercise logging
+- **Tab-based interface**: Today Training, Calendar View, Progress Analytics
+- Session tracking and exercise logging with persistence
 - Performance analytics and statistics
 - Custom routine creation and modification
+- **Today Training Tab**: Current day exercises with completion tracking
+- **Calendar View**: Google Calendar-style workout planning with visual indicators starting Monday
+- **Progress Tab**: Real-time historical data and performance metrics from database
+- **⭐ NEW: Exercise Feedback System**: Persistent user ratings (love/normal/hard) with comments
+- **⭐ NEW: Smart Modal State**: No repeated confirmation modals after routine completion
+- **⭐ NEW: Complete Progress Tracking**: Exercise completion data flows to ProgressTab automatically
 
 ### 4. **Nutrition Tracking** (`/nutrition`)
 - Macro and calorie tracking
@@ -175,6 +193,30 @@ npm start        # Start backend server
 
 ## 🎨 UI/UX Components
 
+### Tab-Based Routine Interface
+
+The Routines section now features a modern tab-based interface with three distinct views:
+
+#### 1. **Today Training Tab** (`TodayTrainingTab.jsx`)
+- Current day workout display with AI-generated exercises
+- Real-time exercise completion tracking (completed/skipped/pending states)
+- Session persistence across browser sessions and tab switches
+- Exercise modal integration with series, reps, rest times, and notes
+- Visual indicators: Green (completed), Orange (skipped), Default (pending)
+
+#### 2. **Calendar Tab** (`CalendarTab.jsx`)
+- Google Calendar-style weekly view of workout schedule
+- Color-coded training days: Yellow (today), Green (past), Blue (future)
+- Exercise count and completion status indicators
+- Interactive day selection and session overview
+- Past/present/future workout visualization
+
+#### 3. **Progress Tab** (`ProgressTab.jsx`)
+- Historical performance data and analytics
+- Workout completion statistics
+- Progress tracking over time
+- Performance metrics and insights
+
 ### Custom Hooks
 - `useRoutinePlan` - Routine plan state management
 - `useRoutineSession` - Active session handling  
@@ -228,6 +270,124 @@ AI_MODULES = {
 ```
 
 ## 🔄 Complete Application Flows
+
+### ⭐ Routine State Persistence System (NEW)
+
+The application now maintains routine state across logout/login cycles, ensuring users can seamlessly return to their active training plans.
+
+#### Key Features:
+- **Automatic Recovery**: Active routines are automatically restored after login
+- **Zero Data Loss**: All exercise progress, completion status, and feedback persist
+- **Seamless UX**: Users directly access their routine tabs without re-generation
+- **Smart Fallback**: Redirects to methodology generation only when no active routine exists
+
+#### Implementation:
+
+**Backend Endpoint (`/api/routines/active-plan`):**
+```javascript
+// GET /api/routines/active-plan - Recovers user's active routine
+router.get('/active-plan', authenticateToken, async (req, res) => {
+  const activeMethodologyQuery = await pool.query(`
+    SELECT mp.id as methodology_plan_id, mp.methodology_type, mp.plan_data, mp.confirmed_at,
+           rp.id as routine_plan_id
+    FROM app.methodology_plans mp
+    LEFT JOIN app.routine_plans rp ON rp.user_id = mp.user_id 
+      AND rp.methodology_type = mp.methodology_type
+      AND rp.status = 'active'
+    WHERE mp.user_id = $1 AND mp.status = 'active'
+    ORDER BY mp.confirmed_at DESC LIMIT 1
+  `, [userId]);
+  
+  if (activeMethodologyQuery.rowCount === 0) {
+    return res.json({ hasActivePlan: false });
+  }
+  
+  const activePlan = activeMethodologyQuery.rows[0];
+  res.json({
+    hasActivePlan: true,
+    routinePlan: planData,
+    methodology_plan_id: activePlan.methodology_plan_id,
+    planSource: { label: 'IA' }
+  });
+});
+```
+
+**Frontend Recovery (`RoutineScreen.jsx`):**
+```javascript
+// Auto-recovery logic when no incoming plan state
+useEffect(() => {
+  if (!incomingPlan) {
+    setIsRecoveringPlan(true);
+    
+    getActivePlan()
+      .then(activeData => {
+        if (activeData.hasActivePlan) {
+          setRecoveredPlan(activeData.routinePlan);
+          setMethodologyPlanId(activeData.methodology_plan_id);
+        } else {
+          navigate('/methodologies', { replace: true });
+        }
+      })
+      .finally(() => {
+        setIsRecoveringPlan(false);
+        setIsCheckingPlanStatus(false);
+      });
+  }
+}, []);
+
+// Effective plan selection (incoming or recovered)
+const effectivePlan = incomingPlan || recoveredPlan;
+```
+
+#### User Experience Flow:
+1. **User completes routine** → Plan marked as `status = 'active'` in database
+2. **User logs out** → Browser state cleared
+3. **User logs back in** → Session restored but routine state lost
+4. **User navigates to /routines** → Auto-recovery triggered
+5. **System queries database** → Finds active routine plan
+6. **Routine restored** → User sees complete progress with all tabs functional
+
+### Exercise Completion Persistence System
+
+The application implements a comprehensive exercise completion persistence system that maintains user progress across browser sessions and tab switches.
+
+#### Key Components:
+- **Session Status API**: `GET /api/routines/sessions/today-status` loads current session state
+- **Automatic Resume**: Incomplete sessions automatically restore exercise completion states  
+- **Visual Feedback**: Completed (green), skipped (orange), pending (default) exercise states
+- **Tab-Safe Persistence**: Exercise progress persists when switching between Today/Calendar/Progress tabs
+
+#### Implementation Flow:
+```javascript
+// TodayTrainingTab.jsx - Load session status on component mount
+useEffect(() => {
+  const loadTodaySessionStatus = async () => {
+    const sessionStatus = await getTodaySessionStatus({
+      methodology_plan_id: mId,
+      week_number: todaySession.weekNumber || 1,
+      day_name: todaySession.dia
+    });
+    setTodaySessionStatus(sessionStatus); // Restores all exercise states
+  };
+  loadTodaySessionStatus();
+}, [todaySession, methodologyPlanId]);
+
+// Backend API endpoint (routines.js)
+router.get('/sessions/today-status', async (req, res) => {
+  const session = await pool.query(`
+    SELECT s.*, array_agg(json_build_object(
+      'exercise_order', p.exercise_order,
+      'exercise_name', p.exercise_name,
+      'status', p.status,
+      'series_completed', p.series_completed
+    )) as exercises
+    FROM app.methodology_exercise_sessions s
+    LEFT JOIN app.methodology_exercise_progress p ON s.id = p.methodology_session_id
+    WHERE s.methodology_plan_id = $1 AND s.week_number = $2 AND s.day_name = $3
+    GROUP BY s.id
+  `);
+});
+```
 
 ### 1. **METHODOLOGY GENERATION → ROUTINE EXECUTION FLOW** ⭐
 
@@ -346,6 +506,34 @@ User → HomeTrainingScreen → POST /api/ia-home-training/generate
                         Completion data → exercise_history (AI memory)
 ```
 
+#### Repeat Training Functionality:
+```javascript
+// HomeTrainingExerciseModal.jsx - Complete workout reset system
+const confirmRepeatTraining = () => {
+  setCurrentPhase('ready');           // Reset to initial phase
+  setCurrentSeries(1);                // Reset series counter
+  setIsRunning(false);               // Stop any running timers
+  setTotalTimeSpent(0);              // Reset total time
+  setTimeLeft(Number(exercise?.duracion_seg) || 45); // Reset exercise timer
+  lastPhaseHandledRef.current = '';   // Clear phase tracking
+  lastReportedSeriesRef.current = ''; // Clear series tracking
+  setShowRepeatConfirm(false);       // Close confirmation modal
+};
+
+// UI Implementation with confirmation flow
+<button onClick={() => setShowRepeatConfirm(true)}>
+  ¿Quieres repetir el entrenamiento del día?
+</button>
+
+{showRepeatConfirm && (
+  <div className="confirmation-modal">
+    <p>¿Estás seguro?</p>
+    <button onClick={confirmRepeatTraining}>Sí</button>
+    <button onClick={() => setShowRepeatConfirm(false)}>No</button>
+  </div>
+)}
+```
+
 ### 3. **VIDEO/PHOTO CORRECTION FLOW**
 
 ```
@@ -367,6 +555,86 @@ User → Nutrition screen → POST /api/nutrition/generate-meal-plan
 ```
 
 ## 🔧 Critical Technical Details
+
+### Routine Confirmation System
+
+The application implements a draft/active status system for routine plans to track user engagement and plan activation.
+
+#### Database Schema:
+```sql
+-- Add status and confirmation timestamp to methodology_plans
+ALTER TABLE app.methodology_plans 
+ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'draft';
+ALTER TABLE app.methodology_plans 
+ADD COLUMN IF NOT EXISTS confirmed_at TIMESTAMP NULL;
+
+-- Database function for atomic plan confirmation
+CREATE OR REPLACE FUNCTION app.confirm_routine_plan(
+    p_user_id INTEGER,
+    p_methodology_plan_id INTEGER,
+    p_routine_plan_id INTEGER DEFAULT NULL
+) RETURNS BOOLEAN AS $$
+BEGIN
+    UPDATE app.methodology_plans 
+    SET status = 'active', confirmed_at = NOW()
+    WHERE id = p_methodology_plan_id AND user_id = p_user_id AND status = 'draft';
+    
+    IF p_routine_plan_id IS NOT NULL THEN
+        UPDATE app.routine_plans 
+        SET status = 'active', confirmed_at = NOW()
+        WHERE id = p_routine_plan_id AND user_id = p_user_id AND status = 'draft';
+    END IF;
+    
+    RETURN FOUND;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+#### Frontend Integration:
+```javascript
+// RoutineScreen.jsx - Confirm routine when user starts training
+const handleStart = async () => {
+  setIsConfirming(true);
+  try {
+    const methodologyId = methodologyPlanId || incomingState?.methodology_plan_id;
+    const routineId = planId;
+    
+    if (methodologyId) {
+      await confirmRoutinePlan({ 
+        methodology_plan_id: methodologyId, 
+        routine_plan_id: routineId 
+      });
+      console.log('✅ Rutina confirmada exitosamente');
+    }
+    setShowPlanModal(false);
+    setActiveTab('today'); // Switch to training tab
+  } catch (e) {
+    console.error('❌ Error confirmando rutina:', e);
+  } finally {
+    setIsConfirming(false);
+  }
+};
+```
+
+#### API Endpoint:
+```javascript
+// backend/routes/routines.js - POST /api/routines/confirm-plan
+router.post('/confirm-plan', authenticateToken, async (req, res) => {
+  const { methodology_plan_id, routine_plan_id } = req.body;
+  const userId = req.user.id;
+  
+  const confirmResult = await client.query(
+    'SELECT app.confirm_routine_plan($1, $2, $3) as confirmed',
+    [userId, methodology_plan_id, routine_plan_id || null]
+  );
+  
+  if (confirmResult.rows[0]?.confirmed) {
+    res.json({ success: true, message: 'Plan confirmado correctamente' });
+  } else {
+    res.status(400).json({ success: false, error: 'No se pudo confirmar el plan' });
+  }
+});
+```
 
 ### Missing Day Handling
 ```javascript
@@ -444,11 +712,32 @@ CHECK (day_name IN ('Lun','Mar','Mie','Jue','Vie','Sab','Dom',
 - ✅ Recent refactor: Extracted routine hooks for better modularity
 - ✅ Weekend session support: Fixed missing Saturday/Sunday training sessions
 - ✅ Database constraints: Updated to support full Spanish day names
+- ✅ **NEW**: Routine confirmation system with draft/active states
+- ✅ **NEW**: Exercise completion persistence system
+- ✅ **NEW**: Tab-based routine interface (Today/Calendar/Progress)
+- ✅ **NEW**: Session resume functionality
+- ✅ **NEW**: Repeat training functionality in HomeTraining
+- ✅ **NEW**: ⭐ **Routine State Persistence** - Auto-recovery after logout/login
+- ✅ **NEW**: Enhanced exercise feedback display with sentiment indicators
+- ✅ **NEW**: Dynamic session summary titles based on actual methodology
+- ✅ **NEW**: Complete exercise display (removed 5-exercise limit)
+- ✅ **NEW**: Improved AI methodology generation using correct historical data
 - 🔄 Active branch: `feat/refactor-routine-hooks`
 
 ## 🛠️ Development Notes
 
-### Recent Critical Fixes (August 30, 2025)
+### Recent Critical Fixes (September 1, 2025) ⭐
+- **NEW**: `/api/routines/active-plan` endpoint for routine state recovery
+- **FIXED**: Routine persistence after logout/login with automatic recovery system
+- **FIXED**: Hardcoded 'Adaptada' methodology bug → now uses correct plan methodology  
+- **FIXED**: Session summary display showing proper titles instead of "HIIT en Casa"
+- **FIXED**: Exercise feedback integration in session progress API (LEFT JOIN fix)
+- **FIXED**: AI methodology generation reading from correct history table (`methodology_exercise_history_complete`)
+- **ENHANCED**: Exercise feedback display with love/normal/hard visual indicators
+- **ENHANCED**: Methodology prompts with gym-specific exercise guidelines
+- **REMOVED**: Exercise display limitation (now shows all exercises generated)
+
+### Previous Critical Fixes (August 30, 2025)
 - **Fixed null user_id constraint violation** in `methodology_exercise_progress` table
 - **Added weekend session support**: When AI plans don't include Sat/Sun, system auto-creates sessions using weekday templates
 - **Updated database constraints**: `methodology_sessions_day_valid` now accepts both abbreviated and full Spanish day names
@@ -481,6 +770,6 @@ CHECK (day_name IN ('Lun','Mar','Mie','Jue','Vie','Sab','Dom',
 
 ---
 
-*Last updated: August 30, 2025*
+*Last updated: September 1, 2025*
 *Project: Entrena con IA - AI-Powered Fitness Application*
-*Documentation includes: Complete AI flows, API integration, database schema, recent fixes*
+*Documentation includes: Complete AI flows, API integration, database schema, routine persistence system, recent fixes*
