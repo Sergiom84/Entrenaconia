@@ -10,7 +10,6 @@ import {
   logRecentExercises, 
   logAIPayload, 
   logAIResponse, 
-  logError, 
   logAPICall, 
   logTokens 
 } from '../utils/aiLogger.js';

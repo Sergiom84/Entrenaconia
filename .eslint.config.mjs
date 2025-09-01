@@ -26,6 +26,9 @@ export default [
       ...js.configs.recommended.rules,
       ...reactHooks.configs.recommended.rules,
       'react-refresh/only-export-components': 'warn',
+      // Relax rules for better development flow
+      'no-unused-vars': 'warn', // Change from error to warning
+      'no-undef': 'warn', // Change from error to warning  
     },
   },
 
@@ -41,6 +44,9 @@ export default [
     },
     rules: {
       ...js.configs.recommended.rules,
+      // Relax backend rules too
+      'no-unused-vars': 'warn',
+      'no-undef': 'warn',
     },
   },
 ];

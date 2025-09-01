@@ -22,7 +22,6 @@ import { startSession, updateExercise, finishSession, getTodaySessionStatus } fr
 
 export default function TodayTrainingTab({ 
   plan, 
-  planId, 
   methodologyPlanId, 
   todayName, 
   planStartDate,

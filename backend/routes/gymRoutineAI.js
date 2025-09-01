@@ -3,7 +3,6 @@ import authenticateToken from '../middleware/auth.js';
 import { pool } from '../db.js';
 import { AI_MODULES } from '../config/aiConfigs.js';
 import { getModuleOpenAI } from '../lib/openaiClient.js';
-import { getPrompt } from '../lib/promptRegistry.js';
 
 const router = express.Router();
 

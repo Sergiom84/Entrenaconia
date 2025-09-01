@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { Play, Pause, RotateCcw, Info, X as IconX, Square, SkipForward, Star, Target } from 'lucide-react';
 import { getExerciseGifUrl } from '@/config/exerciseGifs.js';
 import ExerciseFeedbackModal from '../HomeTraining/ExerciseFeedbackModal';
@@ -32,7 +32,7 @@ export default function RoutineSessionModal({
   const [exerciseFeedback, setExerciseFeedback] = useState({}); // { exerciseIndex: { sentiment, comment } }
   const intervalRef = useRef(null);
 
-  const exercises = Array.isArray(session?.ejercicios) ? session.ejercicios : [];
+  const exercises = useMemo(() => Array.isArray(session?.ejercicios) ? session.ejercicios : [], [session?.ejercicios]);
   const total = exercises.length;
 
   const ex = exercises[currentIndex] || null;

@@ -138,7 +138,7 @@ export default function RoutineSessionSummaryCard({ sessionId, plan, planSource,
           const status = (e.status || '').toLowerCase();
           const sentiment = (e.feedback?.sentiment || e.sentiment || '').toLowerCase();
           const comment = e.feedback?.comment || e.comment || '';
-          const isHard = sentiment === 'hard';
+          // const isHard = sentiment === 'hard'; // unused variable
           return (
             <div key={idx} className={`rounded-lg border p-3 ${cardClassesByStatus(status)}`}>
               <div className="flex items-start justify-between gap-2">

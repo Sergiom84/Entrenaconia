@@ -86,10 +86,6 @@ router.post('/generate-manual', authenticateToken, async (req, res) => {
       WHERE id = $1
     `;
     
-    const recentExercisesQuery = `
-      SELECT * FROM app.get_recent_exercises($1, $2, 60)
-    `;
-    
     const userResult = await pool.query(userQuery, [userId]);
     const user = userResult.rows[0];
     

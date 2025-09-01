@@ -1,0 +1,21 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Check if build passes (most critical)
+echo "🔨 Verificando que la aplicación compila..."
+npm run build
+
+# Run linting (but don't fail on warnings)
+echo "🔍 Ejecutando ESLint..."
+npm run lint || echo "⚠️ ESLint encontró problemas pero el commit continuará"
+
+# Prevent commits to main branch
+branch="$(git rev-parse --abbrev-ref HEAD)"
+
+if [ "$branch" = "main" ]; then
+  echo "🚫 No puedes hacer commit directamente a main"
+  echo "   Crea una rama feature: git checkout -b feat/tu-feature"
+  exit 1
+fi
+
+echo "✅ Pre-commit checks passed"

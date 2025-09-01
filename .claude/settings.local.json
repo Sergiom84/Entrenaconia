@@ -39,7 +39,11 @@
       "Bash(rm:*)",
       "Bash(git rm:*)",
       "Bash(ping:*)",
-      "Bash(nslookup:*)"
+      "Bash(nslookup:*)",
+      "Bash(chmod:*)",
+      "Bash(npx husky init:*)",
+      "Bash(npx eslint:*)",
+      "Bash(npm run lint)"
     ]
   }
 }

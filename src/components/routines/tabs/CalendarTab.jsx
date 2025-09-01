@@ -14,14 +14,14 @@ import {
   CheckCircle
 } from 'lucide-react';
 
-export default function CalendarTab({ plan, planStartDate, methodologyPlanId, ensureMethodologyPlan }) {
+export default function CalendarTab({ plan, planStartDate }) {
   const [currentWeek, setCurrentWeek] = useState(0);
   const [selectedDay, setSelectedDay] = useState(null);
   const [showDayModal, setShowDayModal] = useState(false);
 
-  // Días de la semana (empezando por lunes)
-  const weekDays = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
-  const weekDaysFull = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+  // Días de la semana (empezando por lunes) - used for display reference
+  // const weekDays = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+  // const weekDaysFull = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 
   // Procesar el plan para crear estructura de calendario
   const calendarData = useMemo(() => {
@@ -102,12 +102,13 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
     setShowDayModal(true);
   };
 
-  const formatDate = (date) => {
-    return date.toLocaleDateString('es-ES', {
-      day: 'numeric',
-      month: 'short'
-    });
-  };
+  // Utility function removed - was unused
+  // const formatDate = (date) => {
+  //   return date.toLocaleDateString('es-ES', {
+  //     day: 'numeric',
+  //     month: 'short'
+  //   });
+  // };
 
   const formatFullDate = (date) => {
     return date.toLocaleDateString('es-ES', {

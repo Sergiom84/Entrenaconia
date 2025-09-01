@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 // Hook para gestionar el plan de rutina (carga inicial, estado vacío, navegación/localStorage, verificación de activos)
 export default function useRoutinePlan(location) {
@@ -9,7 +9,7 @@ export default function useRoutinePlan(location) {
   const [hasTriedLoadingPlan, setHasTriedLoadingPlan] = useState(false);
   const [initialLoad, setInitialLoad] = useState(true);
   const [uiState, setUIState] = useState('LOADING');
-  const didInit = useRef(false);
+  // const didInit = useRef(false); // unused variable removed
 
   const clearLocalSessionState = useCallback(() => {
     localStorage.removeItem('currentRoutineSessionId');
@@ -40,8 +40,8 @@ export default function useRoutinePlan(location) {
     const planMetadataFromNavigation = location.state?.planMetadata;
     const planFromStorage = localStorage.getItem('currentRoutinePlan');
     const planIdFromStorage = localStorage.getItem('currentRoutinePlanId');
-    const sessionIdFromStorage = localStorage.getItem('currentRoutineSessionId');
-    const sessionStartFromStorage = localStorage.getItem('currentRoutineSessionStartAt');
+    // const sessionIdFromStorage = localStorage.getItem('currentRoutineSessionId'); // unused
+    // const sessionStartFromStorage = localStorage.getItem('currentRoutineSessionStartAt'); // unused
 
     if (planFromNavigation) {
       // Limpiar sesión anterior

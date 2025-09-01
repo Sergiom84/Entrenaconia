@@ -16,7 +16,6 @@ export default function RoutineScreen() {
   // State recibido desde MethodologiesScreen.navigate('/routines', { state })
   const incomingState = location.state || {};
   const incomingPlan = incomingState?.routinePlan || null;
-  const planSource = incomingState?.planSource || { label: 'OpenAI' };
   const planId = incomingState?.planId || null; // routinePlanId preferido
 
   const [showPlanModal, setShowPlanModal] = useState(false); // Cambiado: no mostrar por defecto

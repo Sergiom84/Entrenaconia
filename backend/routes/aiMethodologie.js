@@ -21,17 +21,6 @@ const router = express.Router();
 const METHODOLOGIE_CONFIG = AI_MODULES.METHODOLOGIE;
 
 /**
- * Función helper para parsear JSON de manera segura
- */
-function safeJSON(v) { 
-  try { 
-    return v ? JSON.parse(v) : null; 
-  } catch { 
-    return null; 
-  } 
-}
-
-/**
  * Función para validar y sanitizar datos del perfil de usuario
  */
 function validateProfileData(profile) {
@@ -106,6 +95,7 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
 
     // ===== OBTENER EJERCICIOS RECIENTES DE RUTINAS/METODOLOGÍAS =====
     let exercisesFromDB = [];
+    let exerciseFeedback = [];
     try {
       // Consultar directamente methodology_exercise_history_complete (rutinas/metodologías reales)
       const recentExercisesResult = await pool.query(
@@ -141,7 +131,7 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
         [userId]
       );
       
-      const exerciseFeedback = feedbackResult.rows;
+      exerciseFeedback = feedbackResult.rows;
       console.log(`💭 Feedback de ejercicios encontrado: ${exerciseFeedback.length}`);
       
       // Si no hay ejercicios recientes, intentar obtener ejercicios de gimnasio que el usuario no haya hecho en metodologías

@@ -17,7 +17,7 @@ import { getProgressData } from '../api';
 export default function ProgressTab({ plan, methodologyPlanId }) {
   const [progressData, setProgressData] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [, setError] = useState(null); // Keep setError for logging purposes
 
   useEffect(() => {
     const loadProgressData = async () => {

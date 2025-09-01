@@ -20,16 +20,16 @@ export const useMusicSync = (userId, exerciseData = null) => {
         general: { autoSync: false, exerciseBPMSync: true, defaultVolume: 0.8, crossfadeDuration: 3, autoNext: true }
       });
     }
-  }, [userId]);
+  }, [userId, loadMusicConfig]);
 
   // Get exercise-based recommendations when exercise changes
   useEffect(() => {
     if (exerciseData && musicConfig?.general?.autoSync) {
       getExerciseRecommendations();
     }
-  }, [exerciseData, musicConfig?.general?.autoSync]);
+  }, [exerciseData, musicConfig?.general?.autoSync, getExerciseRecommendations]);
 
-  const loadMusicConfig = async () => {
+  const loadMusicConfig = useCallback(async () => {
     try {
       const response = await fetch(`/api/music/config/${userId}`);
       if (response.ok) {
@@ -40,7 +40,7 @@ export const useMusicSync = (userId, exerciseData = null) => {
       console.error('Error loading music config:', error);
       setError('Failed to load music configuration');
     }
-  };
+  }, [userId]);
 
   const getExerciseRecommendations = useCallback(async () => {
     if (!exerciseData || !userId) return;
@@ -187,7 +187,7 @@ export const useMusicSync = (userId, exerciseData = null) => {
     return Math.max(0.1, Math.min(1.0, baseEnergy));
   }, []);
 
-  const getValenceLevel = useCallback((exerciseType, intensity) => {
+  const getValenceLevel = useCallback((exerciseType) => {
     const exerciseTypeNormalized = exerciseType?.toLowerCase();
     
     switch (exerciseTypeNormalized) {
@@ -216,7 +216,7 @@ export const useMusicSync = (userId, exerciseData = null) => {
       bpm: getOptimalBPM(exerciseType, intensity),
       genres: getRecommendedGenres(exerciseType, intensity),
       energy: getEnergyLevel(exerciseType, intensity),
-      valence: getValenceLevel(exerciseType, intensity)
+      valence: getValenceLevel(exerciseType)
     };
   }, [getOptimalBPM, getRecommendedGenres, getEnergyLevel, getValenceLevel]);
 

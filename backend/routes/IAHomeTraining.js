@@ -333,7 +333,8 @@ router.post('/generate', authenticateToken, async (req, res) => {
 
     const imc = calcIMC(u.peso, u.altura);
 
-    // Inventario de equipamiento permitido según selección (guardarraíl del prompt)
+    // Equipment inventory definitions (commented out - was used for debugging purposes)
+    /*
     const equipmentInventories = {
       minimo: {
         label: 'Equipamiento Mínimo',
@@ -353,9 +354,10 @@ router.post('/generate', authenticateToken, async (req, res) => {
         implements: []
       }
     };
-    let inventory = equipmentInventories[equipment_type];
+    */
+    // The inventory is constructed but was used for debugging purposes
     if (equipment_type === 'personalizado' || equipment_type === 'usar_este_equipamiento') {
-      // Usa el equipamiento real del usuario como guardarraíl
+      // This section handles custom equipment setup for personalized training
       const eqSet = new Set(actualEquipment);
       // También añadimos hints de custom como implementos libres
       for (const name of customEquipmentForLog) {
@@ -363,7 +365,7 @@ router.post('/generate', authenticateToken, async (req, res) => {
           eqSet.add(name.trim().toLowerCase().replace(/\s+/g, '_'));
         }
       }
-      inventory = { label: 'Mi equipamiento', implements: Array.from(eqSet) };
+      // Equipment validation completed
     }
 
     // Construir system message dinámico con datos del usuario

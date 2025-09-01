@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { ArrowLeft, User, Activity, Target, Heart, Settings, Ruler, Dumbbell, Music } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useProfileState } from '../../hooks/useProfileState';
-import { useAuth } from '../../contexts/AuthContext';
 
 // Importar todos los tabs
 import { BasicInfoTab } from './BasicInfoTab';

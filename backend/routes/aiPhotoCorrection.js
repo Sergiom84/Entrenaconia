@@ -10,7 +10,6 @@ import {
   logRecentExercises, 
   logAIPayload, 
   logAIResponse, 
-  logError, 
   logAPICall, 
   logTokens 
 } from '../utils/aiLogger.js';
@@ -108,7 +107,7 @@ router.post('/analyze', authenticateToken, upload.array('photos', 5), async (req
 Analiza las fotos secuencialmente si muestran diferentes fases del ejercicio, o comparativamente si muestran diferentes ángulos de la misma posición. Enfócate en los aspectos técnicos más importantes para la seguridad y efectividad del ejercicio.`;
 
     // Preparar imágenes para OpenAI
-    const imageMessages = photos.map((photo, index) => ({
+    const imageMessages = photos.map((photo) => ({
       type: 'image_url',
       image_url: {
         url: imageToBase64(photo.buffer, photo.mimetype),
