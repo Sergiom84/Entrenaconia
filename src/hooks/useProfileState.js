@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 
 export const useProfileState = () => {
-  const defaultProfile = {
+  const defaultProfile = useMemo(() => ({
     // Datos básicos
     nombre: '',
     apellido: '',
@@ -40,7 +40,7 @@ export const useProfileState = () => {
     antebrazos: '',
     // Documentación médica
     medical_docs: [],
-  }
+  }), [])
 
   const [userProfile, setUserProfile] = useState(defaultProfile)
   const [editingSection, setEditingSection] = useState(null)
@@ -49,7 +49,7 @@ export const useProfileState = () => {
   // Helpers de mapeo UI<->DB
   const toNumber = (v) => (v === '' || v === null || v === undefined ? null : Number(v))
 
-  const mapDbToUi = (u = {}) => ({
+  const mapDbToUi = useCallback((u = {}) => ({
     ...defaultProfile,
     // Básicos
     nombre: u.nombre || '',
@@ -87,7 +87,7 @@ export const useProfileState = () => {
     muslos: u.muslos ?? '',
     cuello: u.cuello ?? '',
     antebrazos: u.antebrazos ?? ''
-  })
+  }), [defaultProfile])
 
   const mapUiToDb = (data = {}) => {
     const payload = { ...data }
@@ -141,7 +141,7 @@ export const useProfileState = () => {
           .catch(err => console.error('Error cargando perfil desde API:', err))
       }
     }
-  }, [defaultProfile, mapDbToUi])
+  }, [])
 
   // Guardar datos del perfil en localStorage cuando cambien
   useEffect(() => {
