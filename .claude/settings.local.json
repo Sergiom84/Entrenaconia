@@ -43,7 +43,8 @@
       "Bash(chmod:*)",
       "Bash(npx husky init:*)",
       "Bash(npx eslint:*)",
-      "Bash(npm run lint)"
+      "Bash(npm run lint)",
+      "Bash(git checkout:*)"
     ]
   }
 }

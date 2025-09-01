@@ -6,29 +6,7 @@ export const useMusicSync = (userId, exerciseData = null) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Load music configuration
-  useEffect(() => {
-    if (userId) {
-      loadMusicConfig();
-    } else {
-      // Set default config if no userId
-      setMusicConfig({
-        spotify: { enabled: false, connected: false },
-        youtube: { enabled: false, connected: false },
-        apple: { enabled: false, connected: false },
-        local: { enabled: true, supportedFormats: ['mp3', 'wav', 'ogg', 'aac'], autoPlay: false },
-        general: { autoSync: false, exerciseBPMSync: true, defaultVolume: 0.8, crossfadeDuration: 3, autoNext: true }
-      });
-    }
-  }, [userId, loadMusicConfig]);
-
-  // Get exercise-based recommendations when exercise changes
-  useEffect(() => {
-    if (exerciseData && musicConfig?.general?.autoSync) {
-      getExerciseRecommendations();
-    }
-  }, [exerciseData, musicConfig?.general?.autoSync, getExerciseRecommendations]);
-
+  // Define callback functions FIRST
   const loadMusicConfig = useCallback(async () => {
     try {
       const response = await fetch(`/api/music/config/${userId}`);
@@ -75,6 +53,29 @@ export const useMusicSync = (userId, exerciseData = null) => {
       setIsLoading(false);
     }
   }, [exerciseData, userId]);
+
+  // Load music configuration
+  useEffect(() => {
+    if (userId) {
+      loadMusicConfig();
+    } else {
+      // Set default config if no userId
+      setMusicConfig({
+        spotify: { enabled: false, connected: false },
+        youtube: { enabled: false, connected: false },
+        apple: { enabled: false, connected: false },
+        local: { enabled: true, supportedFormats: ['mp3', 'wav', 'ogg', 'aac'], autoPlay: false },
+        general: { autoSync: false, exerciseBPMSync: true, defaultVolume: 0.8, crossfadeDuration: 3, autoNext: true }
+      });
+    }
+  }, [userId, loadMusicConfig]);
+
+  // Get exercise-based recommendations when exercise changes
+  useEffect(() => {
+    if (exerciseData && musicConfig?.general?.autoSync) {
+      getExerciseRecommendations();
+    }
+  }, [exerciseData, musicConfig?.general?.autoSync, getExerciseRecommendations]);
 
   const getOptimalBPM = useCallback((exerciseType, intensity) => {
     const exerciseTypeNormalized = exerciseType?.toLowerCase();
