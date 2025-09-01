@@ -140,7 +140,7 @@ router.post('/users/:id/medical-docs/:docId/extract', async (req, res) => {
     let pdfParse
     try {
       pdfParse = (await import('pdf-parse')).default
-    } catch (e) {
+    } catch {
       return res.status(501).json({ success: false, error: 'pdf-parse no instalado' })
     }
 

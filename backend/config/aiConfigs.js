@@ -128,8 +128,8 @@ Si falta algún dato, infiérelo razonablemente y márcalo en "assumptions".
 7) VARIEDAD OBLIGATORIA CRÍTICA: 
    - Los ejercicios deben variar significativamente entre semanas. No repitas exactamente los mismos ejercicios en todas las semanas del plan.
    - CADA DÍA DE LA SEMANA DEBE SER COMPLETAMENTE ÚNICO: 
-     * El Lunes de la semana 1 debe ser totalmente diferente al Lunes de la semana 2, 3, 4, etc.
-     * El Martes de la semana 1 debe ser totalmente diferente al Martes de la semana 2, 3, 4, etc.
+     * Cada día de la semana 1 debe ser totalmente diferente al mismo día de la semana 2, 3, 4, etc.
+     * Por ejemplo: el primer día de entrenamiento de la semana 1 debe ser diferente al primer día de la semana 2, etc.
      * Y así sucesivamente para todos los días.
    - Usa progresiones, variantes y ejercicios completamente diferentes para mantener estímulo y evitar monotonía.
    - Si el usuario tiene ejercicios_recientes, EVITA usar esos ejercicios prioritariamente. Solo úsalos si has agotado las alternativas viables para la metodología.
@@ -145,7 +145,7 @@ Si falta algún dato, infiérelo razonablemente y márcalo en "assumptions".
 Mapeo orientativo: 3–5 reps ≈ 85–90% 1RM; 6–10 reps ≈ 70–80% 1RM; 10–15 reps ≈ 60–70% 1RM.
 
 — DISTRIBUCIÓN SEMANAL OBLIGATORIA:
-• Distribir los entrenamientos en DÍAS DIFERENTES cada semana (ej: Lun, Mar, Jue, Vie o Lun, Mie, Vie, Sab)
+• Distribuir los entrenamientos en días balanceados durante la semana (ej: días alternos o bloques de 2-3 días seguidos)
 • NO repetir los mismos días para todas las semanas si es posible evitarlo
 • Incluir máximo 1-2 días de descanso consecutivos
 • Asegurar al menos 1 día de descanso entre sesiones muy intensas
@@ -244,7 +244,7 @@ Mapeo orientativo: 3–5 reps ≈ 85–90% 1RM; 6–10 reps ≈ 70–80% 1RM; 10
 • Si la duración de una sesión sale <35 o >75, reequilibra series/reps para cumplir.
 • VERIFICAR OBLIGATORIAMENTE que cada sesión tenga MÍNIMO 4 ejercicios. Si tiene menos, agregar ejercicios complementarios apropiados para la metodología.
 • VERIFICAR OBLIGATORIAMENTE que cada ejercicio tenga "informacion_detallada" completa con ejecucion, consejos y errores_evitar.
-• VERIFICAR OBLIGATORIAMENTE que los ejercicios varíen significativamente entre semanas. El Lunes semana 1 debe ser completamente diferente al Lunes semana 2, 3, 4, etc.
+• VERIFICAR OBLIGATORIAMENTE que los ejercicios varíen significativamente entre semanas. Cada sesión de entrenamiento debe ser completamente diferente en todas las semanas.
 • VERIFICAR que no uses ejercicios de la lista "ejercicios_recientes" prioritariamente. Solo si has agotado alternativas viables.
 • VERIFICAR que la frecuencia sea mínimo 4 días (excepción Heavy Duty 3-4).
 • VERIFICAR que "duracion_total_semanas" coincida EXACTAMENTE con versionConfig.customWeeks si está especificado.

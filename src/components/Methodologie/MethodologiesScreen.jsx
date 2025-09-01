@@ -15,7 +15,6 @@ import MethodologyCard from './MethodologyCard.jsx';
 import MethodologyDetailsDialog from './MethodologyDetailsDialog.jsx';
 import MethodologyConfirmationModal from './MethodologyConfirmationModal.jsx';
 import MethodologyVersionSelectionModal from './MethodologyVersionSelectionModal.jsx';
-import { RoutinePlanModal } from '../routines';
 
 export default function MethodologiesScreen() {
   const navigate = useNavigate();
@@ -33,9 +32,38 @@ export default function MethodologiesScreen() {
   const [generatedRoutinePlan, setGeneratedRoutinePlan] = useState(null);
   const [showVersionSelection, setShowVersionSelection] = useState(false);
   const [versionSelectionData, setVersionSelectionData] = useState(null);
+  const [showActiveTrainingWarning, setShowActiveTrainingWarning] = useState(false);
+  const [activeTrainingInfo, setActiveTrainingInfo] = useState(null);
+
+  // Función para verificar si hay entrenamiento activo
+  const checkActiveTraining = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/routines/active-plan', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        return data.hasActivePlan ? data : null;
+      }
+      return null;
+    } catch (error) {
+      console.error('Error checking active training:', error);
+      return null;
+    }
+  };
 
   const handleActivateIA = async (forcedMethodology = null) => {
     if (!currentUser && !user) return;
+    
+    // Verificar si hay entrenamiento activo
+    const activeTraining = await checkActiveTraining();
+    if (activeTraining) {
+      setActiveTrainingInfo(activeTraining);
+      setShowActiveTrainingWarning(true);
+      return;
+    }
     
     // Mostrar modal de selección de versión
     setVersionSelectionData({
@@ -88,15 +116,16 @@ export default function MethodologiesScreen() {
       console.log('✅ Plan generado exitosamente:', result.plan);
       
       // Guardar plan y mostrar mensaje personalizado (como en HomeTraining)
-      setGeneratedRoutinePlan({
+      const newGeneratedPlan = {
         plan: result.plan,
         planSource: 'automatic',
         planId: result.planId, // ID original de methodology_plans
         routinePlanId: result.routinePlanId, // ID para routine_plans
         metadata: result.metadata,
         metodologia: result.plan.selected_style
-      });
-      
+      };
+      setGeneratedRoutinePlan(newGeneratedPlan);
+
       console.log('🛤️ Plan automático generado:', {
         methodologyPlanId: result.planId,
         routinePlanId: result.routinePlanId,
@@ -126,6 +155,12 @@ export default function MethodologiesScreen() {
       
       const enhancedMessage = `${baseMessage}\n\n💡 ${tip}`;
       setPersonalizedMessage(enhancedMessage);
+      
+      // Navegar automáticamente a rutinas después de generar el plan
+      console.log('🚀 Plan generado, navegando a rutinas automáticamente...');
+      setTimeout(() => {
+        navigateToRoutines(newGeneratedPlan);
+      }, 1500);
 
     } catch (err) {
       console.error('❌ Error generando plan:', err);
@@ -149,6 +184,14 @@ export default function MethodologiesScreen() {
 
   const confirmManualSelection = async (versionConfig) => {
     if (!pendingMethodology) return;
+    
+    // Verificar si hay entrenamiento activo
+    const activeTraining = await checkActiveTraining();
+    if (activeTraining) {
+      setActiveTrainingInfo(activeTraining);
+      setShowActiveTrainingWarning(true);
+      return;
+    }
     
     setShowVersionSelection(false);
     setIsLoading(true);
@@ -246,32 +289,56 @@ export default function MethodologiesScreen() {
   // Función para proceder del mensaje personalizado al modal del plan (como en HomeTraining)
   const proceedToRoutinePlan = () => {
     setShowPersonalizedMessage(false);
-    // Ahora se mostrará el RoutinePlanModal porque generatedRoutinePlan está seteado
+    // Navegar automáticamente a rutinas
+    console.log('🚀 Auto-navigating to routines with generated plan');
+    setTimeout(() => {
+      navigateToRoutines(generatedRoutinePlan);
+    }, 1000);
   };
 
   // Función para navegar a rutinas con el plan
-  const navigateToRoutines = () => {
-    const model = generatedRoutinePlan?.metadata?.model;
+  const navigateToRoutines = (overridePlan = null) => {
+    const planContainer = overridePlan || generatedRoutinePlan;
+
+    if (!planContainer || !planContainer.plan) {
+      console.error('❌ No hay plan de rutina disponible para navegar', { overridePlan, generatedRoutinePlan });
+      setError('No se pudo preparar la rutina. Vuelve a intentar generar el plan.');
+      return;
+    }
+
+    const model = planContainer?.metadata?.model;
     // Usar routinePlanId para Rutinas, fallback a planId si no existe
-    const correctPlanId = generatedRoutinePlan?.routinePlanId || generatedRoutinePlan?.planId;
-    
+    const correctPlanId = planContainer?.routinePlanId || planContainer?.planId;
+
     console.log('🛤️ Navegando a Rutinas:', {
-      methodologyPlanId: generatedRoutinePlan?.planId,
-      routinePlanId: generatedRoutinePlan?.routinePlanId,
+      methodologyPlanId: planContainer?.planId,
+      routinePlanId: planContainer?.routinePlanId,
       usingPlanId: correctPlanId
     });
-    
+
+    console.log('📦 Full generatedRoutinePlan object:', planContainer);
+    console.log('📋 Routine plan structure:', planContainer.plan);
+
+    const navigationState = {
+      routinePlan: planContainer.plan,
+      planSource: { label: 'OpenAI', detail: model ? `(${model})` : '' },
+      planMetadata: planContainer.metadata,
+      planId: correctPlanId,
+      methodology_plan_id: planContainer?.planId // ⭐ Crítico: ID del plan de metodología
+    };
+
+    console.log('🚀 About to navigate with state:', navigationState);
+
     navigate('/routines', {
-      state: {
-        routinePlan: generatedRoutinePlan.plan,
-        planSource: { label: 'OpenAI', detail: model ? `(${model})` : '' },
-        planMetadata: generatedRoutinePlan.metadata,
-        planId: correctPlanId // Usar el ID correcto para routine_plans
-      }
+      state: navigationState
     });
-    // Limpiar estado después de navegar
-    setGeneratedRoutinePlan(null);
-    setShowPersonalizedMessage(false);
+
+    // Limpiar estado después de un delay para asegurar que la navegación se complete
+    setTimeout(() => {
+      console.log('🧹 Clearing methodology state after navigation');
+      setGeneratedRoutinePlan(null);
+      setShowPersonalizedMessage(false);
+    }, 100);
   };
 
   return (
@@ -414,26 +481,65 @@ export default function MethodologiesScreen() {
       />
 
 
-      {/* Modal del plan de rutina (sin paso intermedio) */}
-      {generatedRoutinePlan && (
-        <RoutinePlanModal
-          plan={generatedRoutinePlan.plan}
-          planSource={{ 
-            label: 'OpenAI', 
-            detail: '(gpt-4.1-nano)' 
-          }}
-          personalizedMessage={personalizedMessage || `Rutina de ${generatedRoutinePlan.metodologia} generada específicamente para tus objetivos.`}
-          onStart={navigateToRoutines}
-          onGenerateAnother={() => {
-            setGeneratedRoutinePlan(null);
-            setShowPersonalizedMessage(false);
-          }}
-          onClose={() => {
-            setGeneratedRoutinePlan(null);
-            setShowPersonalizedMessage(false);
-          }}
-        />
+      {/* Modal de advertencia de entrenamiento activo */}
+      {showActiveTrainingWarning && (
+        <Dialog open={showActiveTrainingWarning} onOpenChange={setShowActiveTrainingWarning}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 text-orange-500" />
+                <DialogTitle>Entrenamiento en Marcha</DialogTitle>
+              </div>
+              <DialogDescription>
+                Tienes un entrenamiento activo de <strong>{activeTrainingInfo?.routinePlan?.selected_style}</strong>.
+                Si generas un nuevo entrenamiento, perderás el progreso actual.
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800 rounded-lg p-4 mt-4">
+              <div className="flex items-start gap-2">
+                <Zap className="w-4 h-4 text-orange-500 mt-0.5" />
+                <div className="text-sm">
+                  <p className="font-medium text-orange-800 dark:text-orange-200">
+                    Plan Activo: {activeTrainingInfo?.routinePlan?.selected_style}
+                  </p>
+                  <p className="text-orange-600 dark:text-orange-300 mt-1">
+                    Fuente: {activeTrainingInfo?.planSource?.label || 'Automático'}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter className="flex gap-2 sm:gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowActiveTrainingWarning(false);
+                  navigate('/routines');
+                }}
+              >
+                Continuar Entrenamiento
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  setShowActiveTrainingWarning(false);
+                  // Continuar con la generación original
+                  if (versionSelectionData?.isAutomatic) {
+                    setShowVersionSelection(true);
+                  } else {
+                    setShowVersionSelection(true);
+                  }
+                }}
+              >
+                Crear Nuevo Entrenamiento
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
+
+      {/* Auto-navigate to routines - no modal needed */}
     </div>
   );
 }

@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS app.methodology_exercise_sessions (
     user_id INTEGER NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
     methodology_plan_id INTEGER NOT NULL REFERENCES app.methodology_plans(id) ON DELETE CASCADE,
     methodology_type VARCHAR(50) NOT NULL,
-    session_name VARCHAR(100) NOT NULL, -- Ej: "Hipertrofia - Lunes Semana 1"
+    session_name VARCHAR(100) NOT NULL, -- Ej: "Hipertrofia - Día 1 Semana 1"
     week_number INTEGER NOT NULL DEFAULT 1,
     day_name VARCHAR(20) NOT NULL, -- Lun, Mar, Mie, Jue, Vie, Sab, Dom
     total_exercises INTEGER NOT NULL DEFAULT 0,
@@ -395,7 +395,7 @@ INSERT INTO app.methodology_exercise_sessions (
     user_id, methodology_plan_id, methodology_type, session_name, 
     week_number, day_name, total_exercises
 ) VALUES 
-(10, 20, 'Hipertrofia', 'Hipertrofia - Lunes Semana 1', 1, 'Lun', 4);
+(10, 20, 'Hipertrofia', 'Hipertrofia - Día 1 Semana 1', 1, 'Lun', 4);
 */
 
 -- ===============================================================

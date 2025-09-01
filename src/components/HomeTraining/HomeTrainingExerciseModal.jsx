@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Pause, Square, SkipForward, X, Clock, Target, RotateCcw, CheckCircle, Star, Info } from 'lucide-react';
 import { getExerciseGifUrl } from '../../config/exerciseGifs';
 import ExerciseFeedbackModal from './ExerciseFeedbackModal';
-import ExerciseInfoModal from '../routines/ExerciseInfoModal';
+// import ExerciseInfoModal from '../routines/ExerciseInfoModal'; // TODO: Restore when routines are rebuilt
 
 const HomeTrainingExerciseModal = ({
   exercise,
@@ -25,6 +25,7 @@ const HomeTrainingExerciseModal = ({
   const [totalTimeSpent, setTotalTimeSpent] = useState(0);
   const [showFeedback, setShowFeedback] = useState(false);
   const [showExerciseInfo, setShowExerciseInfo] = useState(false);
+  const [showRepeatConfirm, setShowRepeatConfirm] = useState(false);
   const intervalRef = useRef(null);
   const lastPhaseHandledRef = useRef(''); // evita manejar la misma transición dos veces
   const lastReportedSeriesRef = useRef(''); // evita PUT duplicados para la misma serie
@@ -61,7 +62,8 @@ const HomeTrainingExerciseModal = ({
               clearInterval(intervalRef.current);
               intervalRef.current = null;
             }
-            handlePhaseComplete();
+            // Usar setTimeout para evitar setState durante render
+            setTimeout(() => handlePhaseComplete(), 10);
             return 0;
           }
           return prev - 1;
@@ -83,13 +85,13 @@ const HomeTrainingExerciseModal = ({
   const handlePhaseComplete = () => {
     console.log(`🔄 [HomeTraining] Phase complete: ${currentPhase}, Series: ${currentSeries}/${seriesTotal}`);
     
-    // Evitar manejar la misma fase más de una vez con timestamp más específico
-    const currentSignatureBase = `${currentPhase}-${currentSeries}`;
-    if (lastPhaseHandledRef.current === currentSignatureBase) {
-      console.log('🚫 [HomeTraining] Duplicate phase transition blocked:', currentSignatureBase);
+    // Evitar manejar la misma fase más de una vez
+    const currentSignature = `${currentPhase}-${currentSeries}`;
+    if (lastPhaseHandledRef.current === currentSignature) {
+      console.log('🚫 [HomeTraining] Duplicate phase transition blocked:', currentSignature);
       return;
     }
-    lastPhaseHandledRef.current = currentSignatureBase;
+    lastPhaseHandledRef.current = currentSignature;
 
     // Cortar el intervalo inmediatamente
     if (intervalRef.current) {
@@ -108,36 +110,46 @@ const HomeTrainingExerciseModal = ({
 
       if (currentSeries < seriesTotal) {
         console.log(`🔄 [HomeTraining] Starting rest phase, series ${currentSeries}/${seriesTotal}`);
-        setCurrentPhase('rest');
-        const restTime = Math.min(60, Math.max(45, Number(exercise.descanso_seg) || 60));
-        setTimeLeft(restTime);
-        // Iniciar descanso automáticamente sin delay
-        setTimeout(() => { 
-          lastPhaseHandledRef.current = '';
-          setIsRunning(true); 
+        
+        // Usar setTimeout para hacer las transiciones de estado de forma asíncrona
+        setTimeout(() => {
+          setCurrentPhase('rest');
+          const restTime = Math.min(60, Math.max(45, Number(exercise.descanso_seg) || 60));
+          setTimeLeft(restTime);
+          
+          // Reset signature y auto-start después de un pequeño delay
+          setTimeout(() => { 
+            lastPhaseHandledRef.current = '';
+            setIsRunning(true); 
+          }, 200);
         }, 100);
       } else {
         console.log('🎉 [HomeTraining] All series completed, finishing exercise');
-        setCurrentPhase('completed');
-        setTimeout(() => { onComplete(totalTimeSpent); }, 500);
+        setTimeout(() => {
+          setCurrentPhase('completed');
+          setTimeout(() => { onComplete(totalTimeSpent); }, 300);
+        }, 100);
       }
     } else if (currentPhase === 'rest') {
       console.log('⏰ [HomeTraining] Rest phase completed, moving to next series');
-      // Incrementar serie y cambiar a ejercicio
-      const nextSeries = Math.min(currentSeries + 1, seriesTotal);
-      setCurrentSeries(nextSeries);
-      setCurrentPhase('exercise');
       
-      // Configurar tiempo del próximo ejercicio
-      const exerciseTime = Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos) || 45;
-      setTimeLeft(exerciseTime);
-      
-      // Pequeño delay para evitar problemas de renderizado, luego iniciar automáticamente
-      setTimeout(() => { 
-        lastPhaseHandledRef.current = '';
-        setIsRunning(true); 
-        console.log(`🏃‍♂️ [HomeTraining] Starting series ${nextSeries}/${seriesTotal} automatically`);
-      }, 150);
+      // Usar setTimeout para transiciones asíncronas
+      setTimeout(() => {
+        const nextSeries = Math.min(currentSeries + 1, seriesTotal);
+        setCurrentSeries(nextSeries);
+        setCurrentPhase('exercise');
+        
+        // Configurar tiempo del próximo ejercicio
+        const exerciseTime = Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos) || 45;
+        setTimeLeft(exerciseTime);
+        
+        // Reset signature y auto-start
+        setTimeout(() => { 
+          lastPhaseHandledRef.current = '';
+          setIsRunning(true); 
+          console.log(`🏃‍♂️ [HomeTraining] Starting series ${nextSeries}/${seriesTotal} automatically`);
+        }, 200);
+      }, 100);
     }
   };
 
@@ -207,6 +219,30 @@ const HomeTrainingExerciseModal = ({
     if (typeof onCancel === 'function') onCancel();
     setIsRunning(false);
     setCurrentPhase('completed'); // cerramos el flujo localmente
+  };
+
+  const handleRepeatTraining = () => {
+    setShowRepeatConfirm(true);
+  };
+
+  const confirmRepeatTraining = () => {
+    console.log('🔄 [HomeTraining] Reiniciando entrenamiento completo');
+    // Reiniciar completamente el ejercicio
+    setCurrentPhase('ready');
+    setCurrentSeries(1);
+    setIsRunning(false);
+    setTotalTimeSpent(0);
+    setTimeLeft((Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos) || 45));
+    lastPhaseHandledRef.current = '';
+    lastReportedSeriesRef.current = '';
+    
+    // Limpiar el intervalo si existe
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    
+    setShowRepeatConfirm(false);
   };
 
   // Reservado para futura UI de saltar solo una serie
@@ -555,6 +591,24 @@ const HomeTrainingExerciseModal = ({
               </>
             )}
           </div>
+
+          {/* Botón para repetir entrenamiento - solo visible al completar */}
+          {currentPhase === 'completed' && (
+            <div className="mt-6 pt-4 border-t border-gray-700">
+              <div className="text-center">
+                <button
+                  onClick={handleRepeatTraining}
+                  className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white font-semibold py-3 px-6 rounded-lg transition-all duration-200 shadow-lg hover:shadow-xl mx-auto"
+                >
+                  <RotateCcw size={20} />
+                  ¿Quieres repetir el entrenamiento del día?
+                </button>
+                <p className="text-xs text-gray-400 mt-2">
+                  Reiniciará el ejercicio completo desde cero
+                </p>
+              </div>
+            </div>
+          )}
         </div>
         {/* Modal de feedback */}
         {showFeedback && (
@@ -599,6 +653,40 @@ const HomeTrainingExerciseModal = ({
           />
         )}
 
+        {/* Modal de confirmación para repetir entrenamiento */}
+        {showRepeatConfirm && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+            <div className="bg-gray-800 border border-gray-600 rounded-xl p-6 w-full max-w-md">
+              <div className="text-center mb-6">
+                <div className="w-16 h-16 bg-purple-600/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <RotateCcw size={24} className="text-purple-400" />
+                </div>
+                <h3 className="text-xl font-bold text-white mb-2">¿Estás seguro?</h3>
+                <p className="text-gray-300 text-sm">
+                  Esto reiniciará completamente el ejercicio actual desde el principio.
+                </p>
+                <p className="text-gray-400 text-xs mt-2">
+                  Perderás todo el progreso de las series completadas.
+                </p>
+              </div>
+              
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowRepeatConfirm(false)}
+                  className="flex-1 px-4 py-3 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-lg transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={confirmRepeatTraining}
+                  className="flex-1 px-4 py-3 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg transition-colors"
+                >
+                  Sí, repetir
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
       </div>
     </div>

@@ -80,17 +80,68 @@ router.post('/register', async (req, res) => {
       return isNaN(num) ? null : num;
     };
 
-    // Normalizar horarioPreferido a los valores permitidos en BD
+    // Normalizar todos los campos con constraints
     const normalizeHorarioPreferido = (val) => {
       if (val === '' || val === undefined || val === null) return null;
       const v = String(val).toLowerCase();
-      // Aceptar variantes del registro y mapear a: 'mañana', 'media_mañana', 'tarde', 'noche'
       if (v === 'manana' || v === 'mañana' || v === 'morning') return 'mañana';
       if (v === 'mediodia' || v === 'medio_dia' || v === 'media_mañana' || v === 'media_manana' || v === 'noon') return 'media_mañana';
       if (v === 'tarde' || v === 'afternoon') return 'tarde';
       if (v === 'noche' || v === 'night') return 'noche';
-      if (v === 'flexible') return null; // no permitido por constraint; guardamos NULL
-      return null; // cualquier otro valor inválido -> NULL
+      return null;
+    };
+
+    const normalizeObjetivoPrincipal = (val) => {
+      if (val === '' || val === undefined || val === null) return null;
+      const v = String(val).toLowerCase().replace(/\s+/g, '_');
+      
+      // Mapear valores del frontend a valores de BD
+      const mappings = {
+        'perder_peso': 'perder_peso',
+        'ganar_musculo': 'ganar_masa_muscular',
+        'ganar_masa_muscular': 'ganar_masa_muscular',
+        'tonificar': 'tonificar',
+        'ganar_peso': 'ganar_peso',
+        'mejorar_resistencia': 'mejorar_resistencia',
+        'mejorar_flexibilidad': 'mejorar_flexibilidad',
+        'salud_general': 'salud_general',
+        'mantenimiento': 'mantenimiento',
+        'rehabilitacion': 'rehabilitacion'
+      };
+      
+      return mappings[v] || null;
+    };
+
+    const normalizeEnfoqueEntrenamiento = (val) => {
+      if (val === '' || val === undefined || val === null) return null;
+      const v = String(val).toLowerCase().replace(/\s+/g, '_');
+      
+      // Mapear valores del frontend a valores de BD permitidos
+      const mappings = {
+        'fuerza': 'fuerza',
+        'hipertrofia': 'hipertrofia', 
+        'resistencia': 'resistencia',
+        'funcional': 'general', // Funcional -> general (según constraint BD)
+        'hiit': 'perdida_peso', // HIIT -> perdida_peso (según constraint BD)
+        'mixto': 'general', // Mixto -> general (según constraint BD)
+        'perdida_peso': 'perdida_peso',
+        'general': 'general'
+      };
+      
+      return mappings[v] || null;
+    };
+
+    const normalizeNivelActividad = (val) => {
+      if (val === '' || val === undefined || val === null) return null;
+      const v = String(val).toLowerCase();
+      const validValues = ['sedentario', 'ligero', 'moderado', 'activo', 'muy_activo'];
+      return validValues.includes(v) ? v : null;
+    };
+
+    const normalizeSexo = (val) => {
+      if (val === '' || val === undefined || val === null) return null;
+      const v = String(val).toLowerCase();
+      return (v === 'masculino' || v === 'femenino') ? v : null;
     };
 
     // Procesar valores numéricos
@@ -145,6 +196,7 @@ router.post('/register', async (req, res) => {
     const medicamentosValue = normalizeArrayValue(medicamentos, isArrayColumn['medicamentos']);
     const suplementacionValue = normalizeArrayValue(suplementacion, isArrayColumn['suplementacion']);
     const alimentosExcluidosValue = normalizeArrayValue(alimentosExcluidos, isArrayColumn['alimentos_excluidos']);
+    const limitacionesFisicasValue = normalizeArrayValue(limitacionesFisicas, isArrayColumn['limitaciones_fisicas']);
 
 
     // Insertar usuario en la base de datos (created_at y updated_at se manejan automáticamente)
@@ -164,14 +216,14 @@ router.post('/register', async (req, res) => {
       ) RETURNING id, nombre, apellido, email, created_at`,
       [
         nombre, apellido, email, hashedPassword,
-        toNumberOrNull(edad), toNullIfEmpty(sexo), toNumberOrNull(peso), toNumberOrNull(altura),
+        toNumberOrNull(edad), normalizeSexo(sexo), toNumberOrNull(peso), toNumberOrNull(altura),
         toNullIfEmpty(nivelEntrenamiento), anosEntrenamientoValue, frecuenciaSemanalValue,
-        toNullIfEmpty(metodologiaPreferida), toNullIfEmpty(nivelActividad),
+        toNullIfEmpty(metodologiaPreferida), normalizeNivelActividad(nivelActividad),
         toNumberOrNull(cintura), toNumberOrNull(pecho), toNumberOrNull(brazos),
         toNumberOrNull(muslos), toNumberOrNull(cuello), toNumberOrNull(antebrazos),
-        toNullIfEmpty(historialMedico), toNullIfEmpty(limitacionesFisicas),
-        alergiasValue, medicamentosValue, toNullIfEmpty(objetivoPrincipal),
-        toNumberOrNull(metaPeso), toNumberOrNull(metaGrasaCorporal), toNullIfEmpty(enfoqueEntrenamiento),
+        toNullIfEmpty(historialMedico), limitacionesFisicasValue,
+        alergiasValue, medicamentosValue, normalizeObjetivoPrincipal(objetivoPrincipal),
+        toNumberOrNull(metaPeso), toNumberOrNull(metaGrasaCorporal), normalizeEnfoqueEntrenamiento(enfoqueEntrenamiento),
         normalizeHorarioPreferido(horarioPreferido), toNumberOrNull(comidasPorDia), suplementacionValue,
         alimentosExcluidosValue
       ]

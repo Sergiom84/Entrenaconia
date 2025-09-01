@@ -13,7 +13,7 @@ router.get('/catalog', authenticateToken, async (_req, res) => {
     try {
       const r1 = await pool.query(`SELECT code, name, level, icon FROM app.equipment_catalog ORDER BY level, name`);
       rows = r1.rows;
-    } catch (_e) {
+    } catch {
       const r2 = await pool.query(`SELECT key AS code, label AS name, level FROM app.equipment_items ORDER BY level, label`);
       rows = r2.rows;
     }
@@ -76,7 +76,7 @@ router.post('/user', authenticateToken, async (req, res) => {
           [equipment_key]
         );
         equipmentId = r.rows[0]?.id ?? null; // si no existe, dejamos null
-      } catch (_e) {
+      } catch {
         equipmentId = null; // si no existe la tabla/vista
       }
     }

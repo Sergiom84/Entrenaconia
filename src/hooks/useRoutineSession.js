@@ -163,7 +163,7 @@ export default function useRoutineSession() {
     }
   }, [persistExerciseProgress]);
 
-  const completeExercise = useCallback(async (timeSpent, fetchRoutineStats) => {
+  const completeExercise = useCallback(async (timeSpent) => {
     const idx = currentExerciseIndex;
     const sc = (currentSessionData?.exercises?.[idx]?.series) || 0;
     await persistExerciseProgress({ exerciseIndex: idx, seriesCompleted: sc, status: 'completed', timeSpent });

@@ -4,996 +4,1053 @@ import { pool } from '../db.js';
 
 const router = express.Router();
 
-// ========================================
-// RUTAS PARA SESIONES DE RUTINAS
-// ========================================
-
-// Crear/hidratar sesión de rutina (idempotente)
-router.post('/sessions', authenticateToken, async (req, res) => {
+// Helpers para normalizar los nombres de días a abreviaturas válidas por la BD
+function stripDiacritics(str = '') {
+  try { return str.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); } catch { return str; }
+}
+function normalizeDayAbbrev(dayName) {
+  if (!dayName) return dayName;
+  const raw = stripDiacritics(String(dayName).trim());
+  const lower = raw.toLowerCase().replace(/\.$/, '');
+  const map = {
+    'lunes': 'Lun', 'lun': 'Lun',
+    'martes': 'Mar', 'mar': 'Mar',
+    'miercoles': 'Mie', 'mie': 'Mie', 'miércoles': 'Mie',
+    'jueves': 'Jue', 'jue': 'Jue',
+    'viernes': 'Vie', 'vie': 'Vie',
+    'sabado': 'Sab', 'sab': 'Sab', 'sábado': 'Sab',
+    'domingo': 'Dom', 'dom': 'Dom',
+  };
+  return map[lower] || dayName; // si ya viene correcto, lo dejamos
+}
+function normalizePlanDays(planDataJson) {
   try {
-    const { routinePlanId, weekNumber, dayName, totalExpected } = req.body;
+    if (!planDataJson || !Array.isArray(planDataJson.semanas)) return planDataJson;
+    return {
+      ...planDataJson,
+      semanas: planDataJson.semanas.map((sem) => ({
+        ...sem,
+        sesiones: Array.isArray(sem.sesiones)
+          ? sem.sesiones.map((ses) => ({
+              ...ses,
+              dia: normalizeDayAbbrev(ses.dia),
+            }))
+          : sem.sesiones,
+      })),
+    };
+  } catch (e) {
+    console.error('No se pudo normalizar días del plan', e);
+    return planDataJson;
+  }
+}
+
+// Utilidad: asegurar sesiones creadas a partir del plan JSON (metodología)
+async function ensureMethodologySessions(client, userId, methodologyPlanId, planDataJson) {
+  // ¿Existen sesiones ya?
+  const exists = await client.query(
+    'SELECT 1 FROM app.methodology_exercise_sessions WHERE user_id = $1 AND methodology_plan_id = $2 LIMIT 1',
+    [userId, methodologyPlanId]
+  );
+  if (exists.rowCount > 0) return;
+
+  const normalizedPlan = normalizePlanDays(planDataJson);
+
+  await client.query(
+    'SELECT app.create_methodology_exercise_sessions($1, $2, $3::jsonb)',
+    [userId, methodologyPlanId, JSON.stringify(normalizedPlan)]
+  );
+}
+
+// Utilidad: crear una sesión específica para un día que no existe en el plan
+async function createMissingDaySession(client, userId, methodologyPlanId, planDataJson, requestedDay, weekNumber = 1) {
+  const normalizedPlan = normalizePlanDays(planDataJson);
+  const normalizedRequestedDay = normalizeDayAbbrev(requestedDay);
+  
+  // Buscar si ya existe la sesión para este día
+  const existingSession = await client.query(
+    'SELECT id FROM app.methodology_exercise_sessions WHERE user_id = $1 AND methodology_plan_id = $2 AND week_number = $3 AND day_name = $4',
+    [userId, methodologyPlanId, weekNumber, normalizedRequestedDay]
+  );
+  
+  if (existingSession.rowCount > 0) {
+    return existingSession.rows[0].id;
+  }
+  
+  // Si el plan no contiene una sesión para el día solicitado, usar la primera sesión disponible
+  const semanas = normalizedPlan?.semanas || [];
+  const firstWeek = semanas.find(s => Number(s.semana) === weekNumber) || semanas[0];
+  const sesiones = firstWeek?.sesiones || [];
+  
+  if (sesiones.length === 0) {
+    throw new Error('No hay sesiones disponibles en el plan para crear una sesión de reemplazo');
+  }
+  
+  // Tomar la primera sesión como template
+  const templateSession = sesiones[0];
+  
+  // Obtener la metodología real del plan JSON
+  const realMethodology = planDataJson?.selected_style || planDataJson?.metodologia || 'Adaptada';
+  
+  // Crear la nueva sesión en la BD
+  const newSession = await client.query(
+    `INSERT INTO app.methodology_exercise_sessions 
+     (user_id, methodology_plan_id, methodology_type, session_name, week_number, day_name, total_exercises, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW()) 
+     RETURNING id`,
+    [
+      userId, 
+      methodologyPlanId, 
+      realMethodology,
+      `Sesión ${normalizedRequestedDay}`, 
+      weekNumber, 
+      normalizedRequestedDay, 
+      templateSession.ejercicios?.length || 0
+    ]
+  );
+  
+  console.log(`✅ Sesión creada para día faltante: ${normalizedRequestedDay} (usando template de ${templateSession.dia})`);
+  return newSession.rows[0].id;
+}
+
+// GET /api/routines/plan?id=...&type=routine|methodology
+router.get('/plan', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
     const userId = req.user?.userId || req.user?.id;
-
-    console.log('[POST /api/routines/sessions]', { userId, routinePlanId, weekNumber, dayName, totalExpected });
-
-    // Validar parámetros
-    if (!Number.isInteger(routinePlanId) || !Number.isInteger(weekNumber) || !dayName) {
-      console.log('[POST /api/routines/sessions] error - parámetros inválidos');
-      return res.status(400).json({ success: false, error: 'Parámetros inválidos' });
+    const { id, type } = req.query;
+    if (!id || !type) {
+      return res.status(400).json({ success: false, error: 'Parámetros requeridos: id y type (routine|methodology)' });
     }
 
-    // Verificar que el plan existe y no está archivado
-    const planQ = await pool.query(
-      `SELECT id, archived_at FROM app.routine_plans WHERE id = $1 AND user_id = $2`,
-      [routinePlanId, userId]
-    );
-    
-    if (planQ.rowCount === 0) {
-      console.log('[POST /api/routines/sessions] error - plan no encontrado');
-      return res.status(404).json({ success: false, error: 'Plan no encontrado' });
-    }
-    
-    if (planQ.rows[0].archived_at) {
-      console.log('[POST /api/routines/sessions] error - plan archivado', { archived_at: planQ.rows[0].archived_at });
-      return res.status(409).json({ success: false, error: 'Plan archivado' });
-    }
-
-    // Lock para evitar multi-click concurrente
-    await pool.query(`SELECT pg_advisory_xact_lock($1, $2)`, [userId, routinePlanId]);
-
-    const total = Number.isInteger(totalExpected) ? Math.max(0, totalExpected) : 0;
-
-    // Obtener el plan con los ejercicios del JSON para este día específico
-    const planWithDataQ = await pool.query(
-      `SELECT plan_data FROM app.routine_plans WHERE id = $1`,
-      [routinePlanId]
-    );
-
-    let exercisesForThisDay = [];
-    if (planWithDataQ.rowCount > 0 && planWithDataQ.rows[0].plan_data) {
-      try {
-        const planData = planWithDataQ.rows[0].plan_data;
-        console.log('[POST /api/routines/sessions] DEBUG planData keys:', Object.keys(planData || {}));
-        if (planData && planData.semanas) {
-          console.log('[POST /api/routines/sessions] DEBUG semanas count:', planData.semanas.length);
-          const semanaActual = planData.semanas.find(s => s.semana === weekNumber);
-          console.log('[POST /api/routines/sessions] DEBUG looking for week:', weekNumber, 'found:', !!semanaActual);
-          if (semanaActual && semanaActual.sesiones) {
-            console.log('[POST /api/routines/sessions] DEBUG sesiones count:', semanaActual.sesiones.length);
-            const sessionForDay = semanaActual.sesiones.find(ses => ses.dia === dayName);
-            console.log('[POST /api/routines/sessions] DEBUG looking for day:', dayName, 'found:', !!sessionForDay);
-            if (sessionForDay && sessionForDay.ejercicios) {
-              exercisesForThisDay = sessionForDay.ejercicios;
-              console.log('[POST /api/routines/sessions] DEBUG ejercicios count:', exercisesForThisDay.length);
-            }
-          }
-        }
-      } catch (parseError) {
-        console.warn('[POST /api/routines/sessions] error parsing plan_data:', parseError);
-      }
-    }
-
-    // Calcular el total de ejercicios basado en el JSON si no se proporcionó
-    const actualTotal = Number.isInteger(totalExpected) && totalExpected > 0 
-      ? totalExpected 
-      : exercisesForThisDay.length;
-
-    // Upsert de la sesión
-    const upsert = await pool.query(
-      `INSERT INTO app.routine_sessions (user_id, routine_plan_id, week_number, day_name, total_exercises, exercises_completed, status)
-       VALUES ($1,$2,$3,$4,$5,0,'pending')
-       ON CONFLICT (user_id, routine_plan_id, week_number, day_name)
-       DO UPDATE SET 
-         total_exercises = CASE WHEN app.routine_sessions.total_exercises = 0 THEN EXCLUDED.total_exercises ELSE app.routine_sessions.total_exercises END,
-         updated_at = NOW()
-       RETURNING *;`,
-      [userId, routinePlanId, weekNumber, dayName, actualTotal]
-    );
-
-    const sessionId = upsert.rows[0].id;
-    const wasInserted = upsert.rows[0].created_at === upsert.rows[0].updated_at;
-    
-    console.log('[POST /api/routines/sessions] DEBUG Session result:', {
-      sessionId,
-      wasInserted,
-      total_exercises: upsert.rows[0].total_exercises,
-      actualTotal,
-      exercisesForThisDayLength: exercisesForThisDay.length
-    });
-
-    // Crear ejercicios SIEMPRE que tengamos ejercicios del JSON y no existan ya
-    if (exercisesForThisDay.length > 0) {
-      console.log('[POST /api/routines/sessions] Creating exercise progress records:', exercisesForThisDay.length);
-      
-      // Verificar si ya existen ejercicios para esta sesión
-      const existingExercises = await pool.query(
-        `SELECT COUNT(*) FROM app.routine_exercise_progress WHERE routine_session_id = $1`,
-        [sessionId]
+    if (type === 'routine') {
+      const r = await client.query(
+        'SELECT id, methodology_type, plan_data, generation_mode, frequency_per_week, total_weeks, is_active FROM app.routine_plans WHERE id = $1 AND user_id = $2',
+        [id, userId]
       );
-      
-      const exerciseCount = parseInt(existingExercises.rows[0].count);
-      console.log('[POST /api/routines/sessions] Existing exercises count:', exerciseCount);
-      
-      // Solo crear si no existen ejercicios
-      if (exerciseCount === 0) {
-        for (let i = 0; i < exercisesForThisDay.length; i++) {
-          const ejercicio = exercisesForThisDay[i];
-          try {
-            await pool.query(
-              `INSERT INTO app.routine_exercise_progress 
-               (user_id, routine_session_id, exercise_order, exercise_name, series_total, status) 
-               VALUES ($1, $2, $3, $4, $5, 'pending')`,
-              [userId, sessionId, i + 1, ejercicio.nombre, ejercicio.series || 0] // i + 1 para empezar en 1
-            );
-          } catch (progressError) {
-            console.warn('[POST /api/routines/sessions] error creating exercise progress:', progressError);
-          }
-        }
-        
-        // Actualizar el total_exercises de la sesión también
-        await pool.query(
-          `UPDATE app.routine_sessions SET total_exercises = $1, updated_at = NOW() WHERE id = $2`,
-          [exercisesForThisDay.length, sessionId]
-        );
-        
-        console.log('[POST /api/routines/sessions] Exercise progress records created successfully');
-      } else {
-        console.log('[POST /api/routines/sessions] Exercises already exist, skipping creation');
-      }
+      if (r.rowCount === 0) return res.status(404).json({ success: false, error: 'Plan no encontrado' });
+      return res.json({ success: true, plan: r.rows[0] });
     }
 
-    console.log('[POST /api/routines/sessions] success', { sessionId: sessionId });
-    return res.status(200).json({
-      success: true,
-      session: upsert.rows[0]
-    });
-    
-  } catch (err) {
-    console.error('[POST /api/routines/sessions] error', err);
-    return res.status(500).json({ success: false, error: 'internal_error' });
+    if (type === 'methodology') {
+      const r = await client.query(
+        'SELECT id, methodology_type, plan_data, generation_mode FROM app.methodology_plans WHERE id = $1 AND user_id = $2',
+        [id, userId]
+      );
+      if (r.rowCount === 0) return res.status(404).json({ success: false, error: 'Plan no encontrado' });
+      return res.json({ success: true, plan: r.rows[0] });
+    }
+
+    return res.status(400).json({ success: false, error: 'type inválido' });
+  } catch (e) {
+    console.error('Error fetching routine plan:', e);
+    res.status(500).json({ success: false, error: 'Error interno' });
+  } finally {
+    client.release();
   }
 });
 
-// Obtener progreso de una rutina (filtrar archivados)
-router.get('/progress/:routinePlanId', authenticateToken, async (req, res) => {
+// POST /api/routines/bootstrap-plan
+// Si solo se tiene routine_plan_id, crea un registro en methodology_plans y devuelve methodology_plan_id
+router.post('/bootstrap-plan', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
   try {
-    const { routinePlanId } = req.params;
+    await client.query('BEGIN');
+
     const userId = req.user?.userId || req.user?.id;
+    const { routine_plan_id } = req.body;
+    if (!routine_plan_id) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, error: 'routine_plan_id requerido' });
+    }
 
-    console.log('[GET /api/routines/progress]', { userId, routinePlanId });
-
-    // Verificar plan no archivado
-    const planCheck = await pool.query(
-      `SELECT id, archived_at FROM app.routine_plans WHERE id = $1 AND user_id = $2`,
-      [routinePlanId, userId]
+    const r = await client.query(
+      'SELECT id, methodology_type, plan_data, generation_mode FROM app.routine_plans WHERE id = $1 AND user_id = $2',
+      [routine_plan_id, userId]
     );
-    
-    if (planCheck.rowCount === 0) {
-      console.log('[GET /api/routines/progress] plan no encontrado');
+    if (r.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, error: 'Routine plan no encontrado' });
+    }
+
+    const { methodology_type, plan_data, generation_mode } = r.rows[0];
+
+    // Crear methodology_plans
+    const ins = await client.query(
+      `INSERT INTO app.methodology_plans (user_id, methodology_type, plan_data, generation_mode, created_at)
+       VALUES ($1, $2, $3, $4, NOW()) RETURNING id`,
+      [userId, methodology_type, plan_data, generation_mode || 'automatic']
+    );
+
+    const methodologyPlanId = ins.rows[0].id;
+
+    // Crear sesiones derivadas del plan JSON
+    await ensureMethodologySessions(client, userId, methodologyPlanId, plan_data);
+
+    await client.query('COMMIT');
+    res.json({ success: true, methodology_plan_id: methodologyPlanId });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('Error bootstrap plan:', e);
+    res.status(500).json({ success: false, error: 'Error interno' });
+  } finally {
+    client.release();
+  }
+});
+
+// POST /api/routines/sessions/start
+// Body: { methodology_plan_id, week_number, day_name }
+router.post('/sessions/start', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const userId = req.user?.userId || req.user?.id;
+    const { methodology_plan_id, week_number, day_name } = req.body;
+    if (!methodology_plan_id || !week_number || !day_name) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, error: 'Faltan parámetros: methodology_plan_id, week_number, day_name' });
+    }
+
+    // Verificar plan y obtener plan_data
+    const planQ = await client.query(
+      'SELECT plan_data, methodology_type FROM app.methodology_plans WHERE id = $1 AND user_id = $2',
+      [methodology_plan_id, userId]
+    );
+    if (planQ.rowCount === 0) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ success: false, error: 'Plan no encontrado' });
     }
+    const planData = planQ.rows[0].plan_data;
+
+    // Asegurar sesiones creadas
+    await ensureMethodologySessions(client, userId, methodology_plan_id, planData);
+
+    const normalizedDay = normalizeDayAbbrev(day_name);
+
+    // Buscar la sesión específica
+    let ses = await client.query(
+      `SELECT * FROM app.methodology_exercise_sessions
+         WHERE user_id = $1 AND methodology_plan_id = $2 AND week_number = $3 AND day_name = $4
+         LIMIT 1`,
+      [userId, methodology_plan_id, week_number, normalizedDay]
+    );
+
+    if (ses.rowCount === 0) {
+      // Crear de nuevo las sesiones por si acaso y reintentar
+      await ensureMethodologySessions(client, userId, methodology_plan_id, planData);
+      ses = await client.query(
+        `SELECT * FROM app.methodology_exercise_sessions
+           WHERE user_id = $1 AND methodology_plan_id = $2 AND week_number = $3 AND day_name = $4
+           LIMIT 1`,
+        [userId, methodology_plan_id, week_number, normalizedDay]
+      );
+    }
+
+    if (ses.rowCount === 0) {
+      // Si no existe la sesión, crearla usando la función de día faltante
+      console.log(`⚠️ Sesión no encontrada para ${normalizedDay}, creando sesión adaptada...`);
+      try {
+        const sessionId = await createMissingDaySession(client, userId, methodology_plan_id, planData, day_name, week_number);
+        // Obtener la sesión recién creada
+        ses = await client.query(
+          `SELECT * FROM app.methodology_exercise_sessions WHERE id = $1`,
+          [sessionId]
+        );
+      } catch (createError) {
+        console.error('Error creando sesión para día faltante:', createError);
+        await client.query('ROLLBACK');
+        return res.status(404).json({ success: false, error: 'Sesión no encontrada para esa semana/día y no se pudo crear una adaptada' });
+      }
+    }
+
+    const session = ses.rows[0];
+
+    // Precrear progreso por ejercicio (si no existe)
+    // Encontrar la definición de ejercicios en el JSON del plan
+    const semana = (planData.semanas || []).find(s => Number(s.semana) === Number(week_number));
+    let sesionDef = semana ? (semana.sesiones || []).find(s => normalizeDayAbbrev(s.dia) === normalizedDay) : null;
     
-    if (planCheck.rows[0].archived_at) {
-      console.log('[GET /api/routines/progress] plan archivado', { archived_at: planCheck.rows[0].archived_at });
-      return res.status(409).json({ success: false, error: 'Plan archivado' });
+    // Si no existe sesión para este día, usar la primera sesión disponible como template
+    if (!sesionDef && semana && semana.sesiones && semana.sesiones.length > 0) {
+      sesionDef = semana.sesiones[0];
+      console.log(`📋 Usando template de ${sesionDef.dia} para día faltante ${normalizedDay}`);
+    }
+    
+    const ejercicios = Array.isArray(sesionDef?.ejercicios) ? sesionDef.ejercicios : [];
+
+    for (let i = 0; i < ejercicios.length; i++) {
+      const ej = ejercicios[i] || {};
+      const order = i; // 0-based
+      // Insertar si no existe
+      await client.query(
+        `INSERT INTO app.methodology_exercise_progress (
+           methodology_session_id, user_id, exercise_order, exercise_name,
+           series_total, repeticiones, descanso_seg, intensidad, tempo, notas,
+           series_completed, status
+         )
+         SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0, 'pending'
+         WHERE NOT EXISTS (
+           SELECT 1 FROM app.methodology_exercise_progress 
+            WHERE methodology_session_id = $1 AND exercise_order = $3
+         )`,
+        [session.id, userId, order, ej.nombre || `Ejercicio ${i + 1}`,
+         Number(ej.series) || 3, String(ej.repeticiones || ''), Number(ej.descanso_seg) || 60,
+         ej.intensidad || null, ej.tempo || null, ej.notas || null]
+      );
     }
 
-    const progressQuery = `
-      SELECT * FROM app.get_routine_progress($1, $2)
-    `;
-    const progressResult = await pool.query(progressQuery, [userId, parseInt(routinePlanId)]);
+    // Marcar sesión iniciada
+    await client.query(
+      `UPDATE app.methodology_exercise_sessions
+         SET session_status = 'in_progress', started_at = COALESCE(started_at, NOW()), total_exercises = $2
+       WHERE id = $1`,
+      [session.id, ejercicios.length]
+    );
 
-    res.json({
-      success: true,
-      progress: progressResult.rows[0] || {
-        total_sessions: 0,
-        completed_sessions: 0,
-        in_progress_sessions: 0,
-        total_exercises: 0,
-        completed_exercises: 0,
-        current_week: 1,
-        current_day: 'Lun',
-        overall_percentage: 0
-      }
-    });
-
-  } catch (error) {
-    console.error('Error obteniendo progreso de rutina:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Error interno del servidor'
-    });
+    await client.query('COMMIT');
+    res.json({ success: true, session_id: session.id, total_exercises: ejercicios.length });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('Error starting routine session:', e);
+    res.status(500).json({ success: false, error: 'Error interno' });
+  } finally {
+    client.release();
   }
 });
 
-// Obtener detalles de una sesión específica (hidratación controlada)
-router.get('/sessions/:sessionId', authenticateToken, async (req, res) => {
+// PUT /api/routines/sessions/:sessionId/exercise/:exerciseOrder
+// Body: { series_completed, status, time_spent_seconds }
+router.put('/sessions/:sessionId/exercise/:exerciseOrder', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
   try {
-    const { sessionId } = req.params;
+    await client.query('BEGIN');
+
     const userId = req.user?.userId || req.user?.id;
+    const { sessionId, exerciseOrder } = req.params;
+    const { series_completed, status, time_spent_seconds } = req.body;
 
-    console.log('[GET /api/routines/sessions/:sessionId]', { userId, sessionId });
-
-    // Primera consulta: obtener sesión básica y plan
-    const sessionQuery = `
-      SELECT 
-        rs.*,
-        rp.archived_at,
-        rp.plan_data
-      FROM app.routine_sessions rs
-      JOIN app.routine_plans rp ON rs.routine_plan_id = rp.id
-      WHERE rs.id = $1 AND rs.user_id = $2
-    `;
-
-    const sessionResult = await pool.query(sessionQuery, [sessionId, userId]);
-
-    if (sessionResult.rows.length === 0) {
-      console.log('[GET /api/routines/sessions/:sessionId] no encontrada');
-      return res.status(204).end();
+    // Verificar sesión del usuario
+    const ses = await client.query(
+      'SELECT * FROM app.methodology_exercise_sessions WHERE id = $1 AND user_id = $2',
+      [sessionId, userId]
+    );
+    if (ses.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
     }
 
-    const session = sessionResult.rows[0];
-    if (session.archived_at) {
-      console.log('[GET /api/routines/sessions/:sessionId] plan archivado', { archived_at: session.archived_at });
-      return res.status(204).end();
-    }
+    // Asegurar fila de progreso existente
+    const progSel = await client.query(
+      `SELECT * FROM app.methodology_exercise_progress 
+        WHERE methodology_session_id = $1 AND exercise_order = $2`,
+      [sessionId, exerciseOrder]
+    );
 
-    // Obtener ejercicios del plan JSON para la semana y día actual
-    let exercises = [];
-    if (session.plan_data && session.plan_data.semanas) {
-      const semanaActual = session.plan_data.semanas.find(s => s.semana === session.week_number);
-      if (semanaActual && semanaActual.sesiones) {
-        const sesionActual = semanaActual.sesiones.find(s => s.dia === session.day_name);
-        if (sesionActual && sesionActual.ejercicios) {
-          exercises = sesionActual.ejercicios.map((ejercicio, index) => ({
-            exercise_order: index + 1, // Coincidir con BD que empieza en 1
-            exercise_name: ejercicio.nombre,
-            status: 'pending',
-            series_completed: 0,
-            series_total: ejercicio.series || 0,
-            repetitions: ejercicio.repeticiones,
-            rest_time: ejercicio.descanso_seg,
-            intensity: ejercicio.intensidad,
-            tempo: ejercicio.tempo,
-            notes: ejercicio.notas,
-            detailed_info: ejercicio.informacion_detallada,
-            time_spent_seconds: 0,
-            feedback_sentiment: null,
-            feedback_comment: null
-          }));
-        }
-      }
-    }
-
-    // Obtener progreso real de la base de datos para sobrescribir valores predeterminados
-    if (exercises.length > 0) {
-      const progressQuery = `
-        SELECT 
-          rep.exercise_order,
-          rep.status,
-          rep.series_completed,
-          rep.time_spent_seconds,
-          ref.sentiment as feedback_sentiment,
-          ref.comment as feedback_comment
-        FROM app.routine_exercise_progress rep
-        LEFT JOIN app.routine_exercise_feedback ref ON rep.routine_session_id = ref.routine_session_id 
-          AND rep.exercise_order = ref.exercise_order
-        WHERE rep.routine_session_id = $1
-        ORDER BY rep.exercise_order
-      `;
-      
-      const progressResult = await pool.query(progressQuery, [sessionId]);
-      
-      // Merge con el progreso real
-      progressResult.rows.forEach(progress => {
-        const exerciseIndex = exercises.findIndex(e => e.exercise_order === progress.exercise_order);
-        if (exerciseIndex >= 0) {
-          exercises[exerciseIndex].status = progress.status;
-          exercises[exerciseIndex].series_completed = progress.series_completed;
-          exercises[exerciseIndex].time_spent_seconds = progress.time_spent_seconds;
-          exercises[exerciseIndex].feedback_sentiment = progress.feedback_sentiment;
-          exercises[exerciseIndex].feedback_comment = progress.feedback_comment;
-        }
-      });
-    }
-
-    // Remover campos internos
-    delete session.archived_at;
-    delete session.plan_data;
-
-    // Añadir ejercicios a la sesión
-    session.exercises = exercises;
-
-    console.log(`[GET /api/routines/sessions/:sessionId] devolviendo ${exercises.length} ejercicios`);
-
-    res.json({
-      success: true,
-      session: session
-    });
-
-  } catch (error) {
-    console.error('Error obteniendo sesión:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Error interno del servidor'
-    });
-  }
-});
-
-// Actualizar progreso de un ejercicio
-router.put('/sessions/:sessionId/exercise/:exerciseIndex/progress', authenticateToken, async (req, res) => {
-  try {
-    const { sessionId, exerciseIndex } = req.params;
-    const { seriesCompleted, status, timeSpent } = req.body;
-    const userId = req.user?.userId || req.user?.id;
-
-    // Verificar que la sesión pertenece al usuario
-    const verifyQuery = `
-      SELECT id FROM app.routine_sessions 
-      WHERE id = $1 AND user_id = $2
-    `;
-    const verifyResult = await pool.query(verifyQuery, [sessionId, userId]);
-
-    if (verifyResult.rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        error: 'Sesión no encontrada'
-      });
+    if (progSel.rowCount === 0) {
+      // Crear fila mínima (sin info completa) si faltase
+      await client.query(
+        `INSERT INTO app.methodology_exercise_progress (
+           methodology_session_id, user_id, exercise_order, exercise_name,
+           series_total, repeticiones, descanso_seg, series_completed, status
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, 0, 'pending')`,
+        [sessionId, userId, exerciseOrder, 'Ejercicio', 3, '—', 60]
+      );
     }
 
     // Actualizar progreso
-    const updateQuery = `
-      SELECT app.update_routine_exercise_progress($1, $2, $3, $4, $5)
-    `;
-    await pool.query(updateQuery, [
-      parseInt(sessionId),
-      parseInt(exerciseIndex),
-      parseInt(seriesCompleted),
-      status,
-      timeSpent ? parseInt(timeSpent) : null
-    ]);
+    const upd = await client.query(
+      `UPDATE app.methodology_exercise_progress
+         SET series_completed = $1::int,
+             status = $2::varchar(20),
+             time_spent_seconds = COALESCE($3, time_spent_seconds),
+             completed_at = CASE WHEN $2::varchar(20) = 'completed' THEN NOW() ELSE completed_at END
+       WHERE methodology_session_id = $4 AND exercise_order = $5
+       RETURNING *`,
+      [series_completed, status, time_spent_seconds ?? null, sessionId, exerciseOrder]
+    );
 
-    // Si el ejercicio se completó, también guardarlo en el historial del usuario para la IA
-    if (status === 'completed') {
-      try {
-        // Obtener información del ejercicio de la sesión incluyendo methodology_type
-        const sessionQuery = `
-          SELECT rs.*, rp.plan_data, rp.methodology_type
-          FROM app.routine_sessions rs
-          JOIN app.routine_plans rp ON rs.routine_plan_id = rp.id
-          WHERE rs.id = $1 AND rs.user_id = $2
-        `;
-        const sessionResult = await pool.query(sessionQuery, [sessionId, userId]);
-        
-        if (sessionResult.rows.length > 0) {
-          const session = sessionResult.rows[0];
-          const planData = session.plan_data;
-          
-          // Encontrar el ejercicio específico
-          let exerciseData = null;
-          if (planData && planData.semanas) {
-            for (const semana of planData.semanas) {
-              if (semana.sesiones) {
-                for (const sesion of semana.sesiones) {
-                  if (sesion.ejercicios && sesion.ejercicios[exerciseIndex]) {
-                    exerciseData = sesion.ejercicios[exerciseIndex];
-                    break;
-                  }
-                }
-              }
-              if (exerciseData) break;
-            }
-          }
+    // Actualizar sesión (contadores y estado)
+    const counters = await client.query(
+      `SELECT 
+         COUNT(*) FILTER (WHERE status = 'completed') AS completed,
+         COUNT(*) AS total
+       FROM app.methodology_exercise_progress
+       WHERE methodology_session_id = $1`,
+      [sessionId]
+    );
+    const { completed, total } = counters.rows[0];
 
-          // Insertar en historial de metodologías (tabla específica)
-          if (exerciseData) {
-            const historyQuery = `
-              INSERT INTO app.exercise_history 
-              (user_id, exercise_name, methodology_type, plan_id, week_number, day_name)
-              VALUES ($1, $2, $3, $4, $5, $6)
-              ON CONFLICT (user_id, exercise_name, plan_id, week_number, day_name) 
-              DO UPDATE SET 
-                used_at = CURRENT_TIMESTAMP
-            `;
-            await pool.query(historyQuery, [
-              userId,
-              exerciseData.nombre,
-              session.methodology_type || 'Desconocida',
-              session.routine_plan_id,
-              session.week_number,
-              session.day_name
-            ]);
-            console.log(`✅ Ejercicio "${exerciseData.nombre}" guardado en historial de metodologías (${session.methodology_type})`);
-          }
-        }
-      } catch (historyError) {
-        console.error('❌ Error guardando en historial de usuario:', historyError);
-        // No fallar la respuesta principal por este error
-      }
-    }
+    await client.query(
+      `UPDATE app.methodology_exercise_sessions
+         SET exercises_completed = $2,
+             total_exercises = GREATEST($3, COALESCE(total_exercises, 0)),
+             total_duration_seconds = COALESCE(total_duration_seconds, 0) + COALESCE($4, 0),
+             session_status = CASE WHEN $2 = $3 AND $3 > 0 THEN 'completed' ELSE 'in_progress' END,
+             completed_at = CASE WHEN $2 = $3 AND $3 > 0 THEN NOW() ELSE completed_at END
+       WHERE id = $1`,
+      [sessionId, Number(completed), Number(total), time_spent_seconds ?? 0]
+    );
 
-    res.json({
-      success: true,
-      message: 'Progreso actualizado'
-    });
-
-  } catch (error) {
-    console.error('Error actualizando progreso:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Error interno del servidor'
-    });
+    await client.query('COMMIT');
+    res.json({ success: true, exercise: upd.rows[0], progress: { completed: Number(completed), total: Number(total) } });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('Error updating routine exercise:', e);
+    res.status(500).json({ success: false, error: 'Error interno' });
+  } finally {
+    client.release();
   }
 });
 
-// Enviar feedback de un ejercicio
-router.post('/sessions/:sessionId/exercise/:exerciseIndex/feedback', authenticateToken, async (req, res) => {
+// POST /api/routines/sessions/:sessionId/finish
+router.post('/sessions/:sessionId/finish', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
   try {
-    const { sessionId, exerciseIndex } = req.params;
-    const { sentiment, comment, exercise_name } = req.body;
+    await client.query('BEGIN');
+
     const userId = req.user?.userId || req.user?.id;
+    const { sessionId } = req.params;
 
-    // Verificar que la sesión pertenece al usuario
-    const verifyQuery = `
-      SELECT id FROM app.routine_sessions 
-      WHERE id = $1 AND user_id = $2
-    `;
-    const verifyResult = await pool.query(verifyQuery, [sessionId, userId]);
+    const ses = await client.query(
+      'SELECT * FROM app.methodology_exercise_sessions WHERE id = $1 AND user_id = $2',
+      [sessionId, userId]
+    );
+    if (ses.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
+    }
 
-    if (verifyResult.rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        error: 'Sesión no encontrada'
+    const session = ses.rows[0];
+
+    // Actualizar estado de la sesión
+    await client.query(
+      `UPDATE app.methodology_exercise_sessions
+         SET session_status = 'completed', completed_at = NOW(),
+             total_duration_seconds = EXTRACT(EPOCH FROM (NOW() - started_at))::INTEGER
+       WHERE id = $1`,
+      [sessionId]
+    );
+
+    // Obtener todos los ejercicios de la sesión para mover al historial
+    const exercisesQuery = await client.query(
+      `SELECT mep.*, mes.methodology_type, mes.methodology_plan_id, mes.week_number, mes.day_name
+       FROM app.methodology_exercise_progress mep
+       JOIN app.methodology_exercise_sessions mes ON mep.methodology_session_id = mes.id
+       WHERE mep.methodology_session_id = $1`,
+      [sessionId]
+    );
+
+    // Mover cada ejercicio al historial completo
+    for (const exercise of exercisesQuery.rows) {
+      // Solo mover ejercicios que fueron completados o saltados (no pendientes)
+      if (exercise.status !== 'pending') {
+        await client.query(
+          `INSERT INTO app.methodology_exercise_history_complete (
+            user_id, methodology_plan_id, methodology_session_id,
+            exercise_name, exercise_order, methodology_type,
+            series_total, series_completed, repeticiones, intensidad,
+            tiempo_dedicado_segundos, week_number, day_name, 
+            session_date, completed_at, created_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW())
+          ON CONFLICT DO NOTHING`,
+          [
+            userId,
+            exercise.methodology_plan_id,
+            sessionId,
+            exercise.exercise_name,
+            exercise.exercise_order,
+            exercise.methodology_type,
+            exercise.series_total,
+            exercise.series_completed || 0,
+            exercise.repeticiones,
+            exercise.intensidad,
+            exercise.time_spent_seconds,
+            exercise.week_number,
+            exercise.day_name,
+            session.started_at ? new Date(session.started_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+            session.completed_at || new Date()
+          ]
+        );
+      }
+    }
+
+    await client.query('COMMIT');
+    res.json({ success: true, message: 'Sesión finalizada y datos guardados en historial' });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('Error finishing routine session:', e);
+    res.status(500).json({ success: false, error: 'Error interno' });
+  } finally {
+    client.release();
+  }
+});
+
+// GET /api/routines/sessions/today-status
+// Obtiene el estado de la sesión del día actual (si existe)
+router.get('/sessions/today-status', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    const { methodology_plan_id, week_number, day_name } = req.query;
+
+    if (!methodology_plan_id || !week_number || !day_name) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Parámetros requeridos: methodology_plan_id, week_number, day_name' 
       });
     }
 
-    // Insertar o actualizar feedback
-    const feedbackQuery = `
-      INSERT INTO app.routine_exercise_feedback (
-        user_id, routine_session_id, exercise_order, exercise_name, sentiment, comment
-      ) VALUES ($1, $2, $3, $4, $5, $6)
-      ON CONFLICT (routine_session_id, exercise_order)
-      DO UPDATE SET 
-        sentiment = EXCLUDED.sentiment,
-        comment = EXCLUDED.comment,
-        updated_at = CURRENT_TIMESTAMP
-    `;
+    const normalizedDay = normalizeDayAbbrev(day_name);
 
-    await pool.query(feedbackQuery, [
-      userId,
-      parseInt(sessionId),
-      parseInt(exerciseIndex),
-      exercise_name,
-      sentiment,
-      comment
-    ]);
+    // Buscar la sesión del día
+    const sessionQuery = await pool.query(
+      `SELECT * FROM app.methodology_exercise_sessions
+       WHERE user_id = $1 AND methodology_plan_id = $2 
+         AND week_number = $3 AND day_name = $4
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [userId, methodology_plan_id, week_number, normalizedDay]
+    );
 
-    res.json({
-      success: true,
-      message: 'Feedback guardado'
-    });
+    if (sessionQuery.rowCount === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'No hay sesión para este día' 
+      });
+    }
 
-  } catch (error) {
-    console.error('Error guardando feedback:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Error interno del servidor'
-    });
-  }
-});
+    const session = sessionQuery.rows[0];
 
-// Completar una sesión
-router.put('/sessions/:sessionId/complete', authenticateToken, async (req, res) => {
-  try {
-    const { sessionId } = req.params;
-    const { totalDuration } = req.body;
-    const userId = req.user?.userId || req.user?.id;
+    // Obtener progreso de ejercicios
+    const exercisesQuery = await pool.query(
+      `SELECT exercise_order, exercise_name, series_total, series_completed, 
+              repeticiones, descanso_seg, intensidad, tempo, status, 
+              time_spent_seconds, notas
+       FROM app.methodology_exercise_progress
+       WHERE methodology_session_id = $1
+       ORDER BY exercise_order ASC`,
+      [session.id]
+    );
 
-    const completeQuery = `
-      UPDATE app.routine_sessions 
-      SET 
-        status = 'completed',
-        completed_at = CURRENT_TIMESTAMP,
-        total_duration_seconds = $3,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1 AND user_id = $2
-    `;
-
-    await pool.query(completeQuery, [sessionId, userId, totalDuration || 0]);
+    // Calcular resumen
+    const totalExercises = exercisesQuery.rowCount;
+    const completedExercises = exercisesQuery.rows.filter(ex => ex.status === 'completed').length;
+    const skippedExercises = exercisesQuery.rows.filter(ex => ex.status === 'skipped').length;
 
     res.json({
       success: true,
-      message: 'Sesión completada'
-    });
-
-  } catch (error) {
-    console.error('Error completando sesión:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Error interno del servidor'
-    });
-  }
-});
-
-// ========================================
-// RUTAS PARA ESTADÍSTICAS
-// ========================================
-
-// Obtener estadísticas del usuario
-router.get('/stats', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user?.userId || req.user?.id;
-
-    const statsQuery = `
-      SELECT * FROM app.user_routine_stats WHERE user_id = $1
-    `;
-    const statsResult = await pool.query(statsQuery, [userId]);
-
-    res.json({
-      success: true,
-      stats: statsResult.rows[0] || {
-        user_id: userId,
-        total_routines_generated: 0,
-        completed_sessions: 0,
-        completed_exercises: 0,
-        total_feedback_given: 0,
-        loved_exercises: 0,
-        hard_exercises: 0,
-        avg_session_duration_seconds: 0,
-        last_workout_date: null
+      session: {
+        ...session,
+        canResume: session.session_status === 'in_progress' || (session.session_status === 'pending' && exercisesQuery.rowCount > 0)
+      },
+      exercises: exercisesQuery.rows,
+      summary: {
+        total: totalExercises,
+        completed: completedExercises,
+        skipped: skippedExercises,
+        pending: totalExercises - completedExercises - skippedExercises,
+        isComplete: session.session_status === 'completed'
       }
     });
 
   } catch (error) {
-    console.error('Error obteniendo estadísticas:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Error interno del servidor'
+    console.error('Error obteniendo estado de sesión del día:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Error interno del servidor' 
     });
   }
 });
 
-// Obtener historial de rutinas del usuario (filtrar archivados)
-router.get('/history', authenticateToken, async (req, res) => {
+// GET /api/routines/sessions/:sessionId/progress
+router.get('/sessions/:sessionId/progress', authenticateToken, async (req, res) => {
   try {
     const userId = req.user?.userId || req.user?.id;
-    const { limit = 10, offset = 0 } = req.query;
+    const { sessionId } = req.params;
 
-    console.log('[GET /api/routines/history]', { userId, limit, offset });
+    const ses = await pool.query(
+      'SELECT * FROM app.methodology_exercise_sessions WHERE id = $1 AND user_id = $2',
+      [sessionId, userId]
+    );
+    if (ses.rowCount === 0) return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
 
-    const historyQuery = `
-      SELECT 
-        rp.id,
-        rp.methodology_type,
-        rp.frequency_per_week,
-        rp.total_weeks,
-        rp.created_at,
-        rp.is_active,
-        rp.archived_at,
-        COUNT(rs.id) as total_sessions,
-        COUNT(CASE WHEN rs.status = 'completed' THEN 1 END) as completed_sessions
-      FROM app.routine_plans rp
-      LEFT JOIN app.routine_sessions rs ON rp.id = rs.routine_plan_id
-      WHERE rp.user_id = $1 AND rp.archived_at IS NULL
-      GROUP BY rp.id, rp.methodology_type, rp.frequency_per_week, rp.total_weeks, rp.created_at, rp.is_active, rp.archived_at
-      ORDER BY rp.created_at DESC
-      LIMIT $2 OFFSET $3
-    `;
+    const progress = await pool.query(
+      `SELECT 
+        mep.exercise_order, mep.exercise_name, mep.series_total, mep.series_completed, 
+        mep.repeticiones, mep.descanso_seg, mep.intensidad, mep.tempo, mep.status, 
+        mep.time_spent_seconds, mep.notas,
+        mef.sentiment, mef.comment
+       FROM app.methodology_exercise_progress mep
+       LEFT JOIN app.methodology_exercise_feedback mef 
+         ON mep.methodology_session_id = mef.methodology_session_id 
+         AND mep.exercise_order = mef.exercise_order
+       WHERE mep.methodology_session_id = $1
+       ORDER BY mep.exercise_order ASC`,
+      [sessionId]
+    );
 
-    const historyResult = await pool.query(historyQuery, [userId, parseInt(limit), parseInt(offset)]);
+    const counters = await pool.query(
+      `SELECT COUNT(*) FILTER (WHERE status = 'completed')::int AS completed,
+              COUNT(*)::int AS total
+         FROM app.methodology_exercise_progress
+        WHERE methodology_session_id = $1`,
+      [sessionId]
+    );
 
-    console.log('[GET /api/routines/history] found:', historyResult.rowCount, 'routines');
-
-    res.json({
-      success: true,
-      routines: historyResult.rows
-    });
-
-  } catch (error) {
-    console.error('Error obteniendo historial:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Error interno del servidor'
-    });
+    res.json({ success: true, session: ses.rows[0], exercises: progress.rows, summary: counters.rows[0] });
+  } catch (e) {
+    console.error('Error fetching session progress:', e);
+    res.status(500).json({ success: false, error: 'Error interno' });
   }
 });
 
-// Obtener estadísticas de un plan de rutina específico (filtrar archivados)
-router.get('/plans/:planId/stats', authenticateToken, async (req, res) => {
+// POST /api/routines/confirm-plan
+// Confirma una rutina cambiando su estado de 'draft' a 'active'
+router.post('/confirm-plan', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
   try {
-    const { planId } = req.params;
+    await client.query('BEGIN');
+
     const userId = req.user?.userId || req.user?.id;
+    const { methodology_plan_id, routine_plan_id } = req.body;
 
-    console.log('[GET /api/routines/plans/:planId/stats]', { planId, userId });
+    if (!methodology_plan_id) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ 
+        success: false, 
+        error: 'methodology_plan_id es requerido' 
+      });
+    }
 
-    // Verificar plan y estado archivado
-    const planCheck = await pool.query(
-      `SELECT id, archived_at, is_active FROM app.routine_plans WHERE id = $1 AND user_id = $2`,
-      [planId, userId]
+    // Verificar que el plan pertenece al usuario y está en estado draft
+    const planCheck = await client.query(
+      `SELECT id, status, methodology_type, plan_data 
+       FROM app.methodology_plans 
+       WHERE id = $1 AND user_id = $2`,
+      [methodology_plan_id, userId]
     );
 
     if (planCheck.rowCount === 0) {
-      console.log('[GET /api/routines/plans/:planId/stats] plan no encontrado');
-      return res.status(404).json({ success: false, error: 'Plan no encontrado' });
+      await client.query('ROLLBACK');
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Plan no encontrado' 
+      });
     }
 
     const plan = planCheck.rows[0];
-    console.log('[GET /api/routines/plans/:planId/stats] plan check', { archived_at: plan.archived_at, is_active: plan.is_active });
-    
-    if (plan.archived_at) {
-      return res.status(409).json({ success: false, error: 'Plan archivado' });
-    }
 
-    if (plan.is_active === false) {
-      return res.status(410).json({
-        success: false,
-        error: 'Este plan de rutina ha sido cancelado',
-        code: 'ROUTINE_CANCELLED'
-      });
-    }
-
-    // Usar la nueva función mejorada para obtener estadísticas
-    const statsQuery = `
-      SELECT * FROM app.get_enhanced_routine_plan_stats($1, $2)
-    `;
-
-    const statsResult = await pool.query(statsQuery, [userId, parseInt(planId)]);
-    
-    if (statsResult.rows.length === 0) {
-      console.log('[GET /api/routines/plans/:planId/stats] no stats found');
-      return res.status(404).json({
-        success: false,
-        error: 'Plan de rutina no encontrado'
-      });
-    }
-
-    const stats = statsResult.rows[0];
-    console.log('[GET /api/routines/plans/:planId/stats] success', { total_exercises: stats.total_exercises_attempted });
-
-    res.json({
-      success: true,
-      stats: {
-        completed_sessions: stats.completed_sessions,
-        completed_exercises: stats.total_exercises_attempted,
-        total_training_time: stats.total_training_time_minutes,
-        current_streak: stats.current_streak_days,
-        methodology_type: stats.methodology_type,
-        current_level: stats.generation_mode === 'auto' ? 'Intermedio' : 'Personalizado',
-        last_session_date: stats.last_session_date,
-        loved_exercises: stats.loved_exercises,
-        hard_exercises: stats.hard_exercises,
-        plan_created_at: stats.plan_created_at,
-        plan_total_weeks: stats.total_weeks,
-        plan_frequency_per_week: stats.frequency_per_week,
-        overall_progress: stats.overall_progress_percentage
-      }
-    });
-
-  } catch (error) {
-    console.error('Error obteniendo estadísticas del plan:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Error interno del servidor'
-    });
-  }
-});
-
-// Registrar actividad diaria (cuando usuario hace clic en "Continuar Entrenamiento")
-router.post('/plans/:planId/activity', authenticateToken, async (req, res) => {
-  try {
-    const { planId } = req.params;
-    const userId = req.user?.userId || req.user?.id;
-    const { activityType = 'continue_training' } = req.body;
-
-    console.log('[POST /api/routines/plans/:planId/activity]', { planId, userId, activityType });
-
-    // Verificar plan y estado archivado
-    const planCheck = await pool.query(
-      `SELECT id, archived_at FROM app.routine_plans WHERE id = $1 AND user_id = $2`,
-      [planId, userId]
+    // Usar la función de la base de datos para confirmar
+    const confirmResult = await client.query(
+      'SELECT app.confirm_routine_plan($1, $2, $3) as confirmed',
+      [userId, methodology_plan_id, routine_plan_id || null]
     );
 
-    if (planCheck.rowCount === 0) {
-      console.log('[POST /api/routines/plans/:planId/activity] plan no encontrado');
-      return res.status(404).json({ success: false, error: 'Plan no encontrado' });
+    const confirmed = confirmResult.rows[0]?.confirmed;
+
+    if (!confirmed) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ 
+        success: false, 
+        error: 'No se pudo confirmar el plan. Puede que ya esté confirmado o no esté en estado draft.' 
+      });
     }
 
-    if (planCheck.rows[0].archived_at) {
-      console.log('[POST /api/routines/plans/:planId/activity] plan archivado', { archived_at: planCheck.rows[0].archived_at });
-      return res.status(409).json({ success: false, error: 'Plan archivado' });
+    // Asegurar que las sesiones metodológicas estén creadas
+    try {
+      await client.query(
+        'SELECT app.create_methodology_exercise_sessions($1, $2, $3::jsonb)',
+        [userId, methodology_plan_id, JSON.stringify(plan.plan_data)]
+      );
+      console.log('✅ Sesiones metodológicas creadas tras confirmación');
+    } catch (sessionError) {
+      console.warn('⚠️ Error creando sesiones tras confirmación:', sessionError.message);
+      // No fallar la confirmación por esto, las sesiones se pueden crear después
     }
 
-    // Registrar la actividad diaria
-    const registerQuery = `
-      SELECT app.register_daily_activity($1, $2, $3)
-    `;
+    await client.query('COMMIT');
 
-    await pool.query(registerQuery, [userId, parseInt(planId), activityType]);
+    console.log(`✅ Rutina confirmada: methodology_plan(${methodology_plan_id}) routine_plan(${routine_plan_id || 'N/A'})`);
 
-    console.log('[POST /api/routines/plans/:planId/activity] success');
     res.json({
       success: true,
-      message: 'Actividad registrada exitosamente'
+      message: 'Rutina confirmada exitosamente',
+      confirmed_at: new Date().toISOString(),
+      methodology_plan_id: methodology_plan_id,
+      routine_plan_id: routine_plan_id,
+      status: 'active'
     });
 
   } catch (error) {
-    console.error('Error registrando actividad diaria:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Error interno del servidor'
+    await client.query('ROLLBACK');
+    console.error('Error confirmando rutina:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Error interno del servidor',
+      details: error.message 
     });
+  } finally {
+    client.release();
   }
 });
 
-// ========================================
-// CANCELAR/ELIMINAR RUTINAS
-// ========================================
-
-// Cancelar rutina completamente (marcar como inactiva y limpiar sesiones)
-router.delete('/plans/:planId', authenticateToken, async (req, res) => {
+// GET /api/routines/progress-data
+// Obtiene datos de progreso histórico para el ProgressTab
+router.get('/progress-data', authenticateToken, async (req, res) => {
   try {
-    const { planId } = req.params;
     const userId = req.user?.userId || req.user?.id;
-    
-    console.log(`🗑️ [Routines] Cancelando rutina planId: ${planId}, userId: ${userId}`);
+    const { methodology_plan_id } = req.query;
 
-    // Verificar que el plan pertenezca al usuario y no esté archivado
-    const checkQuery = `
-      SELECT id, methodology_type, archived_at FROM app.routine_plans 
-      WHERE id = $1 AND user_id = $2
-    `;
-    
-    const checkResult = await pool.query(checkQuery, [planId, userId]);
-    
-    if (checkResult.rows.length === 0) {
+    if (!methodology_plan_id) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'methodology_plan_id es requerido' 
+      });
+    }
+
+    // Obtener información del plan
+    const planQuery = await pool.query(
+      'SELECT methodology_type, plan_data FROM app.methodology_plans WHERE id = $1 AND user_id = $2',
+      [methodology_plan_id, userId]
+    );
+
+    if (planQuery.rowCount === 0) {
       return res.status(404).json({ 
         success: false, 
-        error: 'Rutina no encontrada o no tienes permisos' 
+        error: 'Plan de metodología no encontrado' 
       });
     }
 
-    const plan = checkResult.rows[0];
-    if (plan.archived_at) {
-      return res.status(409).json({ 
+    const plan = planQuery.rows[0];
+    const planData = typeof plan.plan_data === 'string' ? JSON.parse(plan.plan_data) : plan.plan_data;
+
+    // Obtener resumen general de progreso
+    const generalStatsQuery = await pool.query(
+      `SELECT 
+         COUNT(DISTINCT methodology_session_id) as total_sessions_completed,
+         COUNT(*) as total_exercises_completed,
+         SUM(series_completed) as total_series_completed,
+         SUM(tiempo_dedicado_segundos) as total_time_seconds,
+         MIN(session_date) as first_session_date,
+         MAX(session_date) as last_session_date
+       FROM app.methodology_exercise_history_complete
+       WHERE user_id = $1 AND methodology_plan_id = $2`,
+      [userId, methodology_plan_id]
+    );
+
+    // Obtener progreso por semanas
+    const weeklyProgressQuery = await pool.query(
+      `SELECT 
+         week_number,
+         COUNT(DISTINCT methodology_session_id) as sessions_completed,
+         COUNT(*) as exercises_completed,
+         SUM(series_completed) as series_completed,
+         SUM(tiempo_dedicado_segundos) as time_spent_seconds
+       FROM app.methodology_exercise_history_complete
+       WHERE user_id = $1 AND methodology_plan_id = $2
+       GROUP BY week_number
+       ORDER BY week_number ASC`,
+      [userId, methodology_plan_id]
+    );
+
+    // Obtener actividad reciente (últimas 10 sesiones)
+    const recentActivityQuery = await pool.query(
+      `SELECT DISTINCT
+         methodology_session_id,
+         session_date,
+         week_number,
+         day_name,
+         COUNT(*) as exercises_count,
+         SUM(series_completed) as total_series,
+         SUM(tiempo_dedicado_segundos) as session_duration_seconds
+       FROM app.methodology_exercise_history_complete
+       WHERE user_id = $1 AND methodology_plan_id = $2
+       GROUP BY methodology_session_id, session_date, week_number, day_name
+       ORDER BY session_date DESC, methodology_session_id DESC
+       LIMIT 10`,
+      [userId, methodology_plan_id]
+    );
+
+    // Calcular totales del plan (desde el JSON)
+    const totalWeeks = planData?.semanas?.length || 0;
+    const totalSessionsInPlan = planData?.semanas?.reduce((acc, semana) => 
+      acc + (semana.sesiones?.length || 0), 0) || 0;
+    const totalExercisesInPlan = planData?.semanas?.reduce((acc, semana) => 
+      acc + semana.sesiones?.reduce((sessAcc, sesion) => 
+        sessAcc + (sesion.ejercicios?.length || 0), 0) || 0, 0) || 0;
+
+    // Construir respuesta
+    const generalStats = generalStatsQuery.rows[0];
+    const weeklyProgress = weeklyProgressQuery.rows;
+    const recentActivity = recentActivityQuery.rows;
+
+    // Calcular semana actual (basado en sesiones completadas)
+    const currentWeek = Math.max(1, ...weeklyProgress.map(w => w.week_number), 1);
+
+    // Construir progreso por semanas con datos reales
+    const weeklyProgressData = [];
+    for (let week = 1; week <= totalWeeks; week++) {
+      const weekData = weeklyProgress.find(w => w.week_number === week);
+      const weekSessions = planData?.semanas?.find(s => s.semana === week)?.sesiones?.length || 0;
+      const weekExercises = planData?.semanas?.find(s => s.semana === week)?.sesiones?.reduce(
+        (acc, ses) => acc + (ses.ejercicios?.length || 0), 0) || 0;
+
+      weeklyProgressData.push({
+        week,
+        sessions: weekSessions,
+        completed: weekData?.sessions_completed || 0,
+        exercises: weekExercises,
+        exercisesCompleted: weekData?.exercises_completed || 0,
+        seriesCompleted: weekData?.series_completed || 0,
+        timeSpentSeconds: weekData?.time_spent_seconds || 0
+      });
+    }
+
+    const responseData = {
+      totalWeeks,
+      currentWeek,
+      totalSessions: totalSessionsInPlan,
+      completedSessions: parseInt(generalStats.total_sessions_completed) || 0,
+      totalExercises: totalExercisesInPlan,
+      completedExercises: parseInt(generalStats.total_exercises_completed) || 0,
+      totalSeriesCompleted: parseInt(generalStats.total_series_completed) || 0,
+      totalTimeSpentSeconds: parseInt(generalStats.total_time_seconds) || 0,
+      firstSessionDate: generalStats.first_session_date,
+      lastSessionDate: generalStats.last_session_date,
+      weeklyProgress: weeklyProgressData,
+      recentActivity: recentActivity.map(activity => ({
+        sessionId: activity.methodology_session_id,
+        date: activity.session_date,
+        weekNumber: activity.week_number,
+        dayName: activity.day_name,
+        exercisesCount: parseInt(activity.exercises_count),
+        totalSeries: parseInt(activity.total_series),
+        durationSeconds: parseInt(activity.session_duration_seconds) || 0,
+        formattedDate: new Date(activity.session_date).toLocaleDateString('es-ES', {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric'
+        })
+      }))
+    };
+
+    res.json({ success: true, data: responseData });
+  } catch (error) {
+    console.error('Error obteniendo datos de progreso:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Error interno del servidor' 
+    });
+  }
+});
+
+// POST /api/routines/sessions/:sessionId/exercise/:exerciseOrder/feedback
+// Guardar feedback del usuario sobre un ejercicio específico
+router.post('/sessions/:sessionId/exercise/:exerciseOrder/feedback', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const userId = req.user?.userId || req.user?.id;
+    const { sessionId, exerciseOrder } = req.params;
+    const { sentiment, comment, exerciseName } = req.body;
+
+    // Validar parámetros
+    if (!sentiment || !['love', 'normal', 'hard'].includes(sentiment)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ 
         success: false, 
-        error: 'La rutina ya está archivada' 
+        error: 'sentiment es requerido y debe ser: love, normal, hard' 
       });
     }
 
-    // TRANSACCIÓN para limpiar todo relacionado con la rutina
-    await pool.query('BEGIN');
+    // Verificar que la sesión pertenece al usuario
+    const sessionCheck = await client.query(
+      'SELECT id FROM app.methodology_exercise_sessions WHERE id = $1 AND user_id = $2',
+      [sessionId, userId]
+    );
 
-    try {
-      // 1. Eliminar feedback de ejercicios
-      await pool.query(`
-        DELETE FROM app.routine_exercise_feedback 
-        WHERE routine_session_id IN (
-          SELECT id FROM app.routine_sessions 
-          WHERE routine_plan_id = $1 AND user_id = $2
-        )
-      `, [planId, userId]);
-
-      // 2. Eliminar progreso de ejercicios
-      await pool.query(`
-        DELETE FROM app.routine_exercise_progress 
-        WHERE routine_session_id IN (
-          SELECT id FROM app.routine_sessions 
-          WHERE routine_plan_id = $1 AND user_id = $2
-        )
-      `, [planId, userId]);
-
-      // 3. Eliminar actividad diaria relacionada (tabla no existe - omitir)
-      // await pool.query(`
-      //   DELETE FROM app.daily_activity 
-      //   WHERE user_id = $1 AND routine_plan_id = $2
-      // `, [userId, planId]);
-
-      // 4. Eliminar sesiones de rutina
-      const deleteSessionsResult = await pool.query(`
-        DELETE FROM app.routine_sessions 
-        WHERE routine_plan_id = $1 AND user_id = $2
-        RETURNING id
-      `, [planId, userId]);
-
-      // 5. Archivar plan (marcar como archived_at para que no reaparezca)
-      const archiveResult = await pool.query(`
-        UPDATE app.routine_plans 
-        SET archived_at = CURRENT_TIMESTAMP, is_active = false, updated_at = CURRENT_TIMESTAMP 
-        WHERE id = $1 AND user_id = $2
-        RETURNING id, methodology_type
-      `, [planId, userId]);
-
-      await pool.query('COMMIT');
-
-      console.log(`✅ [Routines] Rutina ${planId} cancelada exitosamente:`);
-      console.log(`   - Sesiones eliminadas: ${deleteSessionsResult.rowCount}`);
-      console.log(`   - Plan archivado: ${archiveResult.rowCount}`);
-
-      res.json({
-        success: true,
-        message: 'Rutina cancelada exitosamente',
-        deleted: {
-          sessions: deleteSessionsResult.rowCount,
-          plan_archived: archiveResult.rowCount > 0
-        }
+    if (sessionCheck.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Sesión no encontrada' 
       });
-
-    } catch (transactionError) {
-      await pool.query('ROLLBACK');
-      throw transactionError;
     }
+
+    // Insertar o actualizar feedback (usando UPSERT)
+    const upsertResult = await client.query(
+      `INSERT INTO app.methodology_exercise_feedback (
+        methodology_session_id, user_id, exercise_name, exercise_order, sentiment, comment, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
+      ON CONFLICT (methodology_session_id, exercise_order) 
+      DO UPDATE SET 
+        sentiment = EXCLUDED.sentiment,
+        comment = EXCLUDED.comment,
+        updated_at = NOW()
+      RETURNING id, sentiment, comment`,
+      [sessionId, userId, exerciseName, parseInt(exerciseOrder), sentiment, comment || null]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({ 
+      success: true, 
+      feedback: upsertResult.rows[0],
+      message: 'Feedback guardado correctamente' 
+    });
 
   } catch (error) {
-    console.error('❌ [Routines] Error cancelando rutina:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Error interno del servidor'
+    await client.query('ROLLBACK');
+    console.error('Error guardando feedback de ejercicio:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Error interno del servidor' 
+    });
+  } finally {
+    client.release();
+  }
+});
+
+// GET /api/routines/plan-status/:methodologyPlanId
+// Verificar si un plan de metodología ya está confirmado (activo)
+router.get('/plan-status/:methodologyPlanId', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    const { methodologyPlanId } = req.params;
+
+    // Verificar el estado del plan de metodología
+    const planQuery = await pool.query(
+      'SELECT status, confirmed_at FROM app.methodology_plans WHERE id = $1 AND user_id = $2',
+      [methodologyPlanId, userId]
+    );
+
+    if (planQuery.rowCount === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Plan no encontrado' 
+      });
+    }
+
+    const plan = planQuery.rows[0];
+    const isConfirmed = plan.status === 'active';
+
+    res.json({ 
+      success: true, 
+      isConfirmed,
+      status: plan.status,
+      confirmedAt: plan.confirmed_at
+    });
+
+  } catch (error) {
+    console.error('Error verificando estado del plan:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Error interno del servidor' 
     });
   }
 });
 
-// Limpiar todas las rutinas inactivas del usuario
-router.post('/cleanup', authenticateToken, async (req, res) => {
+// GET /api/routines/sessions/:sessionId/feedback
+// Obtener todo el feedback de una sesión
+router.get('/sessions/:sessionId/feedback', authenticateToken, async (req, res) => {
   try {
     const userId = req.user?.userId || req.user?.id;
-    
-    console.log(`🧹 [Routines] Limpiando rutinas inactivas para userId: ${userId}`);
+    const { sessionId } = req.params;
 
-    await pool.query('BEGIN');
+    // Verificar que la sesión pertenece al usuario
+    const sessionCheck = await pool.query(
+      'SELECT id FROM app.methodology_exercise_sessions WHERE id = $1 AND user_id = $2',
+      [sessionId, userId]
+    );
 
-    try {
-      // Obtener todos los planes inactivos del usuario
-      const inactiveQuery = `
-        SELECT id, methodology_type FROM app.routine_plans 
-        WHERE user_id = $1 AND (is_active = false OR is_active IS NULL)
-      `;
-      
-      const inactivePlans = await pool.query(inactiveQuery, [userId]);
-      
-      if (inactivePlans.rows.length === 0) {
-        await pool.query('COMMIT');
-        return res.json({
-          success: true,
-          message: 'No hay rutinas inactivas para limpiar',
-          cleaned: 0
-        });
-      }
-
-      const planIds = inactivePlans.rows.map(plan => plan.id);
-
-      // Eliminar datos relacionados en orden
-      await pool.query(`
-        DELETE FROM app.routine_exercise_feedback 
-        WHERE routine_session_id IN (
-          SELECT rs.id FROM app.routine_sessions rs 
-          WHERE rs.routine_plan_id = ANY($1) AND rs.user_id = $2
-        )
-      `, [planIds, userId]);
-
-      await pool.query(`
-        DELETE FROM app.routine_exercise_progress 
-        WHERE routine_session_id IN (
-          SELECT rs.id FROM app.routine_sessions rs 
-          WHERE rs.routine_plan_id = ANY($1) AND rs.user_id = $2
-        )
-      `, [planIds, userId]);
-
-      // Eliminar actividad diaria relacionada (tabla no existe - omitir)
-      // await pool.query(`
-      //   DELETE FROM app.daily_activity 
-      //   WHERE user_id = $1 AND routine_plan_id = ANY($2)
-      // `, [userId, planIds]);
-
-      const deleteSessionsResult = await pool.query(`
-        DELETE FROM app.routine_sessions 
-        WHERE routine_plan_id = ANY($1) AND user_id = $2
-        RETURNING id
-      `, [planIds, userId]);
-
-      const deletePlansResult = await pool.query(`
-        DELETE FROM app.routine_plans 
-        WHERE id = ANY($1) AND user_id = $2 AND (is_active = false OR is_active IS NULL)
-        RETURNING id, methodology_type
-      `, [planIds, userId]);
-
-      await pool.query('COMMIT');
-
-      console.log(`✅ [Routines] Limpieza completada:`);
-      console.log(`   - Planes eliminados: ${deletePlansResult.rowCount}`);
-      console.log(`   - Sesiones eliminadas: ${deleteSessionsResult.rowCount}`);
-
-      res.json({
-        success: true,
-        message: 'Limpieza de rutinas inactivas completada',
-        cleaned: deletePlansResult.rowCount
+    if (sessionCheck.rowCount === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Sesión no encontrada' 
       });
-
-    } catch (transactionError) {
-      await pool.query('ROLLBACK');
-      throw transactionError;
     }
 
+    // Obtener feedback de todos los ejercicios de la sesión
+    const feedbackQuery = await pool.query(
+      `SELECT 
+        exercise_order,
+        exercise_name,
+        sentiment,
+        comment,
+        created_at,
+        updated_at
+       FROM app.methodology_exercise_feedback
+       WHERE methodology_session_id = $1
+       ORDER BY exercise_order ASC`,
+      [sessionId]
+    );
+
+    res.json({ 
+      success: true, 
+      feedback: feedbackQuery.rows 
+    });
+
   } catch (error) {
-    console.error('❌ [Routines] Error en limpieza:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Error interno del servidor'
+    console.error('Error obteniendo feedback de sesión:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Error interno del servidor' 
     });
   }
 });
 
-// ENDPOINT DE EMERGENCIA: Limpiar TODAS las rutinas de un usuario
-router.post('/emergency-cleanup', authenticateToken, async (req, res) => {
+// GET /api/routines/active-plan
+// Obtiene la rutina activa del usuario para restaurar después del login
+router.get('/active-plan', authenticateToken, async (req, res) => {
   try {
     const userId = req.user?.userId || req.user?.id;
-    
-    console.log(`🚨 [EMERGENCY] Limpieza completa para userId: ${userId}`);
 
-    await pool.query('BEGIN');
+    // Buscar el plan de metodología activo más reciente
+    const activeMethodologyQuery = await pool.query(
+      `SELECT mp.id as methodology_plan_id, mp.methodology_type, mp.plan_data, mp.confirmed_at,
+              rp.id as routine_plan_id
+       FROM app.methodology_plans mp
+       LEFT JOIN app.routine_plans rp ON rp.user_id = mp.user_id 
+         AND rp.methodology_type = mp.methodology_type
+         AND rp.status = 'active'
+       WHERE mp.user_id = $1 AND mp.status = 'active'
+       ORDER BY mp.confirmed_at DESC
+       LIMIT 1`,
+      [userId]
+    );
 
-    try {
-      // Eliminar TODO sin verificar is_active
-      await pool.query(`
-        DELETE FROM app.routine_exercise_feedback 
-        WHERE routine_session_id IN (
-          SELECT rs.id FROM app.routine_sessions rs 
-          JOIN app.routine_plans rp ON rs.routine_plan_id = rp.id
-          WHERE rp.user_id = $1
-        )
-      `, [userId]);
-
-      await pool.query(`
-        DELETE FROM app.routine_exercise_progress 
-        WHERE routine_session_id IN (
-          SELECT rs.id FROM app.routine_sessions rs 
-          JOIN app.routine_plans rp ON rs.routine_plan_id = rp.id
-          WHERE rp.user_id = $1
-        )
-      `, [userId]);
-
-      const deleteSessionsResult = await pool.query(`
-        DELETE FROM app.routine_sessions 
-        WHERE routine_plan_id IN (
-          SELECT id FROM app.routine_plans WHERE user_id = $1
-        )
-        RETURNING id
-      `, [userId]);
-
-      const deletePlansResult = await pool.query(`
-        DELETE FROM app.routine_plans 
-        WHERE user_id = $1
-        RETURNING id, methodology_type
-      `, [userId]);
-
-      await pool.query('COMMIT');
-
-      console.log(`✅ [EMERGENCY] Limpieza completada:`);
-      console.log(`   - Planes eliminados: ${deletePlansResult.rowCount}`);
-      console.log(`   - Sesiones eliminadas: ${deleteSessionsResult.rowCount}`);
-
-      res.json({
-        success: true,
-        message: 'Limpieza de emergencia completada',
-        deleted: {
-          plans: deletePlansResult.rowCount,
-          sessions: deleteSessionsResult.rowCount,
-          plans_ids: deletePlansResult.rows.map(r => r.id),
-          sessions_ids: deleteSessionsResult.rows.map(r => r.id)
-        }
+    if (activeMethodologyQuery.rowCount === 0) {
+      return res.json({ 
+        success: true, 
+        hasActivePlan: false,
+        message: 'No hay rutina activa' 
       });
-
-    } catch (transactionError) {
-      await pool.query('ROLLBACK');
-      throw transactionError;
     }
 
+    const activePlan = activeMethodologyQuery.rows[0];
+    const planData = typeof activePlan.plan_data === 'string' 
+      ? JSON.parse(activePlan.plan_data) 
+      : activePlan.plan_data;
+
+    res.json({
+      success: true,
+      hasActivePlan: true,
+      routinePlan: planData,
+      planSource: { label: 'IA' },
+      planId: activePlan.routine_plan_id,
+      methodology_plan_id: activePlan.methodology_plan_id,
+      confirmedAt: activePlan.confirmed_at
+    });
+
   } catch (error) {
-    console.error('❌ [EMERGENCY] Error en limpieza:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Error interno del servidor'
+    console.error('Error obteniendo rutina activa:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Error interno del servidor' 
     });
   }
 });
 
 export default router;
+

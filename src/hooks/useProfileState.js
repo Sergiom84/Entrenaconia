@@ -141,7 +141,7 @@ export const useProfileState = () => {
           .catch(err => console.error('Error cargando perfil desde API:', err))
       }
     }
-  }, [])
+  }, [defaultProfile, mapDbToUi])
 
   // Guardar datos del perfil en localStorage cuando cambien
   useEffect(() => {

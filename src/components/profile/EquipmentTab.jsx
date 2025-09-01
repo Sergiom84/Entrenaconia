@@ -31,24 +31,24 @@ export function EquipmentTab() {
     {
       level: 'MINIMO',
       items: [
-        { code: 'toallas', label: 'Toallas' },
-        { code: 'silla_sofa', label: 'Silla/Sofá' },
+        { code: 'towel', label: 'Toallas' },
+        { code: 'chair', label: 'Silla/Sofá' },
       ]
     },
     {
       level: 'BÁSICO',
       items: [
-        { code: 'esterilla', label: 'Esterilla' },
-        { code: 'bandas_elasticas', label: 'Cintas elásticas' },
-        { code: 'mancuernas', label: 'Mancuernas' },
-        { code: 'banco_step', label: 'Banco/Step' }
+        { code: 'mat', label: 'Esterilla' },
+        { code: 'elastic_bands', label: 'Cintas elásticas' },
+        { code: 'dumbbell', label: 'Mancuernas' },
+        { code: 'bench', label: 'Banco/Step' }
       ]
     },
     {
       level: 'AVANZADO',
       items: [
         { code: 'trx', label: 'TRX' },
-        { code: 'discos_olimpicos', label: 'Barra con discos profesionales' }
+        { code: 'olympic_plates', label: 'Barra con discos profesionales' }
       ]
     }
   ];
