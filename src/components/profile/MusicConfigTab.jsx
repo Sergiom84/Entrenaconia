@@ -3,16 +3,7 @@ import { Save, Music, Headphones, Smartphone, Volume2, Settings, ExternalLink, C
 import { FaSpotify, FaYoutube, FaApple } from 'react-icons/fa';
 
 const MusicConfigTab = ({ userId }) => {
-  // Early return if no userId provided
-  if (!userId) {
-    return (
-      <div className="space-y-6">
-        <div className="p-4 bg-red-600/10 border border-red-600/20 rounded-lg">
-          <p className="text-red-400 text-sm">Error: No se pudo cargar la configuración de música</p>
-        </div>
-      </div>
-    );
-  }
+  // Initialize hooks FIRST - NEVER after conditional returns
   const [config, setConfig] = useState({
     spotify: {
       enabled: false,
@@ -156,6 +147,17 @@ const MusicConfigTab = ({ userId }) => {
       }
     }));
   };
+
+  // Early return if no userId provided - AFTER all hooks
+  if (!userId) {
+    return (
+      <div className="space-y-6">
+        <div className="p-4 bg-red-600/10 border border-red-600/20 rounded-lg">
+          <p className="text-red-400 text-sm">Error: No se pudo cargar la configuración de música</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

@@ -44,7 +44,9 @@
       "Bash(npx husky init:*)",
       "Bash(npx eslint:*)",
       "Bash(npm run lint)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Read(c:\\Users\\Sergio\\Pictures\\EntranaconIA\\Procedimientos/**)",
+      "Read(c:\\Users\\Sergio\\Pictures\\EntranaconIA\\Procedimientos/**)"
     ]
   }
 }
