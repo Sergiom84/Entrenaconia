@@ -25,7 +25,21 @@
       "WebSearch",
       "Bash(npx @modelcontextprotocol/server-postgres:*)",
       "Bash(npx @modelcontextprotocol/server-filesystem:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(npm ls:*)",
+      "Read(C:\\Users\\Sergio\\Pictures\\EntranaconIA\\Procedimientos/**)",
+      "Read(c:\\Users\\Sergio\\Pictures\\EntranaconIA\\Procedimientos/**)",
+      "Read(c:\\Users\\Sergio\\Pictures\\EntranaconIA\\Procedimientos/**)",
+      "Read(c:\\Users\\Sergio\\Pictures\\EntranaconIA\\Procedimientos/**)",
+      "Bash(del constraint_update.sql)",
+      "Read(c:\\Users\\Sergio\\Pictures\\EntranaconIA\\Procedimientos/**)",
+      "Read(c:\\Users\\Sergio\\Pictures\\EntranaconIA\\Procedimientos/**)",
+      "Read(c:\\Users\\Sergio\\Pictures\\EntranaconIA\\Procedimientos/**)",
+      "Bash(grep:*)",
+      "Bash(rm:*)",
+      "Bash(git rm:*)",
+      "Bash(ping:*)",
+      "Bash(nslookup:*)"
     ]
   }
 }

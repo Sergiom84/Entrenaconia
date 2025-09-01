@@ -226,7 +226,10 @@ router.put('/sessions/:sessionId/exercise/:exerciseOrder', authenticateToken, as
         total_duration_seconds = COALESCE(total_duration_seconds, 0) + COALESCE($2, 0),
         completed_at           = CASE WHEN (SELECT COUNT(*) FROM app.home_exercise_progress
                                   WHERE home_training_session_id = $1 AND status <> 'completed') = 0
-                                  THEN NOW() ELSE completed_at END
+                                  THEN NOW() ELSE completed_at END,
+        status                 = CASE WHEN (SELECT COUNT(*) FROM app.home_exercise_progress
+                                  WHERE home_training_session_id = $1 AND status <> 'completed') = 0
+                                  THEN 'completed' ELSE status END
       WHERE id = $1
     `, [sessionId, duration_seconds ?? 0]);
 

@@ -137,6 +137,11 @@ const HomeTrainingSection = () => {
       if (data.success) {
         setSessionProgress(data.progress);
         
+        // Si la sesión está completada al 100%, marcar como completada pero mantener el objeto
+        if (data.progress.percentage >= 100 && data.session && currentSession) {
+          setCurrentSession({ ...data.session, status: 'completed' });
+        }
+        
         // Validar que el currentExercise esté dentro del rango válido
         const currentExerciseFromServer = data.progress.currentExercise || 0;
         if (generatedPlan && generatedPlan.plan_entrenamiento && generatedPlan.plan_entrenamiento.ejercicios) {
@@ -360,7 +365,7 @@ const HomeTrainingSection = () => {
       const token = localStorage.getItem('token');
       const exercise = generatedPlan.plan_entrenamiento.ejercicios[currentExerciseIndex];
 
-      await fetch(`/api/home-training/sessions/${currentSession.id}/exercise/${currentExerciseIndex}`, {
+      await fetch(`/api/home-training/sessions/${currentSession.id}/exercise/${currentExerciseIndex + 1}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ series_completed: exercise.series, status: 'completed', duration_seconds: durationSeconds || null })
@@ -402,7 +407,7 @@ const HomeTrainingSection = () => {
     try {
       const token = localStorage.getItem('token');
 
-      await fetch(`/api/home-training/sessions/${currentSession.id}/exercise/${currentExerciseIndex}`, {
+      await fetch(`/api/home-training/sessions/${currentSession.id}/exercise/${currentExerciseIndex + 1}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ series_completed: 0, status: 'skipped' })
@@ -442,7 +447,7 @@ const HomeTrainingSection = () => {
     try {
       const token = localStorage.getItem('token');
 
-      await fetch(`/api/home-training/sessions/${currentSession.id}/exercise/${currentExerciseIndex}`, {
+      await fetch(`/api/home-training/sessions/${currentSession.id}/exercise/${currentExerciseIndex + 1}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ series_completed: 0, status: 'cancelled' })
@@ -483,7 +488,7 @@ const HomeTrainingSection = () => {
       const token = localStorage.getItem('token');
       const status = seriesCompleted === totalSeries ? 'completed' : 'in_progress';
 
-      await fetch(`/api/home-training/sessions/${currentSession.id}/exercise/${exerciseIndex}`, {
+      await fetch(`/api/home-training/sessions/${currentSession.id}/exercise/${exerciseIndex + 1}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ series_completed: seriesCompleted, status })
@@ -780,7 +785,13 @@ const HomeTrainingSection = () => {
             sessionExercises={exercisesProgress}
             progress={sessionProgress}
             userStats={userStats}
-            onContinueTraining={currentSession ? continueTraining : startTraining}
+            onContinueTraining={
+              currentSession?.status === 'completed' || sessionProgress?.percentage >= 100 
+                ? startTraining
+                : currentSession 
+                  ? continueTraining 
+                  : startTraining
+            }
             onGenerateNewPlan={resetToInitialState}
           />
         )}

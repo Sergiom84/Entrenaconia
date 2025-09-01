@@ -12,7 +12,9 @@ import {
   CheckCircle, 
   Calendar,
   Timer,
-  Dumbbell
+  Dumbbell,
+  X,
+  AlertTriangle
 } from 'lucide-react';
 import RoutineSessionModal from '../RoutineSessionModal';
 import RoutineSessionSummaryCard from '../RoutineSessionSummaryCard';
@@ -35,6 +37,7 @@ export default function TodayTrainingTab({
   const [error, setError] = useState(null);
   const [todaySessionStatus, setTodaySessionStatus] = useState(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
   // Obtener la sesión del día actual (el día que se activó la IA)
   const todaySession = useMemo(() => {
@@ -206,6 +209,33 @@ export default function TodayTrainingTab({
       setShowSessionModal(false);
       setRoutineSessionId(null);
       setSelectedSession(null);
+    }
+  };
+
+  // Función para cancelar entrenamiento
+  const handleCancelTraining = async () => {
+    try {
+      setShowCancelConfirm(false);
+      
+      // Si hay una sesión activa, finalizarla
+      if (routineSessionId) {
+        await finishSession(routineSessionId);
+        setRoutineSessionId(null);
+        setSelectedSession(null);
+        setShowSessionModal(false);
+      }
+      
+      // Limpiar estado local
+      setTodaySessionStatus(null);
+      setLastSessionId(null);
+      
+      // Llamar a la función para generar otro entrenamiento
+      if (onGenerateAnother) {
+        onGenerateAnother();
+      }
+      
+    } catch (error) {
+      console.error('Error cancelando entrenamiento:', error);
     }
   };
 
@@ -476,7 +506,52 @@ export default function TodayTrainingTab({
               })}
             </div>
           </div>
+          
+          {/* Botón Cancelar Entrenamiento */}
+          <div className="mt-6 pt-4 border-t border-gray-700">
+            <button
+              onClick={() => setShowCancelConfirm(true)}
+              className="w-full px-4 py-3 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition-colors duration-200 flex items-center justify-center gap-2"
+            >
+              <X className="w-4 h-4" />
+              Cancelar Entrenamiento
+            </button>
+          </div>
         </Card>
+      )}
+
+      {/* Modal de confirmación para cancelar entrenamiento */}
+      {showCancelConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full">
+            <div className="flex items-center gap-3 mb-4">
+              <AlertTriangle className="w-6 h-6 text-red-400" />
+              <h3 className="text-lg font-semibold text-white">
+                ¿Cancelar Entrenamiento?
+              </h3>
+            </div>
+            
+            <p className="text-gray-300 mb-6">
+              Esta acción cancelará tu entrenamiento actual y perderás todo el progreso. 
+              ¿Estás seguro de que quieres continuar?
+            </p>
+            
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowCancelConfirm(false)}
+                className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
+              >
+                No, continuar
+              </button>
+              <button
+                onClick={handleCancelTraining}
+                className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+              >
+                Sí, cancelar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Modal de sesión activa */}

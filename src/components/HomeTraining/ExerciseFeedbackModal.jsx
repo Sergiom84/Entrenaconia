@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Star, X } from 'lucide-react';
 
 const feedbackOptions = [
@@ -7,9 +7,15 @@ const feedbackOptions = [
   { key: 'love', label: 'Me ha encantado' },
 ];
 
-const ExerciseFeedbackModal = ({ show, onClose, onSubmit, exerciseName }) => {
-  const [selected, setSelected] = useState(null);
-  const [comment, setComment] = useState('');
+const ExerciseFeedbackModal = ({ show, onClose, onSubmit, exerciseName, initialFeedback = null }) => {
+  const [selected, setSelected] = useState(initialFeedback?.sentiment || null);
+  const [comment, setComment] = useState(initialFeedback?.comment || '');
+
+  // Actualizar estado cuando cambie el feedback inicial
+  useEffect(() => {
+    setSelected(initialFeedback?.sentiment || null);
+    setComment(initialFeedback?.comment || '');
+  }, [initialFeedback]);
 
   if (!show) return null;
 

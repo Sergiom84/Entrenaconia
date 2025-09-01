@@ -90,7 +90,7 @@ router.post('/generate-manual', authenticateToken, async (req, res) => {
       SELECT * FROM app.get_recent_exercises($1, $2, 60)
     `;
     
-    const userResult = await db.query(userQuery, [userId]);
+    const userResult = await pool.query(userQuery, [userId]);
     const user = userResult.rows[0];
     
     if (!user) {
@@ -104,13 +104,16 @@ router.post('/generate-manual', authenticateToken, async (req, res) => {
     // Log del perfil del usuario
     logUserProfile(user, userId);
 
-    // Obtener ejercicios recientes para evitar repeticiones
+    // Obtener ejercicios recientes MANUALES para evitar repeticiones
     let recentExercises = [];
     try {
-      const recentExercisesResult = await db.query(recentExercisesQuery, [userId, canonical]);
+      const recentExercisesQuery = `
+        SELECT * FROM app.get_recent_manual_exercises($1, $2, 60)
+      `;
+      const recentExercisesResult = await pool.query(recentExercisesQuery, [userId, canonical]);
       recentExercises = recentExercisesResult.rows;
     } catch (exerciseError) {
-      console.log('⚠️ No se pudieron obtener ejercicios recientes (tabla puede no existir):', exerciseError.message);
+      console.log('⚠️ No se pudieron obtener ejercicios recientes manuales (tabla puede no existir):', exerciseError.message);
     }
 
     // Log de ejercicios recientes
@@ -202,32 +205,32 @@ router.post('/generate-manual', authenticateToken, async (req, res) => {
       });
     }
 
-    // Guardar en base de datos (opcional, para historial)
+    // Guardar en base de datos como ACTIVO para que aparezca en rutinas
     const insertQuery = `
       INSERT INTO app.methodology_plans (
-        user_id, methodology_type, plan_data, generation_mode, created_at
-      ) VALUES ($1, $2, $3, 'manual', NOW())
+        user_id, methodology_type, plan_data, generation_mode, status, confirmed_at, created_at
+      ) VALUES ($1, $2, $3, 'manual', 'active', NOW(), NOW())
       RETURNING id
     `;
     
-    const insertResult = await db.query(insertQuery, [
+    const insertResult = await pool.query(insertQuery, [
       userId,
       canonical,
       JSON.stringify(planData)
     ]);
 
-    // Registrar ejercicios del plan en el historial para evitar repeticiones futuras
+    // Registrar ejercicios del plan en el historial MANUAL para evitar repeticiones futuras
     try {
-      const registerExercisesQuery = `SELECT app.register_plan_exercises($1, $2, $3, $4)`;
-      await db.query(registerExercisesQuery, [
+      const registerExercisesQuery = `SELECT app.register_manual_plan_exercises($1, $2, $3, $4)`;
+      await pool.query(registerExercisesQuery, [
         userId,
         canonical,
         JSON.stringify(planData),
         insertResult.rows[0].id
       ]);
-      console.log('✅ Ejercicios registrados en historial para evitar repeticiones');
+      console.log('✅ Ejercicios registrados en historial MANUAL para evitar repeticiones');
     } catch (registerError) {
-      console.log('⚠️ No se pudieron registrar ejercicios en historial:', registerError.message);
+      console.log('⚠️ No se pudieron registrar ejercicios en historial manual:', registerError.message);
     }
 
     console.log(`✅ Plan de ${metodologia_solicitada} guardado en methodology_plans`);
@@ -238,7 +241,7 @@ router.post('/generate-manual', authenticateToken, async (req, res) => {
     try {
       // PASO 1: Archivar todos los planes anteriores del usuario para empezar desde 0
       console.log('🗄️ Archivando planes anteriores del usuario...');
-      await db.query(
+      await pool.query(
         `UPDATE app.routine_plans 
          SET archived_at = NOW(), is_active = false, updated_at = NOW() 
          WHERE user_id = $1 AND archived_at IS NULL`,
@@ -246,7 +249,7 @@ router.post('/generate-manual', authenticateToken, async (req, res) => {
       );
       
       // PASO 2: Marcar methodology_plans anteriores como inactivos (no tiene archived_at)
-      await db.query(
+      await pool.query(
         `UPDATE app.methodology_plans 
          SET updated_at = NOW() 
          WHERE user_id = $1`,
@@ -255,16 +258,16 @@ router.post('/generate-manual', authenticateToken, async (req, res) => {
       
       console.log('✅ Planes anteriores archivados - Empezando desde 0');
       
-      // PASO 3: Crear nuevo plan en routine_plans
+      // PASO 3: Crear nuevo plan en routine_plans como ACTIVO
       const routinePlanQuery = `
         INSERT INTO app.routine_plans (
           user_id, methodology_type, plan_data, generation_mode, 
-          frequency_per_week, total_weeks, is_active, created_at, updated_at
-        ) VALUES ($1, $2, $3, 'manual', $4, $5, true, NOW(), NOW())
+          frequency_per_week, total_weeks, is_active, status, created_at, updated_at
+        ) VALUES ($1, $2, $3, 'manual', $4, $5, true, 'active', NOW(), NOW())
         RETURNING id
       `;
       
-      const routinePlanResult = await db.query(routinePlanQuery, [
+      const routinePlanResult = await pool.query(routinePlanQuery, [
         userId,
         canonical,
         JSON.stringify(planData),
