@@ -88,15 +88,19 @@ async function createMissingDaySession(client, userId, methodologyPlanId, planDa
   // Tomar la primera sesión como template
   const templateSession = sesiones[0];
   
+  // Obtener la metodología real del plan JSON
+  const realMethodology = planDataJson?.selected_style || planDataJson?.metodologia || 'Adaptada';
+  
   // Crear la nueva sesión en la BD
   const newSession = await client.query(
     `INSERT INTO app.methodology_exercise_sessions 
      (user_id, methodology_plan_id, methodology_type, session_name, week_number, day_name, total_exercises, created_at, updated_at)
-     VALUES ($1, $2, 'Adaptada', $3, $4, $5, $6, NOW(), NOW()) 
+     VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW()) 
      RETURNING id`,
     [
       userId, 
       methodologyPlanId, 
+      realMethodology,
       `Sesión ${normalizedRequestedDay}`, 
       weekNumber, 
       normalizedRequestedDay, 
@@ -346,20 +350,20 @@ router.put('/sessions/:sessionId/exercise/:exerciseOrder', authenticateToken, as
       // Crear fila mínima (sin info completa) si faltase
       await client.query(
         `INSERT INTO app.methodology_exercise_progress (
-           methodology_session_id, exercise_order, exercise_name,
+           methodology_session_id, user_id, exercise_order, exercise_name,
            series_total, repeticiones, descanso_seg, series_completed, status
-         ) VALUES ($1, $2, $3, $4, $5, $6, 0, 'pending')`,
-        [sessionId, exerciseOrder, 'Ejercicio', 3, '—', 60]
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, 0, 'pending')`,
+        [sessionId, userId, exerciseOrder, 'Ejercicio', 3, '—', 60]
       );
     }
 
     // Actualizar progreso
     const upd = await client.query(
       `UPDATE app.methodology_exercise_progress
-         SET series_completed = $1,
-             status = $2,
+         SET series_completed = $1::int,
+             status = $2::varchar(20),
              time_spent_seconds = COALESCE($3, time_spent_seconds),
-             completed_at = CASE WHEN $2 = 'completed' THEN NOW() ELSE completed_at END
+             completed_at = CASE WHEN $2::varchar(20) = 'completed' THEN NOW() ELSE completed_at END
        WHERE methodology_session_id = $4 AND exercise_order = $5
        RETURNING *`,
       [series_completed, status, time_spent_seconds ?? null, sessionId, exerciseOrder]
@@ -382,7 +386,7 @@ router.put('/sessions/:sessionId/exercise/:exerciseOrder', authenticateToken, as
              total_exercises = GREATEST($3, COALESCE(total_exercises, 0)),
              total_duration_seconds = COALESCE(total_duration_seconds, 0) + COALESCE($4, 0),
              session_status = CASE WHEN $2 = $3 AND $3 > 0 THEN 'completed' ELSE 'in_progress' END,
-             ended_at = CASE WHEN $2 = $3 AND $3 > 0 THEN NOW() ELSE ended_at END
+             completed_at = CASE WHEN $2 = $3 AND $3 > 0 THEN NOW() ELSE completed_at END
        WHERE id = $1`,
       [sessionId, Number(completed), Number(total), time_spent_seconds ?? 0]
     );
@@ -402,6 +406,8 @@ router.put('/sessions/:sessionId/exercise/:exerciseOrder', authenticateToken, as
 router.post('/sessions/:sessionId/finish', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
+    await client.query('BEGIN');
+
     const userId = req.user?.userId || req.user?.id;
     const { sessionId } = req.params;
 
@@ -409,21 +415,149 @@ router.post('/sessions/:sessionId/finish', authenticateToken, async (req, res) =
       'SELECT * FROM app.methodology_exercise_sessions WHERE id = $1 AND user_id = $2',
       [sessionId, userId]
     );
-    if (ses.rowCount === 0) return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
+    if (ses.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
+    }
 
+    const session = ses.rows[0];
+
+    // Actualizar estado de la sesión
     await client.query(
       `UPDATE app.methodology_exercise_sessions
-         SET session_status = 'completed', ended_at = NOW()
+         SET session_status = 'completed', completed_at = NOW(),
+             total_duration_seconds = EXTRACT(EPOCH FROM (NOW() - started_at))::INTEGER
        WHERE id = $1`,
       [sessionId]
     );
 
-    res.json({ success: true });
+    // Obtener todos los ejercicios de la sesión para mover al historial
+    const exercisesQuery = await client.query(
+      `SELECT mep.*, mes.methodology_type, mes.methodology_plan_id, mes.week_number, mes.day_name
+       FROM app.methodology_exercise_progress mep
+       JOIN app.methodology_exercise_sessions mes ON mep.methodology_session_id = mes.id
+       WHERE mep.methodology_session_id = $1`,
+      [sessionId]
+    );
+
+    // Mover cada ejercicio al historial completo
+    for (const exercise of exercisesQuery.rows) {
+      // Solo mover ejercicios que fueron completados o saltados (no pendientes)
+      if (exercise.status !== 'pending') {
+        await client.query(
+          `INSERT INTO app.methodology_exercise_history_complete (
+            user_id, methodology_plan_id, methodology_session_id,
+            exercise_name, exercise_order, methodology_type,
+            series_total, series_completed, repeticiones, intensidad,
+            tiempo_dedicado_segundos, week_number, day_name, 
+            session_date, completed_at, created_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW())
+          ON CONFLICT DO NOTHING`,
+          [
+            userId,
+            exercise.methodology_plan_id,
+            sessionId,
+            exercise.exercise_name,
+            exercise.exercise_order,
+            exercise.methodology_type,
+            exercise.series_total,
+            exercise.series_completed || 0,
+            exercise.repeticiones,
+            exercise.intensidad,
+            exercise.time_spent_seconds,
+            exercise.week_number,
+            exercise.day_name,
+            session.started_at ? new Date(session.started_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+            session.completed_at || new Date()
+          ]
+        );
+      }
+    }
+
+    await client.query('COMMIT');
+    res.json({ success: true, message: 'Sesión finalizada y datos guardados en historial' });
   } catch (e) {
+    await client.query('ROLLBACK');
     console.error('Error finishing routine session:', e);
     res.status(500).json({ success: false, error: 'Error interno' });
   } finally {
     client.release();
+  }
+});
+
+// GET /api/routines/sessions/today-status
+// Obtiene el estado de la sesión del día actual (si existe)
+router.get('/sessions/today-status', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    const { methodology_plan_id, week_number, day_name } = req.query;
+
+    if (!methodology_plan_id || !week_number || !day_name) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Parámetros requeridos: methodology_plan_id, week_number, day_name' 
+      });
+    }
+
+    const normalizedDay = normalizeDayAbbrev(day_name);
+
+    // Buscar la sesión del día
+    const sessionQuery = await pool.query(
+      `SELECT * FROM app.methodology_exercise_sessions
+       WHERE user_id = $1 AND methodology_plan_id = $2 
+         AND week_number = $3 AND day_name = $4
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [userId, methodology_plan_id, week_number, normalizedDay]
+    );
+
+    if (sessionQuery.rowCount === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'No hay sesión para este día' 
+      });
+    }
+
+    const session = sessionQuery.rows[0];
+
+    // Obtener progreso de ejercicios
+    const exercisesQuery = await pool.query(
+      `SELECT exercise_order, exercise_name, series_total, series_completed, 
+              repeticiones, descanso_seg, intensidad, tempo, status, 
+              time_spent_seconds, notas
+       FROM app.methodology_exercise_progress
+       WHERE methodology_session_id = $1
+       ORDER BY exercise_order ASC`,
+      [session.id]
+    );
+
+    // Calcular resumen
+    const totalExercises = exercisesQuery.rowCount;
+    const completedExercises = exercisesQuery.rows.filter(ex => ex.status === 'completed').length;
+    const skippedExercises = exercisesQuery.rows.filter(ex => ex.status === 'skipped').length;
+
+    res.json({
+      success: true,
+      session: {
+        ...session,
+        canResume: session.session_status === 'in_progress' || (session.session_status === 'pending' && exercisesQuery.rowCount > 0)
+      },
+      exercises: exercisesQuery.rows,
+      summary: {
+        total: totalExercises,
+        completed: completedExercises,
+        skipped: skippedExercises,
+        pending: totalExercises - completedExercises - skippedExercises,
+        isComplete: session.session_status === 'completed'
+      }
+    });
+
+  } catch (error) {
+    console.error('Error obteniendo estado de sesión del día:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Error interno del servidor' 
+    });
   }
 });
 
@@ -440,10 +574,17 @@ router.get('/sessions/:sessionId/progress', authenticateToken, async (req, res) 
     if (ses.rowCount === 0) return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
 
     const progress = await pool.query(
-      `SELECT exercise_order, exercise_name, series_total, series_completed, repeticiones, descanso_seg, intensidad, tempo, status, time_spent_seconds
-         FROM app.methodology_exercise_progress
-        WHERE methodology_session_id = $1
-        ORDER BY exercise_order ASC`,
+      `SELECT 
+        mep.exercise_order, mep.exercise_name, mep.series_total, mep.series_completed, 
+        mep.repeticiones, mep.descanso_seg, mep.intensidad, mep.tempo, mep.status, 
+        mep.time_spent_seconds, mep.notas,
+        mef.sentiment, mef.comment
+       FROM app.methodology_exercise_progress mep
+       LEFT JOIN app.methodology_exercise_feedback mef 
+         ON mep.methodology_session_id = mef.methodology_session_id 
+         AND mep.exercise_order = mef.exercise_order
+       WHERE mep.methodology_session_id = $1
+       ORDER BY mep.exercise_order ASC`,
       [sessionId]
     );
 
@@ -459,6 +600,455 @@ router.get('/sessions/:sessionId/progress', authenticateToken, async (req, res) 
   } catch (e) {
     console.error('Error fetching session progress:', e);
     res.status(500).json({ success: false, error: 'Error interno' });
+  }
+});
+
+// POST /api/routines/confirm-plan
+// Confirma una rutina cambiando su estado de 'draft' a 'active'
+router.post('/confirm-plan', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const userId = req.user?.userId || req.user?.id;
+    const { methodology_plan_id, routine_plan_id } = req.body;
+
+    if (!methodology_plan_id) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ 
+        success: false, 
+        error: 'methodology_plan_id es requerido' 
+      });
+    }
+
+    // Verificar que el plan pertenece al usuario y está en estado draft
+    const planCheck = await client.query(
+      `SELECT id, status, methodology_type, plan_data 
+       FROM app.methodology_plans 
+       WHERE id = $1 AND user_id = $2`,
+      [methodology_plan_id, userId]
+    );
+
+    if (planCheck.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Plan no encontrado' 
+      });
+    }
+
+    const plan = planCheck.rows[0];
+
+    // Usar la función de la base de datos para confirmar
+    const confirmResult = await client.query(
+      'SELECT app.confirm_routine_plan($1, $2, $3) as confirmed',
+      [userId, methodology_plan_id, routine_plan_id || null]
+    );
+
+    const confirmed = confirmResult.rows[0]?.confirmed;
+
+    if (!confirmed) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ 
+        success: false, 
+        error: 'No se pudo confirmar el plan. Puede que ya esté confirmado o no esté en estado draft.' 
+      });
+    }
+
+    // Asegurar que las sesiones metodológicas estén creadas
+    try {
+      await client.query(
+        'SELECT app.create_methodology_exercise_sessions($1, $2, $3::jsonb)',
+        [userId, methodology_plan_id, JSON.stringify(plan.plan_data)]
+      );
+      console.log('✅ Sesiones metodológicas creadas tras confirmación');
+    } catch (sessionError) {
+      console.warn('⚠️ Error creando sesiones tras confirmación:', sessionError.message);
+      // No fallar la confirmación por esto, las sesiones se pueden crear después
+    }
+
+    await client.query('COMMIT');
+
+    console.log(`✅ Rutina confirmada: methodology_plan(${methodology_plan_id}) routine_plan(${routine_plan_id || 'N/A'})`);
+
+    res.json({
+      success: true,
+      message: 'Rutina confirmada exitosamente',
+      confirmed_at: new Date().toISOString(),
+      methodology_plan_id: methodology_plan_id,
+      routine_plan_id: routine_plan_id,
+      status: 'active'
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error confirmando rutina:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Error interno del servidor',
+      details: error.message 
+    });
+  } finally {
+    client.release();
+  }
+});
+
+// GET /api/routines/progress-data
+// Obtiene datos de progreso histórico para el ProgressTab
+router.get('/progress-data', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    const { methodology_plan_id } = req.query;
+
+    if (!methodology_plan_id) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'methodology_plan_id es requerido' 
+      });
+    }
+
+    // Obtener información del plan
+    const planQuery = await pool.query(
+      'SELECT methodology_type, plan_data FROM app.methodology_plans WHERE id = $1 AND user_id = $2',
+      [methodology_plan_id, userId]
+    );
+
+    if (planQuery.rowCount === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Plan de metodología no encontrado' 
+      });
+    }
+
+    const plan = planQuery.rows[0];
+    const planData = typeof plan.plan_data === 'string' ? JSON.parse(plan.plan_data) : plan.plan_data;
+
+    // Obtener resumen general de progreso
+    const generalStatsQuery = await pool.query(
+      `SELECT 
+         COUNT(DISTINCT methodology_session_id) as total_sessions_completed,
+         COUNT(*) as total_exercises_completed,
+         SUM(series_completed) as total_series_completed,
+         SUM(tiempo_dedicado_segundos) as total_time_seconds,
+         MIN(session_date) as first_session_date,
+         MAX(session_date) as last_session_date
+       FROM app.methodology_exercise_history_complete
+       WHERE user_id = $1 AND methodology_plan_id = $2`,
+      [userId, methodology_plan_id]
+    );
+
+    // Obtener progreso por semanas
+    const weeklyProgressQuery = await pool.query(
+      `SELECT 
+         week_number,
+         COUNT(DISTINCT methodology_session_id) as sessions_completed,
+         COUNT(*) as exercises_completed,
+         SUM(series_completed) as series_completed,
+         SUM(tiempo_dedicado_segundos) as time_spent_seconds
+       FROM app.methodology_exercise_history_complete
+       WHERE user_id = $1 AND methodology_plan_id = $2
+       GROUP BY week_number
+       ORDER BY week_number ASC`,
+      [userId, methodology_plan_id]
+    );
+
+    // Obtener actividad reciente (últimas 10 sesiones)
+    const recentActivityQuery = await pool.query(
+      `SELECT DISTINCT
+         methodology_session_id,
+         session_date,
+         week_number,
+         day_name,
+         COUNT(*) as exercises_count,
+         SUM(series_completed) as total_series,
+         SUM(tiempo_dedicado_segundos) as session_duration_seconds
+       FROM app.methodology_exercise_history_complete
+       WHERE user_id = $1 AND methodology_plan_id = $2
+       GROUP BY methodology_session_id, session_date, week_number, day_name
+       ORDER BY session_date DESC, methodology_session_id DESC
+       LIMIT 10`,
+      [userId, methodology_plan_id]
+    );
+
+    // Calcular totales del plan (desde el JSON)
+    const totalWeeks = planData?.semanas?.length || 0;
+    const totalSessionsInPlan = planData?.semanas?.reduce((acc, semana) => 
+      acc + (semana.sesiones?.length || 0), 0) || 0;
+    const totalExercisesInPlan = planData?.semanas?.reduce((acc, semana) => 
+      acc + semana.sesiones?.reduce((sessAcc, sesion) => 
+        sessAcc + (sesion.ejercicios?.length || 0), 0) || 0, 0) || 0;
+
+    // Construir respuesta
+    const generalStats = generalStatsQuery.rows[0];
+    const weeklyProgress = weeklyProgressQuery.rows;
+    const recentActivity = recentActivityQuery.rows;
+
+    // Calcular semana actual (basado en sesiones completadas)
+    const currentWeek = Math.max(1, ...weeklyProgress.map(w => w.week_number), 1);
+
+    // Construir progreso por semanas con datos reales
+    const weeklyProgressData = [];
+    for (let week = 1; week <= totalWeeks; week++) {
+      const weekData = weeklyProgress.find(w => w.week_number === week);
+      const weekSessions = planData?.semanas?.find(s => s.semana === week)?.sesiones?.length || 0;
+      const weekExercises = planData?.semanas?.find(s => s.semana === week)?.sesiones?.reduce(
+        (acc, ses) => acc + (ses.ejercicios?.length || 0), 0) || 0;
+
+      weeklyProgressData.push({
+        week,
+        sessions: weekSessions,
+        completed: weekData?.sessions_completed || 0,
+        exercises: weekExercises,
+        exercisesCompleted: weekData?.exercises_completed || 0,
+        seriesCompleted: weekData?.series_completed || 0,
+        timeSpentSeconds: weekData?.time_spent_seconds || 0
+      });
+    }
+
+    const responseData = {
+      totalWeeks,
+      currentWeek,
+      totalSessions: totalSessionsInPlan,
+      completedSessions: parseInt(generalStats.total_sessions_completed) || 0,
+      totalExercises: totalExercisesInPlan,
+      completedExercises: parseInt(generalStats.total_exercises_completed) || 0,
+      totalSeriesCompleted: parseInt(generalStats.total_series_completed) || 0,
+      totalTimeSpentSeconds: parseInt(generalStats.total_time_seconds) || 0,
+      firstSessionDate: generalStats.first_session_date,
+      lastSessionDate: generalStats.last_session_date,
+      weeklyProgress: weeklyProgressData,
+      recentActivity: recentActivity.map(activity => ({
+        sessionId: activity.methodology_session_id,
+        date: activity.session_date,
+        weekNumber: activity.week_number,
+        dayName: activity.day_name,
+        exercisesCount: parseInt(activity.exercises_count),
+        totalSeries: parseInt(activity.total_series),
+        durationSeconds: parseInt(activity.session_duration_seconds) || 0,
+        formattedDate: new Date(activity.session_date).toLocaleDateString('es-ES', {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric'
+        })
+      }))
+    };
+
+    res.json({ success: true, data: responseData });
+  } catch (error) {
+    console.error('Error obteniendo datos de progreso:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Error interno del servidor' 
+    });
+  }
+});
+
+// POST /api/routines/sessions/:sessionId/exercise/:exerciseOrder/feedback
+// Guardar feedback del usuario sobre un ejercicio específico
+router.post('/sessions/:sessionId/exercise/:exerciseOrder/feedback', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const userId = req.user?.userId || req.user?.id;
+    const { sessionId, exerciseOrder } = req.params;
+    const { sentiment, comment, exerciseName } = req.body;
+
+    // Validar parámetros
+    if (!sentiment || !['love', 'normal', 'hard'].includes(sentiment)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ 
+        success: false, 
+        error: 'sentiment es requerido y debe ser: love, normal, hard' 
+      });
+    }
+
+    // Verificar que la sesión pertenece al usuario
+    const sessionCheck = await client.query(
+      'SELECT id FROM app.methodology_exercise_sessions WHERE id = $1 AND user_id = $2',
+      [sessionId, userId]
+    );
+
+    if (sessionCheck.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Sesión no encontrada' 
+      });
+    }
+
+    // Insertar o actualizar feedback (usando UPSERT)
+    const upsertResult = await client.query(
+      `INSERT INTO app.methodology_exercise_feedback (
+        methodology_session_id, user_id, exercise_name, exercise_order, sentiment, comment, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
+      ON CONFLICT (methodology_session_id, exercise_order) 
+      DO UPDATE SET 
+        sentiment = EXCLUDED.sentiment,
+        comment = EXCLUDED.comment,
+        updated_at = NOW()
+      RETURNING id, sentiment, comment`,
+      [sessionId, userId, exerciseName, parseInt(exerciseOrder), sentiment, comment || null]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({ 
+      success: true, 
+      feedback: upsertResult.rows[0],
+      message: 'Feedback guardado correctamente' 
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error guardando feedback de ejercicio:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Error interno del servidor' 
+    });
+  } finally {
+    client.release();
+  }
+});
+
+// GET /api/routines/plan-status/:methodologyPlanId
+// Verificar si un plan de metodología ya está confirmado (activo)
+router.get('/plan-status/:methodologyPlanId', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    const { methodologyPlanId } = req.params;
+
+    // Verificar el estado del plan de metodología
+    const planQuery = await pool.query(
+      'SELECT status, confirmed_at FROM app.methodology_plans WHERE id = $1 AND user_id = $2',
+      [methodologyPlanId, userId]
+    );
+
+    if (planQuery.rowCount === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Plan no encontrado' 
+      });
+    }
+
+    const plan = planQuery.rows[0];
+    const isConfirmed = plan.status === 'active';
+
+    res.json({ 
+      success: true, 
+      isConfirmed,
+      status: plan.status,
+      confirmedAt: plan.confirmed_at
+    });
+
+  } catch (error) {
+    console.error('Error verificando estado del plan:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Error interno del servidor' 
+    });
+  }
+});
+
+// GET /api/routines/sessions/:sessionId/feedback
+// Obtener todo el feedback de una sesión
+router.get('/sessions/:sessionId/feedback', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    const { sessionId } = req.params;
+
+    // Verificar que la sesión pertenece al usuario
+    const sessionCheck = await pool.query(
+      'SELECT id FROM app.methodology_exercise_sessions WHERE id = $1 AND user_id = $2',
+      [sessionId, userId]
+    );
+
+    if (sessionCheck.rowCount === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Sesión no encontrada' 
+      });
+    }
+
+    // Obtener feedback de todos los ejercicios de la sesión
+    const feedbackQuery = await pool.query(
+      `SELECT 
+        exercise_order,
+        exercise_name,
+        sentiment,
+        comment,
+        created_at,
+        updated_at
+       FROM app.methodology_exercise_feedback
+       WHERE methodology_session_id = $1
+       ORDER BY exercise_order ASC`,
+      [sessionId]
+    );
+
+    res.json({ 
+      success: true, 
+      feedback: feedbackQuery.rows 
+    });
+
+  } catch (error) {
+    console.error('Error obteniendo feedback de sesión:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Error interno del servidor' 
+    });
+  }
+});
+
+// GET /api/routines/active-plan
+// Obtiene la rutina activa del usuario para restaurar después del login
+router.get('/active-plan', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+
+    // Buscar el plan de metodología activo más reciente
+    const activeMethodologyQuery = await pool.query(
+      `SELECT mp.id as methodology_plan_id, mp.methodology_type, mp.plan_data, mp.confirmed_at,
+              rp.id as routine_plan_id
+       FROM app.methodology_plans mp
+       LEFT JOIN app.routine_plans rp ON rp.user_id = mp.user_id 
+         AND rp.methodology_type = mp.methodology_type
+         AND rp.status = 'active'
+       WHERE mp.user_id = $1 AND mp.status = 'active'
+       ORDER BY mp.confirmed_at DESC
+       LIMIT 1`,
+      [userId]
+    );
+
+    if (activeMethodologyQuery.rowCount === 0) {
+      return res.json({ 
+        success: true, 
+        hasActivePlan: false,
+        message: 'No hay rutina activa' 
+      });
+    }
+
+    const activePlan = activeMethodologyQuery.rows[0];
+    const planData = typeof activePlan.plan_data === 'string' 
+      ? JSON.parse(activePlan.plan_data) 
+      : activePlan.plan_data;
+
+    res.json({
+      success: true,
+      hasActivePlan: true,
+      routinePlan: planData,
+      planSource: { label: 'IA' },
+      planId: activePlan.routine_plan_id,
+      methodology_plan_id: activePlan.methodology_plan_id,
+      confirmedAt: activePlan.confirmed_at
+    });
+
+  } catch (error) {
+    console.error('Error obteniendo rutina activa:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Error interno del servidor' 
+    });
   }
 });
 

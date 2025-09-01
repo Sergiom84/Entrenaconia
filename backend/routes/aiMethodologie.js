@@ -107,25 +107,42 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
     // ===== OBTENER EJERCICIOS RECIENTES DE RUTINAS/METODOLOGÍAS =====
     let exercisesFromDB = [];
     try {
-      // Consultar directamente exercise_history (rutinas/metodologías reales)
+      // Consultar directamente methodology_exercise_history_complete (rutinas/metodologías reales)
       const recentExercisesResult = await pool.query(
         `SELECT 
           exercise_name,
           methodology_type,
           COUNT(*) as usage_count,
-          MAX(used_at) as last_used,
+          MAX(completed_at) as last_used,
           methodology_type as methodologies_used
-        FROM app.exercise_history 
+        FROM app.methodology_exercise_history_complete 
         WHERE user_id = $1 
-          AND used_at >= NOW() - INTERVAL '60 days'
+          AND completed_at >= NOW() - INTERVAL '60 days'
         GROUP BY exercise_name, methodology_type
-        ORDER BY MAX(used_at) DESC, COUNT(*) DESC
+        ORDER BY MAX(completed_at) DESC, COUNT(*) DESC
         LIMIT 30`,
         [userId]
       );
       
       exercisesFromDB = recentExercisesResult.rows;
       console.log(`📊 Ejercicios recientes encontrados (SOLO de rutinas/metodologías): ${exercisesFromDB.length}`);
+
+      // Obtener feedback de ejercicios para que la IA evite ejercicios que no gustan
+      const feedbackResult = await pool.query(
+        `SELECT 
+          exercise_name,
+          sentiment,
+          COUNT(*) as frecuencia,
+          ARRAY_AGG(comment) FILTER (WHERE comment IS NOT NULL) as comentarios
+        FROM app.methodology_exercise_feedback
+        WHERE user_id = $1
+        GROUP BY exercise_name, sentiment
+        ORDER BY exercise_name, frecuencia DESC`,
+        [userId]
+      );
+      
+      const exerciseFeedback = feedbackResult.rows;
+      console.log(`💭 Feedback de ejercicios encontrado: ${exerciseFeedback.length}`);
       
       // Si no hay ejercicios recientes, intentar obtener ejercicios de gimnasio que el usuario no haya hecho en metodologías
       if (exercisesFromDB.length === 0) {
@@ -142,7 +159,7 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
           WHERE ec.is_active = true
             AND ec.equipment_required != 'Ninguno'  -- Solo ejercicios que requieren equipamiento (gimnasio)
             AND NOT EXISTS (
-              SELECT 1 FROM app.exercise_history eh
+              SELECT 1 FROM app.methodology_exercise_history_complete eh
               WHERE eh.user_id = $1 AND eh.exercise_name = ec.name
             )
           ORDER BY ec.difficulty_level ASC, RANDOM()
@@ -183,6 +200,15 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
       const isRecentHistory = exercisesFromDB.some(ex => ex.usage_count && ex.last_used);
       
       if (isRecentHistory) {
+        // Crear mapa de feedback por ejercicio
+        const feedbackMap = {};
+        exerciseFeedback.forEach(fb => {
+          if (!feedbackMap[fb.exercise_name]) {
+            feedbackMap[fb.exercise_name] = [];
+          }
+          feedbackMap[fb.exercise_name].push(fb);
+        });
+
         exercisesContext = `\n\nHISTORIAL DE EJERCICIOS EN METODOLOGÍAS (últimos 60 días):
 ${exercisesFromDB.map(ex => {
   const usageCount = ex.usage_count || 1;
@@ -191,13 +217,28 @@ ${exercisesFromDB.map(ex => {
   
   // Añadir información de feedback del usuario
   let feedbackInfo = '';
-  if (ex.last_sentiment) {
+  const feedback = feedbackMap[ex.exercise_name];
+  if (feedback && feedback.length > 0) {
+    const sentimentCounts = feedback.reduce((acc, fb) => {
+      acc[fb.sentiment] = (acc[fb.sentiment] || 0) + parseInt(fb.frecuencia);
+      return acc;
+    }, {});
+    
     const sentimentMap = {
       'love': '❤️ Le encanta',
       'normal': '👍 Normal',
       'hard': '😓 Difícil'
     };
-    feedbackInfo = ` [${sentimentMap[ex.last_sentiment] || ex.last_sentiment}]`;
+    
+    // Determinar el sentiment predominante
+    const mostFrequent = Object.entries(sentimentCounts).reduce((a, b) => a[1] > b[1] ? a : b);
+    feedbackInfo = ` [${sentimentMap[mostFrequent[0]] || mostFrequent[0]}]`;
+    
+    // Agregar comentarios si existen
+    const commentsForExercise = feedback.find(fb => fb.comentarios && fb.comentarios.length > 0);
+    if (commentsForExercise) {
+      feedbackInfo += ` (Comentario: "${commentsForExercise.comentarios[0]}")`;
+    }
   }
   
   return `- ${ex.exercise_name}: ${usageCount} veces en ${methodologyType} (último: ${lastUsed})${feedbackInfo}`;
@@ -243,9 +284,20 @@ La IA tendrá libertad total para seleccionar ejercicios de gimnasio apropiados 
     const currentTimestamp = new Date().toISOString();
     const randomSeed = Math.floor(Math.random() * 10000);
     
+    // Obtener día actual de activación
+    const activationDate = new Date();
+    const daysOfWeek = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+    const activationDay = daysOfWeek[activationDate.getDay()];
+    
     const userMessage = `IMPORTANTE: Este es el sistema de METODOLOGÍAS DE GIMNASIO. Los ejercicios deben ser para GIMNASIO con equipamiento. NO generar planes de "Entrenamiento en casa".
 
 SOLICITUD ÚNICA: Timestamp=${currentTimestamp}, Seed=${randomSeed} (usa esto para generar variación en cada petición)
+
+🎯 INFORMACIÓN CRÍTICA DE INICIO:
+- El usuario está activando la IA HOY: ${activationDay} (${activationDate.toLocaleDateString('es-ES')})  
+- El plan debe comenzar INMEDIATAMENTE desde HOY (${activationDay})
+- La primera sesión debe ser para ${activationDay}, NO para Lunes
+- Estructura las semanas empezando desde ${activationDay}
 
 Genera un plan de entrenamiento basado en el siguiente perfil:
     
@@ -328,6 +380,15 @@ Por favor, responde únicamente con el JSON solicitado según las especificacion
     }
 
     let aiContent = response.choices[0].message.content.trim();
+    
+    // Limpiar backticks markdown si existen
+    if (aiContent.startsWith('```json')) {
+      aiContent = aiContent.replace(/^```json\s*/, '').replace(/```\s*$/, '').trim();
+      console.log('🧹 Removidos backticks markdown de la respuesta IA');
+    } else if (aiContent.startsWith('```')) {
+      aiContent = aiContent.replace(/^```\s*/, '').replace(/```\s*$/, '').trim();  
+      console.log('🧹 Removidos backticks genéricos de la respuesta IA');
+    }
     
     // Log de tokens consumidos
     logTokens(response);
