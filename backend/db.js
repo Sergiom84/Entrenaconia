@@ -12,10 +12,12 @@ const { Pool } = pkg;
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL || 'postgresql://postgres.lhsnmjgdtjalfcsurxvg:Xe05Klm563kkjL@aws-1-eu-north-1.pooler.supabase.com:6543/postgres?sslmode=require',
   application_name: 'EntrenaConIA',
-  ssl: { 
+  ssl: process.env.NODE_ENV === 'production' ? { 
     rejectUnauthorized: false,
-    require: true
-  },
+    require: true,
+    // Configuración específica para certificados auto-firmados en Render
+    ca: false
+  } : false,
   options: '-c search_path=app,public',
   // Configuraciones adicionales para Render
   connectionTimeoutMillis: 15000,

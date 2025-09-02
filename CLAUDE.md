@@ -579,6 +579,9 @@ Para desplegar en Render, configura estas variables de entorno:
 DATABASE_URL=postgresql://postgres.lhsnmjgdtjalfcsurxvg:Xe05Klm563kkjL@aws-1-eu-north-1.pooler.supabase.com:6543/postgres?sslmode=require
 DB_SEARCH_PATH=app,public
 
+# Environment
+NODE_ENV=production
+
 # Supabase
 SUPABASE_URL=https://lhsnmjgdtjalfcsurxvg.supabase.co
 SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxoc25tamdkdGphbGZjc3VyeHZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY0ODEzMjcsImV4cCI6MjA3MjA1NzMyN30.SNxXfC5C6vI8dmRZAlUvHicdpKAquciI4wg7oNvTB5M
@@ -604,9 +607,10 @@ OPENAI_VISION_MODEL=gpt-4o-mini
 ### Importante para Render
 - **Usar CONNECTION_STRING con pooler**: Render funciona mejor con URL completa que incluya `sslmode=require`
 - **Pooler necesario**: El host directo `db.lhsnmjgdtjalfcsurxvg.supabase.co` solo tiene IPv6
-- **SSL requerido**: Incluir `?sslmode=require` en la CONNECTION_STRING es obligatorio
+- **SSL con certificados auto-firmados**: La configuración maneja automáticamente los certificados SSL de Render/Supabase
+- **NODE_ENV=production**: Asegúrate de configurar esta variable para activar SSL en producción
 - **Formato pooler**: Usuario debe ser `postgres.lhsnmjgdtjalfcsurxvg` (no solo `postgres`)
-- **Variables de entorno**: Solo necesitas `DATABASE_URL` y `DB_SEARCH_PATH` en Render
+- **Variables de entorno**: Solo necesitas `DATABASE_URL`, `DB_SEARCH_PATH` y `NODE_ENV` en Render
 - **Build Command**: `npm install && cd backend && npm install`
 - **Start Command**: `cd backend && npm start`
 
