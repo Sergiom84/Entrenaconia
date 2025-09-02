@@ -10,18 +10,20 @@ const { Pool } = pkg;
 
 // Configuración de la base de datos para Supabase
 export const pool = new Pool({
-  host: process.env.DB_HOST || 'aws-1-eu-north-1.pooler.supabase.com',
-  port: process.env.DB_PORT || 6543,
-  database: process.env.DB_NAME || 'postgres',
-  user: process.env.DB_USER || 'postgres.lhsnmjgdtjalfcsurxvg',
-  password: process.env.DB_PASSWORD || 'Xe05Klm563kkjL',
+  connectionString: process.env.DATABASE_URL || 'postgresql://postgres.lhsnmjgdtjalfcsurxvg:Xe05Klm563kkjL@aws-1-eu-north-1.pooler.supabase.com:6543/postgres?sslmode=require',
   application_name: 'EntrenaConIA',
-  ssl: { rejectUnauthorized: false }, // Supabase siempre requiere SSL
+  ssl: { 
+    rejectUnauthorized: false,
+    require: true
+  },
   options: '-c search_path=app,public',
   // Configuraciones adicionales para Render
-  connectionTimeoutMillis: 10000,
+  connectionTimeoutMillis: 15000,
   idleTimeoutMillis: 30000,
-  max: 20
+  max: 10,
+  // Configuraciones específicas para pooler
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 10000
 });
 
 // Establecer search_path en cada conexión (soporta esquemas como 'app')

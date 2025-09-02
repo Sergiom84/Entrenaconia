@@ -575,12 +575,8 @@ User → Nutrition screen → POST /api/nutrition/generate-meal-plan
 Para desplegar en Render, configura estas variables de entorno:
 
 ```bash
-# Database (usar pooler para evitar problemas IPv6 en Render)
-DB_HOST=aws-1-eu-north-1.pooler.supabase.com
-DB_PORT=6543
-DB_NAME=postgres
-DB_USER=postgres.lhsnmjgdtjalfcsurxvg
-DB_PASSWORD=Xe05Klm563kkjL
+# Database (usar CONNECTION_STRING con pooler para Render)
+DATABASE_URL=postgresql://postgres.lhsnmjgdtjalfcsurxvg:Xe05Klm563kkjL@aws-1-eu-north-1.pooler.supabase.com:6543/postgres?sslmode=require
 DB_SEARCH_PATH=app,public
 
 # Supabase
@@ -606,11 +602,11 @@ OPENAI_VISION_MODEL=gpt-4o-mini
 ```
 
 ### Importante para Render
-- **Evitar DATABASE_URL**: No uses DATABASE_URL ya que puede resolver a IPv6 y causar errores ENETUNREACH
-- **Usar configuración individual**: Configura DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD por separado
-- **Usar pooler**: El host directo `db.lhsnmjgdtjalfcsurxvg.supabase.co` solo tiene IPv6. Usar el pooler `aws-1-eu-north-1.pooler.supabase.com:6543`
-- **Usuario completo**: En el pooler usar `postgres.lhsnmjgdtjalfcsurxvg` como username
-- **Variables de entorno**: Todas las variables deben configurarse en el dashboard de Render
+- **Usar CONNECTION_STRING con pooler**: Render funciona mejor con URL completa que incluya `sslmode=require`
+- **Pooler necesario**: El host directo `db.lhsnmjgdtjalfcsurxvg.supabase.co` solo tiene IPv6
+- **SSL requerido**: Incluir `?sslmode=require` en la CONNECTION_STRING es obligatorio
+- **Formato pooler**: Usuario debe ser `postgres.lhsnmjgdtjalfcsurxvg` (no solo `postgres`)
+- **Variables de entorno**: Solo necesitas `DATABASE_URL` y `DB_SEARCH_PATH` en Render
 - **Build Command**: `npm install && cd backend && npm install`
 - **Start Command**: `cd backend && npm start`
 
