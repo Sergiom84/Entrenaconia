@@ -12,7 +12,7 @@
       "command": "npx",
       "args": ["@modelcontextprotocol/server-filesystem"],
       "env": {
-        "ALLOWED_DIRECTORIES": "C:\\Users\\Sergio\\Documents\\augment-projects\\Entrena_con_IA"
+        "ALLOWED_DIRECTORIES": "C:\\Users\\Sergio\\Desktop\\Entrenaconia"
       }
     },
     "github-repo": {

@@ -35,6 +35,7 @@
 - **Database**: `postgres`
 - **Schema**: `app` (main schema with search_path configuration)
 - **Connection**: Pool-based with SSL and automatic schema switching
+- **Supabase URL**: `https://lhsnmjgdtjalfcsurxvg.supabase.co`
 
 ## 📁 Project Structure
 
@@ -167,9 +168,13 @@ npm start        # Start backend server
 ### Database
 - **Supabase PostgreSQL** (cloud hosted)
 - Project ID: `lhsnmjgdtjalfcsurxvg`
+- Project Name: `Entrena_con_IA`
 - Database: `postgres`
 - Main schema: `app`
 - Connection: Pool-based with SSL
+- Supabase URL: `https://lhsnmjgdtjalfcsurxvg.supabase.co`
+- **Development** (Pooler): `postgresql://postgres.lhsnmjgdtjalfcsurxvg:Xe05Klm563kkjL@aws-1-eu-north-1.pooler.supabase.com:6543/postgres`
+- **Production** (Direct): `postgresql://postgres:Xe05Klm563kkjL@db.lhsnmjgdtjalfcsurxvg.supabase.co:5432/postgres`
 
 ## 🗄️ Database Schema Highlights
 
@@ -244,27 +249,33 @@ The Routines section now features a modern tab-based interface with three distin
 AI_MODULES = {
   METHODOLOGIE: {
     envKey: 'OPENAI_API_KEY_METHODOLOGIE',        // Methodology generation (automatic)
-    model: 'gpt-4o-mini'
+    model: 'gpt-4o-mini',
+    promptId: 'pmpt_68a9a05d7ee0819493fd342673a05b210a99044d2c5e3055'
   },
   METHODOLOGIE_MANUAL: {
     envKey: 'OPENAI_API_KEY_METHODOLOGIE_MANUAL', // Manual methodology generation
-    model: 'gpt-4o-mini'
+    model: 'gpt-4o-mini',
+    promptId: 'pmpt_68a9a18bdfc08197965d75cd064eeb1f0a109ccbc248c9ca'
   },
   HOME_TRAINING: {
     envKey: 'OPENAI_API_KEY_HOME_TRAINING',       // Home workout generation
-    model: 'gpt-4.1-nano'
+    model: 'gpt-4.1-nano',
+    promptId: 'pmpt_688fd23d27448193b5bfbb2c4ef9548103c68f1f6b84e824'
   },
   VIDEO_CORRECTION: {
     envKey: 'OPENAI_API_KEY_CORRECTION_VIDEO',    // Video form analysis
-    model: 'gpt-4.1-nano'
+    model: 'gpt-4.1-nano',
+    promptId: 'pmpt_68a83503ca28819693a81b0651dd52e00901a6ecf8a21eef'
   },
   PHOTO_CORRECTION: {
     envKey: 'OPENAI_API_KEY_CORRECTION_PHOTO',    // Photo form analysis
-    model: 'gpt-4.1-nano'
+    model: 'gpt-4o-mini',
+    promptId: 'pmpt_68a89775a9e08190a95a5e3d484fd09a055e214db81a6fd0'
   },
   NUTRITION: {
     envKey: 'OPENAI_API_KEY_NUTRITION',           // Nutrition recommendations
-    model: 'gpt-4o-mini'
+    model: 'gpt-4o-mini',
+    promptId: 'pmpt_68ae0d8c52908196a4d207ac1292fcff0eb39487cfc552fc'
   }
 }
 ```
@@ -398,10 +409,11 @@ router.get('/sessions/today-status', async (req, res) => {
 User → MethodologiesScreen → POST /api/methodologie/generate → OpenAI API
                                     ↓
                             Uses OPENAI_API_KEY_METHODOLOGIE
+                            Prompt ID: pmpt_68a9a05d7ee0819493fd342673a05b210a99044d2c5e3055
                                     ↓
                         AI generates complete JSON plan with:
                         - semanas[]: weeks of training
-                        - sesiones[]: sessions per week  
+                        - sesiones[]: sessions per week
                         - ejercicios[]: exercises with series, reps, rest, etc.
 ```
 
@@ -495,9 +507,10 @@ router.get('/sessions/:sessionId/progress', (req, res) => {
 ### 2. **HOME TRAINING FLOW** 
 
 ```
-User → HomeTrainingScreen → POST /api/ia-home-training/generate 
+User → HomeTrainingScreen → POST /api/ia-home-training/generate
                                     ↓
                             Uses OPENAI_API_KEY_HOME_TRAINING
+                            Prompt ID: pmpt_688fd23d27448193b5bfbb2c4ef9548103c68f1f6b84e824
                                     ↓
                         AI generates workout → home_training_sessions
                                     ↓
@@ -540,6 +553,7 @@ const confirmRepeatTraining = () => {
 User uploads → VideoCorrection component → POST /api/ai/analyze-video
                                                     ↓
                                           Uses OPENAI_API_KEY_CORRECTION_VIDEO
+                                          Prompt ID: pmpt_68a83503ca28819693a81b0651dd52e00901a6ecf8a21eef
                                                     ↓
                                           AI analyzes form → returns corrections
 ```
@@ -550,11 +564,55 @@ User uploads → VideoCorrection component → POST /api/ai/analyze-video
 User → Nutrition screen → POST /api/nutrition/generate-meal-plan
                                     ↓
                             Uses OPENAI_API_KEY_NUTRITION
+                            Prompt ID: pmpt_68ae0d8c52908196a4d207ac1292fcff0eb39487cfc552fc
                                     ↓
                         AI generates meal plan → daily_nutrition_log
 ```
 
-## 🔧 Critical Technical Details
+## � Deployment Configuration
+
+### Render.com Environment Variables
+Para desplegar en Render, configura estas variables de entorno:
+
+```bash
+# Database (usar conexión directa para producción)
+DATABASE_URL=postgresql://postgres:Xe05Klm563kkjL@db.lhsnmjgdtjalfcsurxvg.supabase.co:5432/postgres
+DB_HOST=db.lhsnmjgdtjalfcsurxvg.supabase.co
+DB_PORT=5432
+DB_NAME=postgres
+DB_USER=postgres
+DB_PASSWORD=Xe05Klm563kkjL
+DB_SEARCH_PATH=app,public
+
+# Supabase
+SUPABASE_URL=https://lhsnmjgdtjalfcsurxvg.supabase.co
+SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxoc25tamdkdGphbGZjc3VyeHZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY0ODEzMjcsImV4cCI6MjA3MjA1NzMyN30.SNxXfC5C6vI8dmRZAlUvHicdpKAquciI4wg7oNvTB5M
+SUPABASE_SERVICE_ROLE_KEY=sb_secret_IpeTiJWcnms06aO6jk9Jaw_JBmOKem5
+
+# OpenAI API Keys
+OPENAI_API_KEY_HOME_TRAINING=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
+OPENAI_API_KEY_CORRECTION_VIDEO=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
+OPENAI_API_KEY_CORRECTION_PHOTO=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
+OPENAI_API_KEY_METHODOLOGIE=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
+OPENAI_API_KEY_METHODOLOGIE_MANUAL=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
+OPENAI_API_KEY_NUTRITION=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
+
+# Server Configuration
+NODE_ENV=production
+PORT=3002
+JWT_SECRET=entrenaconjwtsecret2024supersecure
+UPLOAD_DIR=uploads
+MAX_FILE_SIZE=26214400
+OPENAI_VISION_MODEL=gpt-4o-mini
+```
+
+### Importante para Render
+- **Usar conexión directa**: En producción, Render necesita la conexión directa a Supabase (`db.lhsnmjgdtjalfcsurxvg.supabase.co:5432`) en lugar del pooler
+- **Variables de entorno**: Todas las variables deben configurarse en el dashboard de Render
+- **Build Command**: `npm install && cd backend && npm install`
+- **Start Command**: `cd backend && npm start`
+
+## �🔧 Critical Technical Details
 
 ### Routine Confirmation System
 

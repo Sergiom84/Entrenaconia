@@ -24,8 +24,10 @@ import musicRoutes from './routes/music.js';
 import { pool } from './db.js';
 import routinesRoutes from './routes/routines.js';
 
-// Cargar variables de entorno
-dotenv.config();
+// Solo cargar dotenv en desarrollo
+if (process.env.NODE_ENV !== 'production') {
+  dotenv.config();
+}
 
 const app = express();
 const PORT = process.env.PORT || 3002;

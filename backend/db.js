@@ -1,13 +1,16 @@
 import pkg from 'pg';
 import dotenv from 'dotenv';
 
-dotenv.config();
+// Solo cargar dotenv en desarrollo
+if (process.env.NODE_ENV !== 'production') {
+  dotenv.config();
+}
 
 const { Pool } = pkg;
 
 // Configuración de la base de datos para Supabase
 export const pool = new Pool({
-  connectionString: `postgresql://postgres.lhsnmjgdtjalfcsurxvg:${encodeURIComponent('Xe05Klm563kkjL')}@aws-1-eu-north-1.pooler.supabase.com:6543/postgres`,
+  connectionString: process.env.DATABASE_URL,
   application_name: 'EntrenaConIA',
   ssl: { rejectUnauthorized: false }, // Supabase siempre requiere SSL
   options: '-c search_path=app,public'
