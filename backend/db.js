@@ -2,44 +2,60 @@
 import pkg from "pg";
 import dotenv from "dotenv";
 
-// Cargar .env solo en desarrollo
 if (process.env.NODE_ENV !== "production") {
   dotenv.config();
 }
 
 const { Pool } = pkg;
 
-// ---------- CONFIG BÁSICA ----------
-
-// Fallback seguro para PRODUCCIÓN en Render (Session Pooler IPv4)
+// --- 1) Fuente única de verdad: DATABASE_URL ---
 const DEFAULT_SESSION_POOLER =
   "postgresql://postgres.lhsnmjgdtjalfcsurxvg:Xe05Klm563kkjL@aws-1-eu-north-1.pooler.supabase.com:5432/postgres?sslmode=require";
 
-// Toma DATABASE_URL si existe; si no, en prod usa el pooler IPv4
-const connectionString =
+const rawConnStr =
   process.env.DATABASE_URL ||
   (process.env.NODE_ENV === "production"
     ? DEFAULT_SESSION_POOLER
     : DEFAULT_SESSION_POOLER);
 
-// Pool de conexiones
+// --- 2) Parseo robusto de la URL ---
+let parsed;
+try {
+  parsed = new URL(rawConnStr);
+} catch (e) {
+  console.error("❌ DATABASE_URL inválida:", e.message);
+  throw e;
+}
+
+const host = parsed.hostname;                 // ej: aws-1-eu-north-1.pooler.supabase.com
+const port = Number(parsed.port || 5432);
+const database = decodeURIComponent(parsed.pathname.replace(/^\//, "")) || "postgres";
+const user = decodeURIComponent(parsed.username || "postgres");
+const password = decodeURIComponent(parsed.password || "");
+const sslmode = parsed.searchParams.get("sslmode");
+
+// Log seguro (sin password)
+console.log(
+  `🔌 DB target → host=${host} port=${port} db=${database} user=${user} sslmode=${sslmode || "default"}`
+);
+
+// --- 3) Config Pool explícita (ignora PGHOST/PGPORT externos) ---
 export const pool = new Pool({
-  connectionString,
+  host,
+  port,
+  database,
+  user,
+  password,
+  ssl: { rejectUnauthorized: false }, // Supabase + Render
   application_name: "EntrenaConIA",
-  // SSL requerido por Supabase y necesario en Render
-  ssl: { rejectUnauthorized: false },
-  // Pool tuning para evitar demasiadas conexiones
   max: 10,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 15000,
   keepAlive: true,
   keepAliveInitialDelayMillis: 10000,
-  // Opcional: fija search_path desde aquí para cada conexión nueva
-  // Nota: también lo reforzamos en el evento 'connect' de abajo
-  options: "-c search_path=app,public",
 });
 
-// ---------- SEARCH_PATH POR CONEXIÓN ----------
+// --- 4) search_path por conexión ---
 const DB_SEARCH_PATH = process.env.DB_SEARCH_PATH || "app,public";
 pool.on("connect", async (client) => {
   try {
@@ -49,7 +65,7 @@ pool.on("connect", async (client) => {
   }
 });
 
-// ---------- TEST INICIAL ----------
+// --- 5) Test inicial ---
 export const testConnection = async () => {
   try {
     const client = await pool.connect();
@@ -72,7 +88,7 @@ export const testConnection = async () => {
     client.release();
   } catch (error) {
     console.error("❌ Error conectando a PostgreSQL:", error.message);
-    console.log("💡 Revisa DATABASE_URL o el pooler de Supabase (IPv4).");
+    console.log("💡 Revisa que DATABASE_URL apunte al pooler IPv4 y que no existan PGHOST/PGPORT conflictivos.");
   }
 };
 
