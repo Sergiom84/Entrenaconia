@@ -39,7 +39,7 @@ const PORT = process.env.PORT || 3002;
 // --- utilidades de path para servir el frontend ---
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const FRONTEND_DIST = path.join(__dirname, '../frontend/dist'); // ajusta si tu build sale en otra carpeta
+const FRONTEND_DIST = path.join(__dirname, '../dist'); // ajusta si tu build sale en otra carpeta
 
 // Verificar search_path y precargar prompts al arrancar el backend
 (async () => {
