@@ -382,6 +382,9 @@ const HomeTrainingSection = () => {
         percentage: newPercentage
       });
 
+      // Recargar progreso del servidor para mantener UI sincronizada
+      await loadSessionProgress(currentSession.id);
+
       if (currentExerciseIndex < generatedPlan.plan_entrenamiento.ejercicios.length - 1) {
         setCurrentExerciseIndex(currentExerciseIndex + 1);
       } else {
@@ -422,6 +425,9 @@ const HomeTrainingSection = () => {
         percentage: newPercentage
       });
 
+      // Refrescar progreso para reflejar estado 'skipped'
+      await loadSessionProgress(currentSession.id);
+
       if (currentExerciseIndex < generatedPlan.plan_entrenamiento.ejercicios.length - 1) {
         setCurrentExerciseIndex(currentExerciseIndex + 1);
       } else {
@@ -430,8 +436,6 @@ const HomeTrainingSection = () => {
         alert('Entrenamiento finalizado. Algunos ejercicios fueron saltados.');
       }
 
-      // refrescar progreso para reflejar estado 'skipped'
-      await loadSessionProgress(currentSession.id);
       await loadUserStats();
     } catch (error) {
       console.error('Error skipping exercise:', error);
@@ -462,6 +466,9 @@ const HomeTrainingSection = () => {
         percentage: newPercentage
       });
 
+      // Refrescar progreso para reflejar estado 'cancelled'
+      await loadSessionProgress(currentSession.id);
+
       if (currentExerciseIndex < generatedPlan.plan_entrenamiento.ejercicios.length - 1) {
         setCurrentExerciseIndex(currentExerciseIndex + 1);
       } else {
@@ -470,8 +477,6 @@ const HomeTrainingSection = () => {
         alert('Entrenamiento finalizado. Algunos ejercicios fueron cancelados.');
       }
 
-      // refrescar progreso para reflejar estado 'cancelled'
-      await loadSessionProgress(currentSession.id);
       await loadUserStats();
     } catch (error) {
       console.error('Error cancelling exercise:', error);
