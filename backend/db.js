@@ -9,8 +9,8 @@ if (process.env.NODE_ENV !== 'production') {
 const { Pool } = pkg;
 
 // Configuración de la base de datos para Supabase
-export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgresql://postgres.lhsnmjgdtjalfcsurxvg:Xe05Klm563kkjL@aws-1-eu-north-1.pooler.supabase.com:6543/postgres?sslmode=require',
+// Render no soporta IPv6, usamos conexión directa puerto 5432 como fallback
+const dbConfig = {
   application_name: 'EntrenaConIA',
   ssl: process.env.NODE_ENV === 'production' ? { 
     rejectUnauthorized: false,
@@ -23,10 +23,23 @@ export const pool = new Pool({
   connectionTimeoutMillis: 15000,
   idleTimeoutMillis: 30000,
   max: 10,
-  // Configuraciones específicas para pooler
   keepAlive: true,
   keepAliveInitialDelayMillis: 10000
-});
+};
+
+// Intentar con diferentes configuraciones según el entorno
+if (process.env.DATABASE_URL) {
+  // Si hay DATABASE_URL, usar esa configuración
+  dbConfig.connectionString = process.env.DATABASE_URL;
+} else if (process.env.NODE_ENV === 'production') {
+  // En producción (Render), usar conexión directa sin pooler
+  dbConfig.connectionString = 'postgresql://postgres:Xe05Klm563kkjL@db.lhsnmjgdtjalfcsurxvg.supabase.co:5432/postgres?sslmode=require';
+} else {
+  // En desarrollo, usar pooler local
+  dbConfig.connectionString = 'postgresql://postgres.lhsnmjgdtjalfcsurxvg:Xe05Klm563kkjL@aws-1-eu-north-1.pooler.supabase.com:6543/postgres?sslmode=require';
+}
+
+export const pool = new Pool(dbConfig);
 
 // Establecer search_path en cada conexión (soporta esquemas como 'app')
 const DB_SEARCH_PATH = process.env.DB_SEARCH_PATH || 'app,public';

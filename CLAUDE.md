@@ -575,9 +575,13 @@ User → Nutrition screen → POST /api/nutrition/generate-meal-plan
 Para desplegar en Render, configura estas variables de entorno:
 
 ```bash
-# Database (usar CONNECTION_STRING con pooler para Render)
-DATABASE_URL=postgresql://postgres.lhsnmjgdtjalfcsurxvg:Xe05Klm563kkjL@aws-1-eu-north-1.pooler.supabase.com:6543/postgres?sslmode=require
+# Database - OPCIÓN 1: Usar conexión directa (puerto 5432, sin pooler)
+# Render no soporta IPv6, esta opción evita el pooler que causa ECONNREFUSED
+# NO configures DATABASE_URL, déjalo vacío para usar la conexión directa automática
 DB_SEARCH_PATH=app,public
+
+# Database - OPCIÓN 2: Si opción 1 falla, usar URL directa
+# DATABASE_URL=postgresql://postgres:Xe05Klm563kkjL@db.lhsnmjgdtjalfcsurxvg.supabase.co:5432/postgres?sslmode=require
 
 # Environment
 NODE_ENV=production
@@ -604,13 +608,14 @@ MAX_FILE_SIZE=26214400
 OPENAI_VISION_MODEL=gpt-4o-mini
 ```
 
-### Importante para Render
-- **Usar CONNECTION_STRING con pooler**: Render funciona mejor con URL completa que incluya `sslmode=require`
-- **Pooler necesario**: El host directo `db.lhsnmjgdtjalfcsurxvg.supabase.co` solo tiene IPv6
-- **SSL con certificados auto-firmados**: La configuración maneja automáticamente los certificados SSL de Render/Supabase
-- **NODE_ENV=production**: Asegúrate de configurar esta variable para activar SSL en producción
-- **Formato pooler**: Usuario debe ser `postgres.lhsnmjgdtjalfcsurxvg` (no solo `postgres`)
-- **Variables de entorno**: Solo necesitas `DATABASE_URL`, `DB_SEARCH_PATH` y `NODE_ENV` en Render
+### Importante para Render (IPv6 Issue)
+- **Problema conocido**: Render no soporta IPv6 pero Supabase migró a IPv6, causando ECONNREFUSED
+- **Solución implementada**: El código detecta automáticamente el entorno y usa configuración adecuada
+- **OPCIÓN 1 (Recomendada)**: NO configures DATABASE_URL en Render, deja que use conexión directa puerto 5432
+- **OPCIÓN 2**: Si falla, configura DATABASE_URL con la conexión directa (no pooler)
+- **SSL automático**: Configurado para manejar certificados auto-firmados en producción
+- **NODE_ENV=production**: Obligatorio para activar SSL y conexión directa
+- **Variables de entorno**: Solo necesitas `DB_SEARCH_PATH` y `NODE_ENV` (OPCIÓN 1) o `DATABASE_URL`, `DB_SEARCH_PATH` y `NODE_ENV` (OPCIÓN 2)
 - **Build Command**: `npm install && cd backend && npm install`
 - **Start Command**: `cd backend && npm start`
 
