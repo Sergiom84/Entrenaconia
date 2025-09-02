@@ -65,7 +65,7 @@ export function EquipmentTab() {
 
   const curatedKeys = useMemo(() => new Set(curated.map(i => i.key)), [curated]);
 
-  const toggleCurated = async (code) => {
+   const toggleCurated = async (code, labelFallback = null, levelFallback = null) => {
     const token = localStorage.getItem('token');
     if (!token) return;
     const isSelected = curatedKeys.has(code);
@@ -76,7 +76,11 @@ export function EquipmentTab() {
       } else {
         await fetch('/api/equipment/user', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ equipment_key: code }) });
         const item = catalog.find(i => i.code === code);
-        if (item) setCurated(prev => [...prev, { key: item.code, label: item.name, level: item.level }]);
+        // Asegurar feedback inmediato incluso si el catálogo no contiene el código
+        const newEntry = item
+          ? { key: item.code, label: item.name, level: item.level }
+          : { key: code, label: labelFallback || code, level: levelFallback };
+        setCurated(prev => [...prev, newEntry]);
       }
     } catch (e) {
       console.error('toggleCurated error', e);
