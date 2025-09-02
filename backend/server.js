@@ -2,6 +2,9 @@ import express from 'express';
 import pg from 'pg';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
 import { preloadAllPrompts } from './lib/promptRegistry.js';
 import { validateAPIKeys } from './lib/openaiClient.js';
 import authRoutes from './routes/auth.js';
@@ -32,6 +35,11 @@ if (process.env.NODE_ENV !== 'production') {
 
 const app = express();
 const PORT = process.env.PORT || 3002;
+
+// --- utilidades de path para servir el frontend ---
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const FRONTEND_DIST = path.join(__dirname, '../frontend/dist'); // ajusta si tu build sale en otra carpeta
 
 // Verificar search_path y precargar prompts al arrancar el backend
 (async () => {
@@ -97,6 +105,7 @@ app.use((req, res, next) => {
   next();
 });
 
+// Info base de auth (evita 404 en GET /api/auth)
 app.get('/api/auth', (req, res) => {
   res.json({
     status: 'ok',
@@ -104,7 +113,7 @@ app.get('/api/auth', (req, res) => {
   });
 });
 
-// Rutas
+// Rutas API
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/medical-docs', medicalDocsRoutes);
@@ -134,16 +143,12 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// === NUEVO: Ruta raíz ===
-app.get('/', (req, res) => {
-  res.type('html').send(`
-    <h1>🚀 Entrena con IA – Backend</h1>
-    <p>El servidor está funcionando.</p>
-    <ul>
-      <li><a href="/api/health">/api/health</a></li>
-      <li><a href="/api/auth">/api/auth</a></li>
-    </ul>
-  `);
+// === SERVIR FRONTEND ESTÁTICO (después de las rutas /api/*) ===
+app.use(express.static(FRONTEND_DIST));
+
+// Catch-all: cualquier ruta que NO empiece por /api la atiende el frontend
+app.get(/^(?!\/api).*/, (req, res) => {
+  res.sendFile(path.join(FRONTEND_DIST, 'index.html'));
 });
 
 // Endpoint de test para validar módulos IA
@@ -194,51 +199,6 @@ app.get('/api/test-ai-modules', async (req, res) => {
   }
 });
 
-// Debug endpoint para limpiar cache de prompts
-app.post('/api/debug/clear-prompt-cache', async (req, res) => {
-  try {
-    const { feature } = req.body;
-    const { clearPromptCache, getCacheStatus } = await import('./lib/promptRegistry.js');
-
-    const beforeStatus = getCacheStatus();
-    clearPromptCache(feature);
-    const afterStatus = getCacheStatus();
-
-    res.json({
-      success: true,
-      message: `Cache ${feature ? `para feature ${feature}` : 'completo'} limpiado`,
-      before: beforeStatus,
-      after: afterStatus
-    });
-  } catch (error) {
-    console.error('Error clearing prompt cache:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Debug endpoint para verificar contenido de prompts
-app.get('/api/debug/prompt-content/:feature', async (req, res) => {
-  try {
-    const { feature } = req.params;
-    const { getPrompt } = await import('./lib/promptRegistry.js');
-
-    const content = await getPrompt(feature);
-    const preview = content.substring(0, 200);
-    const containsTraining = content.toLowerCase().includes('entrenamiento en casa');
-
-    res.json({
-      feature,
-      contentLength: content.length,
-      preview,
-      containsTraining,
-      firstLine: content.split('\n')[0]
-    });
-  } catch (error) {
-    console.error('Error getting prompt content:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
 // Manejo de errores
 app.use((err, req, res, _next) => {
   console.error(err.stack);
@@ -248,7 +208,7 @@ app.use((err, req, res, _next) => {
   });
 });
 
-// Ruta 404
+// Ruta 404 (solo si aún no se respondió nada; las rutas no-/api ya las coge el frontend)
 app.use('*', (req, res) => {
   res.status(404).json({ error: 'Ruta no encontrada' });
 });
@@ -258,4 +218,5 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Servidor backend ejecutándose en http://0.0.0.0:${PORT}`);
   console.log(`📊 Endpoint de salud: http://0.0.0.0:${PORT}/api/health`);
   console.log(`🔐 Rutas de autenticación: http://0.0.0.0:${PORT}/api/auth`);
+  console.log(`🗂️  Frontend estático servido desde: ${FRONTEND_DIST}`);
 });
