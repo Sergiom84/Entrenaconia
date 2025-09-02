@@ -10,10 +10,10 @@ const { Pool } = pkg;
 
 // Configuración de la base de datos para Supabase
 export const pool = new Pool({
-  host: process.env.DB_HOST || 'db.lhsnmjgdtjalfcsurxvg.supabase.co',
-  port: process.env.DB_PORT || 5432,
+  host: process.env.DB_HOST || 'aws-1-eu-north-1.pooler.supabase.com',
+  port: process.env.DB_PORT || 6543,
   database: process.env.DB_NAME || 'postgres',
-  user: process.env.DB_USER || 'postgres',
+  user: process.env.DB_USER || 'postgres.lhsnmjgdtjalfcsurxvg',
   password: process.env.DB_PASSWORD || 'Xe05Klm563kkjL',
   application_name: 'EntrenaConIA',
   ssl: { rejectUnauthorized: false }, // Supabase siempre requiere SSL
