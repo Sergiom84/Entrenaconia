@@ -1,6 +1,10 @@
 import express from 'express';
+import pg from 'pg';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
 import { preloadAllPrompts } from './lib/promptRegistry.js';
 import { validateAPIKeys } from './lib/openaiClient.js';
 import authRoutes from './routes/auth.js';
@@ -32,6 +36,10 @@ if (process.env.NODE_ENV !== 'production') {
 const app = express();
 const PORT = process.env.PORT || 3002;
 
+// --- utilidades de path para servir el frontend ---
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const FRONTEND_DIST = path.join(__dirname, '../dist'); // ajusta si tu build sale en otra carpeta
 
 // Verificar search_path y precargar prompts al arrancar el backend
 (async () => {
@@ -76,7 +84,13 @@ const PORT = process.env.PORT || 3002;
 
 // Middleware
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175', 'http://localhost:3000'],
+  origin: [
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'http://localhost:5175',
+    'http://localhost:3000',
+    'https://entrenaconia.onrender.com'
+  ],
   credentials: true
 }));
 app.use(express.json());
@@ -91,7 +105,15 @@ app.use((req, res, next) => {
   next();
 });
 
-// Rutas
+// Info base de auth (evita 404 en GET /api/auth)
+app.get('/api/auth', (req, res) => {
+  res.json({
+    status: 'ok',
+    message: 'Auth API base. Usa los endpoints específicos (p. ej. /api/auth/login, /api/auth/register, /api/auth/logout, /api/auth/refresh, etc.).'
+  });
+});
+
+// Rutas API
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/medical-docs', medicalDocsRoutes);
@@ -109,14 +131,8 @@ app.use('/api/uploads', uploadsRoutes);
 app.use('/api/exercises', exercisesRoutes);
 app.use('/api/technique', techniqueRoutes);
 app.use('/api/nutrition', nutritionRoutes);
-
-
 app.use('/api/music', musicRoutes);
 app.use('/api/routines', routinesRoutes);
-
-
-// Ruta de prueba
-app.use('/api/uploads', uploadsRoutes);
 
 // Endpoint simple de salud
 app.get('/api/health', (req, res) => {
@@ -125,6 +141,14 @@ app.get('/api/health', (req, res) => {
     message: 'Servidor funcionando correctamente',
     timestamp: new Date().toISOString()
   });
+});
+
+// === SERVIR FRONTEND ESTÁTICO (después de las rutas /api/*) ===
+app.use(express.static(FRONTEND_DIST));
+
+// Catch-all: cualquier ruta que NO empiece por /api la atiende el frontend
+app.get(/^(?!\/api).*/, (req, res) => {
+  res.sendFile(path.join(FRONTEND_DIST, 'index.html'));
 });
 
 // Endpoint de test para validar módulos IA
@@ -175,53 +199,6 @@ app.get('/api/test-ai-modules', async (req, res) => {
   }
 });
 
-// Debug endpoint para limpiar cache de prompts
-app.post('/api/debug/clear-prompt-cache', async (req, res) => {
-  try {
-    const { feature } = req.body;
-
-    // Importar funciones de prompt registry
-    const { clearPromptCache, getCacheStatus } = await import('./lib/promptRegistry.js');
-
-    const beforeStatus = getCacheStatus();
-    clearPromptCache(feature);
-    const afterStatus = getCacheStatus();
-
-    res.json({
-      success: true,
-      message: `Cache ${feature ? `para feature ${feature}` : 'completo'} limpiado`,
-      before: beforeStatus,
-      after: afterStatus
-    });
-  } catch (error) {
-    console.error('Error clearing prompt cache:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Debug endpoint para verificar contenido de prompts
-app.get('/api/debug/prompt-content/:feature', async (req, res) => {
-  try {
-    const { feature } = req.params;
-    const { getPrompt } = await import('./lib/promptRegistry.js');
-
-    const content = await getPrompt(feature);
-    const preview = content.substring(0, 200);
-    const containsTraining = content.toLowerCase().includes('entrenamiento en casa');
-
-    res.json({
-      feature,
-      contentLength: content.length,
-      preview,
-      containsTraining,
-      firstLine: content.split('\n')[0]
-    });
-  } catch (error) {
-    console.error('Error getting prompt content:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
 // Manejo de errores
 app.use((err, req, res, _next) => {
   console.error(err.stack);
@@ -231,14 +208,15 @@ app.use((err, req, res, _next) => {
   });
 });
 
-// Ruta 404
+// Ruta 404 (solo si aún no se respondió nada; las rutas no-/api ya las coge el frontend)
 app.use('*', (req, res) => {
   res.status(404).json({ error: 'Ruta no encontrada' });
 });
 
-// Iniciar servidor
-app.listen(PORT, () => {
-  console.log(`🚀 Servidor backend ejecutándose en http://localhost:${PORT}`);
-  console.log(`📊 Endpoint de salud: http://localhost:${PORT}/api/health`);
-  console.log(`🔐 Rutas de autenticación: http://localhost:${PORT}/api/auth`);
+// Iniciar servidor en Render (0.0.0.0 obligatorio)
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Servidor backend ejecutándose en http://0.0.0.0:${PORT}`);
+  console.log(`📊 Endpoint de salud: http://0.0.0.0:${PORT}/api/health`);
+  console.log(`🔐 Rutas de autenticación: http://0.0.0.0:${PORT}/api/auth`);
+  console.log(`🗂️  Frontend estático servido desde: ${FRONTEND_DIST}`);
 });

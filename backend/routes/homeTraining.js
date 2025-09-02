@@ -374,22 +374,25 @@ router.get('/sessions/:sessionId/progress', authenticateToken, async (req, res) 
     const session = sessionResult.rows[0];
     const exercises = progressResult.rows;
 
-    // Calcular ejercicio actual
-    const currentExerciseIndex = exercises.findIndex(ex => ex.status === 'pending' || ex.status === 'in_progress');
-    const completedExercises = exercises.filter(ex => ex.status === 'completed').map(ex => ex.exercise_order);
+     // Calcular siguiente ejercicio a realizar
+    // Debe ser el primer ejercicio NO completado (incluye pending, in_progress, skipped, cancelled)
+    const nextExerciseIndex = exercises.findIndex(ex => ex.status !== 'completed');
+    const completedExercises = exercises
+      .filter(ex => ex.status === 'completed')
+      .map(ex => ex.exercise_order);
 
-    // Determinar el ejercicio actual de manera más segura
+    // Si hay alguno sin completar, retomamos desde ese índice; si no, usar último índice válido
     let safeCurrentExercise;
-    if (currentExerciseIndex >= 0) {
-      // Hay un ejercicio pendiente o en progreso
-      safeCurrentExercise = currentExerciseIndex;
+   if (nextExerciseIndex >= 0) {
+      safeCurrentExercise = nextExerciseIndex;
     } else if (exercises.length > 0) {
-      // Todos completados, usar el último índice válido
       safeCurrentExercise = Math.max(0, exercises.length - 1);
     } else {
-      // No hay ejercicios
       safeCurrentExercise = 0;
     }
+
+    // allCompleted solo es true si absolutamente todos están marcados como 'completed'
+    const allCompleted = exercises.length > 0 && exercises.every(ex => ex.status === 'completed');
 
     res.json({
       success: true,
@@ -399,7 +402,7 @@ router.get('/sessions/:sessionId/progress', authenticateToken, async (req, res) 
         currentExercise: safeCurrentExercise,
         completedExercises: completedExercises,
         percentage: session.progress_percentage || 0,
-        allCompleted: currentExerciseIndex < 0 && exercises.length > 0
+        allCompleted
       }
     });
   } catch (error) {

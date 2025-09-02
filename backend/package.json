@@ -5,9 +5,12 @@
   "main": "server.js",
   "type": "module",
   "scripts": {
-    "dev": "nodemon server.js",
     "start": "node server.js",
-    "dw": "nodemon server.js"
+    "dev": "nodemon --watch . server.js",
+    "postinstall": "echo \"(backend) postinstall ok\""
+  },
+  "engines": {
+    "node": ">=18 <23"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
