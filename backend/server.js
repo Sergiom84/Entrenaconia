@@ -1,4 +1,5 @@
 import express from 'express';
+import pg from 'pg';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { preloadAllPrompts } from './lib/promptRegistry.js';
@@ -31,7 +32,6 @@ if (process.env.NODE_ENV !== 'production') {
 
 const app = express();
 const PORT = process.env.PORT || 3002;
-
 
 // Verificar search_path y precargar prompts al arrancar el backend
 (async () => {
@@ -76,7 +76,13 @@ const PORT = process.env.PORT || 3002;
 
 // Middleware
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175', 'http://localhost:3000'],
+  origin: [
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'http://localhost:5175',
+    'http://localhost:3000',
+    'https://entrenaconia.onrender.com'
+  ],
   credentials: true
 }));
 app.use(express.json());
@@ -109,14 +115,8 @@ app.use('/api/uploads', uploadsRoutes);
 app.use('/api/exercises', exercisesRoutes);
 app.use('/api/technique', techniqueRoutes);
 app.use('/api/nutrition', nutritionRoutes);
-
-
 app.use('/api/music', musicRoutes);
 app.use('/api/routines', routinesRoutes);
-
-
-// Ruta de prueba
-app.use('/api/uploads', uploadsRoutes);
 
 // Endpoint simple de salud
 app.get('/api/health', (req, res) => {
@@ -125,6 +125,18 @@ app.get('/api/health', (req, res) => {
     message: 'Servidor funcionando correctamente',
     timestamp: new Date().toISOString()
   });
+});
+
+// === NUEVO: Ruta raíz ===
+app.get('/', (req, res) => {
+  res.type('html').send(`
+    <h1>🚀 Entrena con IA – Backend</h1>
+    <p>El servidor está funcionando.</p>
+    <ul>
+      <li><a href="/api/health">/api/health</a></li>
+      <li><a href="/api/auth">/api/auth</a></li>
+    </ul>
+  `);
 });
 
 // Endpoint de test para validar módulos IA
@@ -179,8 +191,6 @@ app.get('/api/test-ai-modules', async (req, res) => {
 app.post('/api/debug/clear-prompt-cache', async (req, res) => {
   try {
     const { feature } = req.body;
-
-    // Importar funciones de prompt registry
     const { clearPromptCache, getCacheStatus } = await import('./lib/promptRegistry.js');
 
     const beforeStatus = getCacheStatus();
@@ -236,9 +246,9 @@ app.use('*', (req, res) => {
   res.status(404).json({ error: 'Ruta no encontrada' });
 });
 
-// Iniciar servidor
-app.listen(PORT, () => {
-  console.log(`🚀 Servidor backend ejecutándose en http://localhost:${PORT}`);
-  console.log(`📊 Endpoint de salud: http://localhost:${PORT}/api/health`);
-  console.log(`🔐 Rutas de autenticación: http://localhost:${PORT}/api/auth`);
+// Iniciar servidor en Render (0.0.0.0 obligatorio)
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Servidor backend ejecutándose en http://0.0.0.0:${PORT}`);
+  console.log(`📊 Endpoint de salud: http://0.0.0.0:${PORT}/api/health`);
+  console.log(`🔐 Rutas de autenticación: http://0.0.0.0:${PORT}/api/auth`);
 });
