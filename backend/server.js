@@ -97,6 +97,13 @@ app.use((req, res, next) => {
   next();
 });
 
+app.get('/api/auth', (req, res) => {
+  res.json({
+    status: 'ok',
+    message: 'Auth API base. Usa los endpoints específicos (p. ej. /api/auth/login, /api/auth/register, /api/auth/logout, /api/auth/refresh, etc.).'
+  });
+});
+
 // Rutas
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
