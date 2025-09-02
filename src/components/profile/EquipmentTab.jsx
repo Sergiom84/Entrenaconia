@@ -65,7 +65,7 @@ export function EquipmentTab() {
 
   const curatedKeys = useMemo(() => new Set(curated.map(i => i.key)), [curated]);
 
-   const toggleCurated = async (code, labelFallback = null, levelFallback = null) => {
+  const toggleCurated = async (code, labelFallback = null, levelFallback = null) => {
     const token = localStorage.getItem('token');
     if (!token) return;
     const isSelected = curatedKeys.has(code);

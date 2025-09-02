@@ -374,7 +374,7 @@ router.get('/sessions/:sessionId/progress', authenticateToken, async (req, res) 
     const session = sessionResult.rows[0];
     const exercises = progressResult.rows;
 
-     // Calcular siguiente ejercicio a realizar
+    // Calcular siguiente ejercicio a realizar
     // Debe ser el primer ejercicio NO completado (incluye pending, in_progress, skipped, cancelled)
     const nextExerciseIndex = exercises.findIndex(ex => ex.status !== 'completed');
     const completedExercises = exercises
@@ -383,7 +383,7 @@ router.get('/sessions/:sessionId/progress', authenticateToken, async (req, res) 
 
     // Si hay alguno sin completar, retomamos desde ese índice; si no, usar último índice válido
     let safeCurrentExercise;
-   if (nextExerciseIndex >= 0) {
+    if (nextExerciseIndex >= 0) {
       safeCurrentExercise = nextExerciseIndex;
     } else if (exercises.length > 0) {
       safeCurrentExercise = Math.max(0, exercises.length - 1);

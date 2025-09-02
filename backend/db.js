@@ -9,14 +9,13 @@ if (process.env.NODE_ENV !== "production") {
 const { Pool } = pkg;
 
 // --- 1) Fuente única de verdad: DATABASE_URL ---
-const DEFAULT_SESSION_POOLER =
-  "postgresql://postgres.lhsnmjgdtjalfcsurxvg:Xe05Klm563kkjL@aws-1-eu-north-1.pooler.supabase.com:5432/postgres?sslmode=require";
+// Render: usa conexión directa (DATABASE_URL definida en variables de entorno)
+// Local: usa pooler con puerto 6543 para compatibilidad IPv4/IPv6
+const DEFAULT_LOCAL_POOLER =
+  "postgresql://postgres.lhsnmjgdtjalfcsurxvg:Xe05Klm563kkjL@aws-1-eu-north-1.pooler.supabase.com:6543/postgres?sslmode=require";
 
 const rawConnStr =
-  process.env.DATABASE_URL ||
-  (process.env.NODE_ENV === "production"
-    ? DEFAULT_SESSION_POOLER
-    : DEFAULT_SESSION_POOLER);
+  process.env.DATABASE_URL || DEFAULT_LOCAL_POOLER;
 
 // --- 2) Parseo robusto de la URL ---
 let parsed;
