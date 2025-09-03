@@ -1,9 +1,11 @@
-import { ArrowLeft, Home, Dumbbell, Target } from 'lucide-react';
+import { ArrowLeft, Home, Dumbbell, Target, BarChart3 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import HomeTrainingExerciseModal from './HomeTrainingExerciseModal';
 import HomeTrainingProgress from './HomeTrainingProgress';
 import HomeTrainingPlanModal from './HomeTrainingPlanModal';
+import HomeTrainingRejectionModal from './HomeTrainingRejectionModal';
+import HomeTrainingPreferencesHistory from './HomeTrainingPreferencesHistory';
 import UserEquipmentSummaryCard from './UserEquipmentSummaryCard';
 
 
@@ -41,6 +43,11 @@ const HomeTrainingSection = () => {
   // Flags para evitar PUT duplicados
   const [sending, setSending] = useState(false);
   const [sendingProgress, setSendingProgress] = useState(false);
+  // Modal de rechazo de ejercicios
+  const [showRejectionModal, setShowRejectionModal] = useState(false);
+  const [pendingRegenerateAfterRejection, setPendingRegenerateAfterRejection] = useState(false);
+  // Vista de historial de preferencias
+  const [showPreferencesHistory, setShowPreferencesHistory] = useState(false);
 
   // Función para resetear todo al estado inicial
   const resetToInitialState = () => {
@@ -59,6 +66,9 @@ const HomeTrainingSection = () => {
       percentage: 0
     });
     setShowProgress(false);
+    setShowRejectionModal(false);
+    setPendingRegenerateAfterRejection(false);
+    setShowPreferencesHistory(false);
   };
 
   // Cargar datos al inicializar el componente
@@ -67,6 +77,81 @@ const HomeTrainingSection = () => {
     loadUserStats();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 🛡️ PROTECCIÓN: Detección de abandono de sesión
+  useEffect(() => {
+    if (!currentSession) return;
+
+    const handleBeforeUnload = (event) => {
+      // Solo si hay una sesión activa y progreso sin guardar
+      if (currentSession && (showExerciseModal || (exercisesProgress && exercisesProgress.length > 0))) {
+        console.log('🚪 Usuario abandonando sesión, guardando progreso...');
+        
+        // Usar sendBeacon para envío asíncrono confiable
+        const token = localStorage.getItem('token');
+        const abandonData = {
+          currentProgress: exercisesProgress,
+          reason: 'beforeunload'
+        };
+
+        navigator.sendBeacon(
+          `/api/home-training/sessions/${currentSession.id}/handle-abandon`,
+          new Blob([JSON.stringify(abandonData)], {
+            type: 'application/json'
+          })
+        );
+
+        // Mostrar warning al usuario (opcional)
+        event.preventDefault();
+        event.returnValue = '¿Estás seguro de que quieres salir? Tu progreso se guardará automáticamente.';
+        return event.returnValue;
+      }
+    };
+
+    const handleVisibilityChange = async () => {
+      if (!currentSession) return;
+      
+      const token = localStorage.getItem('token');
+      
+      if (document.hidden) {
+        // Usuario cambió de tab/minimizó - marcar como abandonado temporalmente
+        console.log('👀 Usuario cambió de tab, marcando sesión como pausada');
+        
+        if (exercisesProgress && exercisesProgress.length > 0) {
+          try {
+            await fetch(`/api/home-training/sessions/${currentSession.id}/handle-abandon`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify({
+                currentProgress: exercisesProgress,
+                reason: 'visibility_hidden'
+              })
+            });
+          } catch (error) {
+            console.error('❌ Error guardando progreso en cambio de visibilidad:', error);
+          }
+        }
+      } else {
+        // Usuario volvió - reactivar sesión
+        console.log('👁️ Usuario volvió, reactivando sesión');
+        // Aquí podrías cargar progreso actualizado si fuera necesario
+        await loadSessionProgress(currentSession.id);
+      }
+    };
+
+    // Agregar event listeners
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Cleanup
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [currentSession, showExerciseModal, exercisesProgress]);
 
   // Función para cargar el plan actual del usuario
   const loadCurrentPlan = async () => {
@@ -174,13 +259,16 @@ const HomeTrainingSection = () => {
         return;
       }
 
-      // ① Mostrar loader ANTES de llamar a la IA
+      // ① Cerrar sesiones activas antes de generar nuevo plan
+      await closeActiveSessions();
+
+      // ② Mostrar loader ANTES de llamar a la IA
       setIsGenerating(true);
       setShowPersonalizedMessage(false);
       // Reset del flag para un nuevo plan
       setHasShownPersonalizedMessage(false);
 
-      // ② Llamada a la IA
+      // ③ Llamada a la IA
       const resp = await fetch('/api/ia-home-training/generate', {
         method: 'POST',
         headers: {
@@ -198,19 +286,19 @@ const HomeTrainingSection = () => {
         throw new Error(data.error || 'Error al generar el entrenamiento');
       }
 
-      // ③ Guardar plan y preparar mensaje
+      // ④ Guardar plan y preparar mensaje
       setGeneratedPlan(data.plan);
       const message = data.plan.mensaje_personalizado || 'Tu entrenamiento personalizado ha sido generado.';
       setPersonalizedMessage(message);
 
-      // ④ Ocultar loader y mostrar mensaje personalizado (solo primera vez por plan)
+      // ⑤ Ocultar loader y mostrar mensaje personalizado (solo primera vez por plan)
       setIsGenerating(false);
       if (!hasShownPersonalizedMessage) {
         setShowPersonalizedMessage(true);
         setHasShownPersonalizedMessage(true);
       }
 
-      // ⑤ Persistir en BD (opcionalmente puedes hacerlo tras aceptar el plan)
+      // ⑥ Persistir en BD (opcionalmente puedes hacerlo tras aceptar el plan)
       await savePlanToDatabase(data.plan, selectedEquipment, selectedTrainingType);
     } catch (error) {
       console.error('Error:', error);
@@ -247,6 +335,205 @@ const HomeTrainingSection = () => {
     } catch (error) {
       console.error('Error saving plan to database:', error);
     }
+  };
+
+  // ===============================================
+  // FUNCIONES PARA SISTEMA DE RECHAZOS
+  // ===============================================
+
+  // Función para cerrar sesiones activas
+  const closeActiveSessions = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+
+      await fetch('/api/home-training/close-active-sessions', {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+    } catch (error) {
+      console.error('Error closing active sessions:', error);
+    }
+  };
+
+  // Función para manejar el rechazo de ejercicios
+  const handleExerciseRejections = async (rejections) => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        alert('Debes iniciar sesión para guardar preferencias');
+        return;
+      }
+
+      console.log('🚀 Iniciando proceso de rechazo y regeneración...');
+
+      // 1. Guardar rechazos
+      const response = await fetch('/api/home-training/rejections', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ rejections })
+      });
+
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.message || 'Error guardando preferencias');
+      }
+
+      console.log('✅ Ejercicios rechazados guardados:', data.message);
+      setShowRejectionModal(false);
+
+      // 2. Limpiar completamente el estado antes de regenerar
+      console.log('🧹 Limpiando estado anterior...');
+      setCurrentSession(null);
+      setSessionProgress({
+        currentExercise: 0,
+        completedExercises: [],
+        percentage: 0
+      });
+      setExercisesProgress([]);
+      setShowProgress(false);
+      setShowExerciseModal(false);
+
+      // 3. Cerrar sesiones activas y verificar
+      console.log('🔒 Cerrando sesiones activas...');
+      const closeResponse = await fetch('/api/home-training/close-active-sessions', {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      const closeData = await closeResponse.json();
+      console.log('✅ Sesiones cerradas:', closeData.message);
+
+      // 4. Regenerar plan
+      console.log('🔄 Regenerando plan con ejercicios rechazados...');
+      await generateNewPlanAfterRejection();
+
+    } catch (error) {
+      console.error('❌ Error en proceso de rechazo:', error);
+      alert('Error al guardar las preferencias. Por favor, inténtalo de nuevo.');
+    }
+  };
+
+  // Función para regenerar plan sin marcar rechazos
+  const handleSkipRejection = async () => {
+    try {
+      console.log('⏭️ Regenerando sin marcar rechazos...');
+      setShowRejectionModal(false);
+
+      // Limpiar estado
+      console.log('🧹 Limpiando estado anterior...');
+      setCurrentSession(null);
+      setSessionProgress({
+        currentExercise: 0,
+        completedExercises: [],
+        percentage: 0
+      });
+      setExercisesProgress([]);
+      setShowProgress(false);
+      setShowExerciseModal(false);
+
+      // Cerrar sesiones activas
+      const token = localStorage.getItem('token');
+      if (token) {
+        const closeResponse = await fetch('/api/home-training/close-active-sessions', {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        const closeData = await closeResponse.json();
+        console.log('✅ Sesiones cerradas:', closeData.message);
+      }
+
+      await generateNewPlanAfterRejection();
+    } catch (error) {
+      console.error('❌ Error regenerando sin rechazos:', error);
+      alert('Error al regenerar el plan. Por favor, inténtalo de nuevo.');
+    }
+  };
+
+  // Función para generar nuevo plan después del rechazo
+  const generateNewPlanAfterRejection = async () => {
+    if (!selectedEquipment || !selectedTrainingType) {
+      alert('Error: No se encontró la configuración del entrenamiento');
+      return;
+    }
+
+    setPendingRegenerateAfterRejection(false);
+    
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        alert('Debes iniciar sesión para generar tu entrenamiento');
+        return;
+      }
+
+      // ⚠️ NO llamar closeActiveSessions() aquí porque ya se hizo antes
+      
+      // Mostrar loader ANTES de llamar a la IA
+      setIsGenerating(true);
+      setShowPersonalizedMessage(false);
+      setHasShownPersonalizedMessage(false);
+
+      // Llamada a la IA
+      const resp = await fetch('/api/ia-home-training/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          equipment_type: selectedEquipment,
+          training_type: selectedTrainingType
+        })
+      });
+
+      const data = await resp.json();
+      if (!resp.ok || !data.success || !data.plan) {
+        throw new Error(data.error || 'Error al generar el entrenamiento');
+      }
+
+      // Guardar plan y preparar mensaje
+      setGeneratedPlan(data.plan);
+      const message = data.plan.mensaje_personalizado || 'Tu entrenamiento personalizado ha sido generado.';
+      setPersonalizedMessage(message);
+
+      // Ocultar loader y mostrar mensaje personalizado
+      setIsGenerating(false);
+      if (!hasShownPersonalizedMessage) {
+        setShowPersonalizedMessage(true);
+        setHasShownPersonalizedMessage(true);
+      }
+
+      // Persistir en BD
+      await savePlanToDatabase(data.plan, selectedEquipment, selectedTrainingType);
+      
+      console.log('✅ Nuevo plan generado exitosamente');
+      
+    } catch (error) {
+      console.error('❌ Error generando nuevo plan:', error);
+      setIsGenerating(false);
+      alert('Error al generar el entrenamiento. Por favor, inténtalo de nuevo.');
+    }
+  };
+
+  // Nueva función para manejar regeneración con modal de rechazo
+  const regenerateWithRejectionModal = () => {
+    if (!generatedPlan || !generatedPlan.plan_entrenamiento?.ejercicios) {
+      // Si no hay plan, generar directamente
+      generateTraining();
+      return;
+    }
+
+    // Mostrar modal de rechazo
+    setShowRejectionModal(true);
   };
 
   // Función para comenzar el entrenamiento
@@ -365,22 +652,51 @@ const HomeTrainingSection = () => {
       const token = localStorage.getItem('token');
       const exercise = generatedPlan.plan_entrenamiento.ejercicios[currentExerciseIndex];
 
-      await fetch(`/api/home-training/sessions/${currentSession.id}/exercise/${currentExerciseIndex + 1}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ series_completed: exercise.series, status: 'completed', duration_seconds: durationSeconds || null })
+      // ⚠️ IMPORTANTE: Solo actualizar duration si el ejercicio ya está completado
+      // Si no está completado, usar handleUpdateProgress primero
+      
+      console.log(`🏁 Finalizando ejercicio ${currentExerciseIndex + 1}: ${exercise.nombre}`);
+      
+      // Recargar progreso actual para tener datos frescos
+      await loadSessionProgress(currentSession.id);
+      
+      // Verificar estado actual desde la base de datos
+      const freshProgressResponse = await fetch(`/api/home-training/sessions/${currentSession.id}/progress`, {
+        headers: { 'Authorization': `Bearer ${token}` }
       });
-
-      // Actualizar estado local inmediatamente
-      const newCompletedExercises = [...sessionProgress.completedExercises, currentExerciseIndex];
-      const total = generatedPlan.plan_entrenamiento.ejercicios.length;
-      const newPercentage = (newCompletedExercises.length / total) * 100;
-
-      setSessionProgress({
-        currentExercise: currentExerciseIndex + 1,
-        completedExercises: newCompletedExercises,
-        percentage: newPercentage
+      const freshProgressData = await freshProgressResponse.json();
+      const currentExerciseProgress = freshProgressData.exercises?.[currentExerciseIndex];
+      const isAlreadyCompleted = currentExerciseProgress?.status === 'completed';
+      
+      console.log(`📊 Estado actual del ejercicio ${currentExerciseIndex + 1}:`, {
+        status: currentExerciseProgress?.status,
+        series: `${currentExerciseProgress?.series_completed}/${currentExerciseProgress?.total_series}`,
+        isCompleted: isAlreadyCompleted
       });
+      
+      if (isAlreadyCompleted && durationSeconds) {
+        // Solo actualizar duration si ya está completado y hay duración nueva
+        console.log(`⏰ Ejercicio ya completado, añadiendo duración: ${durationSeconds}s`);
+        await fetch(`/api/home-training/sessions/${currentSession.id}/exercise/${currentExerciseIndex + 1}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ duration_seconds: durationSeconds })
+        });
+      } else if (!isAlreadyCompleted) {
+        // Completar ejercicio por primera vez
+        console.log(`✅ Completando ejercicio por primera vez${durationSeconds ? ` con duración ${durationSeconds}s` : ''}`);
+        await fetch(`/api/home-training/sessions/${currentSession.id}/exercise/${currentExerciseIndex + 1}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ 
+            series_completed: exercise.series, 
+            status: 'completed', 
+            ...(durationSeconds && { duration_seconds: durationSeconds })
+          })
+        });
+      } else {
+        console.log(`ℹ️ Ejercicio ya completado, no se requiere actualización adicional`);
+      }
 
       // Recargar progreso del servidor para mantener UI sincronizada
       await loadSessionProgress(currentSession.id);
@@ -492,6 +808,9 @@ const HomeTrainingSection = () => {
     try {
       const token = localStorage.getItem('token');
       const status = seriesCompleted === totalSeries ? 'completed' : 'in_progress';
+      const exerciseName = generatedPlan?.plan_entrenamiento?.ejercicios?.[exerciseIndex]?.nombre || `Ejercicio ${exerciseIndex + 1}`;
+
+      console.log(`📈 Actualizando progreso: ${exerciseName} - ${seriesCompleted}/${totalSeries} series (${status})`);
 
       await fetch(`/api/home-training/sessions/${currentSession.id}/exercise/${exerciseIndex + 1}`, {
         method: 'PUT',
@@ -584,17 +903,35 @@ const HomeTrainingSection = () => {
     }
   };
 
+  // Si está mostrando el historial de preferencias, renderizar solo ese componente
+  if (showPreferencesHistory) {
+    return (
+      <HomeTrainingPreferencesHistory
+        onBack={() => setShowPreferencesHistory(false)}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen text-white">
       <div className="container mx-auto px-6 py-8">
         {/* Header con navegación */}
-        <div className="flex items-center mb-8">
+        <div className="flex items-center justify-between mb-8">
           <button
             onClick={() => navigate('/')}
-            className="flex items-center text-gray-300 hover:text-white transition-colors duration-200 mr-6"
+            className="flex items-center text-gray-300 hover:text-white transition-colors duration-200"
           >
             <ArrowLeft size={24} className="mr-2" />
             Volver al inicio
+          </button>
+          
+          {/* Botón de historial de preferencias */}
+          <button
+            onClick={() => setShowPreferencesHistory(true)}
+            className="flex items-center text-yellow-400 hover:text-yellow-300 transition-colors duration-200 bg-yellow-400/10 hover:bg-yellow-400/20 px-4 py-2 rounded-lg border border-yellow-400/30"
+          >
+            <BarChart3 size={20} className="mr-2" />
+            Mis Preferencias
           </button>
         </div>
 
@@ -797,7 +1134,7 @@ const HomeTrainingSection = () => {
                   ? continueTraining 
                   : startTraining
             }
-            onGenerateNewPlan={resetToInitialState}
+            onGenerateNewPlan={regenerateWithRejectionModal}
           />
         )}
 
@@ -808,7 +1145,7 @@ const HomeTrainingSection = () => {
             planSource={generatedPlan.plan_source}
             personalizedMessage={generatedPlan.mensaje_personalizado}
             onStart={startTraining}
-            onGenerateAnother={resetToInitialState}
+            onGenerateAnother={regenerateWithRejectionModal}
             onClose={resetToInitialState}
           />
         )}
@@ -830,6 +1167,18 @@ const HomeTrainingSection = () => {
             overrideSeriesTotal={exercisesProgress?.[currentExerciseIndex]?.total_series}
             sessionId={currentSession?.id}
             onFeedbackSubmitted={() => currentSession?.id && loadSessionProgress(currentSession.id)}
+          />
+        )}
+
+        {/* Modal de rechazo de ejercicios */}
+        {showRejectionModal && generatedPlan && generatedPlan.plan_entrenamiento?.ejercicios && (
+          <HomeTrainingRejectionModal
+            exercises={generatedPlan.plan_entrenamiento.ejercicios}
+            equipmentType={selectedEquipment}
+            trainingType={selectedTrainingType}
+            onReject={handleExerciseRejections}
+            onSkip={handleSkipRejection}
+            onClose={() => setShowRejectionModal(false)}
           />
         )}
       </div>

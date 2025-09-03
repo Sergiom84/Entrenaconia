@@ -324,6 +324,33 @@ router.post('/generate', authenticateToken, async (req, res) => {
     );
     const generalHomeExercises = generalHomeHistoryRes.rows.map(r => r.exercise_name).join(', ') || 'Ninguno';
     
+    // ===============================================
+    // CONSULTAR EJERCICIOS RECHAZADOS
+    // ===============================================
+    
+    const rejectedExercisesRes = await pool.query(
+      `SELECT * FROM app.get_rejected_exercises_for_combination($1, $2, $3)`,
+      [userId, equipment_type, training_type]
+    );
+    
+    const rejectedExercises = rejectedExercisesRes.rows.length > 0
+      ? rejectedExercisesRes.rows.map(r => {
+          const expiry = r.days_until_expires 
+            ? ` (expira en ${r.days_until_expires} días)`
+            : ' (permanente)';
+          const reason = r.rejection_category 
+            ? ` - ${r.rejection_category}`
+            : '';
+          return `${r.exercise_name}${reason}${expiry}`;
+        }).join(', ')
+      : 'Ninguno';
+    
+    // Crear lista de ejercicios que la IA debe evitar absolutamente
+    const exercisesToAvoid = rejectedExercisesRes.rows.map(r => r.exercise_name);
+    
+    console.log(`🚫 Ejercicios rechazados para ${equipment_type}+${training_type}:`, exercisesToAvoid.length);
+    exercisesToAvoid.forEach(ex => console.log(`   ❌ ${ex}`));
+    
     // Log de ejercicios específicos para esta combinación
     logRecentExercises(combinationHistoryRes.rows.map(r => ({
       nombre: r.exercise_name,
@@ -405,6 +432,8 @@ router.post('/generate', authenticateToken, async (req, res) => {
       equipamiento_personalizado: customNamesStr,
       ejercicios_usados_en_combinacion: exercisesUsedForCombination,
       ejercicios_generales_casa: generalHomeExercises,
+      ejercicios_rechazados: rejectedExercises,
+      ejercicios_prohibidos: exercisesToAvoid,
       system_message_length: systemMessage.length
     };
 
@@ -417,7 +446,20 @@ router.post('/generate', authenticateToken, async (req, res) => {
         { role: 'system', content: systemMessage },
         {
           role: 'user',
-          content: `Genera un plan de entrenamiento para el usuario con equipamiento "${equipment_type}" y tipo "${training_type}". Responde SOLO con JSON.`
+          content: `Genera un plan de entrenamiento para el usuario con equipamiento "${equipment_type}" y tipo "${training_type}".
+          
+EJERCICIOS RECHAZADOS POR EL USUARIO (NO usar):
+${exercisesToAvoid.length > 0 ? exercisesToAvoid.map(ex => `- ${ex}`).join('\n') : '- Ninguno'}
+
+EJERCICIOS USADOS RECIENTEMENTE (evitar repetir):
+${exercisesUsedForCombination !== 'Ningún ejercicio previo' ? exercisesUsedForCombination : '- Ninguno'}
+
+IMPORTANTE: 
+- NO incluyas ningún ejercicio de la lista de ejercicios rechazados
+- Prioriza ejercicios nuevos y variados
+- Si el usuario rechazó ejercicios por "muy difícil", ajusta la intensidad general
+
+Responde SOLO con JSON.`
         }
       ],
       response_format: { type: 'json_object' },

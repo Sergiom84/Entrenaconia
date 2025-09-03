@@ -161,6 +161,9 @@ router.put('/sessions/:sessionId/exercise/:exerciseOrder', authenticateToken, as
     const { series_completed, duration_seconds, status } = req.body;
     const user_id = req.user.userId || req.user.id;
 
+    console.log(`🔍 PUT /sessions/${sessionId}/exercise/${exerciseOrder} - Usuario: ${user_id}`);
+    console.log(`📦 Body:`, { series_completed, duration_seconds, status });
+
     // Verificar que la sesión pertenece al usuario
     const sessionResult = await client.query(
       'SELECT * FROM app.home_training_sessions WHERE id = $1 AND user_id = $2',
@@ -172,25 +175,46 @@ router.put('/sessions/:sessionId/exercise/:exerciseOrder', authenticateToken, as
       return res.status(404).json({ success: false, message: 'Sesión no encontrada' });
     }
 
-    // Actualizar progreso del ejercicio (SQL con casts y esquema app.)
-    const updateSql = `
-      UPDATE app.home_exercise_progress
-      SET
-        series_completed  = $1,
-        status            = $2::text,
-        duration_seconds  = COALESCE($3, duration_seconds),
-        completed_at      = CASE WHEN $2::text = 'completed' THEN now() ELSE completed_at END
-      WHERE home_training_session_id = $4
-        AND exercise_order = $5
-      RETURNING *;
-    `;
-    const updateResult = await client.query(updateSql, [
-      series_completed,
-      status,
-      duration_seconds ?? null,
-      sessionId,
-      exerciseOrder
-    ]);
+    // Determinar si es una actualización de solo duración
+    const isDurationOnlyUpdate = !series_completed && !status && duration_seconds;
+    
+    let updateSql, updateParams;
+    
+    if (isDurationOnlyUpdate) {
+      // Solo actualizar duración sin cambiar status ni series
+      console.log(`⏰ Actualizando solo duración para ejercicio ${exerciseOrder}: ${duration_seconds}s`);
+      updateSql = `
+        UPDATE app.home_exercise_progress
+        SET duration_seconds = $1
+        WHERE home_training_session_id = $2
+          AND exercise_order = $3
+        RETURNING *;
+      `;
+      updateParams = [duration_seconds, sessionId, exerciseOrder];
+    } else {
+      // Actualización completa (series, status y duración)
+      console.log(`📊 Actualizando progreso completo para ejercicio ${exerciseOrder}: ${series_completed} series, ${status}`);
+      updateSql = `
+        UPDATE app.home_exercise_progress
+        SET
+          series_completed  = COALESCE($1, series_completed),
+          status            = COALESCE($2::text, status),
+          duration_seconds  = COALESCE($3, duration_seconds),
+          completed_at      = CASE WHEN COALESCE($2::text, status) = 'completed' THEN now() ELSE completed_at END
+        WHERE home_training_session_id = $4
+          AND exercise_order = $5
+        RETURNING *;
+      `;
+      updateParams = [
+        series_completed !== undefined ? series_completed : null,
+        status !== undefined ? status : null,
+        duration_seconds !== undefined ? duration_seconds : null,
+        sessionId,
+        exerciseOrder
+      ];
+    }
+    
+    const updateResult = await client.query(updateSql, updateParams);
 
 
     if (updateResult.rows.length === 0) {
@@ -457,6 +481,386 @@ router.post('/sessions/:sessionId/exercise/:exerciseOrder/feedback', authenticat
   } catch (error) {
     console.error('Error creating feedback:', error);
     res.status(500).json({ success: false, message: 'Error creando feedback' });
+  }
+});
+
+// ===============================================
+// ENDPOINTS PARA SISTEMA DE RECHAZOS
+// ===============================================
+
+// Guardar ejercicios rechazados
+router.post('/rejections', authenticateToken, async (req, res) => {
+  try {
+    const { rejections } = req.body;
+    const user_id = req.user.userId || req.user.id;
+
+    if (!Array.isArray(rejections) || rejections.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Se requiere un array de ejercicios rechazados'
+      });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const insertedRejections = [];
+      
+      for (const rejection of rejections) {
+        const {
+          exercise_name,
+          exercise_key,
+          equipment_type,
+          training_type,
+          rejection_reason,
+          rejection_category,
+          expires_in_days
+        } = rejection;
+
+        // Calcular fecha de expiración si es temporal
+        let expiresAt = null;
+        if (expires_in_days && expires_in_days > 0) {
+          expiresAt = new Date();
+          expiresAt.setDate(expiresAt.getDate() + expires_in_days);
+        }
+
+        // Verificar si ya existe un rechazo activo para este ejercicio
+        const existingResult = await client.query(
+          `SELECT id FROM app.home_exercise_rejections
+           WHERE user_id = $1 AND exercise_key = $2 
+           AND equipment_type = $3 AND training_type = $4 
+           AND is_active = true`,
+          [user_id, exercise_key, equipment_type, training_type]
+        );
+
+        if (existingResult.rows.length > 0) {
+          // Actualizar rechazo existente
+          const updateResult = await client.query(
+            `UPDATE app.home_exercise_rejections
+             SET rejection_reason = $1, 
+                 rejection_category = $2,
+                 expires_at = $3,
+                 rejected_at = NOW(),
+                 updated_at = NOW()
+             WHERE id = $4
+             RETURNING *`,
+            [rejection_reason, rejection_category, expiresAt, existingResult.rows[0].id]
+          );
+          insertedRejections.push(updateResult.rows[0]);
+        } else {
+          // Crear nuevo rechazo
+          const insertResult = await client.query(
+            `INSERT INTO app.home_exercise_rejections
+             (user_id, exercise_name, exercise_key, equipment_type, training_type,
+              rejection_reason, rejection_category, expires_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             RETURNING *`,
+            [user_id, exercise_name, exercise_key, equipment_type, training_type,
+             rejection_reason, rejection_category, expiresAt]
+          );
+          insertedRejections.push(insertResult.rows[0]);
+        }
+      }
+
+      await client.query('COMMIT');
+
+      res.json({
+        success: true,
+        message: `${insertedRejections.length} ejercicio${insertedRejections.length !== 1 ? 's' : ''} marcado${insertedRejections.length !== 1 ? 's' : ''} como rechazado${insertedRejections.length !== 1 ? 's' : ''}`,
+        rejections: insertedRejections
+      });
+
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+
+  } catch (error) {
+    console.error('Error saving exercise rejections:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al guardar las preferencias de ejercicios'
+    });
+  }
+});
+
+// Obtener ejercicios rechazados para una combinación
+router.get('/rejections/:equipmentType/:trainingType', authenticateToken, async (req, res) => {
+  try {
+    const { equipmentType, trainingType } = req.params;
+    const user_id = req.user.userId || req.user.id;
+
+    const result = await pool.query(
+      `SELECT * FROM app.get_rejected_exercises_for_combination($1, $2, $3)`,
+      [user_id, equipmentType, trainingType]
+    );
+
+    res.json({
+      success: true,
+      rejections: result.rows,
+      count: result.rows.length
+    });
+
+  } catch (error) {
+    console.error('Error getting exercise rejections:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al obtener ejercicios rechazados'
+    });
+  }
+});
+
+// Eliminar/desactivar un rechazo específico
+router.delete('/rejections/:rejectionId', authenticateToken, async (req, res) => {
+  try {
+    const { rejectionId } = req.params;
+    const user_id = req.user.userId || req.user.id;
+
+    const result = await pool.query(
+      `UPDATE app.home_exercise_rejections
+       SET is_active = false, updated_at = NOW()
+       WHERE id = $1 AND user_id = $2
+       RETURNING exercise_name`,
+      [rejectionId, user_id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Rechazo no encontrado'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `"${result.rows[0].exercise_name}" ya no será rechazado`
+    });
+
+  } catch (error) {
+    console.error('Error removing exercise rejection:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al eliminar el rechazo'
+    });
+  }
+});
+
+// Obtener historial completo de preferencias del usuario
+router.get('/preferences-history', authenticateToken, async (req, res) => {
+  try {
+    const user_id = req.user.userId || req.user.id;
+
+    // 1. Ejercicios favoritos (completados con feedback 'love')
+    const favorites = await pool.query(`
+      SELECT DISTINCT
+        eh.exercise_name,
+        COUNT(*) as times_completed,
+        MAX(eh.session_date) as last_completed
+      FROM app.home_exercise_history eh
+      LEFT JOIN app.user_exercise_feedback uef ON (
+        uef.user_id = eh.user_id 
+        AND uef.exercise_name = eh.exercise_name 
+        AND uef.sentiment = 'love'
+      )
+      WHERE eh.user_id = $1 
+        AND uef.sentiment = 'love'
+      GROUP BY eh.exercise_name
+      ORDER BY times_completed DESC, last_completed DESC
+      LIMIT 20
+    `, [user_id]);
+
+    // 2. Ejercicios desafiantes (completados con feedback 'hard')
+    const challenging = await pool.query(`
+      SELECT DISTINCT
+        eh.exercise_name,
+        COUNT(*) as times_completed,
+        MAX(eh.session_date) as last_completed
+      FROM app.home_exercise_history eh
+      LEFT JOIN app.user_exercise_feedback uef ON (
+        uef.user_id = eh.user_id 
+        AND uef.exercise_name = eh.exercise_name 
+        AND uef.sentiment = 'hard'
+      )
+      WHERE eh.user_id = $1 
+        AND uef.sentiment = 'hard'
+      GROUP BY eh.exercise_name
+      ORDER BY times_completed DESC, last_completed DESC
+      LIMIT 20
+    `, [user_id]);
+
+    // 3. Ejercicios rechazados activos
+    const rejected = await pool.query(`
+      SELECT 
+        id,
+        exercise_name,
+        rejection_reason,
+        rejection_category,
+        rejected_at,
+        expires_at,
+        CASE 
+          WHEN expires_at IS NULL THEN NULL
+          ELSE GREATEST(0, CEIL(EXTRACT(EPOCH FROM (expires_at - NOW())) / 86400))
+        END as days_until_expires
+      FROM app.home_exercise_rejections 
+      WHERE user_id = $1 
+        AND is_active = true
+        AND (expires_at IS NULL OR expires_at > NOW())
+      ORDER BY rejected_at DESC
+    `, [user_id]);
+
+    // 4. Analytics generales
+    const analytics = await pool.query(`
+      SELECT 
+        COUNT(*) as total_completed,
+        COUNT(DISTINCT exercise_name) as unique_exercises,
+        AVG(series) as avg_series,
+        SUM(duration_seconds) as total_duration_seconds
+      FROM app.home_exercise_history 
+      WHERE user_id = $1
+    `, [user_id]);
+
+    // 5. Patrones de rechazo (para insights)
+    const rejectionPatterns = await pool.query(`
+      SELECT 
+        rejection_category,
+        COUNT(*) as count
+      FROM app.home_exercise_rejections 
+      WHERE user_id = $1 AND is_active = true
+      GROUP BY rejection_category
+      ORDER BY count DESC
+    `, [user_id]);
+
+    // 6. Ejercicios más populares (sin feedback específico)
+    const popular = await pool.query(`
+      SELECT 
+        exercise_name,
+        COUNT(*) as times_completed,
+        MAX(session_date) as last_completed
+      FROM app.home_exercise_history 
+      WHERE user_id = $1
+      GROUP BY exercise_name
+      ORDER BY times_completed DESC
+      LIMIT 10
+    `, [user_id]);
+
+    const preferences = {
+      favorites: favorites.rows,
+      challenging: challenging.rows,
+      rejected: rejected.rows,
+      analytics: {
+        ...analytics.rows[0],
+        rejection_patterns: rejectionPatterns.rows,
+        popular_exercises: popular.rows
+      }
+    };
+
+    res.json({
+      success: true,
+      preferences: preferences
+    });
+
+  } catch (error) {
+    console.error('Error getting preferences history:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al obtener el historial de preferencias'
+    });
+  }
+});
+
+// Manejar abandono de sesión (beforeunload, visibility change, etc.)
+router.post('/sessions/:sessionId/handle-abandon', authenticateToken, async (req, res) => {
+  const { sessionId } = req.params;
+  const { currentProgress, reason } = req.body; // reason: 'beforeunload', 'visibility', 'logout'
+  const user_id = req.user.userId || req.user.id;
+
+  console.log(`🚪 Usuario ${user_id} abandonando sesión ${sessionId}, motivo: ${reason}`);
+
+  try {
+    // 1. Verificar que la sesión pertenece al usuario
+    const sessionCheck = await pool.query(
+      'SELECT * FROM app.home_training_sessions WHERE id = $1 AND user_id = $2',
+      [sessionId, user_id]
+    );
+
+    if (sessionCheck.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Sesión no encontrada' });
+    }
+
+    // 2. Guardar progreso actual si se proporciona
+    if (currentProgress) {
+      console.log(`💾 Guardando progreso antes de abandono:`, currentProgress);
+      
+      for (const [exerciseIndex, progress] of Object.entries(currentProgress)) {
+        if (progress.series_completed > 0) {
+          await pool.query(`
+            UPDATE app.home_exercise_progress
+            SET 
+              series_completed = $1,
+              status = $2,
+              duration_seconds = COALESCE($3, duration_seconds)
+            WHERE home_training_session_id = $4 
+              AND exercise_order = $5
+          `, [
+            progress.series_completed,
+            progress.status || 'in_progress',
+            progress.duration_seconds,
+            sessionId,
+            parseInt(exerciseIndex)
+          ]);
+        }
+      }
+    }
+
+    // 3. Marcar momento de abandono (no cerrar la sesión, solo marcar)
+    await pool.query(`
+      UPDATE app.home_training_sessions
+      SET 
+        abandoned_at = NOW(),
+        abandon_reason = $2
+      WHERE id = $1
+    `, [sessionId, reason]);
+
+    console.log(`✅ Sesión ${sessionId} marcada como abandonada (${reason})`);
+    
+    res.json({ success: true, message: 'Progreso guardado antes de abandono' });
+    
+  } catch (error) {
+    console.error('❌ Error manejando abandono:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Cerrar sesiones activas (para el problema principal)
+router.put('/close-active-sessions', authenticateToken, async (req, res) => {
+  try {
+    const user_id = req.user.userId || req.user.id;
+
+    const result = await pool.query(
+      `UPDATE app.home_training_sessions
+       SET status = 'cancelled', 
+           completed_at = NOW(),
+           updated_at = NOW()
+       WHERE user_id = $1 AND status = 'in_progress'
+       RETURNING id`,
+      [user_id]
+    );
+
+    res.json({
+      success: true,
+      message: `${result.rows.length} sesión${result.rows.length !== 1 ? 'es' : ''} cerrada${result.rows.length !== 1 ? 's' : ''}`,
+      closedSessions: result.rows.length
+    });
+
+  } catch (error) {
+    console.error('Error closing active sessions:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al cerrar sesiones activas'
+    });
   }
 });
 
