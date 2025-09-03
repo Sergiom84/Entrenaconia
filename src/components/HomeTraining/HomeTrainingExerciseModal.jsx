@@ -8,6 +8,7 @@ const HomeTrainingExerciseModal = ({
   exercise,
   exerciseIndex,
   totalExercises,
+  isLastExercise = false,
   onComplete,
   onSkip,
   onCancel,
@@ -51,7 +52,7 @@ const HomeTrainingExerciseModal = ({
     }
   }, [exercise]);
 
-  // Timer principal con guardas para evitar dobles disparos
+  // Timer principal con guardas mejoradas para evitar dobles disparos
   useEffect(() => {
     if (isRunning && timeLeft > 0 && !intervalRef.current) {
       intervalRef.current = setInterval(() => {
@@ -62,8 +63,14 @@ const HomeTrainingExerciseModal = ({
               clearInterval(intervalRef.current);
               intervalRef.current = null;
             }
-            // Usar setTimeout para evitar setState durante render
-            setTimeout(() => handlePhaseComplete(), 10);
+            // Usar requestAnimationFrame en lugar de setTimeout para mejor control
+            requestAnimationFrame(() => {
+              // Double-check que no se haya llamado ya
+              const currentSig = `${currentPhase}-${currentSeries}`;
+              if (lastPhaseHandledRef.current !== currentSig) {
+                handlePhaseComplete();
+              }
+            });
             return 0;
           }
           return prev - 1;
@@ -72,6 +79,10 @@ const HomeTrainingExerciseModal = ({
           setTotalTimeSpent(prev => prev + 1);
         }
       }, 1000);
+    } else if (!isRunning && intervalRef.current) {
+      // Limpiar intervalo cuando se pausa
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
     }
 
     return () => {
@@ -80,7 +91,7 @@ const HomeTrainingExerciseModal = ({
         intervalRef.current = null;
       }
     };
-  }, [isRunning, timeLeft, currentPhase]);
+  }, [isRunning, timeLeft]); // Removed currentPhase from dependencies to avoid re-creating timer
 
   const handlePhaseComplete = () => {
     console.log(`🔄 [HomeTraining] Phase complete: ${currentPhase}, Series: ${currentSeries}/${seriesTotal}`);
@@ -592,8 +603,8 @@ const HomeTrainingExerciseModal = ({
             )}
           </div>
 
-          {/* Botón para repetir entrenamiento - solo visible al completar */}
-          {currentPhase === 'completed' && (
+          {/* Botón para repetir entrenamiento - solo visible al completar el ÚLTIMO ejercicio */}
+          {currentPhase === 'completed' && isLastExercise && (
             <div className="mt-6 pt-4 border-t border-gray-700">
               <div className="text-center">
                 <button

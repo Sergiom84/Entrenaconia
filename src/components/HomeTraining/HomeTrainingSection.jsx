@@ -389,6 +389,7 @@ const HomeTrainingSection = () => {
 
       // 2. Limpiar completamente el estado antes de regenerar
       console.log('🧹 Limpiando estado anterior...');
+      console.log('📋 Plan anterior tenía ejercicios:', generatedPlan?.plan_entrenamiento?.ejercicios?.map(e => e.nombre) || 'ninguno');
       setCurrentSession(null);
       setSessionProgress({
         currentExercise: 0,
@@ -398,6 +399,11 @@ const HomeTrainingSection = () => {
       setExercisesProgress([]);
       setShowProgress(false);
       setShowExerciseModal(false);
+      setGeneratedPlan(null); // ← LIMPIAR PLAN ANTERIOR ANTES DE REGENERAR
+      setPersonalizedMessage('');
+      setShowPersonalizedMessage(false);
+      setHasShownPersonalizedMessage(false);
+      console.log('✨ Estado limpiado completamente');
 
       // 3. Cerrar sesiones activas y verificar
       console.log('🔒 Cerrando sesiones activas...');
@@ -501,15 +507,20 @@ const HomeTrainingSection = () => {
       }
 
       // Guardar plan y preparar mensaje
+      console.log('💾 Guardando nuevo plan generado:', data.plan.plan_entrenamiento.ejercicios.map(e => e.nombre));
       setGeneratedPlan(data.plan);
       const message = data.plan.mensaje_personalizado || 'Tu entrenamiento personalizado ha sido generado.';
       setPersonalizedMessage(message);
 
       // Ocultar loader y mostrar mensaje personalizado
+      console.log('🎯 Ocultando loader y mostrando mensaje personalizado');
       setIsGenerating(false);
       if (!hasShownPersonalizedMessage) {
+        console.log('📢 Mostrando mensaje personalizado del nuevo plan');
         setShowPersonalizedMessage(true);
         setHasShownPersonalizedMessage(true);
+      } else {
+        console.log('⚠️ Mensaje personalizado ya fue mostrado, saltando');
       }
 
       // Persistir en BD
@@ -674,10 +685,20 @@ const HomeTrainingSection = () => {
         isCompleted: isAlreadyCompleted
       });
       
+      // Validar que el índice esté en rango válido
+      const exerciseOrder = currentExerciseIndex + 1;
+      const totalExercises = generatedPlan?.plan_entrenamiento?.ejercicios?.length || 0;
+      
+      if (exerciseOrder > totalExercises) {
+        console.error(`❌ Error: Intentando actualizar ejercicio ${exerciseOrder} pero solo hay ${totalExercises} ejercicios`);
+        console.log(`ℹ️ Ejercicio ya completado, no se requiere actualización adicional`);
+        return;
+      }
+
       if (isAlreadyCompleted && durationSeconds) {
         // Solo actualizar duration si ya está completado y hay duración nueva
         console.log(`⏰ Ejercicio ya completado, añadiendo duración: ${durationSeconds}s`);
-        await fetch(`/api/home-training/sessions/${currentSession.id}/exercise/${currentExerciseIndex + 1}`, {
+        await fetch(`/api/home-training/sessions/${currentSession.id}/exercise/${exerciseOrder}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify({ duration_seconds: durationSeconds })
@@ -685,7 +706,7 @@ const HomeTrainingSection = () => {
       } else if (!isAlreadyCompleted) {
         // Completar ejercicio por primera vez
         console.log(`✅ Completando ejercicio por primera vez${durationSeconds ? ` con duración ${durationSeconds}s` : ''}`);
-        await fetch(`/api/home-training/sessions/${currentSession.id}/exercise/${currentExerciseIndex + 1}`, {
+        await fetch(`/api/home-training/sessions/${currentSession.id}/exercise/${exerciseOrder}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify({ 
@@ -1159,6 +1180,7 @@ const HomeTrainingSection = () => {
             exercise={generatedPlan.plan_entrenamiento.ejercicios[currentExerciseIndex]}
             exerciseIndex={currentExerciseIndex}
             totalExercises={generatedPlan.plan_entrenamiento.ejercicios.length}
+            isLastExercise={currentExerciseIndex >= generatedPlan.plan_entrenamiento.ejercicios.length - 1}
             onComplete={handleExerciseComplete}
             onSkip={handleExerciseSkip}
             onCancel={handleExerciseCancel}

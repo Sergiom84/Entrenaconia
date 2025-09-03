@@ -63,7 +63,7 @@ const HomeTrainingProgress = ({
         <div className="flex items-center mb-4">
           <Target className="text-yellow-400 mr-2" size={24} />
           <h3 className="text-xl font-semibold text-yellow-400">
-            {getTrainingTypeLabel(currentPlan.training_type).toUpperCase()} en Casa
+            {(getTrainingTypeLabel(currentPlan.training_type) || 'ENTRENAMIENTO').toUpperCase()} en Casa
           </h3>
         </div>
         
