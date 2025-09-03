@@ -48,7 +48,9 @@
       "Read(c:\\Users\\Sergio\\Pictures\\EntranaconIA\\Procedimientos/**)",
       "Read(c:\\Users\\Sergio\\Pictures\\EntranaconIA\\Procedimientos/**)",
       "Bash(git merge:*)",
-      "Read(c:\\Users\\Sergio\\Pictures\\EntranaconIA\\Procedimientos/**)"
+      "Read(c:\\Users\\Sergio\\Pictures\\EntranaconIA\\Procedimientos/**)",
+      "Bash(git show:*)",
+      "Bash(del execute_sql.js)"
     ]
   }
 }

@@ -7,6 +7,7 @@ const HomeTrainingPlanModal = ({
   onStart,
   onGenerateAnother,
   onClose,
+  onCancel,
 }) => {
   if (!plan) return null;
 
@@ -103,6 +104,21 @@ const HomeTrainingPlanModal = ({
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Botón de cancelar rutina - al final del todo */}
+          {onCancel && (
+            <div className="border-t border-gray-700 pt-4">
+              <button
+                onClick={onCancel}
+                className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2.5 px-4 rounded-lg transition-colors duration-200 text-sm"
+              >
+                ❌ Cancelar Rutina Completamente
+              </button>
+              <p className="text-xs text-gray-400 text-center mt-2">
+                Esto eliminará todo el progreso actual y regresará al inicio
+              </p>
             </div>
           )}
 

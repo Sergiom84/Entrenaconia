@@ -71,6 +71,35 @@ const HomeTrainingSection = () => {
     setShowPreferencesHistory(false);
   };
 
+  // Función para cancelar completamente la rutina (cerrar sesiones activas y resetear UI)
+  const cancelRoutineCompletely = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        resetToInitialState();
+        return;
+      }
+
+      // Cerrar cualquier sesión activa del usuario en el backend
+      await fetch('/api/home-training/close-active-sessions', {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      console.log('✅ Sesiones activas cerradas');
+
+      // Resetear todo al estado inicial
+      resetToInitialState();
+
+    } catch (error) {
+      console.error('❌ Error cancelando rutina:', error);
+      // Aún así resetear el frontend
+      resetToInitialState();
+    }
+  };
+
   // Cargar datos al inicializar el componente
   useEffect(() => {
     loadCurrentPlan();
@@ -166,7 +195,8 @@ const HomeTrainingSection = () => {
       });
 
       const data = await response.json();
-      if (data.success && data.plan) {
+      // Solo auto-restaurar si hay una sesión ACTIVA en progreso
+      if (data.success && data.plan && data.session) {
         setGeneratedPlan({
           plan_entrenamiento: data.plan.plan_data.plan_entrenamiento,
           mensaje_personalizado: data.plan.plan_data.mensaje_personalizado,
@@ -177,10 +207,13 @@ const HomeTrainingSection = () => {
         setSelectedTrainingType(data.plan.training_type);
         setShowProgress(true);
 
-        if (data.session) {
-          setCurrentSession(data.session);
-          await loadSessionProgress(data.session.id);
-        }
+        setCurrentSession(data.session);
+        await loadSessionProgress(data.session.id);
+      } else {
+        // Si no hay sesión activa, no mostrar el último plan para partir "de 0"
+        setGeneratedPlan(null);
+        setCurrentSession(null);
+        setShowProgress(false);
       }
     } catch (error) {
       console.error('Error loading current plan:', error);
@@ -220,6 +253,13 @@ const HomeTrainingSection = () => {
 
       const data = await response.json();
       if (data.success) {
+        console.log('🔄 loadSessionProgress - Datos recibidos:', {
+          progress_percentage: data.progress?.percentage,
+          current_exercise: data.progress?.currentExercise,
+          total_exercises: data.exercises?.length,
+          exercises_status: data.exercises?.map((ex, idx) => `${idx}: ${ex.exercise_name} - ${ex.status}`)
+        });
+
         setSessionProgress(data.progress);
         
         // Si la sesión está completada al 100%, marcar como completada pero mantener el objeto
@@ -241,7 +281,15 @@ const HomeTrainingSection = () => {
           setCurrentExerciseIndex(currentExerciseFromServer);
         }
         
+        console.log('✅ Actualizando exercisesProgress con:', data.exercises?.length, 'ejercicios');
         setExercisesProgress(data.exercises || []);
+        
+        // Log estado después de actualizar
+        setTimeout(() => {
+          console.log('📊 Estado UI actualizado - exercisesProgress:', 
+            data.exercises?.map((ex, idx) => `${idx}: ${ex.exercise_name} (${ex.status})`)
+          );
+        }, 100);
       }
     } catch (error) {
       console.error('Error loading session progress:', error);
@@ -686,10 +734,10 @@ const HomeTrainingSection = () => {
       });
       
       // Validar que el índice esté en rango válido
-      const exerciseOrder = currentExerciseIndex + 1;
+      const exerciseOrder = currentExerciseIndex;
       const totalExercises = generatedPlan?.plan_entrenamiento?.ejercicios?.length || 0;
       
-      if (exerciseOrder > totalExercises) {
+      if (exerciseOrder >= totalExercises) {
         console.error(`❌ Error: Intentando actualizar ejercicio ${exerciseOrder} pero solo hay ${totalExercises} ejercicios`);
         console.log(`ℹ️ Ejercicio ya completado, no se requiere actualización adicional`);
         return;
@@ -720,7 +768,9 @@ const HomeTrainingSection = () => {
       }
 
       // Recargar progreso del servidor para mantener UI sincronizada
+      console.log('🔄 Recargando progreso después de completar ejercicio...');
       await loadSessionProgress(currentSession.id);
+      console.log('✅ Progreso recargado, avanzando al siguiente ejercicio');
 
       if (currentExerciseIndex < generatedPlan.plan_entrenamiento.ejercicios.length - 1) {
         setCurrentExerciseIndex(currentExerciseIndex + 1);
@@ -747,7 +797,7 @@ const HomeTrainingSection = () => {
     try {
       const token = localStorage.getItem('token');
 
-      await fetch(`/api/home-training/sessions/${currentSession.id}/exercise/${currentExerciseIndex + 1}`, {
+      await fetch(`/api/home-training/sessions/${currentSession.id}/exercise/${currentExerciseIndex}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ series_completed: 0, status: 'skipped' })
@@ -758,7 +808,7 @@ const HomeTrainingSection = () => {
 
       setSessionProgress({
         ...sessionProgress,
-        currentExercise: currentExerciseIndex + 1,
+        currentExercise: currentExerciseIndex,
         percentage: newPercentage
       });
 
@@ -788,7 +838,7 @@ const HomeTrainingSection = () => {
     try {
       const token = localStorage.getItem('token');
 
-      await fetch(`/api/home-training/sessions/${currentSession.id}/exercise/${currentExerciseIndex + 1}`, {
+      await fetch(`/api/home-training/sessions/${currentSession.id}/exercise/${currentExerciseIndex}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ series_completed: 0, status: 'cancelled' })
@@ -799,7 +849,7 @@ const HomeTrainingSection = () => {
 
       setSessionProgress({
         ...sessionProgress,
-        currentExercise: currentExerciseIndex + 1,
+        currentExercise: currentExerciseIndex,
         percentage: newPercentage
       });
 
@@ -1149,13 +1199,15 @@ const HomeTrainingSection = () => {
             progress={sessionProgress}
             userStats={userStats}
             onContinueTraining={
-              currentSession?.status === 'completed' || sessionProgress?.percentage >= 100 
+              currentSession?.status === 'completed' || sessionProgress?.percentage >= 100
                 ? startTraining
-                : currentSession 
-                  ? continueTraining 
+                : currentSession
+                  ? continueTraining
                   : startTraining
             }
             onGenerateNewPlan={regenerateWithRejectionModal}
+            onCancelAll={cancelRoutineCompletely}
+            onGenerateNewAfterCompleted={resetToInitialState}
           />
         )}
 
@@ -1168,6 +1220,7 @@ const HomeTrainingSection = () => {
             onStart={startTraining}
             onGenerateAnother={regenerateWithRejectionModal}
             onClose={resetToInitialState}
+            onCancel={cancelRoutineCompletely}
           />
         )}
 

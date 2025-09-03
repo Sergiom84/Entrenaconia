@@ -8,7 +8,9 @@ const HomeTrainingProgress = ({
   progress,
   userStats,
   onContinueTraining,
-  onGenerateNewPlan
+  onGenerateNewPlan,
+  onCancelAll,
+  onGenerateNewAfterCompleted
 }) => {
   const formatDuration = (seconds) => {
     const hours = Math.floor(seconds / 3600);
@@ -119,12 +121,15 @@ const HomeTrainingProgress = ({
             <div className="space-y-3">
               {currentPlan.exercises.map((ejercicio, idx) => {
                 // Enlazar datos del backend (status/feedback y total_series) si existen
-                const exSession = sessionExercises?.find(e => e.exercise_order === idx) || {};
-                const status = exSession.status || (progress.completedExercises.includes(idx) ? 'completed' : (progress.currentExercise === idx ? 'in_progress' : 'pending'));
+                const exSession = sessionExercises?.find(e => e.exercise_order === idx);
+                // No marcar "en progreso" por defecto: sólo si el backend lo reporta
+                const status = exSession?.status
+                  ? exSession.status
+                  : (progress.completedExercises.includes(idx) ? 'completed' : 'pending');
                 const isCompleted = status === 'completed';
-                const isCurrent = status === 'in_progress' || progress.currentExercise === idx;
-                const sentiment = exSession.feedback_sentiment;
-                const comment = exSession.feedback_comment || exSession.comment;
+                const isCurrent = status === 'in_progress';
+                const sentiment = exSession?.feedback_sentiment;
+                const comment = exSession?.feedback_comment || exSession?.comment;
 
                 return (
                   <div
@@ -192,37 +197,48 @@ const HomeTrainingProgress = ({
         )}
 
         {/* Botones de acción */}
-        <div className="flex gap-4">
-          <button
-            onClick={onGenerateNewPlan}
-            className="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
-          >
-            Generar Otro Plan
-          </button>
-          
-          {progress.percentage < 100 ? (
-            <button
-              onClick={onContinueTraining}
-              className="flex-1 bg-yellow-400 hover:bg-yellow-500 text-black font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
-            >
-              {progress.percentage === 0 ? 'Comenzar Entrenamiento' : 'Continuar Entrenamiento'}
-            </button>
-          ) : (
-            <>
+        <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+          <div className="flex gap-3 sm:gap-4 flex-1">
+            {progress.percentage < 100 && (
               <button
                 onClick={onGenerateNewPlan}
-                className="flex-1 bg-green-600 hover:bg-green-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+                className="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
               >
-                ¡Entrenamiento Completado! Generar Nuevo
+                Generar Otro Plan
               </button>
+            )}
+
+            {progress.percentage < 100 ? (
               <button
                 onClick={onContinueTraining}
-                className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+                className="flex-1 bg-yellow-400 hover:bg-yellow-500 text-black font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
               >
-                Reanudar ejercicios
+                {progress.percentage === 0 ? 'Comenzar Entrenamiento' : 'Continuar Entrenamiento'}
               </button>
-            </>
-          )}
+            ) : (
+              <>
+                <button
+                  onClick={onGenerateNewAfterCompleted}
+                  className="flex-1 bg-green-600 hover:bg-green-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+                >
+                  ¡Entrenamiento Completado! Generar Nuevo
+                </button>
+                <button
+                  onClick={onContinueTraining}
+                  className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+                >
+                  Reanudar ejercicios
+                </button>
+              </>
+            )}
+          </div>
+          {/* Botón para cancelar todo y reiniciar */}
+          <button
+            onClick={onCancelAll}
+            className="bg-red-600 hover:bg-red-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+          >
+            Cancelar todo
+          </button>
         </div>
       </div>
     </div>

@@ -1,7 +1,45 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, Info } from 'lucide-react';
 
 export default function ExerciseInfoModal({ show, exercise, onClose }) {
+  const [tab, setTab] = useState('ejecucion'); // ejecucion | consejos | errores
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [data, setData] = useState({ ejecucion: '', consejos: '', errores_evitar: '' });
+
+  useEffect(() => {
+    if (!show) return;
+    let isCancelled = false;
+
+    const fetchInfo = async () => {
+      try {
+        setLoading(true);
+        setError('');
+        const token = localStorage.getItem('token');
+        const res = await fetch('/api/ia-home-training/exercise-info', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ exerciseName: exercise?.nombre })
+        });
+        const json = await res.json();
+        if (!isCancelled) {
+          if (json?.success && json?.exerciseInfo) {
+            setData(json.exerciseInfo);
+          } else {
+            setError('No se pudo obtener la información en este momento.');
+          }
+        }
+      } catch (e) {
+        if (!isCancelled) setError('Error de red al obtener la información.');
+      } finally {
+        if (!isCancelled) setLoading(false);
+      }
+    };
+
+    fetchInfo();
+    return () => { isCancelled = true; };
+  }, [show, exercise?.nombre]);
+
   if (!show) return null;
   const ex = exercise || {};
   const repsValue = Number(ex?.repeticiones ?? ex?.reps ?? ex?.repeticiones_por_serie);
@@ -30,7 +68,7 @@ export default function ExerciseInfoModal({ show, exercise, onClose }) {
             )}
           </div>
 
-          {/* Bloque métrico como HomeTraining */}
+          {/* Métricas básicas */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center bg-gray-700/30 rounded-lg p-3">
             <div>
               <div className="text-xl font-bold text-white">{seriesTotal}</div>
@@ -58,54 +96,27 @@ export default function ExerciseInfoModal({ show, exercise, onClose }) {
             </div>
           </div>
 
-          {/* Información del ejercicio estilo HomeTraining */}
-          {(ex?.patron || ex?.implemento) && (
-            <div className="bg-gray-700/30 rounded-lg p-3">
-              <div className="flex flex-wrap gap-4 text-sm">
-                {ex?.patron && (
-                  <div className="flex items-center">
-                    <span className="w-2 h-2 bg-green-400 rounded-full mr-2"></span>
-                    <span className="text-gray-300">Patrón:</span>
-                    <span className="text-white font-medium ml-1 capitalize">{String(ex.patron).replaceAll('_',' ')}</span>
-                  </div>
-                )}
-                {ex?.implemento && (
-                  <div className="flex items-center">
-                    <span className="w-2 h-2 bg-blue-400 rounded-full mr-2"></span>
-                    <span className="text-gray-300">Implemento:</span>
-                    <span className="text-white font-medium ml-1 capitalize">{String(ex.implemento).replaceAll('_',' ')}</span>
-                  </div>
-                )}
-              </div>
+          {/* Pestañas */}
+          <div>
+            <div className="flex gap-2 mb-3">
+              <button onClick={() => setTab('ejecucion')} className={`px-3 py-2 rounded-md text-sm font-semibold ${tab==='ejecucion' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-200'}`}>Cómo ejecutarlo</button>
+              <button onClick={() => setTab('consejos')} className={`px-3 py-2 rounded-md text-sm font-semibold ${tab==='consejos' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-200'}`}>Consejos para ejecutarlo</button>
+              <button onClick={() => setTab('errores')} className={`px-3 py-2 rounded-md text-sm font-semibold ${tab==='errores' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-200'}`}>Qué evitar y errores comunes</button>
             </div>
-          )}
-
-          {/* Pestañas simples: Ejecución / Consejos / A evitar */}
-          {(ex?.informacion_detallada || ex?.ejercicio_ejecucion || ex?.ejercicio_consejos || ex?.ejercicio_errores_evitar || ex?.notas) && (
-            <div className="space-y-3">
-              { (ex?.informacion_detallada?.ejecucion || ex?.ejercicio_ejecucion) && (
-                <div className="bg-gray-700/30 rounded-lg p-3">
-                  <h5 className="text-white font-semibold text-sm mb-1">Ejecución</h5>
-                  <p className="text-gray-300 text-sm leading-relaxed">{ex?.informacion_detallada?.ejecucion || ex?.ejercicio_ejecucion}</p>
-                </div>
-              )}
-              { (ex?.informacion_detallada?.consejos || ex?.ejercicio_consejos || ex?.notas) && (
-                <div className="bg-blue-900/20 border border-blue-700/40 rounded-lg p-3">
-                  <h5 className="text-blue-200 font-semibold text-sm mb-1">Consejos</h5>
-                  <p className="text-blue-200 text-sm leading-relaxed">{ex?.informacion_detallada?.consejos || ex?.ejercicio_consejos || ex?.notas}</p>
-                </div>
-              )}
-              { (ex?.informacion_detallada?.errores_evitar || ex?.ejercicio_errores_evitar) && (
-                <div className="bg-red-900/20 border border-red-700/40 rounded-lg p-3">
-                  <h5 className="text-red-200 font-semibold text-sm mb-1">A evitar</h5>
-                  <p className="text-red-200 text-sm leading-relaxed">{ex?.informacion_detallada?.errores_evitar || ex?.ejercicio_errores_evitar}</p>
-                </div>
+            <div className="bg-gray-700/30 rounded-lg p-3 min-h-[120px]">
+              {loading && <p className="text-gray-300 text-sm">Cargando…</p>}
+              {!loading && error && <p className="text-red-300 text-sm">{error}</p>}
+              {!loading && !error && (
+                <p className="text-gray-200 text-sm leading-relaxed">
+                  {tab==='ejecucion' && (data.ejecucion || 'Sin datos disponibles')}
+                  {tab==='consejos' && (data.consejos || 'Sin datos disponibles')}
+                  {tab==='errores' && (data.errores_evitar || 'Sin datos disponibles')}
+                </p>
               )}
             </div>
-          )}
+          </div>
         </div>
       </div>
     </div>
   );
 }
-

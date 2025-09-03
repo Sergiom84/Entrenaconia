@@ -109,10 +109,14 @@ router.post('/exercise-info', authenticateToken, async (req, res) => {
       // ✅ ENCONTRADO EN BD - Sin costo
       const existingInfo = existingResult.rows[0];
       console.log(`💾 [IA Home Training] Información encontrada en BD (usado ${existingInfo.request_count} veces)`);
-      
-      // Incrementar contador de uso
-      await pool.query('SELECT app.increment_exercise_request_count($1)', [exerciseName]);
-      
+
+      // Incrementar contador de uso (no romper si la función no existe o falla)
+      try {
+        await pool.query('SELECT app.increment_exercise_request_count($1)', [exerciseName]);
+      } catch (incErr) {
+        console.warn('⚠️ [IA Home Training] No se pudo incrementar request_count:', incErr?.message || incErr);
+      }
+
       return res.json({
         success: true,
         exerciseInfo: {

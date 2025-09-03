@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Pause, Square, SkipForward, X, Clock, Target, RotateCcw, CheckCircle, Star, Info } from 'lucide-react';
 import { getExerciseGifUrl } from '../../config/exerciseGifs';
 import ExerciseFeedbackModal from './ExerciseFeedbackModal';
-// import ExerciseInfoModal from '../routines/ExerciseInfoModal'; // TODO: Restore when routines are rebuilt
+import ExerciseInfoModal from '../routines/ExerciseInfoModal';
 
 const HomeTrainingExerciseModal = ({
   exercise,
@@ -27,6 +27,19 @@ const HomeTrainingExerciseModal = ({
   const [showFeedback, setShowFeedback] = useState(false);
   const [showExerciseInfo, setShowExerciseInfo] = useState(false);
   const [showRepeatConfirm, setShowRepeatConfirm] = useState(false);
+
+  // Pausar el temporizador cuando se abre un modal superpuesto (feedback / info / confirm repeat)
+  const prevRunningRef = useRef(false);
+  useEffect(() => {
+    const overlayOpen = showFeedback || showExerciseInfo || showRepeatConfirm;
+    if (overlayOpen) {
+      prevRunningRef.current = isRunning;
+      setIsRunning(false);
+    } else {
+      if (prevRunningRef.current) setIsRunning(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showFeedback, showExerciseInfo, showRepeatConfirm]);
   const intervalRef = useRef(null);
   const lastPhaseHandledRef = useRef(''); // evita manejar la misma transición dos veces
   const lastReportedSeriesRef = useRef(''); // evita PUT duplicados para la misma serie
@@ -226,7 +239,9 @@ const HomeTrainingExerciseModal = ({
   };
 
   const handleCancelExercise = () => {
-    // Marca el ejercicio como cancelado desde el modal
+    // Confirmación antes de cancelar el ejercicio actual
+    const ok = window.confirm('¿Estás seguro de que quieres cancelar este ejercicio?');
+    if (!ok) return;
     if (typeof onCancel === 'function') onCancel();
     setIsRunning(false);
     setCurrentPhase('completed'); // cerramos el flujo localmente
