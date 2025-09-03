@@ -22,6 +22,13 @@ export const useProfileState = () => {
     comidas_diarias: '', // UI -> DB: comidas_por_dia
     suplementacion: [],
     alimentos_excluidos: [],
+    // Objetivos y Metas
+    objetivo_principal: '',
+    meta_peso: '',
+    meta_grasa: '',
+    fecha_inicio_objetivo: '',
+    fecha_meta_objetivo: '',
+    notas_progreso: '',
     // Salud
     historial_medico: '',
     limitaciones_fisicas: [],
@@ -71,6 +78,13 @@ export const useProfileState = () => {
     comidas_diarias: u.comidas_por_dia ?? '',
     suplementacion: u.suplementacion || [],
     alimentos_excluidos: u.alimentos_excluidos || [],
+    // Objetivos y Metas
+    objetivo_principal: u.objetivo_principal || '',
+    meta_peso: u.meta_peso ?? '',
+    meta_grasa: u.meta_grasa ?? '',
+    fecha_inicio_objetivo: u.fecha_inicio_objetivo || '',
+    fecha_meta_objetivo: u.fecha_meta_objetivo || '',
+    notas_progreso: u.notas_progreso || '',
     // Salud
     historial_medico: u.historial_medico || '',
     limitaciones_fisicas: u.limitaciones_fisicas || [],
@@ -108,7 +122,7 @@ export const useProfileState = () => {
       delete payload.enfoque
     }
     // Normalizar numéricos comunes
-    ;['edad','peso','altura','grasa_corporal','masa_muscular','agua_corporal','metabolismo_basal','cintura','pecho','brazos','muslos','cuello','antebrazos','frecuencia_semanal','meta_peso','meta_grasa_corporal']
+    ;['edad','peso','altura','grasa_corporal','masa_muscular','agua_corporal','metabolismo_basal','cintura','pecho','brazos','muslos','cuello','antebrazos','frecuencia_semanal','meta_peso','meta_grasa']
       .forEach(k => { if (k in payload) payload[k] = toNumber(payload[k]) })
     return payload
   }
