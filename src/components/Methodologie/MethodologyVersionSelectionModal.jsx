@@ -113,7 +113,7 @@ export default function MethodologyVersionSelectionModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-7xl w-[90vw] max-h-[90vh] overflow-y-auto bg-gray-900 border-gray-700">
+      <DialogContent className="max-w-6xl w-[95vw] max-h-[85vh] overflow-y-auto bg-gray-900 border-gray-700">
         <DialogHeader>
           <DialogTitle className="text-xl font-bold text-white flex items-center gap-2">
             <Target className="h-6 w-6 text-yellow-400" />
