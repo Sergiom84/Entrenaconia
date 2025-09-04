@@ -728,49 +728,52 @@ router.get('/progress-data', authenticateToken, async (req, res) => {
     const plan = planQuery.rows[0];
     const planData = typeof plan.plan_data === 'string' ? JSON.parse(plan.plan_data) : plan.plan_data;
 
-    // Obtener resumen general de progreso
+    // Obtener resumen general de progreso (CORRECCIÓN: usar tabla de progreso actual)
     const generalStatsQuery = await pool.query(
       `SELECT 
-         COUNT(DISTINCT methodology_session_id) as total_sessions_completed,
+         COUNT(DISTINCT mep.methodology_session_id) as total_sessions_completed,
          COUNT(*) as total_exercises_completed,
-         SUM(series_completed) as total_series_completed,
-         SUM(tiempo_dedicado_segundos) as total_time_seconds,
-         MIN(session_date) as first_session_date,
-         MAX(session_date) as last_session_date
-       FROM app.methodology_exercise_history_complete
-       WHERE user_id = $1 AND methodology_plan_id = $2`,
+         SUM(CASE WHEN mep.status = 'completed' THEN mep.series_completed ELSE 0 END) as total_series_completed,
+         SUM(CASE WHEN mep.status = 'completed' THEN COALESCE(mep.time_spent_seconds, 0) ELSE 0 END) as total_time_seconds,
+         MIN(mes.started_at) as first_session_date,
+         MAX(mes.completed_at) as last_session_date
+       FROM app.methodology_exercise_progress mep
+       JOIN app.methodology_exercise_sessions mes ON mes.id = mep.methodology_session_id
+       WHERE mep.user_id = $1 AND mes.methodology_plan_id = $2`,
       [userId, methodology_plan_id]
     );
 
-    // Obtener progreso por semanas
+    // Obtener progreso por semanas (CORRECCIÓN: usar tabla de progreso actual)
     const weeklyProgressQuery = await pool.query(
       `SELECT 
-         week_number,
-         COUNT(DISTINCT methodology_session_id) as sessions_completed,
+         mes.week_number,
+         COUNT(DISTINCT mep.methodology_session_id) as sessions_completed,
          COUNT(*) as exercises_completed,
-         SUM(series_completed) as series_completed,
-         SUM(tiempo_dedicado_segundos) as time_spent_seconds
-       FROM app.methodology_exercise_history_complete
-       WHERE user_id = $1 AND methodology_plan_id = $2
-       GROUP BY week_number
-       ORDER BY week_number ASC`,
+         SUM(CASE WHEN mep.status = 'completed' THEN mep.series_completed ELSE 0 END) as series_completed,
+         SUM(CASE WHEN mep.status = 'completed' THEN COALESCE(mep.time_spent_seconds, 0) ELSE 0 END) as time_spent_seconds
+       FROM app.methodology_exercise_progress mep
+       JOIN app.methodology_exercise_sessions mes ON mes.id = mep.methodology_session_id
+       WHERE mep.user_id = $1 AND mes.methodology_plan_id = $2
+       GROUP BY mes.week_number
+       ORDER BY mes.week_number ASC`,
       [userId, methodology_plan_id]
     );
 
-    // Obtener actividad reciente (últimas 10 sesiones)
+    // Obtener actividad reciente (CORRECCIÓN: usar tabla de progreso actual)
     const recentActivityQuery = await pool.query(
       `SELECT DISTINCT
-         methodology_session_id,
-         session_date,
-         week_number,
-         day_name,
+         mep.methodology_session_id,
+         mes.started_at as session_date,
+         mes.week_number,
+         mes.day_name,
          COUNT(*) as exercises_count,
-         SUM(series_completed) as total_series,
-         SUM(tiempo_dedicado_segundos) as session_duration_seconds
-       FROM app.methodology_exercise_history_complete
-       WHERE user_id = $1 AND methodology_plan_id = $2
-       GROUP BY methodology_session_id, session_date, week_number, day_name
-       ORDER BY session_date DESC, methodology_session_id DESC
+         SUM(CASE WHEN mep.status = 'completed' THEN mep.series_completed ELSE 0 END) as total_series,
+         SUM(CASE WHEN mep.status = 'completed' THEN COALESCE(mep.time_spent_seconds, 0) ELSE 0 END) as session_duration_seconds
+       FROM app.methodology_exercise_progress mep
+       JOIN app.methodology_exercise_sessions mes ON mes.id = mep.methodology_session_id
+       WHERE mep.user_id = $1 AND mes.methodology_plan_id = $2
+       GROUP BY mep.methodology_session_id, mes.started_at, mes.week_number, mes.day_name
+       ORDER BY mes.started_at DESC, mep.methodology_session_id DESC
        LIMIT 10`,
       [userId, methodology_plan_id]
     );
@@ -1137,6 +1140,114 @@ router.post('/cancel-routine', authenticateToken, async (req, res) => {
     });
   } finally {
     client.release();
+  }
+});
+
+// GET /api/routines/historical-data
+// Obtiene datos históricos completos del usuario (todas las rutinas completadas)
+router.get('/historical-data', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+
+    // Obtener estadísticas generales históricas (todas las rutinas del usuario)
+    const totalStatsQuery = await pool.query(
+      `SELECT 
+         COUNT(DISTINCT mp.id) as total_routines_completed,
+         COUNT(DISTINCT mes.id) as total_sessions_ever,
+         COUNT(DISTINCT mep.id) as total_exercises_ever,
+         SUM(CASE WHEN mep.status = 'completed' THEN mep.series_completed ELSE 0 END) as total_series_ever,
+         SUM(CASE WHEN mep.status = 'completed' THEN COALESCE(mep.time_spent_seconds, 0) ELSE 0 END) as total_time_spent_ever,
+         MIN(mes.started_at) as first_workout_date,
+         MAX(mes.completed_at) as last_workout_date
+       FROM app.methodology_plans mp
+       LEFT JOIN app.methodology_exercise_sessions mes ON mes.methodology_plan_id = mp.id
+       LEFT JOIN app.methodology_exercise_progress mep ON mep.methodology_session_id = mes.id
+       WHERE mp.user_id = $1 AND mp.status = 'active'`,
+      [userId]
+    );
+
+    // Obtener historial de rutinas completadas
+    const routineHistoryQuery = await pool.query(
+      `SELECT 
+         mp.id as routine_id,
+         mp.methodology_type,
+         mp.confirmed_at as completed_at,
+         COUNT(DISTINCT mes.id) as sessions,
+         COUNT(DISTINCT mep.id) as exercises,
+         SUM(CASE WHEN mep.status = 'completed' THEN mep.series_completed ELSE 0 END) as series,
+         SUM(CASE WHEN mep.status = 'completed' THEN COALESCE(mep.time_spent_seconds, 0) ELSE 0 END) as time_spent
+       FROM app.methodology_plans mp
+       LEFT JOIN app.methodology_exercise_sessions mes ON mes.methodology_plan_id = mp.id
+       LEFT JOIN app.methodology_exercise_progress mep ON mep.methodology_session_id = mes.id
+       WHERE mp.user_id = $1 AND mp.status = 'active'
+       GROUP BY mp.id, mp.methodology_type, mp.confirmed_at
+       HAVING mp.confirmed_at IS NOT NULL
+       ORDER BY mp.confirmed_at DESC`,
+      [userId]
+    );
+
+    // Obtener estadísticas mensuales
+    const monthlyStatsQuery = await pool.query(
+      `SELECT 
+         TO_CHAR(mes.started_at, 'YYYY-MM') as month_key,
+         TO_CHAR(mes.started_at, 'Month YYYY') as month_label,
+         COUNT(DISTINCT mes.id) as sessions,
+         COUNT(DISTINCT mep.id) as exercises,
+         SUM(CASE WHEN mep.status = 'completed' THEN mep.series_completed ELSE 0 END) as series
+       FROM app.methodology_exercise_sessions mes
+       LEFT JOIN app.methodology_exercise_progress mep ON mep.methodology_session_id = mes.id
+       JOIN app.methodology_plans mp ON mp.id = mes.methodology_plan_id
+       WHERE mp.user_id = $1 AND mes.started_at IS NOT NULL
+       GROUP BY TO_CHAR(mes.started_at, 'YYYY-MM'), TO_CHAR(mes.started_at, 'Month YYYY'), mes.started_at
+       ORDER BY TO_CHAR(mes.started_at, 'YYYY-MM') DESC
+       LIMIT 12`,
+      [userId]
+    );
+
+    const totalStats = totalStatsQuery.rows[0] || {};
+    const routineHistory = routineHistoryQuery.rows || [];
+    const monthlyStats = monthlyStatsQuery.rows || [];
+
+    // Formatear respuesta
+    const responseData = {
+      totalRoutinesCompleted: parseInt(totalStats.total_routines_completed) || 0,
+      totalSessionsEver: parseInt(totalStats.total_sessions_ever) || 0,
+      totalExercisesEver: parseInt(totalStats.total_exercises_ever) || 0,
+      totalSeriesEver: parseInt(totalStats.total_series_ever) || 0,
+      totalTimeSpentEver: parseInt(totalStats.total_time_spent_ever) || 0,
+      firstWorkoutDate: totalStats.first_workout_date,
+      lastWorkoutDate: totalStats.last_workout_date,
+      routineHistory: routineHistory.map(routine => ({
+        id: routine.routine_id,
+        methodologyType: routine.methodology_type,
+        completedAt: routine.completed_at,
+        sessions: parseInt(routine.sessions) || 0,
+        exercises: parseInt(routine.exercises) || 0,
+        series: parseInt(routine.series) || 0,
+        timeSpent: parseInt(routine.time_spent) || 0
+      })),
+      monthlyStats: monthlyStats.map(month => ({
+        month: month.month_label?.trim(),
+        sessions: parseInt(month.sessions) || 0,
+        exercises: parseInt(month.exercises) || 0,
+        series: parseInt(month.series) || 0
+      }))
+    };
+
+    console.log('✅ Datos históricos obtenidos:', {
+      totalRoutines: responseData.totalRoutinesCompleted,
+      totalSessions: responseData.totalSessionsEver,
+      totalExercises: responseData.totalExercisesEver
+    });
+
+    res.json({ success: true, data: responseData });
+
+  } catch (error) {
+    console.error('❌ Error obteniendo datos históricos:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Error interno del servidor' 
+    });
   }
 });
 

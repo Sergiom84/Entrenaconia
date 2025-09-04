@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.jsx';
-import { Calendar, Dumbbell, BarChart3 } from 'lucide-react';
+import { Calendar, Dumbbell, BarChart3, History } from 'lucide-react';
 import RoutinePlanModal from './RoutinePlanModal';
 import TodayTrainingTab from './tabs/TodayTrainingTab';
 import CalendarTab from './tabs/CalendarTab';
 import ProgressTab from './tabs/ProgressTab';
+import HistoricalTab from './tabs/HistoricalTab';
 import { bootstrapPlan, confirmRoutinePlan, getPlanStatus, getActivePlan } from './api';
 
 // Pantalla de Rutinas con sistema de pestañas
@@ -206,7 +207,7 @@ export default function RoutineScreen() {
       {/* Sistema de pestañas - Solo se muestra cuando hay plan y no hay modal */}
       {effectivePlan && !showPlanModal && (
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-3 bg-gray-800 mb-6">
+          <TabsList className="grid w-full grid-cols-4 bg-gray-800 mb-6">
             <TabsTrigger 
               value="today" 
               className="flex items-center gap-2 data-[state=active]:bg-yellow-400 data-[state=active]:text-black"
@@ -227,6 +228,13 @@ export default function RoutineScreen() {
             >
               <BarChart3 className="w-4 h-4" />
               Progreso
+            </TabsTrigger>
+            <TabsTrigger 
+              value="historical" 
+              className="flex items-center gap-2 data-[state=active]:bg-yellow-400 data-[state=active]:text-black"
+            >
+              <History className="w-4 h-4" />
+              Histórico
             </TabsTrigger>
           </TabsList>
 
@@ -254,6 +262,12 @@ export default function RoutineScreen() {
           <TabsContent value="progress" className="mt-0">
             <ProgressTab
               plan={effectivePlan}
+              methodologyPlanId={methodologyPlanId}
+            />
+          </TabsContent>
+
+          <TabsContent value="historical" className="mt-0">
+            <HistoricalTab
               methodologyPlanId={methodologyPlanId}
             />
           </TabsContent>

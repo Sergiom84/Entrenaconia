@@ -159,3 +159,13 @@ export async function cancelRoutine({ methodology_plan_id, routine_plan_id }) {
   return data;
 }
 
+export async function getHistoricalData() {
+  const token = localStorage.getItem('token');
+  const resp = await fetch('/api/routines/historical-data', {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok || !data.success) throw new Error(data.error || 'No se pudieron cargar los datos históricos');
+  return data.data; // Datos históricos completos del usuario
+}
+
