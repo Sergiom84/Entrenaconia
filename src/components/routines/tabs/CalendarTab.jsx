@@ -1,11 +1,11 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Card } from '@/components/ui/card.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog.jsx';
-import { 
-  ChevronLeft, 
-  ChevronRight, 
+import {
+  ChevronLeft,
+  ChevronRight,
   Calendar,
   Clock,
   Target,
@@ -13,11 +13,13 @@ import {
   Play,
   CheckCircle
 } from 'lucide-react';
+import { getTodaySessionStatus } from '../api';
 
-export default function CalendarTab({ plan, planStartDate }) {
+export default function CalendarTab({ plan, planStartDate, methodologyPlanId, ensureMethodologyPlan }) {
   const [currentWeek, setCurrentWeek] = useState(0);
   const [selectedDay, setSelectedDay] = useState(null);
   const [showDayModal, setShowDayModal] = useState(false);
+  const [weekStatuses, setWeekStatuses] = useState({});
 
   // Días de la semana (empezando por lunes) - used for display reference
   // const weekDays = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
@@ -48,7 +50,9 @@ export default function CalendarTab({ plan, planStartDate }) {
       for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
         const dayDate = new Date(mondayDate);
         dayDate.setDate(mondayDate.getDate() + dayIndex);
-        
+        // Normalizar hora para comparar correctamente con "hoy"
+        dayDate.setHours(0, 0, 0, 0);
+
         const dayName = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'][dayDate.getDay()];
         const dayNameShort = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][dayDate.getDay()];
         
@@ -88,6 +92,54 @@ export default function CalendarTab({ plan, planStartDate }) {
 
   const currentWeekData = calendarData[currentWeek] || null;
 
+  // Clave estable para mapear estado de la semana
+  const getDayKey = (weekNumber, day) =>
+    `${weekNumber}-${(day.dayNameShort || day.dayName).toLowerCase()}`;
+
+  // Sincronización: cargar estado para los 7 días visibles
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadWeekStatuses = async () => {
+      if (!currentWeekData) return;
+      try {
+        const mId = await (ensureMethodologyPlan ? ensureMethodologyPlan() : methodologyPlanId);
+        const entries = await Promise.all(
+          currentWeekData.days.map(async (day) => {
+            const key = getDayKey(currentWeekData.weekNumber || 1, day);
+            if (!day.session) return [key, null];
+            try {
+              const data = await getTodaySessionStatus({
+                methodology_plan_id: mId,
+                week_number: currentWeekData.weekNumber || 1,
+                day_name: day.dayNameShort || day.dayName,
+              });
+              return [key, data];
+            } catch {
+              return [key, null];
+            }
+          })
+        );
+        if (cancelled) return;
+        setWeekStatuses((prev) => {
+          const next = { ...prev };
+          entries.forEach(([k, v]) => { next[k] = v; });
+          return next;
+        });
+      } catch (e) {
+        // ignorar errores para días sin sesión
+      }
+    };
+
+    // carga inicial
+    loadWeekStatuses();
+
+    // auto-refresco ligero cada 8s mientras esta semana esté visible
+    const id = setInterval(loadWeekStatuses, 8000);
+
+    return () => { cancelled = true; clearInterval(id); };
+  }, [currentWeekData, methodologyPlanId, ensureMethodologyPlan]);
+
   const handlePrevWeek = () => {
     setCurrentWeek(Math.max(0, currentWeek - 1));
   };
@@ -121,11 +173,10 @@ export default function CalendarTab({ plan, planStartDate }) {
 
   const getDayClassName = (day) => {
     let baseClasses = "min-h-48 p-3 border-r border-gray-700 last:border-r-0 transition-all cursor-pointer relative flex flex-col";
-    
+
     if (day.session) {
-      if (day.isToday) {
-        baseClasses += " bg-gradient-to-b from-yellow-400/60 to-yellow-500/40 border-l-4 border-l-yellow-400 ring-2 ring-yellow-400/50 shadow-lg shadow-yellow-400/20";
-      } else if (day.isPast) {
+      // sin tratamiento amarillo para hoy
+      if (day.isPast) {
         baseClasses += " bg-green-900/20 hover:bg-green-900/30";
       } else if (day.isFuture) {
         baseClasses += " bg-blue-900/20 hover:bg-blue-900/30";
@@ -133,11 +184,7 @@ export default function CalendarTab({ plan, planStartDate }) {
         baseClasses += " bg-gray-800 hover:bg-gray-700";
       }
     } else {
-      if (day.isToday) {
-        baseClasses += " bg-gradient-to-b from-yellow-400/50 to-yellow-500/30 border-l-4 border-l-yellow-400 ring-2 ring-yellow-400/50 shadow-lg shadow-yellow-400/20";
-      } else {
-        baseClasses += " bg-gray-900/50 cursor-default";
-      }
+      baseClasses += " bg-gray-900/50 cursor-default";
     }
 
     return baseClasses;
@@ -228,49 +275,51 @@ export default function CalendarTab({ plan, planStartDate }) {
                   <CheckCircle className="w-4 h-4 text-green-400" />
                 </div>
               )}
-              
-              {/* Indicador especial para día actual */}
-              {day.isToday && (
-                <>
-                  {/* Círculo pulsante */}
-                  <div className="absolute top-2 right-2">
-                    <div className="relative">
-                      <div className="w-3 h-3 bg-yellow-400 rounded-full animate-pulse"></div>
-                      <div className="absolute inset-0 w-3 h-3 bg-yellow-400 rounded-full animate-ping opacity-75"></div>
-                    </div>
-                  </div>
-                  
-                  {/* Badge "HOY" en la esquina superior izquierda */}
-                  <div className="absolute top-1 left-1 bg-yellow-400 text-black text-xs font-bold px-2 py-1 rounded-full shadow-sm">
-                    HOY
-                  </div>
-                </>
-              )}
+
+
 
               {/* Lista de ejercicios ocupando todo el espacio disponible */}
               {day.session ? (
                 <div className="space-y-2 flex-1 py-2">
-                  {day.session.ejercicios?.map((ejercicio, exIndex) => (
-                    <div key={exIndex} className={`text-xs pb-2 last:border-b-0 ${
-                      day.isToday ? 'border-b border-yellow-600/40' : 'border-b border-gray-600/30'
-                    }`}>
-                      <div className={`font-medium mb-1 ${
-                        day.isToday ? 'text-black font-semibold' : 
-                        day.isPast ? 'text-green-100' :
-                        day.isFuture ? 'text-blue-100' : 'text-white'
-                      }`}>
-                        {ejercicio.nombre}
-                      </div>
-                      <div className={`flex items-center justify-between text-xs ${
-                        day.isToday ? 'text-gray-800' : 'text-gray-400'
-                      }`}>
-                        <span>{ejercicio.series} × {ejercicio.repeticiones}</span>
-                        {ejercicio.descanso_seg && (
-                          <span>{Math.round(ejercicio.descanso_seg / 60)}'</span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+                  {(() => {
+                    // Mapa estado->ejercicio para este día
+                    const key = getDayKey(day.weekNumber || currentWeekData.weekNumber, day);
+                    const statusByOrder = new Map(
+                      (weekStatuses[key]?.exercises || []).map(ex => [ex.exercise_order, ex.status])
+                    );
+
+                    return day.session.ejercicios?.map((ejercicio, exIndex) => {
+                      const status = statusByOrder.get(exIndex);
+
+                      // clases por estado
+                      const rowClass =
+                        status === 'completed' ? 'bg-green-900/25 border-green-500/30' :
+                        status === 'skipped'   ? 'bg-gray-800/50 border-gray-600/40 opacity-80' :
+                        status === 'cancelled' ? 'bg-red-900/20 border-red-500/30' :
+                                                 'border-gray-600/30';
+
+                      const nameClass =
+                        status === 'completed' ? 'text-green-300' :
+                        status === 'skipped'   ? 'text-gray-400' :
+                        status === 'cancelled' ? 'text-red-300'  :
+                                                 'text-white';
+
+                      return (
+                        <div
+                          key={exIndex}
+                          className={`text-xs pb-2 last:border-b-0 border rounded-md px-2 py-2 ${rowClass}`}
+                        >
+                          <div className={`font-medium mb-1 ${nameClass}`}>
+                            {ejercicio.nombre}
+                          </div>
+                          <div className="flex items-center justify-between text-xs text-gray-400">
+                            <span>{ejercicio.series} × {ejercicio.repeticiones}</span>
+                            {ejercicio.descanso_seg && <span>{Math.round(ejercicio.descanso_seg / 60)}'</span>}
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
                 </div>
               ) : (
                 <div className="flex-1 flex items-center justify-center">
@@ -294,16 +343,16 @@ export default function CalendarTab({ plan, planStartDate }) {
             <span className="text-gray-300">Completado</span>
           </div>
           <div className="flex items-center space-x-2">
+            <div className="w-3 h-3 bg-gray-400 rounded-full" />
+            <span className="text-gray-300">Saltado</span>
+          </div>
+          <div className="flex items-center space-x-2">
+            <div className="w-3 h-3 bg-red-500 rounded-full" />
+            <span className="text-gray-300">Cancelado</span>
+          </div>
+          <div className="flex items-center space-x-2">
             <div className="w-3 h-3 bg-yellow-400 rounded-full" />
             <span className="text-gray-300">Hoy</span>
-          </div>
-          <div className="flex items-center space-x-2">
-            <div className="w-3 h-3 bg-blue-600 rounded-full" />
-            <span className="text-gray-300">Próximo</span>
-          </div>
-          <div className="flex items-center space-x-2">
-            <div className="w-3 h-3 bg-gray-600 rounded-full" />
-            <span className="text-gray-300">Descanso</span>
           </div>
         </div>
       </Card>
@@ -330,28 +379,43 @@ export default function CalendarTab({ plan, planStartDate }) {
               </div>
 
               <div className="space-y-3 max-h-96 overflow-y-auto">
-                {selectedDay.session.ejercicios?.map((ejercicio, index) => (
-                  <div 
-                    key={index}
-                    className="flex justify-between items-center p-3 bg-black/40 rounded-lg"
-                  >
-                    <div className="flex-1">
-                      <p className="font-medium text-white">{ejercicio.nombre}</p>
-                      <div className="flex items-center space-x-4 text-sm text-gray-400 mt-1">
-                        <span className="flex items-center">
-                          <Target className="w-3 h-3 mr-1" />
-                          {ejercicio.series} × {ejercicio.repeticiones}
-                        </span>
-                        {ejercicio.descanso_seg && (
-                          <span className="flex items-center">
-                            <Clock className="w-3 h-3 mr-1" />
-                            {Math.round(ejercicio.descanso_seg / 60)}min
-                          </span>
-                        )}
+                {(() => {
+                  const key = getDayKey(selectedDay.weekNumber, selectedDay);
+                  const statusMap = new Map((weekStatuses[key]?.exercises || []).map(ex => [ex.exercise_order, ex.status]));
+                  return selectedDay.session.ejercicios?.map((ejercicio, index) => {
+                    const status = statusMap.get(index);
+                    const badge = status === 'completed' ? (
+                      <Badge variant="outline" className="border-green-500 text-green-400 text-xs">Completado</Badge>
+                    ) : status === 'skipped' ? (
+                      <Badge variant="outline" className="border-gray-500 text-gray-400 text-xs">Saltado</Badge>
+                    ) : status === 'cancelled' ? (
+                      <Badge variant="outline" className="border-red-500 text-red-400 text-xs">Cancelado</Badge>
+                    ) : null;
+                    return (
+                      <div
+                        key={index}
+                        className="flex justify-between items-center p-3 bg-black/40 rounded-lg"
+                      >
+                        <div className="flex-1">
+                          <p className="font-medium text-white">{ejercicio.nombre}</p>
+                          <div className="flex items-center space-x-4 text-sm text-gray-400 mt-1">
+                            <span className="flex items-center">
+                              <Target className="w-3 h-3 mr-1" />
+                              {ejercicio.series} × {ejercicio.repeticiones}
+                            </span>
+                            {ejercicio.descanso_seg && (
+                              <span className="flex items-center">
+                                <Clock className="w-3 h-3 mr-1" />
+                                {Math.round(ejercicio.descanso_seg / 60)}min
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        {badge}
                       </div>
-                    </div>
-                  </div>
-                ))}
+                    );
+                  });
+                })()}
               </div>
 
               {selectedDay.isToday && (
