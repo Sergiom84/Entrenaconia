@@ -520,14 +520,19 @@ router.get('/sessions/today-status', authenticateToken, async (req, res) => {
 
     const session = sessionQuery.rows[0];
 
-    // Obtener progreso de ejercicios
+    // Obtener progreso de ejercicios con feedback
     const exercisesQuery = await pool.query(
-      `SELECT exercise_order, exercise_name, series_total, series_completed, 
-              repeticiones, descanso_seg, intensidad, tempo, status, 
-              time_spent_seconds, notas
-       FROM app.methodology_exercise_progress
-       WHERE methodology_session_id = $1
-       ORDER BY exercise_order ASC`,
+      `SELECT 
+        p.exercise_order, p.exercise_name, p.series_total, p.series_completed, 
+        p.repeticiones, p.descanso_seg, p.intensidad, p.tempo, p.status, 
+        p.time_spent_seconds, p.notas,
+        f.sentiment, f.comment
+       FROM app.methodology_exercise_progress p
+       LEFT JOIN app.methodology_exercise_feedback f 
+         ON p.methodology_session_id = f.methodology_session_id 
+         AND p.exercise_order = f.exercise_order
+       WHERE p.methodology_session_id = $1
+       ORDER BY p.exercise_order ASC`,
       [session.id]
     );
 

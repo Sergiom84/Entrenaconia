@@ -14,7 +14,10 @@ import {
   Timer,
   Dumbbell,
   X,
-  AlertTriangle
+  AlertTriangle,
+  Heart,
+  Frown,
+  AlertOctagon
 } from 'lucide-react';
 import RoutineSessionModal from '../RoutineSessionModal';
 import RoutineSessionSummaryCard from '../RoutineSessionSummaryCard';
@@ -38,6 +41,22 @@ export default function TodayTrainingTab({
   const [todaySessionStatus, setTodaySessionStatus] = useState(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+
+  // Función para obtener icono y color del sentimiento
+  const getSentimentIcon = (sentiment) => {
+    switch (sentiment) {
+      case 'love':
+        return { icon: Heart, color: 'text-pink-400', bg: 'bg-pink-900/30', border: 'border-pink-500/30' };
+      case 'normal':
+        return { icon: CheckCircle, color: 'text-green-400', bg: 'bg-green-900/30', border: 'border-green-500/30' };
+      case 'hard':
+        return { icon: AlertOctagon, color: 'text-red-400', bg: 'bg-red-900/30', border: 'border-red-500/30' };
+      case 'dislike':
+        return { icon: Frown, color: 'text-orange-400', bg: 'bg-orange-900/30', border: 'border-orange-500/30' };
+      default:
+        return null;
+    }
+  };
 
   // Obtener la sesión del día actual (el día que se activó la IA)
   const todaySession = useMemo(() => {
@@ -462,6 +481,11 @@ export default function TodayTrainingTab({
                 const isCompleted = exerciseProgress?.status === 'completed';
                 const isSkipped = exerciseProgress?.status === 'skipped';
                 
+                // Obtener datos del sentimiento
+                const sentiment = exerciseProgress?.sentiment;
+                const sentimentData = getSentimentIcon(sentiment);
+                const hasComment = exerciseProgress?.comment && exerciseProgress.comment.trim();
+                
                 return (
                   <div 
                     key={index}
@@ -488,6 +512,26 @@ export default function TodayTrainingTab({
                         <p className="text-sm text-gray-400">
                           {exerciseProgress?.series_completed || 0}/{ejercicio.series} series × {ejercicio.repeticiones} reps
                         </p>
+                        
+                        {/* Mostrar sentimiento y comentario */}
+                        {sentimentData && (
+                          <div className="flex items-center mt-2">
+                            <div className={`flex items-center px-2 py-1 rounded-md ${sentimentData.bg} ${sentimentData.border} border`}>
+                              <sentimentData.icon className={`w-3 h-3 mr-1 ${sentimentData.color}`} />
+                              <span className={`text-xs ${sentimentData.color} capitalize`}>
+                                {sentiment === 'love' ? 'Me gusta' : 
+                                 sentiment === 'normal' ? 'Normal' :
+                                 sentiment === 'hard' ? 'Difícil' :
+                                 sentiment === 'dislike' ? 'No me gusta' : sentiment}
+                              </span>
+                            </div>
+                            {hasComment && (
+                              <span className="text-xs text-gray-400 ml-2 italic">
+                                "{exerciseProgress.comment}"
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                     
