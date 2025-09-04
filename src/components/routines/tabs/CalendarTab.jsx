@@ -10,8 +10,10 @@ import {
   Clock,
   Target,
   Dumbbell,
-  Play,
-  CheckCircle
+  CheckCircle,
+  Heart,
+  Frown,
+  AlertOctagon
 } from 'lucide-react';
 import { getTodaySessionStatus } from '../api';
 
@@ -95,6 +97,22 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
   // Clave estable para mapear estado de la semana
   const getDayKey = (weekNumber, day) =>
     `${weekNumber}-${(day.dayNameShort || day.dayName).toLowerCase()}`;
+
+  // Igual que en TodayTrainingTab: mapea sentimiento a icono/colores
+  const getSentimentIcon = (sentiment) => {
+    switch (sentiment) {
+      case 'love':
+        return { Icon: Heart, color: 'text-pink-400', bg: 'bg-pink-900/30', border: 'border-pink-500/30', label: 'Me gusta' };
+      case 'normal':
+        return { Icon: CheckCircle, color: 'text-green-400', bg: 'bg-green-900/30', border: 'border-green-500/30', label: 'Normal' };
+      case 'hard':
+        return { Icon: AlertOctagon, color: 'text-red-400', bg: 'bg-red-900/30', border: 'border-red-500/30', label: 'Difícil' };
+      case 'dislike':
+        return { Icon: Frown, color: 'text-orange-400', bg: 'bg-orange-900/30', border: 'border-orange-500/30', label: 'No me gusta' };
+      default:
+        return null;
+    }
+  };
 
   // Sincronización: cargar estado para los 7 días visibles
   useEffect(() => {
@@ -281,45 +299,71 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
               {/* Lista de ejercicios ocupando todo el espacio disponible */}
               {day.session ? (
                 <div className="space-y-2 flex-1 py-2">
-                  {(() => {
-                    // Mapa estado->ejercicio para este día
-                    const key = getDayKey(day.weekNumber || currentWeekData.weekNumber, day);
-                    const statusByOrder = new Map(
-                      (weekStatuses[key]?.exercises || []).map(ex => [ex.exercise_order, ex.status])
-                    );
+{(() => {
+  const key = getDayKey(day.weekNumber || currentWeekData.weekNumber, day);
+  const progressList = weekStatuses[key]?.exercises || [];
+  const statusByOrder = new Map(progressList.map(ex => [ex.exercise_order, ex.status]));
+  const progressByOrder = new Map(progressList.map(ex => [ex.exercise_order, ex])); // para comment/sentiment/series
 
-                    return day.session.ejercicios?.map((ejercicio, exIndex) => {
-                      const status = statusByOrder.get(exIndex);
+  return day.session.ejercicios?.map((ejercicio, exIndex) => {
+    const status = statusByOrder.get(exIndex);
+    const progress = progressByOrder.get(exIndex);
+    const sentimentData = getSentimentIcon(progress?.sentiment);
+    const hasComment = !!(progress?.comment && progress.comment.trim());
+    const seriesCompleted = progress?.series_completed ?? 0;
 
-                      // clases por estado
-                      const rowClass =
-                        status === 'completed' ? 'bg-green-900/25 border-green-500/30' :
-                        status === 'skipped'   ? 'bg-gray-800/50 border-gray-600/40 opacity-80' :
-                        status === 'cancelled' ? 'bg-red-900/20 border-red-500/30' :
-                                                 'border-gray-600/30';
+    // Colores suaves por estado (se mantienen)
+    const rowClass =
+      status === 'completed' ? 'bg-green-900/20 border-green-500/30' :
+      status === 'skipped'   ? 'bg-gray-800/50 border-gray-600/40 opacity-90' :
+      status === 'cancelled' ? 'bg-red-900/20 border-red-500/30' :
+                               'border-gray-600/30';
 
-                      const nameClass =
-                        status === 'completed' ? 'text-green-300' :
-                        status === 'skipped'   ? 'text-gray-400' :
-                        status === 'cancelled' ? 'text-red-300'  :
-                                                 'text-white';
+    const nameClass =
+      status === 'completed' ? 'text-green-300' :
+      status === 'skipped'   ? 'text-gray-300' :
+      status === 'cancelled' ? 'text-red-300'  :
+                               'text-white';
 
-                      return (
-                        <div
-                          key={exIndex}
-                          className={`text-xs pb-2 last:border-b-0 border rounded-md px-2 py-2 ${rowClass}`}
-                        >
-                          <div className={`font-medium mb-1 ${nameClass}`}>
-                            {ejercicio.nombre}
-                          </div>
-                          <div className="flex items-center justify-between text-xs text-gray-400">
-                            <span>{ejercicio.series} × {ejercicio.repeticiones}</span>
-                            {ejercicio.descanso_seg && <span>{Math.round(ejercicio.descanso_seg / 60)}'</span>}
-                          </div>
-                        </div>
-                      );
-                    });
-                  })()}
+    return (
+      <div
+        key={exIndex}
+        className={`text-xs pb-2 last:border-b-0 border rounded-md px-2 py-2 ${rowClass}`}
+      >
+        {/* fila superior: nombre + descanso (SIN badge de estado) */}
+        <div className="flex items-start justify-between">
+          <div className={`font-medium ${nameClass}`}>
+            {ejercicio.nombre}
+          </div>
+          {ejercicio.descanso_seg && (
+            <span className="text-gray-400">{Math.round(ejercicio.descanso_seg / 60)}'</span>
+          )}
+        </div>
+
+        {/* fila media: series x repeticiones + progreso de series */}
+        <div className="flex items-center justify-between text-xs text-gray-400 mt-0.5">
+          <span>{ejercicio.series} × {ejercicio.repeticiones}</span>
+          {status && <span className="text-[11px]">{seriesCompleted}/{ejercicio.series} series</span>}
+        </div>
+
+        {/* fila inferior: chip de sentimiento + comentario (se mantiene) */}
+        {(sentimentData || hasComment) && (
+          <div className="flex items-center gap-2 mt-1">
+            {sentimentData && (
+              <span className={`inline-flex items-center px-1.5 py-0.5 rounded-md border ${sentimentData.bg} ${sentimentData.border}`}>
+                <sentimentData.Icon className={`w-3 h-3 mr-1 ${sentimentData.color}`} />
+                <span className={`text-[10px] ${sentimentData.color}`}>{sentimentData.label}</span>
+              </span>
+            )}
+            {hasComment && (
+              <span className="text-[11px] text-gray-400 italic truncate">"{progress.comment}"</span>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  });
+})()}
                 </div>
               ) : (
                 <div className="flex-1 flex items-center justify-center">
@@ -410,6 +454,23 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
                               </span>
                             )}
                           </div>
+                          {(() => {
+                            const key = getDayKey(selectedDay.weekNumber, selectedDay);
+                            const p = (weekStatuses[key]?.exercises || []).find(ex => ex.exercise_order === index);
+                            const sd = getSentimentIcon(p?.sentiment);
+                            const hasC = !!(p?.comment && p.comment.trim());
+                            return (sd || hasC) ? (
+                              <div className="flex items-center gap-2 mt-2">
+                                {sd && (
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-md border ${sd.bg} ${sd.border}`}>
+                                    <sd.Icon className={`w-3 h-3 mr-1 ${sd.color}`} />
+                                    <span className={`text-xs ${sd.color}`}>{sd.label}</span>
+                                  </span>
+                                )}
+                                {hasC && <span className="text-xs text-gray-400 italic">"{p.comment}"</span>}
+                              </div>
+                            ) : null;
+                          })()}
                         </div>
                         {badge}
                       </div>
@@ -418,12 +479,6 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
                 })()}
               </div>
 
-              {selectedDay.isToday && (
-                <Button className="w-full bg-yellow-400 text-black hover:bg-yellow-300">
-                  <Play className="w-4 h-4 mr-2" />
-                  Iniciar Entrenamiento
-                </Button>
-              )}
             </div>
           )}
         </DialogContent>
