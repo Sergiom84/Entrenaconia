@@ -1109,9 +1109,9 @@ router.post('/cancel-routine', authenticateToken, async (req, res) => {
     // También cancelar las sesiones activas/pendientes
     await client.query(
       `UPDATE app.methodology_exercise_sessions 
-       SET status = 'cancelled', updated_at = NOW() 
+       SET session_status = 'cancelled', updated_at = NOW() 
        WHERE methodology_plan_id = $1 AND user_id = $2 
-         AND status IN ('active', 'pending')`,
+         AND session_status IN ('active', 'pending', 'in_progress')`,
       [methodology_plan_id, userId]
     );
 
