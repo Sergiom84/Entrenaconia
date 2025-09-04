@@ -18,10 +18,11 @@ import {
 } from 'lucide-react';
 import RoutineSessionModal from '../RoutineSessionModal';
 import RoutineSessionSummaryCard from '../RoutineSessionSummaryCard';
-import { startSession, updateExercise, finishSession, getTodaySessionStatus } from '../api';
+import { startSession, updateExercise, finishSession, getTodaySessionStatus, cancelRoutine } from '../api';
 
 export default function TodayTrainingTab({ 
   plan, 
+  planId,
   methodologyPlanId, 
   todayName, 
   planStartDate,
@@ -215,26 +216,41 @@ export default function TodayTrainingTab({
   const handleCancelTraining = async () => {
     try {
       setShowCancelConfirm(false);
+      console.log('🚫 Iniciando cancelación de rutina...');
       
-      // Si hay una sesión activa, finalizarla
+      // 1. Si hay una sesión activa, finalizarla primero
       if (routineSessionId) {
+        console.log('⏹️ Finalizando sesión activa:', routineSessionId);
         await finishSession(routineSessionId);
         setRoutineSessionId(null);
         setSelectedSession(null);
         setShowSessionModal(false);
       }
       
-      // Limpiar estado local
+      // 2. Cancelar la rutina en la base de datos
+      const methodologyId = await ensureMethodologyPlan();
+      console.log('🗂️ Cancelando rutina con:', { methodology_plan_id: methodologyId, routine_plan_id: planId });
+      
+      await cancelRoutine({ 
+        methodology_plan_id: methodologyId, 
+        routine_plan_id: planId 
+      });
+      
+      console.log('✅ Rutina cancelada exitosamente en la base de datos');
+      
+      // 3. Limpiar estado local
       setTodaySessionStatus(null);
       setLastSessionId(null);
       
-      // Llamar a la función para generar otro entrenamiento
+      // 4. Redirigir a metodologías para generar nueva rutina
       if (onGenerateAnother) {
         onGenerateAnother();
       }
       
     } catch (error) {
-      console.error('Error cancelando entrenamiento:', error);
+      console.error('❌ Error cancelando entrenamiento:', error);
+      alert('Error al cancelar el entrenamiento: ' + (error.message || error));
+      setShowCancelConfirm(false);
     }
   };
 

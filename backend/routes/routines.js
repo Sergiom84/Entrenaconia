@@ -1052,5 +1052,88 @@ router.get('/active-plan', authenticateToken, async (req, res) => {
   }
 });
 
+// POST /api/routines/cancel-routine
+// Cancela una rutina activa cambiando su estado de 'active' a 'cancelled'
+router.post('/cancel-routine', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const userId = req.user?.userId || req.user?.id;
+    const { methodology_plan_id, routine_plan_id } = req.body;
+
+    if (!methodology_plan_id) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ 
+        success: false, 
+        error: 'methodology_plan_id es requerido' 
+      });
+    }
+
+    console.log('🚫 Cancelando rutina:', { methodology_plan_id, routine_plan_id, userId });
+
+    // Verificar que el plan pertenece al usuario y está activo
+    const planCheck = await client.query(
+      `SELECT id, status, methodology_type 
+       FROM app.methodology_plans 
+       WHERE id = $1 AND user_id = $2 AND status = 'active'`,
+      [methodology_plan_id, userId]
+    );
+
+    if (planCheck.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Plan no encontrado o ya está cancelado' 
+      });
+    }
+
+    // Actualizar estado del plan de metodología a 'cancelled'
+    await client.query(
+      `UPDATE app.methodology_plans 
+       SET status = 'cancelled', updated_at = NOW() 
+       WHERE id = $1 AND user_id = $2`,
+      [methodology_plan_id, userId]
+    );
+
+    // Si existe routine_plan_id, también actualizarlo
+    if (routine_plan_id) {
+      await client.query(
+        `UPDATE app.routine_plans 
+         SET status = 'cancelled', updated_at = NOW() 
+         WHERE id = $1 AND user_id = $2`,
+        [routine_plan_id, userId]
+      );
+    }
+
+    // También cancelar las sesiones activas/pendientes
+    await client.query(
+      `UPDATE app.methodology_exercise_sessions 
+       SET status = 'cancelled', updated_at = NOW() 
+       WHERE methodology_plan_id = $1 AND user_id = $2 
+         AND status IN ('active', 'pending')`,
+      [methodology_plan_id, userId]
+    );
+
+    await client.query('COMMIT');
+
+    console.log('✅ Rutina cancelada exitosamente');
+    res.json({ 
+      success: true, 
+      message: 'Rutina cancelada correctamente' 
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('❌ Error cancelando rutina:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Error interno del servidor' 
+    });
+  } finally {
+    client.release();
+  }
+});
+
 export default router;
 

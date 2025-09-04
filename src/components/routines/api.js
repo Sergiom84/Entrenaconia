@@ -144,3 +144,18 @@ export async function getPlanStatus({ methodologyPlanId }) {
   return data; // { isConfirmed, status, confirmedAt }
 }
 
+export async function cancelRoutine({ methodology_plan_id, routine_plan_id }) {
+  const token = localStorage.getItem('token');
+  const resp = await fetch('/api/routines/cancel-routine', {
+    method: 'POST',
+    headers: { 
+      'Content-Type': 'application/json', 
+      'Authorization': `Bearer ${token}` 
+    },
+    body: JSON.stringify({ methodology_plan_id, routine_plan_id })
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok || !data.success) throw new Error(data.error || 'No se pudo cancelar la rutina');
+  return data;
+}
+
