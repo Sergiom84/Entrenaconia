@@ -15,6 +15,24 @@ export default function RoutineSessionModal({
   sessionId, // Necesario para guardar feedback
   allowManualTimer = true,
 }) {
+  const exercises = useMemo(() => Array.isArray(session?.ejercicios) ? session.ejercicios : [], [session?.ejercicios]);
+  
+  // Calcular índice inicial basado en progreso existente
+  const getInitialExerciseIndex = useMemo(() => {
+    if (!session?.exerciseProgress) return 0;
+    
+    // Buscar el primer ejercicio que no esté completado
+    for (let i = 0; i < exercises.length; i++) {
+      const progress = session.exerciseProgress.find(p => p.exercise_order === i);
+      if (!progress || progress.status !== 'completed') {
+        return i;
+      }
+    }
+    
+    // Si todos están completados, empezar desde el último
+    return Math.max(0, exercises.length - 1);
+  }, [session?.exerciseProgress, exercises.length]);
+
   const [currentIndex, setCurrentIndex] = useState(0);
   const [phase, setPhase] = useState('ready'); // ready | exercise | rest | done
   const [series, setSeries] = useState(1);
@@ -31,8 +49,6 @@ export default function RoutineSessionModal({
   const [showExerciseToast, setShowExerciseToast] = useState(false);
   const [exerciseFeedback, setExerciseFeedback] = useState({}); // { exerciseIndex: { sentiment, comment } }
   const intervalRef = useRef(null);
-
-  const exercises = useMemo(() => Array.isArray(session?.ejercicios) ? session.ejercicios : [], [session?.ejercicios]);
   const total = exercises.length;
 
   const ex = exercises[currentIndex] || null;
@@ -105,6 +121,14 @@ export default function RoutineSessionModal({
     loadExistingFeedback();
   }, [sessionId]);
 
+  // Establecer índice inicial basado en progreso cuando se abre/cambia la sesión
+  useEffect(() => {
+    if (getInitialExerciseIndex !== currentIndex) {
+      setCurrentIndex(getInitialExerciseIndex);
+      console.log('🎯 Reanudando desde ejercicio', getInitialExerciseIndex, '(saltando completados)');
+    }
+  }, [getInitialExerciseIndex, currentIndex]);
+
   useEffect(() => {
     if (timeLeft === 0 && isRunning) {
       // fin de fase
@@ -122,8 +146,12 @@ export default function RoutineSessionModal({
         } else {
           // ejercicio completado
           onFinishExercise?.(currentIndex, seriesTotal, spent);
-          if (currentIndex < total - 1) {
-            setCurrentIndex((i) => i + 1);
+          
+          // Buscar el siguiente ejercicio no completado
+          const nextIncompleteIndex = findNextIncompleteExercise();
+          
+          if (nextIncompleteIndex < total) {
+            setCurrentIndex(nextIncompleteIndex);
             setSeries(1);
             setPhase('ready');
             setTimeLeft(0);
@@ -131,6 +159,7 @@ export default function RoutineSessionModal({
             // Mostrar toast "Ejercicio completado"
             setShowExerciseToast(true);
             setTimeout(() => setShowExerciseToast(false), 1500);
+            console.log('✅ Ejercicio completado, avanzando a ejercicio', nextIncompleteIndex);
           } else {
             setPhase('done');
             setIsRunning(false);
@@ -142,6 +171,19 @@ export default function RoutineSessionModal({
     }
   }, [timeLeft, isRunning, phase, currentIndex, exercises, series, total, onFinishExercise, spent, seriesTotal, baseDuration, anySkipped]);
 
+  // Encontrar el siguiente ejercicio no completado
+  const findNextIncompleteExercise = (fromIndex = currentIndex + 1) => {
+    if (!session?.exerciseProgress) return fromIndex;
+    
+    for (let i = fromIndex; i < exercises.length; i++) {
+      const progress = session.exerciseProgress.find(p => p.exercise_order === i);
+      if (!progress || progress.status !== 'completed') {
+        return i;
+      }
+    }
+    return exercises.length; // No hay más ejercicios incompletos
+  };
+
   const startExercise = () => {
     setPhase('exercise');
     setTimeLeft(baseDuration);
@@ -151,12 +193,17 @@ export default function RoutineSessionModal({
   const skipToNext = () => {
     onSkipExercise?.(currentIndex);
     setAnySkipped(true);
-    if (currentIndex < total - 1) {
-      setCurrentIndex((i) => i + 1);
+    
+    // Buscar el siguiente ejercicio no completado
+    const nextIncompleteIndex = findNextIncompleteExercise();
+    
+    if (nextIncompleteIndex < total) {
+      setCurrentIndex(nextIncompleteIndex);
       setSeries(1);
       setPhase('ready');
       setIsRunning(false);
       setTimeLeft(0);
+      console.log('⏩ Saltando a ejercicio', nextIncompleteIndex, '(siguiente incompleto)');
     } else {
       setPhase('done');
       setIsRunning(false);
