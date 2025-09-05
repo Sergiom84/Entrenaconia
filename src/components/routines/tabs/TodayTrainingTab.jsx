@@ -58,21 +58,31 @@ export default function TodayTrainingTab({
     }
   };
 
-  // Obtener la sesión del día actual (el día que se activó la IA)
+  // Obtener la sesión del día actual (buscar sesión específica para hoy)
   const todaySession = useMemo(() => {
     if (!plan?.semanas?.length) return null;
     
-    // Buscar en todas las semanas la primera sesión disponible
+    // Buscar en todas las semanas la sesión correspondiente al día actual
     for (const semana of plan.semanas) {
       if (semana.sesiones?.length) {
-        // Tomar la primera sesión y ajustarla para el día actual
-        const firstSession = semana.sesiones[0];
-        return {
-          ...firstSession,
-          dia: todayName, // Forzar que sea para hoy
-          semana: semana.semana,
-          weekNumber: semana.semana
-        };
+        // Buscar la sesión que coincida con el día actual
+        const todaySessionFound = semana.sesiones.find(session => {
+          const sessionDay = session.dia?.toLowerCase();
+          const currentDay = todayName.toLowerCase();
+          return sessionDay === currentDay ||
+                 sessionDay === currentDay.replace('é', 'e') ||
+                 (sessionDay === 'mie' && currentDay === 'miércoles') ||
+                 (sessionDay === 'sab' && currentDay === 'sábado') ||
+                 (sessionDay === 'dom' && currentDay === 'domingo');
+        });
+        
+        if (todaySessionFound) {
+          return {
+            ...todaySessionFound,
+            semana: semana.semana,
+            weekNumber: semana.semana
+          };
+        }
       }
     }
     return null;
