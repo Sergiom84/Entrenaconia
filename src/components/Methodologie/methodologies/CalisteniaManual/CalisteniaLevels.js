@@ -139,7 +139,7 @@ export function getPreviousLevel(currentLevel) {
  * @returns {boolean} True si es válido
  */
 export function isValidLevel(level) {
-  return level && CALISTENIA_LEVELS.hasOwnProperty(level.toLowerCase());
+  return level && Object.prototype.hasOwnProperty.call(CALISTENIA_LEVELS, level.toLowerCase());
 }
 
 /**

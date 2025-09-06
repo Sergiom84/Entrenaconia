@@ -6,6 +6,8 @@
  * @version 1.0.0
  */
 
+import React from 'react';
+
 // Configuración de la API
 const API_BASE = '/api/exercises';
 

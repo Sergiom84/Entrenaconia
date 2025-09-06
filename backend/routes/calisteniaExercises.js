@@ -239,7 +239,7 @@ router.get('/calistenia/level/:nivel', authenticateToken, async (req, res) => {
     });
     
   } catch (error) {
-    console.error(`❌ Error obteniendo ejercicios nivel ${nivel}:`, error);
+    console.error(`❌ Error obteniendo ejercicios nivel ${req.params.nivel}:`, error);
     res.status(500).json({
       success: false,
       error: 'Error interno del servidor',
@@ -321,7 +321,6 @@ router.get('/calistenia/progression/:exerciseId', authenticateToken, async (req,
     const exercise = exerciseResult.rows[0];
     
     // Construir cadena de progresión completa
-    const progressionChain = [];
     
     // Agregar ejercicios anteriores (recursivamente hacia atrás)
     let currentPrevious = exercise.progresion_desde;
@@ -378,7 +377,7 @@ router.get('/calistenia/progression/:exerciseId', authenticateToken, async (req,
     });
     
   } catch (error) {
-    console.error(`❌ Error obteniendo progresión para ${exerciseId}:`, error);
+    console.error(`❌ Error obteniendo progresión para ${req.params.exerciseId}:`, error);
     res.status(500).json({
       success: false,
       error: 'Error interno del servidor',
