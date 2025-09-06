@@ -61,7 +61,7 @@ export default function CalisteniaManualCard({ onGenerate, isLoading }) {
     if (!aiEvaluation && !loadingEvaluation) {
       evaluateUserProfile();
     }
-  }, [aiEvaluation, loadingEvaluation]); // Fixed dependency array
+  }, []); // Empty dependency array - run only once on mount
 
   /**
    * Evaluación automática del perfil con IA especializada

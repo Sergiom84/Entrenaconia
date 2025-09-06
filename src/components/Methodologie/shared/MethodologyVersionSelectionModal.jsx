@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Card } from '@/components/ui/card.jsx';
@@ -22,8 +22,8 @@ export default function MethodologyVersionSelectionModal({
   const [requiresConfirmation, setRequiresConfirmation] = useState(false);
   const [customWeeks, setCustomWeeks] = useState(4); // Default 4 weeks
 
-  // Determinar el nivel del usuario basado en datos reales de BD
-  const getUserLevel = () => {
+  // Determinar el nivel del usuario basado en datos reales de BD - MEMOIZADO para evitar bucles
+  const userLevel = useMemo(() => {
     if (!userProfile) return 'principiante';
     
     // Manejar tanto estructura plana como estructura anidada
@@ -41,23 +41,16 @@ export default function MethodologyVersionSelectionModal({
     const currentLevel = profile.nivel_entrenamiento || 
                         profile.nivel_actual_entreno || 
                         profile.nivel_ent ||
-                        profile.training_level ||
+                        profile.training_userLevel ||
                         userProfile.nivel_entrenamiento || 
                         userProfile.nivel_actual_entreno ||
                         'principiante';
-    
-    console.log('🔍 getUserLevel debug:', {
-      yearsTraining,
-      currentLevel,
-      profile,
-      userProfile
-    });
     
     // Lógica más precisa basada en años y nivel declarado
     if (yearsTraining >= 5 || currentLevel === 'avanzado' || currentLevel === 'competicion') return 'avanzado';
     if (yearsTraining >= 2 || currentLevel === 'intermedio') return 'intermedio';
     return 'principiante';
-  };
+  }, [userProfile]);
 
   // Obtener años de entrenamiento reales
   const getTrainingYears = () => {
@@ -75,15 +68,12 @@ export default function MethodologyVersionSelectionModal({
            0;
   };
 
-  // Obtener recomendación automática basada en el nivel
-  const getAutomaticRecommendation = () => {
-    const level = getUserLevel();
-    return level === 'principiante' ? 'adapted' : 'strict';
-  };
+  // Obtener recomendación automática basada en el nivel - MEMOIZADO
+  const autoRecommendation = useMemo(() => {
+    return userLevel === 'principiante' ? 'adapted' : 'strict';
+  }, [userLevel]);
 
   useEffect(() => {
-    const level = getUserLevel();
-    const autoRecommendation = getAutomaticRecommendation();
     
     // Si está en modo automático, usar la recomendación
     if (selectionMode === 'automatic') {
@@ -92,7 +82,7 @@ export default function MethodologyVersionSelectionModal({
       setRequiresConfirmation(false);
     } else {
       // En modo manual, verificar si la selección es apropiada
-      const isInappropriate = (level === 'principiante' && selectedVersion === 'strict');
+      const isInappropriate = (userLevel === 'principiante' && selectedVersion === 'strict');
       setShowWarning(isInappropriate);
       setRequiresConfirmation(isInappropriate);
     }
@@ -102,14 +92,13 @@ export default function MethodologyVersionSelectionModal({
     onConfirm({
       selectionMode,
       version: selectedVersion,
-      userLevel: getUserLevel(),
+      userLevel: userLevel,
       isRecommended: selectedVersion === getAutomaticRecommendation(),
       customWeeks: customWeeks
     });
   };
 
-  const userLevel = getUserLevel();
-  const autoRecommendation = getAutomaticRecommendation();
+  // userLevel y autoRecommendation ya están definidos con useMemo arriba
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
