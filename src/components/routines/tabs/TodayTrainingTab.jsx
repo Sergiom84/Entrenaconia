@@ -47,14 +47,12 @@ export default function TodayTrainingTab({
   // Función para obtener icono y color del sentimiento
   const getSentimentIcon = (sentiment) => {
     switch (sentiment) {
-      case 'love':
+      case 'like':
         return { icon: Heart, color: 'text-pink-400', bg: 'bg-pink-900/30', border: 'border-pink-500/30' };
-      case 'normal':
-        return { icon: CheckCircle, color: 'text-green-400', bg: 'bg-green-900/30', border: 'border-green-500/30' };
-      case 'hard':
-        return { icon: AlertOctagon, color: 'text-red-400', bg: 'bg-red-900/30', border: 'border-red-500/30' };
       case 'dislike':
         return { icon: Frown, color: 'text-orange-400', bg: 'bg-orange-900/30', border: 'border-orange-500/30' };
+      case 'hard':
+        return { icon: AlertOctagon, color: 'text-red-400', bg: 'bg-red-900/30', border: 'border-red-500/30' };
       default:
         return null;
     }
@@ -824,9 +822,8 @@ export default function TodayTrainingTab({
                             <div className={`flex items-center px-2 py-1 rounded-md ${sentimentData.bg} ${sentimentData.border} border`}>
                               <sentimentData.icon className={`w-3 h-3 mr-1 ${sentimentData.color}`} />
                               <span className={`text-xs ${sentimentData.color} capitalize`}>
-                                {sentiment === 'love' ? 'Me gusta' :
-                                 sentiment === 'normal' ? 'Normal' :
-                                 sentiment === 'hard' ? 'Difícil' :
+                                {sentiment === 'like' ? 'Me gusta' :
+                                 sentiment === 'hard' ? 'Es difícil' :
                                  sentiment === 'dislike' ? 'No me gusta' : sentiment}
                               </span>
                             </div>

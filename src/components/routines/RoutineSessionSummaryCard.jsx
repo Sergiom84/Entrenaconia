@@ -145,9 +145,9 @@ export default function RoutineSessionSummaryCard({ sessionId, plan, planSource,
                 <div className="font-semibold text-white">
                   {e.exercise_name || e.nombre || `Ejercicio ${idx + 1}`}
                   {renderStatusPill(status)}
-                  {sentiment === 'love' && <span className="ml-2 text-green-300 text-xs inline-flex items-center gap-1">❤️ Le encanta</span>}
-                  {sentiment === 'hard' && <span className="ml-2 text-yellow-300 text-xs inline-flex items-center gap-1"><AlertTriangle className="w-3 h-3"/> Es difícil</span>}
-                  {sentiment === 'normal' && <span className="ml-2 text-blue-300 text-xs inline-flex items-center gap-1">👍 Normal</span>}
+                  {sentiment === 'like' && <span className="ml-2 text-green-300 text-xs inline-flex items-center gap-1">❤️ Me gusta</span>}
+                  {sentiment === 'hard' && <span className="ml-2 text-red-300 text-xs inline-flex items-center gap-1"><AlertTriangle className="w-3 h-3"/> Es difícil</span>}
+                  {sentiment === 'dislike' && <span className="ml-2 text-orange-300 text-xs inline-flex items-center gap-1">👎 No me gusta</span>}
                 </div>
                 <div className="text-xs text-gray-400 whitespace-nowrap">
                   Descanso: {Number(e.descanso_seg) || 45}s

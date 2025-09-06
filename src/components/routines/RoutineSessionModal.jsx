@@ -349,13 +349,13 @@ export default function RoutineSessionModal({
                   <div className="mb-2">
                     <span className="text-sm text-green-200">Sensación: </span>
                     <span className={`text-sm font-medium ${
-                      exerciseFeedback[currentIndex].sentiment === 'love' ? 'text-green-400' :
-                      exerciseFeedback[currentIndex].sentiment === 'normal' ? 'text-yellow-400' :
-                      'text-red-400'
+                      exerciseFeedback[currentIndex].sentiment === 'like' ? 'text-green-400' :
+                      exerciseFeedback[currentIndex].sentiment === 'hard' ? 'text-red-400' :
+                      'text-orange-400'
                     }`}>
-                      {exerciseFeedback[currentIndex].sentiment === 'love' ? '😍 Me encanta' :
-                       exerciseFeedback[currentIndex].sentiment === 'normal' ? '😐 Normal' :
-                       '😰 Difícil'}
+                      {exerciseFeedback[currentIndex].sentiment === 'like' ? '😍 Me gusta' :
+                       exerciseFeedback[currentIndex].sentiment === 'hard' ? '😰 Es difícil' :
+                       '😞 No me gusta'}
                     </span>
                   </div>
                   

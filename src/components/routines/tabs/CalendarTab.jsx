@@ -102,12 +102,10 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
   // Igual que en TodayTrainingTab: mapea sentimiento a icono/colores
   const getSentimentIcon = (sentiment) => {
     switch (sentiment) {
-      case 'love':
+      case 'like':
         return { Icon: Heart, color: 'text-pink-400', bg: 'bg-pink-900/30', border: 'border-pink-500/30', label: 'Me gusta' };
-      case 'normal':
-        return { Icon: CheckCircle, color: 'text-green-400', bg: 'bg-green-900/30', border: 'border-green-500/30', label: 'Normal' };
       case 'hard':
-        return { Icon: AlertOctagon, color: 'text-red-400', bg: 'bg-red-900/30', border: 'border-red-500/30', label: 'Difícil' };
+        return { Icon: AlertOctagon, color: 'text-red-400', bg: 'bg-red-900/30', border: 'border-red-500/30', label: 'Es difícil' };
       case 'dislike':
         return { Icon: Frown, color: 'text-orange-400', bg: 'bg-orange-900/30', border: 'border-orange-500/30', label: 'No me gusta' };
       default:
