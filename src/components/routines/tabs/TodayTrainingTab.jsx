@@ -540,6 +540,15 @@ export default function TodayTrainingTab({
             <RefreshCw className="w-4 h-4 mr-2" />
             Generar Nueva Rutina
           </Button>
+
+          {/* Botón para cancelar rutina incluso en día de descanso */}
+          <Button
+            onClick={() => setShowCancelConfirm(true)}
+            className="mt-3 bg-red-600 hover:bg-red-700 text-white"
+          >
+            <X className="w-4 h-4 mr-2" />
+            Cancelar Rutina
+          </Button>
         </Card>
 
         {/* Modal de ejercicios pendientes - debe mostrarse incluso sin sesión de hoy */}
@@ -595,6 +604,40 @@ export default function TodayTrainingTab({
             onSkipExercise={handleSkipExercise}
             onEndSession={handleEndSession}
           />
+        )}
+
+        {/* Modal de confirmación para cancelar entrenamiento (visible también en día de descanso) */}
+        {showCancelConfirm && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full">
+              <div className="flex items-center gap-3 mb-4">
+                <AlertTriangle className="w-6 h-6 text-red-400" />
+                <h3 className="text-lg font-semibold text-white">
+                  ¿Cancelar Entrenamiento?
+                </h3>
+              </div>
+
+              <p className="text-gray-300 mb-6">
+                Esta acción cancelará tu rutina actual pero conservará el histórico de ejercicios.
+                ¿Estás seguro de que quieres continuar?
+              </p>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowCancelConfirm(false)}
+                  className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
+                >
+                  No, continuar
+                </button>
+                <button
+                  onClick={handleCancelTraining}
+                  className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+                >
+                  Sí, cancelar
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
       </div>
