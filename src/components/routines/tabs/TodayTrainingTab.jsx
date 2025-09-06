@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import RoutineSessionModal from '../RoutineSessionModal';
 import RoutineSessionSummaryCard from '../RoutineSessionSummaryCard';
-import { startSession, updateExercise, finishSession, getTodaySessionStatus, cancelRoutine } from '../api';
+import { startSession, updateExercise, finishSession, getTodaySessionStatus, cancelRoutine, getPendingExercises, getSessionProgress } from '../api';
 
 export default function TodayTrainingTab({ 
   plan, 
@@ -41,6 +41,8 @@ export default function TodayTrainingTab({
   const [todaySessionStatus, setTodaySessionStatus] = useState(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [pendingExercises, setPendingExercises] = useState(null);
+  const [showPendingModal, setShowPendingModal] = useState(false);
 
   // Función para convertir IDs de ejercicios a nombres legibles
   const formatExerciseName = (exerciseId) => {
@@ -157,6 +159,34 @@ export default function TodayTrainingTab({
     loadTodaySessionStatus();
   }, [todaySession, methodologyPlanId, ensureMethodologyPlan]);
 
+  // Cargar ejercicios pendientes al montar el componente
+  useEffect(() => {
+    const loadPendingExercises = async () => {
+      if (!methodologyPlanId) return;
+
+      try {
+        console.log('🔍 Cargando ejercicios pendientes para methodology_plan_id:', methodologyPlanId);
+        const pendingData = await getPendingExercises({ methodology_plan_id: methodologyPlanId });
+        console.log('📋 Datos de ejercicios pendientes:', pendingData);
+
+        if (pendingData?.hasPendingExercises) {
+          console.log('✅ Hay ejercicios pendientes, mostrando modal');
+          console.log('📊 Datos completos pendingData:', JSON.stringify(pendingData, null, 2));
+          setPendingExercises(pendingData);
+          // Mostrar el modal siempre que haya ejercicios pendientes
+          setShowPendingModal(true);
+          console.log('🎯 Estado del modal actualizado a: true');
+        } else {
+          console.log('ℹ️ No hay ejercicios pendientes');
+        }
+      } catch (e) {
+        console.error('❌ Error cargando ejercicios pendientes:', e);
+      }
+    };
+
+    loadPendingExercises();
+  }, [methodologyPlanId, todaySession]);
+
   const handleStartTraining = async () => {
     if (!todaySession) {
       setError('No hay sesión de entrenamiento para hoy');
@@ -227,6 +257,52 @@ export default function TodayTrainingTab({
         exerciseProgress: todaySessionStatus.exercises
       });
       setShowSessionModal(true);
+    }
+  };
+
+  // Función para reanudar sesión de ejercicios pendientes
+  const handleResumePendingSession = async () => {
+    console.log('🎯 INICIANDO handleResumePendingSession');
+    console.log('📊 pendingExercises:', pendingExercises);
+
+    try {
+      console.log('📡 Obteniendo datos de sesión para sessionId:', pendingExercises.sessionId);
+      const sessionData = await getSessionProgress(pendingExercises.sessionId);
+      console.log('📋 Datos de sesión obtenidos:', sessionData);
+
+      const sessionId = pendingExercises.sessionId;
+      console.log('🔧 Configurando routineSessionId:', sessionId);
+      setRoutineSessionId(sessionId);
+
+      const sessionConfig = {
+        dia: pendingExercises.pendingDay,
+        weekNumber: pendingExercises.weekNumber,
+        ejercicios: pendingExercises.exercises.map(ex => ({
+          nombre: ex.exercise_name,
+          series: ex.series_total,
+          repeticiones: ex.repeticiones,
+          descanso_seg: ex.descanso_seg,
+          intensidad: ex.intensidad,
+          tempo: ex.tempo,
+          notas: ex.notas
+        })),
+        exerciseProgress: sessionData.exercises || []
+      };
+
+      console.log('⚙️ Configuración de sesión preparada:', sessionConfig);
+      setSelectedSession(sessionConfig);
+
+      console.log('🔒 Cerrando modal de pendientes');
+      setShowPendingModal(false);
+
+      console.log('🚀 Abriendo modal de sesión de ejercicios');
+      setShowSessionModal(true);
+
+      console.log('✅ handleResumePendingSession completado exitosamente');
+
+    } catch (e) {
+      console.error('❌ Error reanudando ejercicios pendientes:', e);
+      setError('No se pudo reanudar la sesión de ejercicios pendientes');
     }
   };
 
@@ -576,6 +652,16 @@ export default function TodayTrainingTab({
             )}
           </Button>
         )}
+
+        {/* Botón para cancelar rutina */}
+        <Button
+          onClick={() => setShowCancelConfirm(true)}
+          className="w-full mt-3 bg-red-600 hover:bg-red-700 text-white font-semibold py-2"
+          variant="destructive"
+        >
+          <X className="w-4 h-4 mr-2" />
+          Cancelar Rutina
+        </Button>
       </Card>
 
       {/* Preview de ejercicios de hoy */}
@@ -750,6 +836,80 @@ export default function TodayTrainingTab({
           onSkipExercise={handleSkipExercise}
           onEndSession={handleEndSession}
         />
+      )}
+
+      {/* Modal de ejercicios pendientes */}
+      {showPendingModal && pendingExercises && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-gray-900/95 border border-yellow-400/30 rounded-2xl p-8 max-w-md mx-4 shadow-2xl">
+            <div className="text-center space-y-6">
+              <div className="w-16 h-16 bg-yellow-400/20 rounded-full flex items-center justify-center mx-auto">
+                <AlertTriangle className="w-8 h-8 text-yellow-400" />
+              </div>
+
+              <div className="space-y-3">
+                <h3 className="text-xl font-bold text-white">
+                  Ejercicios Pendientes
+                </h3>
+                <p className="text-gray-300">
+                  Tienes <span className="text-yellow-400 font-semibold">{pendingExercises?.totalPending} ejercicios pendientes</span> del {pendingExercises?.pendingDay}.
+                </p>
+                <p className="text-gray-400 text-sm">
+                  ¿Le damos caña?
+                </p>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => setShowPendingModal(false)}
+                  className="flex-1 px-4 py-3 border border-gray-600 text-gray-300 rounded-xl hover:bg-gray-800/50 transition-colors"
+                >
+                  Más tarde
+                </button>
+                <button
+                  onClick={handleResumePendingSession}
+                  className="flex-1 px-4 py-3 bg-yellow-400 text-black font-semibold rounded-xl hover:bg-yellow-300 transition-colors"
+                >
+                  ¡Vamos!
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de confirmación para cancelar entrenamiento */}
+      {showCancelConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full">
+            <div className="flex items-center gap-3 mb-4">
+              <AlertTriangle className="w-6 h-6 text-red-400" />
+              <h3 className="text-lg font-semibold text-white">
+                ¿Cancelar Entrenamiento?
+              </h3>
+            </div>
+
+            <p className="text-gray-300 mb-6">
+              Esta acción cancelará tu rutina actual pero conservará el histórico de ejercicios.
+              ¿Estás seguro de que quieres continuar?
+            </p>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowCancelConfirm(false)}
+                className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
+              >
+                No, continuar
+              </button>
+              <button
+                onClick={handleCancelTraining}
+                className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+              >
+                Sí, cancelar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
