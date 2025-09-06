@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import RoutineSessionModal from '../RoutineSessionModal';
 import RoutineSessionSummaryCard from '../RoutineSessionSummaryCard';
-import { startSession, updateExercise, finishSession, getTodaySessionStatus, cancelRoutine } from '../api';
+import { startSession, updateExercise, finishSession, getTodaySessionStatus, cancelRoutine, getPendingExercises, getSessionProgress } from '../api';
 
 export default function TodayTrainingTab({ 
   plan, 
@@ -41,6 +41,8 @@ export default function TodayTrainingTab({
   const [todaySessionStatus, setTodaySessionStatus] = useState(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [pendingExercises, setPendingExercises] = useState(null);
+  const [showPendingModal, setShowPendingModal] = useState(false);
 
   // Función para obtener icono y color del sentimiento
   const getSentimentIcon = (sentiment) => {
@@ -180,6 +182,55 @@ export default function TodayTrainingTab({
     });
     setShowSessionModal(true);
   };
+
+  // Función para reanudar sesión de ejercicios pendientes
+  const handleResumePendingSession = async () => {
+    try {
+      const sessionData = await getSessionProgress(pendingExercises.sessionId);
+      setRoutineSessionId(pendingExercises.sessionId);
+      setSelectedSession({
+        dia: pendingExercises.pendingDay,
+        weekNumber: pendingExercises.weekNumber,
+        ejercicios: pendingExercises.exercises.map(ex => ({
+          nombre: ex.exercise_name,
+          series: ex.series_total,
+          repeticiones: ex.repeticiones,
+          descanso_seg: ex.descanso_seg,
+          intensidad: ex.intensidad,
+          tempo: ex.tempo,
+          notas: ex.notas
+        })),
+        exerciseProgress: sessionData.exercises
+      });
+      setShowPendingModal(false);
+      setShowSessionModal(true);
+    } catch (e) {
+      console.error('Error reanudando ejercicios pendientes:', e);
+      setError('No se pudo reanudar la sesión de ejercicios pendientes');
+    }
+  };
+
+  // Cargar ejercicios pendientes al montar el componente
+  useEffect(() => {
+    const loadPendingExercises = async () => {
+      if (!methodologyPlanId) return;
+      
+      try {
+        const pendingData = await getPendingExercises({ methodology_plan_id: methodologyPlanId });
+        if (pendingData?.hasPendingExercises) {
+          setPendingExercises(pendingData);
+          // Solo mostrar el modal en días de descanso (cuando no hay sesión de hoy)
+          if (!todaySession) {
+            setShowPendingModal(true);
+          }
+        }
+      } catch (e) {
+        console.error('Error cargando ejercicios pendientes:', e);
+      }
+    };
+
+    loadPendingExercises();
+  }, [methodologyPlanId, todaySession]);
 
   const handleFinishExercise = async (exerciseIndex, seriesCompleted, timeSpent) => {
     if (!routineSessionId) return;
@@ -618,6 +669,46 @@ export default function TodayTrainingTab({
               >
                 Sí, cancelar
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de ejercicios pendientes */}
+      {showPendingModal && pendingExercises && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-gray-900/95 border border-yellow-400/30 rounded-2xl p-8 max-w-md mx-4 shadow-2xl">
+            <div className="text-center space-y-6">
+              <div className="w-16 h-16 bg-yellow-400/20 rounded-full flex items-center justify-center mx-auto">
+                <AlertTriangle className="w-8 h-8 text-yellow-400" />
+              </div>
+              
+              <div className="space-y-3">
+                <h3 className="text-xl font-bold text-white">
+                  Ejercicios Pendientes
+                </h3>
+                <p className="text-gray-300">
+                  Tienes <span className="text-yellow-400 font-semibold">{pendingExercises.totalPending} ejercicios pendientes</span> del {pendingExercises.pendingDay}.
+                </p>
+                <p className="text-gray-400 text-sm">
+                  ¿Le damos caña?
+                </p>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => setShowPendingModal(false)}
+                  className="flex-1 px-4 py-3 border border-gray-600 text-gray-300 rounded-xl hover:bg-gray-800/50 transition-colors"
+                >
+                  Más tarde
+                </button>
+                <button
+                  onClick={handleResumePendingSession}
+                  className="flex-1 px-4 py-3 bg-yellow-400 text-black font-semibold rounded-xl hover:bg-yellow-300 transition-colors"
+                >
+                  ¡Vamos!
+                </button>
+              </div>
             </div>
           </div>
         </div>

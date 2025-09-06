@@ -169,3 +169,15 @@ export async function getHistoricalData() {
   return data.data; // Datos históricos completos del usuario
 }
 
+export async function getPendingExercises({ methodology_plan_id }) {
+  const token = localStorage.getItem('token');
+  const resp = await fetch(`/api/routines/pending-exercises?methodology_plan_id=${encodeURIComponent(methodology_plan_id)}`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok || !data.success) {
+    if (resp.status === 404) return null; // No hay ejercicios pendientes
+    throw new Error(data.error || 'No se pudieron cargar los ejercicios pendientes');
+  }
+  return data; // { hasPendingExercises, pendingDay, exercises, totalPending }
+}

@@ -1251,5 +1251,98 @@ router.get('/historical-data', authenticateToken, async (req, res) => {
   }
 });
 
+// Endpoint para obtener ejercicios pendientes de días anteriores
+router.get('/pending-exercises', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    const { methodology_plan_id } = req.query;
+
+    if (!methodology_plan_id) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'methodology_plan_id es requerido' 
+      });
+    }
+
+    console.log('🔍 Buscando ejercicios pendientes para:', { userId, methodology_plan_id });
+
+    // Buscar sesiones con ejercicios pendientes o saltados de los últimos 7 días
+    const pendingQuery = await pool.query(`
+      SELECT 
+        mes.id as session_id,
+        mes.day_name,
+        mes.week_number,
+        mes.started_at,
+        COUNT(mep.id) as total_exercises,
+        SUM(CASE WHEN mep.status = 'pending' THEN 1 ELSE 0 END) as pending_exercises,
+        SUM(CASE WHEN mep.status = 'skipped' THEN 1 ELSE 0 END) as skipped_exercises,
+        array_agg(
+          json_build_object(
+            'exercise_order', mep.exercise_order,
+            'exercise_name', mep.exercise_name,
+            'status', mep.status,
+            'series_total', mep.series_total,
+            'repeticiones', mep.repeticiones,
+            'descanso_seg', mep.descanso_seg,
+            'intensidad', mep.intensidad,
+            'tempo', mep.tempo,
+            'notas', mep.notas
+          ) ORDER BY mep.exercise_order
+        ) as exercises
+      FROM app.methodology_exercise_sessions mes
+      LEFT JOIN app.methodology_exercise_progress mep ON mes.id = mep.methodology_session_id
+      WHERE mes.user_id = $1 
+        AND mes.methodology_plan_id = $2
+        AND mes.started_at IS NOT NULL
+        AND mes.started_at >= NOW() - INTERVAL '7 days'
+        AND mes.started_at < CURRENT_DATE
+      GROUP BY mes.id, mes.day_name, mes.week_number, mes.started_at
+      HAVING SUM(CASE WHEN mep.status IN ('pending', 'skipped') THEN 1 ELSE 0 END) > 0
+      ORDER BY mes.started_at DESC
+      LIMIT 1
+    `, [userId, methodology_plan_id]);
+
+    if (pendingQuery.rowCount === 0) {
+      console.log('✅ No se encontraron ejercicios pendientes');
+      return res.json({ 
+        success: true, 
+        hasPendingExercises: false 
+      });
+    }
+
+    const pendingData = pendingQuery.rows[0];
+    
+    // Calcular total de ejercicios pendientes
+    const totalPendingCount = parseInt(pendingData.pending_exercises) + parseInt(pendingData.skipped_exercises);
+
+    console.log('📋 Ejercicios pendientes encontrados:', {
+      sessionId: pendingData.session_id,
+      dayName: pendingData.day_name,
+      totalPending: totalPendingCount,
+      pending: pendingData.pending_exercises,
+      skipped: pendingData.skipped_exercises
+    });
+
+    const responseData = {
+      success: true,
+      hasPendingExercises: true,
+      sessionId: pendingData.session_id,
+      pendingDay: pendingData.day_name,
+      weekNumber: pendingData.week_number,
+      totalPending: totalPendingCount,
+      exercises: pendingData.exercises || []
+    };
+
+    res.json(responseData);
+
+  } catch (error) {
+    console.error('❌ Error obteniendo ejercicios pendientes:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Error interno del servidor' 
+    });
+  }
+});
+
 export default router;
 
