@@ -62,8 +62,8 @@ export default function NutritionScreen() {
   const calculateBasicMacros = () => {
     if (!userData) return null;
 
-    const weight = parseFloat(userData.peso) || 70;
-    const height = parseFloat(userData.altura) || 170;
+    const weight = parseFloat(userData.peso);
+    const height = parseFloat(userData.altura);
     const age = parseInt(userData.edad) || 30;
     const activityLevel = userData.nivel_actividad || 'moderado';
     const goal = userData.objetivo_principal || 'mantener';

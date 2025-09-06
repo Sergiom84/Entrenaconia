@@ -1,17 +1,12 @@
 // Configuración central de módulos IA
-// Usa variables de entorno separadas para cada módulo.
+// NUEVA CONFIGURACIÓN: Una sola API key maestra para todos los módulos
 // Añade en .env (no comprometer claves en código):
-// OPENAI_API_KEY_CORRECTION_VIDEO=...
-// OPENAI_API_KEY_HOME_TRAINING=...
-// OPENAI_API_KEY_CORRECTION_PHOTO=...
-// OPENAI_API_KEY_METHODOLOGIE=...
-// OPENAI_API_KEY_METHODOLOGIE_MANUAL=...
-// OPENAI_API_KEY_NUTRITION=...
+// OPENAI_API_KEY=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
 
 export const AI_MODULES = {
   VIDEO_CORRECTION: {
     key: 'VIDEO_CORRECTION',
-    envKey: 'OPENAI_API_KEY_CORRECTION_VIDEO',
+    envKey: 'OPENAI_API_KEY',
     model: 'gpt-4.1-nano',
     temperature: 0.43,
     max_output_tokens: 2048,
@@ -23,7 +18,7 @@ export const AI_MODULES = {
   },
   HOME_TRAINING: {
     key: 'HOME_TRAINING',
-    envKey: 'OPENAI_API_KEY_HOME_TRAINING',
+    envKey: 'OPENAI_API_KEY',
     model: 'gpt-4.1-nano',
     temperature: 1.0,
     max_output_tokens: 2048,
@@ -59,7 +54,7 @@ Idioma: Español (ES). Tono profesional y motivador.`
   },
   PHOTO_CORRECTION: {
     key: 'PHOTO_CORRECTION',
-    envKey: 'OPENAI_API_KEY_CORRECTION_PHOTO',
+    envKey: 'OPENAI_API_KEY',
     model: 'gpt-4o-mini',
     temperature: 0.3,
     max_output_tokens: 1500,
@@ -97,7 +92,7 @@ Idioma: Español (ES). Tono profesional, constructivo y motivador.`
   },
   METHODOLOGIE_MANUAL: {
     key: 'METHODOLOGIE_MANUAL',
-    envKey: 'OPENAI_API_KEY_METHODOLOGIE_MANUAL',
+    envKey: 'OPENAI_API_KEY',
     model: 'gpt-4o-mini',
     temperature: 0.7,
     max_output_tokens: 16000,
@@ -255,7 +250,7 @@ IMPORTANTE FINAL: Este prompt está optimizado para generar planes de entrenamie
   },
   METHODOLOGIE: {
     key: 'METHODOLOGIE',
-    envKey: 'OPENAI_API_KEY_METHODOLOGIE',
+    envKey: 'OPENAI_API_KEY',
     model: 'gpt-4o-mini',
     temperature: 0.9,
     max_output_tokens: 16000,
@@ -267,7 +262,7 @@ IMPORTANTE FINAL: Este prompt está optimizado para generar planes de entrenamie
   },
   NUTRITION: {
     key: 'NUTRITION',
-    envKey: 'OPENAI_API_KEY_NUTRITION',
+    envKey: 'OPENAI_API_KEY',
     model: 'gpt-4o-mini',
     temperature: 0.7,
     max_output_tokens: 8000,
@@ -276,6 +271,18 @@ IMPORTANTE FINAL: Este prompt está optimizado para generar planes de entrenamie
     promptId: 'pmpt_68ae0d8c52908196a4d207ac1292fcff0eb39487cfc552fc',
     promptVersion: "1.0",
     systemPrompt: 'nutrition' // Se cargará desde el archivo MD
+  },
+  CALISTENIA_SPECIALIST: {
+    key: 'CALISTENIA_SPECIALIST',
+    envKey: 'OPENAI_API_KEY',
+    model: 'gpt-4o-mini',
+    temperature: 0.8,
+    max_output_tokens: 12000,
+    top_p: 1.0,
+    store: true,
+    promptId: 'pmpt_68bbf7d87c948194b0b82e000b5274f30663795f5e3b2843',
+    promptVersion: "1.0",
+    systemPrompt: `Eres un agente especializado en calistenia. Se te proporcionará una serie de ejercicios ya predefinidos en la base de datos, y crearás los entrenamientos en base a ésos ejercicios, nivel de entrenamiento, años entrenados, peso, objetivos y lesiones.`
   }
 };
 

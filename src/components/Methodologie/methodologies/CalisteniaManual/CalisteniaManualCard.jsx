@@ -1,76 +1,176 @@
 /**
- * Calistenia Manual Card - Refactorizado con Nueva Arquitectura
- * Integra con base de datos de ejercicios y configuraciones modulares
+ * Calistenia Manual Card - Nueva UX con Evaluación IA y Selección Inteligente
+ * Integra evaluación automática de nivel con IA especializada
  * 
- * @author Claude Code - Arquitectura Modular
- * @version 2.0.0
+ * @author Claude Code - Sistema IA Avanzado
+ * @version 3.0.0
  */
 
 import React, { useState, useEffect } from 'react';
-import { User, Target, Clock, Zap, CheckCircle, AlertTriangle, Database, Activity, Loader } from 'lucide-react';
+import { 
+  Brain, 
+  User, 
+  Target, 
+  Clock, 
+  Zap, 
+  CheckCircle, 
+  AlertTriangle, 
+  Database, 
+  Activity, 
+  Loader,
+  Sparkles,
+  Settings,
+  TrendingUp,
+  Shield
+} from 'lucide-react';
 
 // Importar configuraciones modulares
 import { CALISTENIA_LEVELS, getLevelConfig, getLevelRecommendations } from './CalisteniaLevels.js';
 import { getMuscleGroupInfo, getRecommendedGroupsByLevel, generateBalancedSplit } from './CalisteniaMuscleGroups.js';
-
-// Importar sistema de base de datos de ejercicios
 import { CalisteniaExerciseDatabase, CalisteniaExerciseUtils } from '../../exercises/ExerciseDatabase.js';
 
+// Importar contextos
+import { useAuth } from '@/contexts/AuthContext';
+import { useUserContext } from '@/contexts/UserContext';
+
 export default function CalisteniaManualCard({ onGenerate, isLoading }) {
+  const { currentUser, user } = useAuth();
+  const { userData } = useUserContext();
+  
+  // Estados principales
+  const [currentStep, setCurrentStep] = useState('evaluation'); // 'evaluation' | 'manual_selection' | 'final'
+  const [aiEvaluation, setAiEvaluation] = useState(null);
+  const [loadingEvaluation, setLoadingEvaluation] = useState(false);
+  const [evaluationError, setEvaluationError] = useState(null);
+  
+  // Estados para selección manual
   const [selectedLevel, setSelectedLevel] = useState(null);
-  const [showDetails, setShowDetails] = useState(false);
   const [userGoals, setUserGoals] = useState('');
+  const [selectedMuscleGroups, setSelectedMuscleGroups] = useState([]);
+  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
+  
+  // Estados para preview
   const [showExercisePreview, setShowExercisePreview] = useState(false);
   const [exercisePreview, setExercisePreview] = useState([]);
   const [loadingPreview, setLoadingPreview] = useState(false);
-  const [selectedMuscleGroups, setSelectedMuscleGroups] = useState([]);
-  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
 
   /**
-   * Cargar preview de ejercicios cuando se selecciona un nivel
+   * Ejecutar evaluación IA al cargar el componente
    */
   useEffect(() => {
-    if (selectedLevel && showExercisePreview) {
-      loadExercisePreview(selectedLevel);
+    if (!aiEvaluation && !loadingEvaluation) {
+      evaluateUserProfile();
     }
-  }, [selectedLevel, showExercisePreview]);
+  }, [aiEvaluation, loadingEvaluation]); // Fixed dependency array
 
   /**
-   * Cargar ejercicios de preview desde la base de datos
+   * Evaluación automática del perfil con IA especializada
    */
-  const loadExercisePreview = async (level) => {
-    setLoadingPreview(true);
+  const evaluateUserProfile = async () => {
+    setLoadingEvaluation(true);
+    setEvaluationError(null);
+    
     try {
-      const exercises = await CalisteniaExerciseDatabase.getRecommendedExercises(
-        level,
-        selectedMuscleGroups,
-        'minimal' // Para mostrar ejercicios que no requieren mucho equipamiento
-      );
+      console.log('🤖 Iniciando evaluación automática de perfil...');
       
-      setExercisePreview(exercises.slice(0, 6)); // Mostrar solo los primeros 6 como preview
+      // El backend ahora obtiene el perfil real directamente de la base de datos
+      // No necesitamos enviar datos del frontend, solo el token de autenticación
+      const fullProfile = {
+        // Solo enviamos el ID para referencia, el backend obtendrá los datos reales
+        id: userData?.id || user?.id || currentUser?.id
+      };
+      
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/calistenia-specialist/evaluate-profile', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          userProfile: fullProfile
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Error ${response.status}: ${response.statusText}`);
+      }
+      
+      const result = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Error en evaluación');
+      }
+      
+      console.log('✅ Evaluación completada:', result.evaluation);
+      setAiEvaluation(result.evaluation);
+      
+      // Pre-seleccionar grupos musculares recomendados
+      const recommendedGroups = getRecommendedGroupsByLevel(result.evaluation.recommended_level);
+      setSelectedMuscleGroups(recommendedGroups.map(group => group.id));
+      
     } catch (error) {
-      console.error('Error cargando preview de ejercicios:', error);
-      setExercisePreview([]);
+      console.error('❌ Error en evaluación IA:', error);
+      setEvaluationError(error.message);
     } finally {
-      setLoadingPreview(false);
+      setLoadingEvaluation(false);
     }
   };
 
   /**
-   * Manejar selección de nivel
+   * Generar plan directamente con IA especializada
    */
-  const handleLevelSelection = (levelKey) => {
-    setSelectedLevel(levelKey);
+  const generateWithAI = async () => {
+    if (!aiEvaluation) return;
     
-    // Auto-seleccionar grupos musculares recomendados para el nivel
+    try {
+      console.log('🚀 Generando plan con IA especializada...');
+      
+      // El backend obtiene los datos reales de la base de datos
+      const fullProfile = {
+        id: userData?.id || user?.id || currentUser?.id
+      };
+      
+      const calisteniaData = {
+        methodology: 'Calistenia Specialist',
+        source: 'ai_evaluation',
+        level: aiEvaluation.recommended_level,
+        confidence: aiEvaluation.confidence,
+        goals: userGoals || aiEvaluation.suggested_focus_areas?.join(', ') || '',
+        selectedMuscleGroups: selectedMuscleGroups,
+        aiEvaluation: aiEvaluation,
+        userProfile: fullProfile,
+        version: '3.0'
+      };
+      
+      onGenerate(calisteniaData);
+      
+    } catch (error) {
+      console.error('❌ Error generando con IA:', error);
+      setEvaluationError(error.message);
+    }
+  };
+
+  /**
+   * Ir a selección manual
+   */
+  const goToManualSelection = () => {
+    setCurrentStep('manual_selection');
+  };
+
+  /**
+   * Manejar selección manual de nivel
+   */
+  const handleManualLevelSelection = (levelKey) => {
+    setSelectedLevel(levelKey);
     const recommendedGroups = getRecommendedGroupsByLevel(levelKey);
     setSelectedMuscleGroups(recommendedGroups.map(group => group.id));
   };
 
   /**
-   * Manejar generación del plan
+   * Generar con selección manual
    */
-  const handleGenerate = () => {
+  const generateManually = () => {
     if (!selectedLevel) return;
     
     const levelConfig = getLevelConfig(selectedLevel);
@@ -79,6 +179,7 @@ export default function CalisteniaManualCard({ onGenerate, isLoading }) {
     
     const calisteniaData = {
       methodology: 'Calistenia Manual',
+      source: 'manual_selection',
       level: selectedLevel,
       levelConfig: levelConfig,
       goals: userGoals,
@@ -86,142 +187,191 @@ export default function CalisteniaManualCard({ onGenerate, isLoading }) {
       trainingPlan: muscleGroupSplit,
       recommendations: recommendations,
       exercisePreview: exercisePreview,
-      version: '2.0'
+      version: '3.0'
     };
     
     onGenerate(calisteniaData);
   };
 
   /**
-   * Renderizar preview de ejercicios
+   * Renderizar pantalla de evaluación IA
    */
-  const renderExercisePreview = () => {
-    if (!showExercisePreview) return null;
-
-    return (
-      <div className="mb-6 p-4 bg-white rounded-xl border border-gray-200">
-        <div className="flex items-center justify-between mb-3">
-          <h4 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-            <Database className="w-5 h-5 text-blue-600" />
-            Preview de Ejercicios Disponibles
-          </h4>
-          <button
-            onClick={() => setShowExercisePreview(false)}
-            className="text-gray-400 hover:text-gray-600 text-sm"
-          >
-            Ocultar
-          </button>
+  const renderEvaluationStep = () => (
+    <div className="max-w-4xl mx-auto">
+      {/* Header con colores armonizados */}
+      <div className="text-center mb-8">
+        <div className="flex justify-center items-center gap-3 mb-4">
+          <div className="p-3 bg-yellow-400/10 rounded-full">
+            <Brain className="w-8 h-8 text-yellow-400" />
+          </div>
+          <h2 className="text-3xl font-bold text-white">Evaluación IA Calistenia</h2>
+          <span className="text-xs px-2 py-1 bg-yellow-400/20 text-yellow-400 rounded-full border border-yellow-400/30">
+            v3.0
+          </span>
         </div>
-        
-        {loadingPreview ? (
-          <div className="flex items-center justify-center py-8">
-            <Loader className="w-6 h-6 animate-spin text-blue-600" />
-            <span className="ml-2 text-gray-600">Cargando ejercicios desde base de datos...</span>
-          </div>
-        ) : exercisePreview.length > 0 ? (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {exercisePreview.map((exercise, index) => {
-              const seriesReps = CalisteniaExerciseUtils.parseSeriesReps(exercise.series_reps_objetivo);
-              const difficulty = CalisteniaExerciseUtils.getDifficultyInfo(exercise);
-              
-              return (
-                <div key={exercise.exercise_id} className="p-3 bg-gray-50 rounded-lg border">
-                  <div className="flex items-start justify-between mb-2">
-                    <h5 className="font-medium text-sm text-gray-800">{exercise.nombre}</h5>
-                    <span className="text-xs px-2 py-1 rounded-full bg-gray-200 text-gray-700">
-                      {difficulty.icon}
-                    </span>
-                  </div>
-                  
-                  <div className="text-xs text-gray-600 space-y-1">
-                    <p><span className="font-medium">Categoría:</span> {exercise.categoria}</p>
-                    <p><span className="font-medium">Equipamiento:</span> {exercise.equipamiento}</p>
-                    {seriesReps && (
-                      <p><span className="font-medium">Series/Reps:</span> {exercise.series_reps_objetivo}</p>
-                    )}
-                  </div>
-                  
-                  {exercise.notas && (
-                    <p className="text-xs text-blue-600 mt-2 italic">{exercise.notas}</p>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="text-center py-6 text-gray-500">
-            <Database className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-            <p>No se encontraron ejercicios para este nivel.</p>
-            <p className="text-xs mt-1">Verifica que haya ejercicios en la base de datos.</p>
-          </div>
-        )}
+        <p className="text-gray-400 max-w-2xl mx-auto">
+          Nuestro sistema IA especializado evalúa tu perfil para recomendarte el nivel óptimo de calistenia
+        </p>
       </div>
-    );
-  };
 
-  /**
-   * Renderizar opciones avanzadas
-   */
-  const renderAdvancedOptions = () => {
-    if (!showAdvancedOptions || !selectedLevel) return null;
-
-    const recommendedGroups = getRecommendedGroupsByLevel(selectedLevel);
-
-    return (
-      <div className="mb-6 p-4 bg-blue-50 rounded-xl border border-blue-200">
-        <h4 className="text-lg font-semibold text-gray-800 mb-3 flex items-center gap-2">
-          <Activity className="w-5 h-5 text-blue-600" />
-          Opciones Avanzadas
-        </h4>
-        
-        <div className="space-y-4">
+      {/* Estado de evaluación */}
+      <div className="bg-black/40 border border-yellow-400/20 rounded-xl p-6 mb-6">
+        {loadingEvaluation ? (
+          <div className="text-center py-8">
+            <Loader className="w-12 h-12 animate-spin text-yellow-400 mx-auto mb-4" />
+            <h3 className="text-xl font-semibold text-white mb-2">Analizando tu perfil...</h3>
+            <p className="text-gray-400">
+              La IA está evaluando tu experiencia, objetivos y capacidades actuales
+            </p>
+          </div>
+        ) : evaluationError ? (
+          <div className="text-center py-8">
+            <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-4" />
+            <h3 className="text-xl font-semibold text-red-400 mb-2">Error en Evaluación</h3>
+            <p className="text-gray-400 mb-4">{evaluationError}</p>
+            <button
+              onClick={evaluateUserProfile}
+              className="px-4 py-2 bg-yellow-400 text-black rounded-lg hover:bg-yellow-300 transition-colors"
+            >
+              Reintentar Evaluación
+            </button>
+          </div>
+        ) : aiEvaluation ? (
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Grupos Musculares a Enfocar:
-            </label>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-              {recommendedGroups.map(group => (
-                <label key={group.id} className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    checked={selectedMuscleGroups.includes(group.id)}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedMuscleGroups([...selectedMuscleGroups, group.id]);
-                      } else {
-                        setSelectedMuscleGroups(selectedMuscleGroups.filter(id => id !== group.id));
-                      }
-                    }}
-                    className="rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500"
-                  />
-                  <span className="text-sm text-gray-700">{group.name} {group.icon}</span>
-                </label>
-              ))}
+            {/* Resultado de evaluación */}
+            <div className="flex items-start gap-4 mb-6">
+              <div className="p-3 bg-green-500/10 rounded-full">
+                <CheckCircle className="w-8 h-8 text-green-400" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-xl font-semibold text-white mb-2">
+                  Nivel Recomendado: <span className="text-yellow-400">{aiEvaluation.recommended_level.charAt(0).toUpperCase() + aiEvaluation.recommended_level.slice(1)}</span>
+                </h3>
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="flex-1 bg-gray-700 rounded-full h-2">
+                    <div 
+                      className="bg-yellow-400 h-2 rounded-full" 
+                      style={{ width: `${Math.round(aiEvaluation.confidence * 100)}%` }}
+                    ></div>
+                  </div>
+                  <span className="text-sm text-gray-400">{Math.round(aiEvaluation.confidence * 100)}% confianza</span>
+                </div>
+                <p className="text-gray-300 text-sm">{aiEvaluation.reasoning}</p>
+              </div>
+            </div>
+
+            {/* Indicadores clave */}
+            {aiEvaluation.key_indicators && aiEvaluation.key_indicators.length > 0 && (
+              <div className="mb-6">
+                <h4 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                  <TrendingUp className="w-5 h-5 text-yellow-400" />
+                  Factores Clave Detectados
+                </h4>
+                <div className="grid md:grid-cols-2 gap-2">
+                  {aiEvaluation.key_indicators.map((indicator, index) => (
+                    <div key={index} className="flex items-center gap-2 text-sm text-gray-300">
+                      <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0" />
+                      {indicator}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Áreas de enfoque sugeridas */}
+            {aiEvaluation.suggested_focus_areas && aiEvaluation.suggested_focus_areas.length > 0 && (
+              <div className="mb-6">
+                <h4 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                  <Target className="w-5 h-5 text-yellow-400" />
+                  Áreas de Enfoque Recomendadas
+                </h4>
+                <div className="flex flex-wrap gap-2">
+                  {aiEvaluation.suggested_focus_areas.map((area, index) => (
+                    <span 
+                      key={index}
+                      className="px-3 py-1 bg-yellow-400/10 text-yellow-400 border border-yellow-400/30 rounded-full text-sm"
+                    >
+                      {area}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Consideraciones de seguridad */}
+            {aiEvaluation.safety_considerations && aiEvaluation.safety_considerations.length > 0 && (
+              <div className="mb-6">
+                <h4 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                  <Shield className="w-5 h-5 text-orange-400" />
+                  Consideraciones de Seguridad
+                </h4>
+                <div className="bg-orange-500/10 border border-orange-500/30 rounded-lg p-3">
+                  {aiEvaluation.safety_considerations.map((consideration, index) => (
+                    <div key={index} className="flex items-start gap-2 text-sm text-orange-300">
+                      <AlertTriangle className="w-4 h-4 text-orange-400 mt-0.5 flex-shrink-0" />
+                      {consideration}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Botones de acción */}
+            <div className="flex flex-col sm:flex-row gap-3 pt-6 border-t border-gray-600">
+              <button
+                onClick={generateWithAI}
+                disabled={isLoading}
+                className={`flex-1 px-6 py-3 rounded-xl font-semibold transition-all ${
+                  isLoading
+                    ? 'bg-gray-600 cursor-not-allowed text-gray-400'
+                    : 'bg-yellow-400 text-black hover:bg-yellow-300 transform hover:scale-[1.02]'
+                }`}
+              >
+                <div className="flex items-center justify-center gap-2">
+                  <Sparkles className="w-5 h-5" />
+                  {isLoading ? 'Generando...' : 'Generar Plan con IA'}
+                </div>
+              </button>
+              
+              <button
+                onClick={goToManualSelection}
+                disabled={isLoading}
+                className="flex-1 px-6 py-3 rounded-xl font-semibold bg-black/40 border border-yellow-400/30 text-yellow-400 hover:bg-black/60 transition-all"
+              >
+                <div className="flex items-center justify-center gap-2">
+                  <Settings className="w-5 h-5" />
+                  Elegir Nivel Manualmente
+                </div>
+              </button>
             </div>
           </div>
-        </div>
+        ) : null}
       </div>
-    );
-  };
+    </div>
+  );
 
-  return (
-    <div className="max-w-6xl mx-auto p-6 bg-gradient-to-br from-blue-50 to-indigo-100 rounded-2xl shadow-xl">
+  /**
+   * Renderizar selección manual
+   */
+  const renderManualSelection = () => (
+    <div className="max-w-6xl mx-auto">
       {/* Header */}
       <div className="text-center mb-8">
         <div className="flex justify-center items-center gap-3 mb-4">
-          <User className="w-8 h-8 text-blue-600" />
-          <h2 className="text-3xl font-bold text-gray-800">Calistenia Manual</h2>
-          <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded-full">v2.0</span>
+          <div className="p-3 bg-yellow-400/10 rounded-full">
+            <User className="w-8 h-8 text-yellow-400" />
+          </div>
+          <h2 className="text-3xl font-bold text-white">Selección Manual</h2>
         </div>
-        <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-          Sistema avanzado de entrenamiento con peso corporal integrado con base de datos de ejercicios
+        <p className="text-gray-400 max-w-2xl mx-auto">
+          Elige tu nivel basándote en tu experiencia actual en calistenia
         </p>
       </div>
 
       {/* Selección de Nivel */}
       <div className="mb-8">
-        <h3 className="text-xl font-semibold mb-4 text-gray-800 flex items-center gap-2">
-          <Target className="w-5 h-5" />
+        <h3 className="text-xl font-semibold mb-4 text-white flex items-center gap-2">
+          <Target className="w-5 h-5 text-yellow-400" />
           Selecciona tu nivel actual
         </h3>
         <div className="grid md:grid-cols-3 gap-4">
@@ -230,20 +380,20 @@ export default function CalisteniaManualCard({ onGenerate, isLoading }) {
               key={key}
               className={`p-5 rounded-xl border-2 cursor-pointer transition-all duration-300 hover:shadow-lg ${
                 selectedLevel === key
-                  ? `${level.color} border-opacity-100 shadow-lg scale-105`
-                  : 'bg-white border-gray-200 hover:border-gray-300'
+                  ? 'bg-yellow-400/10 border-yellow-400/60 shadow-lg scale-105'
+                  : 'bg-black/40 border-yellow-400/20 hover:border-yellow-400/40'
               }`}
-              onClick={() => handleLevelSelection(key)}
+              onClick={() => handleManualLevelSelection(key)}
             >
               <div className="flex items-center justify-between mb-3">
-                <h4 className="font-bold text-lg flex items-center gap-2">
+                <h4 className="font-bold text-lg flex items-center gap-2 text-white">
                   {level.icon} {level.name}
                 </h4>
-                {selectedLevel === key && <CheckCircle className="w-5 h-5 text-green-600" />}
+                {selectedLevel === key && <CheckCircle className="w-5 h-5 text-green-400" />}
               </div>
-              <p className="text-sm mb-2 opacity-75">{level.description}</p>
-              <div className="flex items-center gap-2 text-sm">
-                <Clock className="w-4 h-4" />
+              <p className="text-sm mb-2 text-gray-400">{level.description}</p>
+              <div className="flex items-center gap-2 text-sm text-gray-300">
+                <Clock className="w-4 h-4 text-yellow-400" />
                 {level.frequency}
               </div>
             </div>
@@ -253,159 +403,75 @@ export default function CalisteniaManualCard({ onGenerate, isLoading }) {
 
       {/* Hitos del nivel seleccionado */}
       {selectedLevel && (
-        <div className="mb-8 p-6 bg-white rounded-xl shadow-md">
-          <h3 className="text-xl font-semibold mb-4 text-gray-800 flex items-center gap-2">
-            <Zap className="w-5 h-5" />
+        <div className="mb-8 p-6 bg-black/40 border border-yellow-400/20 rounded-xl">
+          <h3 className="text-xl font-semibold mb-4 text-white flex items-center gap-2">
+            <Zap className="w-5 h-5 text-yellow-400" />
             Hitos para nivel {CALISTENIA_LEVELS[selectedLevel].name}
           </h3>
-          <div className="grid md:grid-cols-2 gap-3">
+          <div className="grid md:grid-cols-2 gap-3 mb-4">
             {CALISTENIA_LEVELS[selectedLevel].hitos.map((hito, index) => (
-              <div key={index} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
-                <CheckCircle className="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
-                <span className="text-sm text-gray-700">{hito}</span>
+              <div key={index} className="flex items-start gap-3 p-3 bg-black/60 rounded-lg">
+                <CheckCircle className="w-5 h-5 text-green-400 mt-0.5 flex-shrink-0" />
+                <span className="text-sm text-gray-300">{hito}</span>
               </div>
             ))}
-          </div>
-          
-          <div className="mt-4 p-4 bg-yellow-50 rounded-lg border border-yellow-200">
-            <div className="flex items-start gap-2">
-              <AlertTriangle className="w-5 h-5 text-yellow-600 mt-0.5" />
-              <div>
-                <p className="text-sm font-medium text-yellow-800">Importante</p>
-                <p className="text-sm text-yellow-700">
-                  Los criterios se evalúan con los ejercicios de tu base de datos personal. 
-                  El sistema adapta automáticamente las progresiones según tu rendimiento real.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Controles de Preview y Opciones Avanzadas */}
-          <div className="mt-4 flex gap-3">
-            <button
-              onClick={() => setShowExercisePreview(!showExercisePreview)}
-              className="px-4 py-2 text-sm bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors"
-            >
-              {showExercisePreview ? 'Ocultar' : 'Ver'} Ejercicios Disponibles
-            </button>
-            <button
-              onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
-              className="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
-            >
-              Opciones Avanzadas
-            </button>
           </div>
         </div>
       )}
 
-      {/* Preview de ejercicios */}
-      {renderExercisePreview()}
-
-      {/* Opciones avanzadas */}
-      {renderAdvancedOptions()}
-
       {/* Objetivos específicos */}
       {selectedLevel && (
         <div className="mb-8">
-          <h3 className="text-xl font-semibold mb-4 text-gray-800">
+          <h3 className="text-xl font-semibold mb-4 text-white">
             Objetivos específicos (opcional)
           </h3>
           <textarea
             value={userGoals}
             onChange={(e) => setUserGoals(e.target.value)}
             placeholder="Ej: Enfocar en dominadas, mejorar handstand, tengo limitaciones en muñecas, busco desarrollar muscle-up..."
-            className="w-full p-4 border border-gray-300 rounded-lg resize-none h-24 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full p-4 bg-black/40 border border-yellow-400/30 text-white placeholder-gray-500 rounded-lg resize-none h-24 focus:ring-2 focus:ring-yellow-400 focus:border-transparent"
           />
         </div>
       )}
 
-      {/* Información del sistema */}
-      <div className="mb-8 p-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl">
-        <h3 className="text-lg font-semibold mb-3 text-gray-800">
-          🔬 Sistema Integrado v2.0
-        </h3>
-        <div className="grid md:grid-cols-2 gap-4 text-sm text-gray-700">
-          <div>
-            <p className="font-medium mb-2">Base de Datos Real:</p>
-            <ul className="space-y-1 text-xs">
-              <li>• Ejercicios específicos de calistenia</li>
-              <li>• Progresiones científicamente validadas</li>
-              <li>• Criterios objetivos de avance</li>
-              <li>• Adaptación a equipamiento disponible</li>
-            </ul>
-          </div>
-          <div>
-            <p className="font-medium mb-2">Funcionalidades Avanzadas:</p>
-            <ul className="space-y-1 text-xs">
-              <li>• Sistema modular y escalable</li>
-              <li>• Preview en tiempo real</li>
-              <li>• Configuraciones personalizables</li>
-              <li>• Integración con progreso histórico</li>
-            </ul>
-          </div>
+      {/* Botones de acción */}
+      {selectedLevel && (
+        <div className="text-center flex gap-3">
+          <button
+            onClick={() => setCurrentStep('evaluation')}
+            className="px-6 py-3 bg-black/40 border border-yellow-400/30 text-yellow-400 rounded-xl hover:bg-black/60 transition-colors"
+          >
+            ← Volver a Evaluación IA
+          </button>
+          <button
+            onClick={generateManually}
+            disabled={isLoading}
+            className={`flex-1 px-8 py-3 rounded-xl text-black font-semibold transition-all ${
+              isLoading
+                ? 'bg-gray-600 cursor-not-allowed'
+                : 'bg-yellow-400 hover:bg-yellow-300 transform hover:scale-[1.02]'
+            }`}
+          >
+            {isLoading ? (
+              <div className="flex items-center justify-center gap-2">
+                <Loader className="w-5 h-5 animate-spin" />
+                Generando plan...
+              </div>
+            ) : (
+              <div className="flex items-center justify-center gap-2">
+                <Zap className="w-5 h-5" />
+                Generar Plan Manual
+              </div>
+            )}
+          </button>
         </div>
-      </div>
+      )}
+    </div>
+  );
 
-      {/* Botón de generación */}
-      <div className="text-center">
-        <button
-          onClick={handleGenerate}
-          disabled={!selectedLevel || isLoading}
-          className={`px-8 py-4 rounded-xl text-white font-semibold text-lg transition-all duration-300 ${
-            !selectedLevel || isLoading
-              ? 'bg-gray-300 cursor-not-allowed'
-              : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 transform hover:scale-105 shadow-lg'
-          }`}
-        >
-          {isLoading ? (
-            <div className="flex items-center gap-3">
-              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-              Generando rutina personalizada...
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <Zap className="w-5 h-5" />
-              Generar Plan de Calistenia Avanzado
-            </div>
-          )}
-        </button>
-      </div>
-
-      {/* Detalles técnicos */}
-      <div className="mt-8 text-center">
-        <button
-          onClick={() => setShowDetails(!showDetails)}
-          className="text-blue-600 hover:text-blue-800 text-sm underline"
-        >
-          {showDetails ? 'Ocultar detalles técnicos' : 'Ver detalles técnicos'}
-        </button>
-        
-        {showDetails && (
-          <div className="mt-4 p-4 bg-gray-50 rounded-lg text-left">
-            <h4 className="font-semibold mb-2">Arquitectura del Sistema v2.0:</h4>
-            <div className="grid md:grid-cols-2 gap-4 text-sm text-gray-700">
-              <div>
-                <p className="font-medium mb-1">Backend:</p>
-                <ul className="text-xs space-y-1 list-disc list-inside">
-                  <li>API REST para ejercicios (/api/exercises/calistenia)</li>
-                  <li>Base de datos PostgreSQL con ejercicios reales</li>
-                  <li>Sistema de progresiones automáticas</li>
-                  <li>Filtrado inteligente por nivel y equipamiento</li>
-                </ul>
-              </div>
-              <div>
-                <p className="font-medium mb-1">Frontend:</p>
-                <ul className="text-xs space-y-1 list-disc list-inside">
-                  <li>Arquitectura modular con configuraciones separadas</li>
-                  <li>Preview en tiempo real de ejercicios</li>
-                  <li>Validación de criterios de progreso</li>
-                  <li>Sistema de hooks personalizados</li>
-                </ul>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+  return (
+    <div className="p-6 bg-black text-white min-h-[80vh]">
+      {currentStep === 'evaluation' ? renderEvaluationStep() : renderManualSelection()}
     </div>
   );
 }

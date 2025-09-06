@@ -19,7 +19,7 @@ const colors = {
   bgBlue: '\x1b[44m'
 };
 
-const logSeparator = (title, color = 'cyan') => {
+const logSeparator = (title = 'AI REQUEST', color = 'cyan') => {
   const separator = '='.repeat(80);
   console.log(colors[color] + colors.bright + separator + colors.reset);
   console.log(colors[color] + colors.bright + `📊 ${title.toUpperCase()}` + colors.reset);
@@ -48,15 +48,15 @@ const logUserProfile = (user, userId) => {
     const userInfo = {
       'Datos Básicos': {
         edad: user.edad || 'No especificado',
-        peso: user.peso ? `${user.peso} kg` : 'No especificado',
-        altura: user.altura ? `${user.altura} cm` : 'No especificado',
+        peso: user.peso_kg ? `${user.peso_kg} kg` : (user.peso ? `${user.peso} kg` : 'No especificado'),
+        altura: user.altura_cm ? `${user.altura_cm} cm` : (user.altura ? `${user.altura} cm` : 'No especificado'),
         sexo: user.sexo || 'No especificado'
       },
       'Entrenamiento': {
         // Usar 'nivel' que es el campo que viene de la vista (COALESCE de nivel_actividad y nivel_entrenamiento)
         nivel_actividad: user.nivel || user.nivel_actividad || 'No especificado',
         nivel_entrenamiento: user.nivel_entrenamiento || user.nivel || 'No especificado',
-        años_entrenando: user.anos_entrenando || user["años_entrenando"] || 0,
+        años_entrenando: user["años_entrenando"] || user.anos_entrenando || user.años_entrenando || 'No especificado',
         objetivo_principal: user.objetivo_principal || 'No especificado'
       },
       'Composición Corporal': {
@@ -133,10 +133,19 @@ const logAIPayload = (methodology, userData) => {
   logSubSection('PAYLOAD COMPLETO ENVIADO A LA IA', 'blue');
   
   console.log(colors.blue + `🎯 Metodología solicitada: ${methodology}` + colors.reset);
-  console.log(colors.blue + `📊 Tamaño del payload: ${JSON.stringify(userData).length} caracteres` + colors.reset);
   
-  console.log(colors.blue + '\n📦 Estructura completa del payload:' + colors.reset);
-  logObject(userData, 4);
+  if (userData) {
+    try {
+      console.log(colors.blue + `📊 Tamaño del payload: ${JSON.stringify(userData).length} caracteres` + colors.reset);
+    } catch (e) {
+      console.log(colors.blue + `📊 Tamaño del payload: No se pudo calcular (${e.message})` + colors.reset);
+    }
+    
+    console.log(colors.blue + '\n📦 Estructura completa del payload:' + colors.reset);
+    logObject(userData, 4);
+  } else {
+    console.log(colors.red + '❌ No se recibieron datos del usuario para la IA' + colors.reset);
+  }
 };
 
 const logAIResponse = (response, methodology) => {
