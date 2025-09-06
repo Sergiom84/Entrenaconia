@@ -23,6 +23,36 @@ import RoutineSessionModal from '../RoutineSessionModal';
 import RoutineSessionSummaryCard from '../RoutineSessionSummaryCard';
 import { startSession, updateExercise, finishSession, getTodaySessionStatus, cancelRoutine, getPendingExercises, getSessionProgress } from '../api';
 
+// Función para convertir IDs de ejercicios a nombres legibles
+const formatExerciseName = (exerciseId) => {
+  if (!exerciseId) return 'Ejercicio desconocido';
+  
+  // Mapeo de IDs conocidos a nombres reales
+  const exerciseNameMap = {
+    'flexion-contra-pared': 'Flexión contra pared',
+    'flexion-estandar': 'Flexión estándar',
+    'muscle-up-en-barra-strict': 'Muscle-up en barra (strict)',
+    'dominadas-asistidas': 'Dominadas asistidas',
+    'plancha-frontal': 'Plancha frontal',
+    'sentadillas-peso-corporal': 'Sentadillas peso corporal',
+    'fondos-en-paralelas': 'Fondos en paralelas',
+    'burpees': 'Burpees',
+    'mountain-climbers': 'Mountain climbers',
+    'jumping-jacks': 'Jumping jacks'
+  };
+  
+  // Si existe en el mapeo, usar el nombre real
+  if (exerciseNameMap[exerciseId]) {
+    return exerciseNameMap[exerciseId];
+  }
+  
+  // Si no existe, formatear el ID: remover guiones y capitalizar
+  return exerciseId
+    .split('-')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+};
+
 export default function TodayTrainingTab({
   plan,
   planId,
