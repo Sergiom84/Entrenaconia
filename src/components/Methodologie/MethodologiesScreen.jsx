@@ -11,10 +11,11 @@ import { Settings, Brain, User as UserIcon, CheckCircle, AlertCircle, Zap } from
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog.jsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.jsx';
 import { METHODOLOGIES, sanitizeProfile } from './methodologiesData.js';
-import MethodologyCard from './MethodologyCard.jsx';
-import MethodologyDetailsDialog from './MethodologyDetailsDialog.jsx';
-import MethodologyConfirmationModal from './MethodologyConfirmationModal.jsx';
-import MethodologyVersionSelectionModal from './MethodologyVersionSelectionModal.jsx';
+import MethodologyCard from './shared/MethodologyCard.jsx';
+import MethodologyDetailsDialog from './shared/MethodologyDetailsDialog.jsx';
+import MethodologyConfirmationModal from './shared/MethodologyConfirmationModal.jsx';
+import MethodologyVersionSelectionModal from './shared/MethodologyVersionSelectionModal.jsx';
+import CalisteniaManualCard from './methodologies/CalisteniaManual/CalisteniaManualCard.jsx';
 
 export default function MethodologiesScreen() {
   const navigate = useNavigate();
@@ -34,6 +35,7 @@ export default function MethodologiesScreen() {
   const [versionSelectionData, setVersionSelectionData] = useState(null);
   const [showActiveTrainingWarning, setShowActiveTrainingWarning] = useState(false);
   const [activeTrainingInfo, setActiveTrainingInfo] = useState(null);
+  const [showCalisteniaManual, setShowCalisteniaManual] = useState(false);
 
   // Función para verificar si hay entrenamiento activo
   const checkActiveTraining = async () => {
@@ -172,6 +174,12 @@ export default function MethodologiesScreen() {
 
   const handleManualCardClick = (methodology) => {
     if (selectionMode === 'manual') {
+      // Si es Calistenia, mostrar el modal específico
+      if (methodology.name === 'Calistenia') {
+        setShowCalisteniaManual(true);
+        return;
+      }
+      
       setPendingMethodology(methodology);
       // Mostrar modal de selección de versión para manual también
       setVersionSelectionData({
@@ -283,6 +291,91 @@ export default function MethodologiesScreen() {
   const handleOpenDetails = (m) => {
     setDetailsMethod(m);
     setShowDetails(true);
+  };
+
+  // Función para manejar generación de calistenia manual
+  const handleCalisteniaManualGenerate = async (calisteniaData) => {
+    // Verificar si hay entrenamiento activo
+    const activeTraining = await checkActiveTraining();
+    if (activeTraining) {
+      setActiveTrainingInfo(activeTraining);
+      setShowActiveTrainingWarning(true);
+      return;
+    }
+    
+    setShowCalisteniaManual(false);
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      console.log('🤸‍♀️ Generando plan de calistenia manual...', calisteniaData);
+      
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/calistenia-manual/generate', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(calisteniaData)
+      });
+      
+      const result = await response.json();
+      
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Error al generar el plan de calistenia');
+      }
+      
+      console.log('✅ Plan de calistenia manual generado exitosamente');
+      
+      // Guardar plan y preparar navegación
+      setGeneratedRoutinePlan({
+        plan: result.plan,
+        planSource: 'calistenia_manual', 
+        planId: result.planId,
+        routinePlanId: result.routinePlanId,
+        metodologia: 'Calistenia Manual'
+      });
+      
+      console.log('🛤️ Plan de calistenia generado:', {
+        methodologyPlanId: result.planId,
+        routinePlanId: result.routinePlanId
+      });
+      
+      // Mensaje personalizado
+      const baseMessage = `Tu plan de Calistenia Manual nivel ${calisteniaData.levelInfo.name} ha sido generado exitosamente. ` +
+                          `Entrenarás ${calisteniaData.levelInfo.frequency} con ejercicios específicos de calistenia.`;
+      
+      let tip = '';
+      if (calisteniaData.level === 'basico') {
+        tip = 'Comenzarás con movimientos fundamentales para construir una base sólida de fuerza y técnica.';
+      } else if (calisteniaData.level === 'intermedio') {
+        tip = 'Trabajarás en movimientos más complejos como dominadas, fondos y progresiones hacia habilidades avanzadas.';
+      } else {
+        tip = 'Te enfocarás en habilidades avanzadas como muscle-ups, handstands y movimientos estáticos de alto nivel.';
+      }
+      
+      const enhancedMessage = `${baseMessage}\n\n💡 ${tip}`;
+      setPersonalizedMessage(enhancedMessage);
+      
+      // Navegar automáticamente a rutinas
+      console.log('🚀 Plan de calistenia generado, navegando a rutinas...');
+      setTimeout(() => {
+        navigateToRoutines({
+          plan: result.plan,
+          planSource: 'calistenia_manual', 
+          planId: result.planId,
+          routinePlanId: result.routinePlanId,
+          metodologia: 'Calistenia Manual'
+        });
+      }, 1500);
+      
+    } catch (error) {
+      console.error('❌ Error generando plan de calistenia:', error);
+      setError(error.message || 'Error al generar el plan de calistenia');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
 
@@ -535,6 +628,21 @@ export default function MethodologiesScreen() {
                 Crear Nuevo Entrenamiento
               </Button>
             </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Modal de Calistenia Manual */}
+      {showCalisteniaManual && (
+        <Dialog open={showCalisteniaManual} onOpenChange={setShowCalisteniaManual}>
+          <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader className="sr-only">
+              <DialogTitle>Calistenia Manual</DialogTitle>
+            </DialogHeader>
+            <CalisteniaManualCard
+              onGenerate={handleCalisteniaManualGenerate}
+              isLoading={isLoading}
+            />
           </DialogContent>
         </Dialog>
       )}

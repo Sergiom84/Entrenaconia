@@ -27,6 +27,9 @@ import nutritionRoutes from './routes/nutrition.js';
 import musicRoutes from './routes/music.js';
 import { pool } from './db.js';
 import routinesRoutes from './routes/routines.js';
+import calisteniaManualRoutes from './routes/calisteniaManual.js';
+import calisteniaExercisesRoutes from './routes/calisteniaExercises.js';
+import calisteniaSpecialistRoutes from './routes/calisteniaSpecialist.js';
 
 // Solo cargar dotenv en desarrollo
 if (process.env.NODE_ENV !== 'production') {
@@ -129,10 +132,13 @@ app.use('/api/gym-routine', gymRoutineAIRoutes);
 app.use('/api/body-composition', bodyCompositionRoutes);
 app.use('/api/uploads', uploadsRoutes);
 app.use('/api/exercises', exercisesRoutes);
+app.use('/api/exercises', calisteniaExercisesRoutes);
 app.use('/api/technique', techniqueRoutes);
 app.use('/api/nutrition', nutritionRoutes);
 app.use('/api/music', musicRoutes);
 app.use('/api/routines', routinesRoutes);
+app.use('/api/calistenia-manual', calisteniaManualRoutes);
+app.use('/api/calistenia-specialist', calisteniaSpecialistRoutes);
 
 // Endpoint simple de salud
 app.get('/api/health', (req, res) => {

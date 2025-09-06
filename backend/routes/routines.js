@@ -864,11 +864,11 @@ router.post('/sessions/:sessionId/exercise/:exerciseOrder/feedback', authenticat
     const { sentiment, comment, exerciseName } = req.body;
 
     // Validar parámetros
-    if (!sentiment || !['love', 'normal', 'hard'].includes(sentiment)) {
+    if (!sentiment || !['love', 'hard', 'dislike'].includes(sentiment)) {
       await client.query('ROLLBACK');
       return res.status(400).json({ 
         success: false, 
-        error: 'sentiment es requerido y debe ser: love, normal, hard' 
+        error: 'sentiment es requerido y debe ser: love, hard, dislike' 
       });
     }
 

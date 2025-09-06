@@ -8,7 +8,7 @@ if (process.env.NODE_ENV !== 'production') {
 
 const clients = {};
 
-// Mapeo de features a variables de entorno - UNIFICADO
+// Mapeo de features a variables de entorno (ACTUALIZADO: API Key Unificada 2025-01-09)
 const ENV_BY_FEATURE = {
   photo: "OPENAI_API_KEY",
   video: "OPENAI_API_KEY", 
@@ -35,6 +35,7 @@ export function getOpenAI(apiKey) {
 
 /**
  * Obtiene cliente OpenAI específico por feature
+ * NOTA: Todas las features ahora usan la misma OPENAI_API_KEY unificada (2025-01-09)
  * @param {"photo"|"video"|"home"|"methodologie"|"nutrition"} feature - Feature específico
  * @returns {OpenAI} Cliente OpenAI configurado
  */
@@ -79,29 +80,29 @@ export function hasAPIKeyForModule(moduleConfig) {
 }
 
 /**
- * Verifica que todas las API keys estén configuradas
- * @returns {Object} Estado de configuración de API keys
+ * Verifica que la API key unificada esté configurada
+ * ACTUALIZADO: Una sola API key para todos los módulos (2025-01-09)
+ * @returns {Object} Estado de configuración de API key unificada
  */
 export function validateAPIKeys() {
+  const key = process.env.OPENAI_API_KEY;
+  const isConfigured = !!(key && key.trim());
+  
   const status = {};
-  const missing = [];
-
-  for (const [feature, envKey] of Object.entries(ENV_BY_FEATURE)) {
-    const key = process.env[envKey];
+  const allFeatures = Object.keys(ENV_BY_FEATURE);
+  
+  // Todas las features usan la misma key ahora
+  allFeatures.forEach(feature => {
     status[feature] = {
-      configured: !!(key && key.trim()),
-      envKey,
+      configured: isConfigured,
+      envKey: 'OPENAI_API_KEY',
       keyLength: key ? key.length : 0
     };
-
-    if (!status[feature].configured) {
-      missing.push(envKey);
-    }
-  }
+  });
 
   return {
-    allConfigured: missing.length === 0,
-    missing,
+    allConfigured: isConfigured,
+    missing: isConfigured ? [] : ['OPENAI_API_KEY'],
     features: status
   };
 }

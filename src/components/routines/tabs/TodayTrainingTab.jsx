@@ -48,13 +48,11 @@ export default function TodayTrainingTab({
   const getSentimentIcon = (sentiment) => {
     switch (sentiment) {
       case 'love':
-        return { icon: Heart, color: 'text-pink-400', bg: 'bg-pink-900/30', border: 'border-pink-500/30' };
-      case 'normal':
-        return { icon: CheckCircle, color: 'text-green-400', bg: 'bg-green-900/30', border: 'border-green-500/30' };
+        return { icon: Heart, color: 'text-green-400', bg: 'bg-green-900/30', border: 'border-green-500/30' };
       case 'hard':
-        return { icon: AlertOctagon, color: 'text-red-400', bg: 'bg-red-900/30', border: 'border-red-500/30' };
+        return { icon: AlertOctagon, color: 'text-yellow-400', bg: 'bg-yellow-900/30', border: 'border-yellow-500/30' };
       case 'dislike':
-        return { icon: Frown, color: 'text-orange-400', bg: 'bg-orange-900/30', border: 'border-orange-500/30' };
+        return { icon: Frown, color: 'text-red-400', bg: 'bg-red-900/30', border: 'border-red-500/30' };
       default:
         return null;
     }
@@ -168,19 +166,40 @@ export default function TodayTrainingTab({
     }
   };
 
-  const handleResumeTraining = () => {
+  const handleResumeTraining = async () => {
     if (!todaySessionStatus?.session?.id) {
       setError('No hay sesión para reanudar');
       return;
     }
 
-    setRoutineSessionId(todaySessionStatus.session.id);
-    setSelectedSession({
-      ...todaySession,
-      // Agregar información del progreso existente
-      exerciseProgress: todaySessionStatus.exercises
-    });
-    setShowSessionModal(true);
+    try {
+      // Obtener el estado más actualizado antes de abrir el modal
+      const mId = await ensureMethodologyPlan();
+      const freshStatus = await getTodaySessionStatus({
+        methodology_plan_id: mId,
+        week_number: todaySession.weekNumber || 1,
+        day_name: todaySession.dia
+      });
+
+      setRoutineSessionId(freshStatus.session.id);
+      setSelectedSession({
+        ...todaySession,
+        // Agregar información del progreso existente más actualizada
+        exerciseProgress: freshStatus.exercises
+      });
+      setTodaySessionStatus(freshStatus); // Actualizar estado local también
+      setShowSessionModal(true);
+      console.log('📊 Modal abierto con datos actualizados:', freshStatus.exercises.length, 'ejercicios');
+    } catch (error) {
+      console.error('Error cargando datos frescos para reanudar:', error);
+      // Fallback a datos existentes si falla
+      setRoutineSessionId(todaySessionStatus.session.id);
+      setSelectedSession({
+        ...todaySession,
+        exerciseProgress: todaySessionStatus.exercises
+      });
+      setShowSessionModal(true);
+    }
   };
 
   // Función para reanudar sesión de ejercicios pendientes
@@ -267,6 +286,33 @@ export default function TodayTrainingTab({
         status: 'completed',
         time_spent_seconds: timeSpent
       });
+      
+      // Actualizar estado local inmediatamente
+      setTodaySessionStatus(prev => {
+        if (!prev?.exercises) return prev;
+        
+        const updatedExercises = prev.exercises.map(ex => 
+          ex.exercise_order === exerciseIndex 
+            ? { ...ex, status: 'completed', series_completed: seriesCompleted, time_spent_seconds: timeSpent }
+            : ex
+        );
+        
+        const completedCount = updatedExercises.filter(ex => ex.status === 'completed').length;
+        const skippedCount = updatedExercises.filter(ex => ex.status === 'skipped').length;
+        
+        return {
+          ...prev,
+          exercises: updatedExercises,
+          summary: {
+            ...prev.summary,
+            completed: completedCount,
+            skipped: skippedCount,
+            isComplete: completedCount + skippedCount === updatedExercises.length
+          }
+        };
+      });
+      
+      console.log('✅ Ejercicio', exerciseIndex, 'marcado como completado y estado actualizado');
     } catch (e) {
       console.error('No se pudo guardar el progreso del ejercicio', e);
     }
@@ -282,6 +328,33 @@ export default function TodayTrainingTab({
         status: 'skipped',
         time_spent_seconds: 0
       });
+      
+      // Actualizar estado local inmediatamente
+      setTodaySessionStatus(prev => {
+        if (!prev?.exercises) return prev;
+        
+        const updatedExercises = prev.exercises.map(ex => 
+          ex.exercise_order === exerciseIndex 
+            ? { ...ex, status: 'skipped', series_completed: 0, time_spent_seconds: 0 }
+            : ex
+        );
+        
+        const completedCount = updatedExercises.filter(ex => ex.status === 'completed').length;
+        const skippedCount = updatedExercises.filter(ex => ex.status === 'skipped').length;
+        
+        return {
+          ...prev,
+          exercises: updatedExercises,
+          summary: {
+            ...prev.summary,
+            completed: completedCount,
+            skipped: skippedCount,
+            isComplete: completedCount + skippedCount === updatedExercises.length
+          }
+        };
+      });
+      
+      console.log('⏩ Ejercicio', exerciseIndex, 'marcado como saltado y estado actualizado');
     } catch (e) {
       console.error('No se pudo marcar como saltado', e);
     }
@@ -965,9 +1038,22 @@ export default function TodayTrainingTab({
         <RoutineSessionModal
           session={selectedSession}
           sessionId={routineSessionId}
-          onClose={() => {
+          onClose={async () => {
             console.log('🚪 Cerrando RoutineSessionModal');
             setShowSessionModal(false);
+            // Recargar el estado de la sesión al cerrar modal
+            try {
+              const mId = await ensureMethodologyPlan();
+              const updatedStatus = await getTodaySessionStatus({
+                methodology_plan_id: mId,
+                week_number: todaySession.weekNumber || 1,
+                day_name: todaySession.dia
+              });
+              setTodaySessionStatus(updatedStatus);
+              console.log('🔄 Estado sincronizado al cerrar modal');
+            } catch (error) {
+              console.log('Error recargando estado:', error);
+            }
           }}
           onFinishExercise={handleFinishExercise}
           onSkipExercise={handleSkipExercise}

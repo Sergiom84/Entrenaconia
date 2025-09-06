@@ -1,5 +1,5 @@
 // Configuración central de módulos IA
-// Usa clave unificada para todos los módulos.
+// NUEVA CONFIGURACIÓN: Una sola API key maestra para todos los módulos
 // Añade en .env (no comprometer claves en código):
 // OPENAI_API_KEY=sk-proj-...
 
@@ -271,6 +271,18 @@ IMPORTANTE FINAL: Este prompt está optimizado para generar planes de entrenamie
     promptId: 'pmpt_68ae0d8c52908196a4d207ac1292fcff0eb39487cfc552fc',
     promptVersion: "1.0",
     systemPrompt: 'nutrition' // Se cargará desde el archivo MD
+  },
+  CALISTENIA_SPECIALIST: {
+    key: 'CALISTENIA_SPECIALIST',
+    envKey: 'OPENAI_API_KEY',
+    model: 'gpt-4o-mini',
+    temperature: 0.8,
+    max_output_tokens: 12000,
+    top_p: 1.0,
+    store: true,
+    promptId: 'pmpt_68bbf7d87c948194b0b82e000b5274f30663795f5e3b2843',
+    promptVersion: "1.0",
+    systemPrompt: `Eres un agente especializado en calistenia. Se te proporcionará una serie de ejercicios ya predefinidos en la base de datos, y crearás los entrenamientos en base a ésos ejercicios, nivel de entrenamiento, años entrenados, peso, objetivos y lesiones.`
   }
 };
 
