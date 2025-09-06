@@ -864,11 +864,11 @@ router.post('/sessions/:sessionId/exercise/:exerciseOrder/feedback', authenticat
     const { sentiment, comment, exerciseName } = req.body;
 
     // Validar parámetros
-    if (!sentiment || !['love', 'hard', 'dislike'].includes(sentiment)) {
+    if (!sentiment || !['like', 'dislike', 'hard'].includes(sentiment)) {
       await client.query('ROLLBACK');
       return res.status(400).json({ 
         success: false, 
-        error: 'sentiment es requerido y debe ser: love, hard, dislike' 
+        error: 'sentiment es requerido y debe ser: like, dislike, hard'
       });
     }
 
@@ -1251,7 +1251,7 @@ router.get('/historical-data', authenticateToken, async (req, res) => {
   }
 });
 
-// Endpoint para obtener ejercicios pendientes
+// Endpoint para obtener ejercicios pendientes de días anteriores
 router.get('/pending-exercises', authenticateToken, async (req, res) => {
   try {
     const userId = req.user?.userId || req.user?.id;

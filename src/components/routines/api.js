@@ -181,4 +181,3 @@ export async function getPendingExercises({ methodology_plan_id }) {
   }
   return data; // { hasPendingExercises, pendingDay, exercises, totalPending, sessionId, weekNumber }
 }
-

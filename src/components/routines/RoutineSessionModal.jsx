@@ -63,7 +63,7 @@ export default function RoutineSessionModal({
     return Math.max(0, exercises.length - 1);
   }, [session?.exerciseProgress, exercises.length]);
 
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [currentIndex, setCurrentIndex] = useState(getInitialExerciseIndex);
   const [phase, setPhase] = useState('ready'); // ready | exercise | rest | done
   const [series, setSeries] = useState(1);
   const [timeLeft, setTimeLeft] = useState(0);
@@ -151,13 +151,7 @@ export default function RoutineSessionModal({
     loadExistingFeedback();
   }, [sessionId]);
 
-  // Establecer índice inicial basado en progreso cuando se abre/cambia la sesión
-  useEffect(() => {
-    if (getInitialExerciseIndex !== currentIndex) {
-      setCurrentIndex(getInitialExerciseIndex);
-      console.log('🎯 Reanudando desde ejercicio', getInitialExerciseIndex, '(saltando completados)');
-    }
-  }, [getInitialExerciseIndex, currentIndex]);
+
 
   useEffect(() => {
     if (timeLeft === 0 && isRunning) {
@@ -385,11 +379,11 @@ export default function RoutineSessionModal({
                   <div className="mb-2">
                     <span className="text-sm text-green-200">Sensación: </span>
                     <span className={`text-sm font-medium ${
-                      exerciseFeedback[currentIndex].sentiment === 'love' ? 'text-green-400' :
-                      exerciseFeedback[currentIndex].sentiment === 'hard' ? 'text-yellow-400' :
-                      'text-red-400'
+                      exerciseFeedback[currentIndex].sentiment === 'like' ? 'text-green-400' :
+                      exerciseFeedback[currentIndex].sentiment === 'hard' ? 'text-red-400' :
+                      'text-orange-400'
                     }`}>
-                      {exerciseFeedback[currentIndex].sentiment === 'love' ? '😍 Me ha encantado' :
+                      {exerciseFeedback[currentIndex].sentiment === 'like' ? '😍 Me gusta' :
                        exerciseFeedback[currentIndex].sentiment === 'hard' ? '😰 Es difícil' :
                        '😞 No me gusta'}
                     </span>

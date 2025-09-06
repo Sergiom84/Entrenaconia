@@ -1,7 +1,7 @@
 // Configuración central de módulos IA
 // NUEVA CONFIGURACIÓN: Una sola API key maestra para todos los módulos
 // Añade en .env (no comprometer claves en código):
-// OPENAI_API_KEY=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
+// OPENAI_API_KEY=sk-proj-...
 
 export const AI_MODULES = {
   VIDEO_CORRECTION: {

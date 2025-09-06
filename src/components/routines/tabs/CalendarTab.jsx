@@ -11,6 +11,7 @@ import {
   Target,
   Dumbbell,
   CheckCircle,
+  AlertTriangle,
   Heart,
   Frown,
   AlertOctagon
@@ -101,10 +102,10 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
   // Igual que en TodayTrainingTab: mapea sentimiento a icono/colores
   const getSentimentIcon = (sentiment) => {
     switch (sentiment) {
-      case 'love':
-        return { Icon: Heart, color: 'text-green-400', bg: 'bg-green-900/30', border: 'border-green-500/30', label: 'Me ha encantado' };
+      case 'like':
+        return { Icon: Heart, color: 'text-pink-400', bg: 'bg-pink-900/30', border: 'border-pink-500/30', label: 'Me gusta' };
       case 'hard':
-        return { Icon: AlertOctagon, color: 'text-yellow-400', bg: 'bg-yellow-900/30', border: 'border-yellow-500/30', label: 'Es difícil' };
+        return { Icon: AlertOctagon, color: 'text-red-400', bg: 'bg-red-900/30', border: 'border-red-500/30', label: 'Es difícil' };
       case 'dislike':
         return { Icon: Frown, color: 'text-red-400', bg: 'bg-red-900/30', border: 'border-red-500/30', label: 'No me gusta' };
       default:
@@ -286,11 +287,27 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
               onClick={() => handleDayClick(day)}
             >
               {/* Indicadores de estado en la esquina */}
-              {day.isPast && day.session && (
-                <div className="absolute top-2 right-2">
-                  <CheckCircle className="w-4 h-4 text-green-400" />
-                </div>
-              )}
+              {day.isPast && day.session && (() => {
+                const key = getDayKey(day.weekNumber || currentWeekData.weekNumber, day);
+                const progressList = weekStatuses[key]?.exercises || [];
+                const totalExercises = day.session.ejercicios?.length || 0;
+                const completedExercises = progressList.filter(ex => ex.status === 'completed').length;
+                
+                // Solo verde si TODOS los ejercicios están completados
+                const allCompleted = totalExercises > 0 && completedExercises === totalExercises;
+                // Triángulo amarillo si hay algunos completados pero no todos
+                const hasIncompleteExercises = completedExercises > 0 && completedExercises < totalExercises;
+                
+                return (
+                  <div className="absolute top-2 right-2">
+                    {allCompleted ? (
+                      <CheckCircle className="w-4 h-4 text-green-400" />
+                    ) : hasIncompleteExercises ? (
+                      <AlertTriangle className="w-4 h-4 text-yellow-400" />
+                    ) : null}
+                  </div>
+                );
+              })()}
 
 
 

@@ -152,20 +152,20 @@ const HomeTrainingProgress = ({
                         {isCompleted && (
                           <span className="ml-2 text-xs">
                             ✓ Completado
-                            {sentiment && <span className="ml-1 text-yellow-300 font-medium">• {sentiment === 'love' ? 'Me encanta' : sentiment === 'hard' ? 'Es difícil' : 'No me gusta'}</span>}
+                            {sentiment && <span className="ml-1 text-yellow-300 font-medium">• {sentiment === 'like' ? 'Me gusta' : sentiment === 'hard' ? 'Es difícil' : 'No me gusta'}</span>}
                           </span>
                         )}
                         {!isCompleted && isCurrent && <span className="ml-2 text-xs text-blue-300">• En progreso</span>}
                         {!isCompleted && !isCurrent && status === 'skipped' && (
                           <span className="ml-2 text-xs text-gray-300">
                             • Saltado
-                            {sentiment && <span className="ml-1 text-yellow-300 font-medium">• {sentiment === 'love' ? 'Me encanta' : sentiment === 'hard' ? 'Es difícil' : 'No me gusta'}</span>}
+                            {sentiment && <span className="ml-1 text-yellow-300 font-medium">• {sentiment === 'like' ? 'Me gusta' : sentiment === 'hard' ? 'Es difícil' : 'No me gusta'}</span>}
                           </span>
                         )}
                         {!isCompleted && !isCurrent && status === 'cancelled' && (
                           <span className="ml-2 text-xs text-red-300">
                             • Cancelado
-                            {sentiment && <span className="ml-1 text-yellow-300 font-medium">• {sentiment === 'love' ? 'Me encanta' : sentiment === 'hard' ? 'Es difícil' : 'No me gusta'}</span>}
+                            {sentiment && <span className="ml-1 text-yellow-300 font-medium">• {sentiment === 'like' ? 'Me gusta' : sentiment === 'hard' ? 'Es difícil' : 'No me gusta'}</span>}
                           </span>
                         )}
                       </h5>
