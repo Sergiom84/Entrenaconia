@@ -17,6 +17,36 @@ export default function RoutineSessionModal({
 }) {
   const exercises = useMemo(() => Array.isArray(session?.ejercicios) ? session.ejercicios : [], [session?.ejercicios]);
   
+  // Función para convertir IDs de ejercicios a nombres legibles
+  const formatExerciseName = (exerciseId) => {
+    if (!exerciseId) return 'Ejercicio desconocido';
+    
+    // Mapeo de IDs conocidos a nombres reales
+    const exerciseNameMap = {
+      'flexion-contra-pared': 'Flexión contra pared',
+      'flexion-estandar': 'Flexión estándar',
+      'muscle-up-en-barra-strict': 'Muscle-up en barra (strict)',
+      'dominadas-asistidas': 'Dominadas asistidas',
+      'plancha-frontal': 'Plancha frontal',
+      'sentadillas-peso-corporal': 'Sentadillas peso corporal',
+      'fondos-en-paralelas': 'Fondos en paralelas',
+      'burpees': 'Burpees',
+      'mountain-climbers': 'Mountain climbers',
+      'jumping-jacks': 'Jumping jacks'
+    };
+    
+    // Si existe en el mapeo, usar el nombre real
+    if (exerciseNameMap[exerciseId]) {
+      return exerciseNameMap[exerciseId];
+    }
+    
+    // Si no existe, formatear el ID: remover guiones y capitalizar
+    return exerciseId
+      .split('-')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  };
+  
   // Calcular índice inicial basado en progreso existente
   const getInitialExerciseIndex = useMemo(() => {
     if (!session?.exerciseProgress) return 0;
@@ -222,7 +252,7 @@ export default function RoutineSessionModal({
         {/* Header */}
         <div className="p-4 border-b border-gray-700 flex items-center justify-between">
           <div>
-            <h2 className="text-xl text-white font-bold">{ex?.nombre || 'Ejercicio'}</h2>
+            <h2 className="text-xl text-white font-bold">{formatExerciseName(ex?.nombre) || 'Ejercicio'}</h2>
             <p className="text-sm text-gray-400">Ejercicio {currentIndex + 1} de {total}</p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-white" aria-label="Cerrar">
@@ -237,7 +267,7 @@ export default function RoutineSessionModal({
           {ex && (
             <div className="bg-black/40 p-4 rounded-lg border border-gray-700">
               <div className="flex items-center justify-between mb-2">
-                <h4 className="text-white font-semibold">{ex.nombre}</h4>
+                <h4 className="text-white font-semibold">{formatExerciseName(ex.nombre)}</h4>
                 <div className="text-gray-400 text-sm">Serie {series}/{seriesTotal}</div>
               </div>
 
@@ -382,7 +412,7 @@ export default function RoutineSessionModal({
                     <div className="relative inline-block">
                       <img
                         src={exerciseGif}
-                        alt={ex.nombre}
+                        alt={formatExerciseName(ex.nombre)}
                         className="mx-auto max-h-64 rounded-md shadow-lg border border-gray-600"
                         onError={(e) => {
                           e.currentTarget.style.display = 'none';
@@ -392,7 +422,7 @@ export default function RoutineSessionModal({
                       <div className="hidden text-center py-8">
                         <Target className="mx-auto mb-2 text-gray-400" size={48} />
                         <p className="text-gray-400">GIF no disponible</p>
-                        <p className="text-sm text-gray-500">({ex.nombre})</p>
+                        <p className="text-sm text-gray-500">({formatExerciseName(ex.nombre)})</p>
                       </div>
                     </div>
                   ) : (
@@ -471,7 +501,7 @@ export default function RoutineSessionModal({
       {showFeedback && (
         <ExerciseFeedbackModal
           show={showFeedback}
-          exerciseName={ex?.nombre}
+          exerciseName={formatExerciseName(ex?.nombre)}
           initialFeedback={exerciseFeedback[currentIndex]}
           onClose={() => setShowFeedback(false)}
           onSubmit={async (payload) => {
@@ -487,7 +517,7 @@ export default function RoutineSessionModal({
                 exerciseOrder: currentIndex,
                 sentiment: payload.sentiment,
                 comment: payload.comment,
-                exerciseName: ex?.nombre
+                exerciseName: formatExerciseName(ex?.nombre)
               });
 
               // Actualizar estado local para mostrar feedback inmediatamente

@@ -6,22 +6,24 @@ import { AI_MODULES } from '../config/aiConfigs.js';
 
 const router = express.Router();
 
-// Helper function to get user profile and equipment
+// Helper function to get user profile (sin equipamiento por ahora)
 async function getUserProfileWithEquipment(userId) {
+  // Obtener perfil del usuario desde la tabla users
   const userQuery = await pool.query(`
-    SELECT up.*, 
-           COALESCE(
-             array_agg(DISTINCT ue.equipment_name) FILTER (WHERE ue.equipment_name IS NOT NULL),
-             ARRAY[]::text[]
-           ) as equipamiento_disponible
-    FROM app.user_profiles up
-    LEFT JOIN app.user_equipment ue ON up.user_id = ue.user_id
-    WHERE up.user_id = $1
-    GROUP BY up.user_id, up.nombre, up.edad, up.peso_kg, up.altura_cm, up.experiencia_ejercicio, 
-             up.nivel_actividad, up.objetivo_fitness, up.lesiones_previas, up.preferencias_entrenamiento
+    SELECT * FROM app.users WHERE id = $1
   `, [userId]);
   
-  return userQuery.rows[0] || {};
+  if (userQuery.rowCount === 0) {
+    return {};
+  }
+  
+  const userProfile = userQuery.rows[0];
+  
+  // Por ahora, asumir equipamiento básico de calistenia (peso corporal + barra)
+  return {
+    ...userProfile,
+    equipamiento_disponible: ['peso_corporal', 'barra_dominadas', 'suelo']
+  };
 }
 
 // Helper function to get available calistenia exercises by level

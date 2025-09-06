@@ -293,7 +293,7 @@ export default function MethodologiesScreen() {
     setShowDetails(true);
   };
 
-  // Función para manejar generación de calistenia manual
+  // Función para manejar generación de calistenia manual Y especialista IA
   const handleCalisteniaManualGenerate = async (calisteniaData) => {
     // Verificar si hay entrenamiento activo
     const activeTraining = await checkActiveTraining();
@@ -308,16 +308,35 @@ export default function MethodologiesScreen() {
     setError(null);
     
     try {
-      console.log('🤸‍♀️ Generando plan de calistenia manual...', calisteniaData);
+      // Detectar si es generación con IA Specialist o selección manual
+      const isAISpecialist = calisteniaData.source === 'ai_evaluation';
+      const endpoint = isAISpecialist ? '/api/calistenia-specialist/generate-plan' : '/api/calistenia-manual/generate';
+      
+      console.log(`🤸‍♀️ Generando plan de calistenia (${isAISpecialist ? 'IA Specialist' : 'Manual'})...`, calisteniaData);
+      
+      // Preparar payload según el tipo de generación
+      let requestBody;
+      if (isAISpecialist) {
+        // Payload para IA Specialist
+        requestBody = {
+          userProfile: calisteniaData.userProfile,
+          selectedLevel: calisteniaData.level,
+          goals: calisteniaData.goals,
+          exercisePreferences: calisteniaData.selectedMuscleGroups || []
+        };
+      } else {
+        // Payload para selección manual (mantener formato original)
+        requestBody = calisteniaData;
+      }
       
       const token = localStorage.getItem('token');
-      const response = await fetch('/api/calistenia-manual/generate', {
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify(calisteniaData)
+        body: JSON.stringify(requestBody)
       });
       
       const result = await response.json();
@@ -326,32 +345,47 @@ export default function MethodologiesScreen() {
         throw new Error(result.error || 'Error al generar el plan de calistenia');
       }
       
-      console.log('✅ Plan de calistenia manual generado exitosamente');
+      console.log(`✅ Plan de calistenia ${isAISpecialist ? 'IA Specialist' : 'Manual'} generado exitosamente`);
+      
+      // Preparar plan source según el tipo
+      const planSource = isAISpecialist ? 'calistenia_specialist' : 'calistenia_manual';
+      const metodologia = isAISpecialist ? 'Calistenia Specialist' : 'Calistenia Manual';
       
       // Guardar plan y preparar navegación
       setGeneratedRoutinePlan({
         plan: result.plan,
-        planSource: 'calistenia_manual', 
+        planSource: planSource, 
         planId: result.planId,
         routinePlanId: result.routinePlanId,
-        metodologia: 'Calistenia Manual'
+        metodologia: metodologia
       });
       
       console.log('🛤️ Plan de calistenia generado:', {
+        type: isAISpecialist ? 'IA Specialist' : 'Manual',
         methodologyPlanId: result.planId,
         routinePlanId: result.routinePlanId
       });
       
-      // Mensaje personalizado
-      const baseMessage = `Tu plan de Calistenia Manual nivel ${calisteniaData.levelInfo.name} ha sido generado exitosamente. ` +
-                          `Entrenarás ${calisteniaData.levelInfo.frequency} con ejercicios específicos de calistenia.`;
-      
-      let tip = '';
-      if (calisteniaData.level === 'basico') {
-        tip = 'Comenzarás con movimientos fundamentales para construir una base sólida de fuerza y técnica.';
-      } else if (calisteniaData.level === 'intermedio') {
-        tip = 'Trabajarás en movimientos más complejos como dominadas, fondos y progresiones hacia habilidades avanzadas.';
+      // Mensaje personalizado según el tipo de generación
+      let baseMessage;
+      if (isAISpecialist) {
+        // Mensaje para IA Specialist
+        baseMessage = `🤖 La IA ha evaluado tu perfil y generado un plan de Calistenia nivel ${calisteniaData.level} optimizado para ti. ` +
+                      `Plan de ${result.plan.duracion_total_semanas} semanas con ${result.plan.frecuencia_por_semana} entrenamientos semanales.`;
       } else {
+        // Mensaje para selección manual (mantener original)
+        baseMessage = `Tu plan de Calistenia Manual nivel ${calisteniaData.levelInfo?.name || calisteniaData.level} ha sido generado exitosamente. ` +
+                      `Entrenarás ${calisteniaData.levelInfo?.frequency || `${result.plan.frecuencia_por_semana}x por semana`} con ejercicios específicos de calistenia.`;
+      }
+      
+      // Tips según nivel (funciona para ambos tipos)
+      let tip = '';
+      const level = calisteniaData.level?.toLowerCase();
+      if (level === 'basico') {
+        tip = 'Comenzarás con movimientos fundamentales para construir una base sólida de fuerza y técnica.';
+      } else if (level === 'intermedio') {
+        tip = 'Trabajarás en movimientos más complejos como dominadas, fondos y progresiones hacia habilidades avanzadas.';
+      } else if (level === 'avanzado') {
         tip = 'Te enfocarás en habilidades avanzadas como muscle-ups, handstands y movimientos estáticos de alto nivel.';
       }
       
@@ -363,10 +397,10 @@ export default function MethodologiesScreen() {
       setTimeout(() => {
         navigateToRoutines({
           plan: result.plan,
-          planSource: 'calistenia_manual', 
+          planSource: planSource, 
           planId: result.planId,
           routinePlanId: result.routinePlanId,
-          metodologia: 'Calistenia Manual'
+          metodologia: metodologia
         });
       }, 1500);
       

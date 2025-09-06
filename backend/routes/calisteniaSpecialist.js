@@ -192,12 +192,28 @@ Analiza el perfil considerando experiencia, fuerza actual, objetivos y limitacio
     logAIResponse(aiResponse);
     logTokens(completion.usage);
     
-    // Parsear respuesta IA
+    // Parsear respuesta IA (limpiar markdown si existe)
+    let cleanResponse = aiResponse;
+    if (aiResponse.includes('```json')) {
+      // Extraer JSON del markdown
+      const jsonMatch = aiResponse.match(/```json\s*([\s\S]*?)\s*```/);
+      if (jsonMatch) {
+        cleanResponse = jsonMatch[1];
+      }
+    } else if (aiResponse.includes('```')) {
+      // Fallback para otros tipos de code blocks
+      const codeMatch = aiResponse.match(/```\s*([\s\S]*?)\s*```/);
+      if (codeMatch) {
+        cleanResponse = codeMatch[1];
+      }
+    }
+    
     let evaluation;
     try {
-      evaluation = JSON.parse(aiResponse);
+      evaluation = JSON.parse(cleanResponse);
     } catch (parseError) {
       console.error('❌ Error parseando respuesta IA:', parseError);
+      console.error('Respuesta raw:', aiResponse);
       throw new Error('Respuesta de IA inválida');
     }
     
@@ -404,12 +420,28 @@ REGLAS CRÍTICAS:
     logAIResponse(aiResponse);
     logTokens(completion.usage);
     
-    // Parsear y validar plan
+    // Parsear y validar plan (limpiar markdown si existe)
+    let cleanPlanResponse = aiResponse;
+    if (aiResponse.includes('```json')) {
+      // Extraer JSON del markdown
+      const jsonMatch = aiResponse.match(/```json\s*([\s\S]*?)\s*```/);
+      if (jsonMatch) {
+        cleanPlanResponse = jsonMatch[1];
+      }
+    } else if (aiResponse.includes('```')) {
+      // Fallback para otros tipos de code blocks
+      const codeMatch = aiResponse.match(/```\s*([\s\S]*?)\s*```/);
+      if (codeMatch) {
+        cleanPlanResponse = codeMatch[1];
+      }
+    }
+    
     let generatedPlan;
     try {
-      generatedPlan = JSON.parse(aiResponse);
+      generatedPlan = JSON.parse(cleanPlanResponse);
     } catch (parseError) {
       console.error('❌ Error parseando plan generado:', parseError);
+      console.error('Respuesta raw:', aiResponse);
       throw new Error('Plan generado inválido');
     }
     

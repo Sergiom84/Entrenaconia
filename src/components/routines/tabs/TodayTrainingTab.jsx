@@ -42,6 +42,36 @@ export default function TodayTrainingTab({
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
+  // Función para convertir IDs de ejercicios a nombres legibles
+  const formatExerciseName = (exerciseId) => {
+    if (!exerciseId) return 'Ejercicio desconocido';
+    
+    // Mapeo de IDs conocidos a nombres reales
+    const exerciseNameMap = {
+      'flexion-contra-pared': 'Flexión contra pared',
+      'flexion-estandar': 'Flexión estándar',
+      'muscle-up-en-barra-strict': 'Muscle-up en barra (strict)',
+      'dominadas-asistidas': 'Dominadas asistidas',
+      'plancha-frontal': 'Plancha frontal',
+      'sentadillas-peso-corporal': 'Sentadillas peso corporal',
+      'fondos-en-paralelas': 'Fondos en paralelas',
+      'burpees': 'Burpees',
+      'mountain-climbers': 'Mountain climbers',
+      'jumping-jacks': 'Jumping jacks'
+    };
+    
+    // Si existe en el mapeo, usar el nombre real
+    if (exerciseNameMap[exerciseId]) {
+      return exerciseNameMap[exerciseId];
+    }
+    
+    // Si no existe, formatear el ID: remover guiones y capitalizar
+    return exerciseId
+      .split('-')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  };
+
   // Función para obtener icono y color del sentimiento
   const getSentimentIcon = (sentiment) => {
     switch (sentiment) {
@@ -590,7 +620,7 @@ export default function TodayTrainingTab({
                           isSkipped ? 'text-orange-300' :
                           'text-white'
                         }`}>
-                          {ejercicio.nombre}
+                          {formatExerciseName(ejercicio.nombre)}
                         </p>
                         <p className="text-sm text-gray-400">
                           {exerciseProgress?.series_completed || 0}/{ejercicio.series} series × {ejercicio.repeticiones} reps
