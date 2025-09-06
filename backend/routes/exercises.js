@@ -1,4 +1,5 @@
 import express from 'express';
+import calisteniaExercisesRoutes from './calisteniaExercises.js';
 
 const router = express.Router();
 
@@ -232,5 +233,8 @@ router.get('/meta/categories', (req, res) => {
     });
   }
 });
+
+// Integrar rutas de ejercicios de calistenia
+router.use('/', calisteniaExercisesRoutes);
 
 export default router;
