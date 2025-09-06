@@ -215,7 +215,7 @@ ${exercisesFromDB.map(ex => {
     }, {});
     
     const sentimentMap = {
-      'love': '❤️ Le encanta',
+      'like': '❤️ Le encanta',
       'normal': '👍 Normal',
       'hard': '😓 Difícil'
     };
@@ -251,7 +251,7 @@ ${exercisesFromDB.filter(ex => ex.usage_count > 4).map(ex => `• ${ex.exercise_
 ${exercisesFromDB.filter(ex => ex.usage_count >= 3 && ex.usage_count <= 4).map(ex => `• ${ex.exercise_name} (${ex.usage_count} veces)`).join('\n')}
 
 ✅ EJERCICIOS FAVORITOS DEL USUARIO (priorizar si es posible):
-${exercisesFromDB.filter(ex => ex.last_sentiment === 'love').map(ex => `• ${ex.exercise_name} (Le encanta)`).join('\n')}`;
+${exercisesFromDB.filter(ex => ex.last_sentiment === 'like').map(ex => `• ${ex.exercise_name} (Le encanta)`).join('\n')}`;
       } else {
         exercisesContext = `\n\nEJERCICIOS DE GIMNASIO SUGERIDOS DEL CATÁLOGO (usuario sin historial en metodologías):
 ${exercisesFromDB.map(ex => `- ${ex.exercise_name} (${ex.category || 'General'}) - ${ex.difficulty_level || 'Nivel estándar'}`).join('\n')}

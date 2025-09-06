@@ -446,8 +446,8 @@ router.post('/sessions/:sessionId/exercise/:exerciseOrder/feedback', authenticat
     const { sentiment, comment, exercise_name } = req.body || {};
     const user_id = req.user.userId || req.user.id;
 
-    // Validar sentiment solo si está presente
-    if (sentiment !== null && sentiment !== undefined && !['dislike','hard','love'].includes(String(sentiment))) {
+    // Validar sentiment solo si está presente - Estados unificados post-merge
+    if (sentiment !== null && sentiment !== undefined && !['like','dislike','hard'].includes(String(sentiment))) {
       return res.status(400).json({ success: false, message: 'sentiment inválido' });
     }
 
@@ -653,7 +653,7 @@ router.get('/preferences-history', authenticateToken, async (req, res) => {
   try {
     const user_id = req.user.userId || req.user.id;
 
-    // 1. Ejercicios favoritos (completados con feedback 'love')
+    // 1. Ejercicios favoritos (completados con feedback 'like')
     const favorites = await pool.query(`
       SELECT DISTINCT
         eh.exercise_name,
@@ -663,10 +663,10 @@ router.get('/preferences-history', authenticateToken, async (req, res) => {
       LEFT JOIN app.user_exercise_feedback uef ON (
         uef.user_id = eh.user_id 
         AND uef.exercise_name = eh.exercise_name 
-        AND uef.sentiment = 'love'
+        AND uef.sentiment = 'like'
       )
       WHERE eh.user_id = $1 
-        AND uef.sentiment = 'love'
+        AND uef.sentiment = 'like'
       GROUP BY eh.exercise_name
       ORDER BY times_completed DESC, last_completed DESC
       LIMIT 20

@@ -241,7 +241,7 @@ router.get('/level-assessment', authenticateToken, async (req, res) => {
     // Get user's recent calistenia performances
     const assessmentQuery = await pool.query(`
       SELECT exercise_name, feedback_rating, notes,
-             AVG(CASE WHEN feedback_rating = 'love' THEN 5
+             AVG(CASE WHEN feedback_rating = 'like' THEN 5
                       WHEN feedback_rating = 'normal' THEN 3  
                       WHEN feedback_rating = 'hard' THEN 1
                       ELSE 3 END) as avg_difficulty,
