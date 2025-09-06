@@ -216,16 +216,22 @@ export default function TodayTrainingTab({
       if (!methodologyPlanId) return;
       
       try {
+        console.log('🔍 Cargando ejercicios pendientes para methodology_plan_id:', methodologyPlanId);
         const pendingData = await getPendingExercises({ methodology_plan_id: methodologyPlanId });
+        console.log('📋 Datos de ejercicios pendientes:', pendingData);
+        
         if (pendingData?.hasPendingExercises) {
+          console.log('✅ Hay ejercicios pendientes, mostrando modal');
+          console.log('📊 Datos completos pendingData:', JSON.stringify(pendingData, null, 2));
           setPendingExercises(pendingData);
-          // Solo mostrar el modal en días de descanso (cuando no hay sesión de hoy)
-          if (!todaySession) {
-            setShowPendingModal(true);
-          }
+          // Mostrar el modal siempre que haya ejercicios pendientes
+          setShowPendingModal(true);
+          console.log('🎯 Estado del modal actualizado a: true');
+        } else {
+          console.log('ℹ️ No hay ejercicios pendientes');
         }
       } catch (e) {
-        console.error('Error cargando ejercicios pendientes:', e);
+        console.error('❌ Error cargando ejercicios pendientes:', e);
       }
     };
 
@@ -344,7 +350,9 @@ export default function TodayTrainingTab({
   };
 
   // Mostrar resumen de sesión completada
+  console.log('🔍 EARLY RETURN CHECK 1 - lastSessionId:', lastSessionId, 'showPendingModal:', showPendingModal);
   if (lastSessionId) {
+    console.log('🚪 EARLY RETURN 1: Mostrando resumen de sesión completada');
     return (
       <div className="space-y-6">
         <RoutineSessionSummaryCard
@@ -362,7 +370,9 @@ export default function TodayTrainingTab({
     );
   }
 
+  console.log('🔍 EARLY RETURN CHECK 2 - plan:', !!plan, 'showPendingModal:', showPendingModal);
   if (!plan) {
+    console.log('🚪 EARLY RETURN 2: No hay plan disponible');
     return (
       <div className="text-center py-12">
         <Dumbbell className="w-16 h-16 text-gray-500 mx-auto mb-4" />
@@ -377,7 +387,9 @@ export default function TodayTrainingTab({
     );
   }
 
+  console.log('🔍 EARLY RETURN CHECK 3 - todaySession:', !!todaySession, 'showPendingModal:', showPendingModal);
   if (!todaySession) {
+    console.log('🚪 EARLY RETURN 3: No hay sesión de hoy');
     return (
       <div className="space-y-6">
         <Alert className="bg-orange-900/30 border-orange-400/40">
@@ -405,6 +417,7 @@ export default function TodayTrainingTab({
     );
   }
 
+  console.log('✅ LLEGANDO AL RENDER PRINCIPAL - showPendingModal:', showPendingModal, 'pendingExercises:', !!pendingExercises);
   return (
     <div className="space-y-6">
       {error && (
@@ -675,6 +688,7 @@ export default function TodayTrainingTab({
       )}
 
       {/* Modal de ejercicios pendientes */}
+      {console.log('🔍 RENDER CHECK - showPendingModal:', showPendingModal, 'pendingExercises:', !!pendingExercises)}
       {showPendingModal && pendingExercises && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-gray-900/95 border border-yellow-400/30 rounded-2xl p-8 max-w-md mx-4 shadow-2xl">
@@ -688,7 +702,7 @@ export default function TodayTrainingTab({
                   Ejercicios Pendientes
                 </h3>
                 <p className="text-gray-300">
-                  Tienes <span className="text-yellow-400 font-semibold">{pendingExercises.totalPending} ejercicios pendientes</span> del {pendingExercises.pendingDay}.
+                  Tienes <span className="text-yellow-400 font-semibold">{pendingExercises?.totalPending} ejercicios pendientes</span> del {pendingExercises?.pendingDay}.
                 </p>
                 <p className="text-gray-400 text-sm">
                   ¿Le damos caña?

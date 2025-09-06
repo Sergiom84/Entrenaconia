@@ -8,13 +8,13 @@ if (process.env.NODE_ENV !== 'production') {
 
 const clients = {};
 
-// Mapeo de features a variables de entorno
+// Mapeo de features a variables de entorno - UNIFICADO
 const ENV_BY_FEATURE = {
-  photo: "OPENAI_API_KEY_CORRECTION_PHOTO",
-  video: "OPENAI_API_KEY_CORRECTION_VIDEO", 
-  home: "OPENAI_API_KEY_HOME_TRAINING",
-  methodologie: "OPENAI_API_KEY_METHODOLOGIE",
-  nutrition: "OPENAI_API_KEY_NUTRITION",
+  photo: "OPENAI_API_KEY",
+  video: "OPENAI_API_KEY", 
+  home: "OPENAI_API_KEY",
+  methodologie: "OPENAI_API_KEY",
+  nutrition: "OPENAI_API_KEY",
 };
 
 /**
