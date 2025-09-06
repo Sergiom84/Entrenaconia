@@ -78,8 +78,22 @@ router.post('/generate', authenticateToken, async (req, res) => {
     const userHistory = await getUserCalisteniaHistory(userId);
     console.log(`✅ Retrieved ${userHistory.length} historical exercises`);
     
+    // 4. Get current day for starting the routine
+    const activationDate = new Date();
+    const daysOfWeek = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+    const activationDay = daysOfWeek[activationDate.getDay()];
+    
+    console.log(`🗓️ CALISTENIA MANUAL: Plan comenzará desde ${activationDay} (${activationDate.toLocaleDateString('es-ES')})`);
+    console.log(`🎯 NO desde Lunes, sino desde el día actual: ${activationDay}`);
+    
     // 4. Build AI prompt context
     const promptContext = `
+🎯 INFORMACIÓN CRÍTICA DE INICIO:
+- El usuario está activando la calistenia HOY: ${activationDay} (${activationDate.toLocaleDateString('es-ES')})  
+- El plan debe comenzar INMEDIATAMENTE desde HOY (${activationDay})
+- La primera sesión debe ser para ${activationDay}, NO para Lunes
+- Estructura las semanas empezando desde ${activationDay}
+
 PERFIL DEL USUARIO:
 - Edad: ${userProfile.edad || 'No especificada'}
 - Peso: ${userProfile.peso_kg || 'No especificado'} kg
@@ -116,6 +130,8 @@ INSTRUCCIONES:
 6. Incluye sempre los campos: progresion_info y criterio_progreso
 7. Balancea las categorías de movimiento en cada sesión
 8. Evita ejercicios que el usuario haya hecho recientemente si es posible
+9. **CRÍTICO**: El plan debe comenzar INMEDIATAMENTE desde HOY (${activationDay}), NO desde Lunes
+10. **CRÍTICO**: La primera sesión debe ser para ${activationDay}, estructura las semanas empezando desde ${activationDay}
     `;
     
     // 5. Get AI configuration and prompt

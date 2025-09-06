@@ -101,6 +101,8 @@ Genera un JSON válido con la siguiente estructura:
 5. **ADAPTA** el volumen al nivel real del usuario, no a sus expectativas
 6. **PRIORIZA** la técnica perfecta sobre el volumen o intensidad
 7. **CONSIDERA** el equipo disponible del usuario
+8. **CRÍTICO**: **COMIENZA DESDE EL DÍA ACTUAL** especificado en el contexto del usuario, NO desde Lunes automáticamente
+9. **CRÍTICO**: La primera sesión debe ser para el día que se indica en "El usuario está activando la calistenia HOY"
 
 ### NOTAS IMPORTANTES
 
