@@ -315,7 +315,7 @@ router.post('/generate', authenticateToken, async (req, res) => {
     
     const exercisesUsedForCombination = combinationHistoryRes.rows.length > 0
       ? combinationHistoryRes.rows.map(r => {
-          const rating = r.user_rating ? ` [${r.user_rating === 'love' ? '❤️' : r.user_rating === 'hard' ? '💪' : '👎'}]` : '';
+          const rating = r.user_rating ? ` [${r.user_rating === 'like' ? '❤️' : r.user_rating === 'hard' ? '💪' : '👎'}]` : '';
           return `${r.exercise_name} (x${r.times_used})${rating}`;
         }).join(', ')
       : `Ningún ejercicio previo para ${equipment_type} + ${training_type}`;

@@ -1,6 +1,6 @@
 /**
  * API Routes para Ejercicios de Calistenia
- * Conecta con la tabla calistenia_exercises
+ * Conecta con la tabla Ejercicios_Calistenia
  * 
  * @author Claude Code - Arquitectura Modular
  * @version 1.0.0
@@ -38,7 +38,7 @@ router.get('/calistenia', authenticateToken, async (req, res) => {
         notas,
         created_at,
         updated_at
-      FROM app.calistenia_exercises
+      FROM app."Ejercicios_Calistenia"
       WHERE 1=1
     `;
     
@@ -139,7 +139,7 @@ router.get('/calistenia/:exerciseId', authenticateToken, async (req, res) => {
         notas,
         created_at,
         updated_at
-      FROM app.calistenia_exercises
+      FROM app."Ejercicios_Calistenia"
       WHERE exercise_id = $1 OR LOWER(nombre) = LOWER($1)
     `, [exerciseId]);
     
@@ -159,7 +159,7 @@ router.get('/calistenia/:exerciseId', authenticateToken, async (req, res) => {
     if (exercise.progresion_desde || exercise.progresion_hacia) {
       const progressionQuery = await pool.query(`
         SELECT exercise_id, nombre, nivel 
-        FROM app.calistenia_exercises 
+        FROM app."Ejercicios_Calistenia" 
         WHERE exercise_id IN ($1, $2) AND exercise_id != $3
       `, [
         exercise.progresion_desde || '', 
@@ -221,7 +221,7 @@ router.get('/calistenia/level/:nivel', authenticateToken, async (req, res) => {
         series_reps_objetivo,
         criterio_de_progreso,
         notas
-      FROM app.calistenia_exercises
+      FROM app."Ejercicios_Calistenia"
       WHERE LOWER(nivel) = LOWER($1)
       ORDER BY categoria, nombre
     `, [nivel]);
@@ -268,7 +268,7 @@ router.get('/calistenia/categories', authenticateToken, async (req, res) => {
             ELSE 4
           END
         ) as niveles_disponibles
-      FROM app.calistenia_exercises
+      FROM app."Ejercicios_Calistenia"
       GROUP BY categoria
       ORDER BY categoria
     `);
@@ -307,7 +307,7 @@ router.get('/calistenia/progression/:exerciseId', authenticateToken, async (req,
     // Obtener el ejercicio base
     const exerciseResult = await pool.query(`
       SELECT exercise_id, nombre, nivel, progresion_desde, progresion_hacia
-      FROM app.calistenia_exercises
+      FROM app."Ejercicios_Calistenia"
       WHERE exercise_id = $1
     `, [exerciseId]);
     
@@ -329,7 +329,7 @@ router.get('/calistenia/progression/:exerciseId', authenticateToken, async (req,
     while (currentPrevious) {
       const prevResult = await pool.query(`
         SELECT exercise_id, nombre, nivel, progresion_desde
-        FROM app.calistenia_exercises
+        FROM app."Ejercicios_Calistenia"
         WHERE exercise_id = $1
       `, [currentPrevious]);
       
@@ -348,7 +348,7 @@ router.get('/calistenia/progression/:exerciseId', authenticateToken, async (req,
     while (currentNext) {
       const nextResult = await pool.query(`
         SELECT exercise_id, nombre, nivel, progresion_hacia
-        FROM app.calistenia_exercises
+        FROM app."Ejercicios_Calistenia"
         WHERE exercise_id = $1
       `, [currentNext]);
       

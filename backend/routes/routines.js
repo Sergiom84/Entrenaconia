@@ -864,11 +864,11 @@ router.post('/sessions/:sessionId/exercise/:exerciseOrder/feedback', authenticat
     const { sentiment, comment, exerciseName } = req.body;
 
     // Validar parámetros
-    if (!sentiment || !['love', 'hard', 'dislike'].includes(sentiment)) {
+    if (!sentiment || !['like', 'dislike', 'hard'].includes(sentiment)) {
       await client.query('ROLLBACK');
       return res.status(400).json({ 
         success: false, 
-        error: 'sentiment es requerido y debe ser: love, hard, dislike' 
+        error: 'sentiment es requerido y debe ser: like, dislike, hard'
       });
     }
 
@@ -1008,16 +1008,17 @@ router.get('/sessions/:sessionId/feedback', authenticateToken, async (req, res) 
   }
 });
 
-// GET /api/routines/active-plan
+// GET /api/routines/active-plan  
 // Obtiene la rutina activa del usuario para restaurar después del login
+// SOLUCIÓN HÍBRIDA: Busca en methodology_plans activos, con fallback a routine_plans
 router.get('/active-plan', authenticateToken, async (req, res) => {
   try {
     const userId = req.user?.userId || req.user?.id;
 
-    // Buscar el plan de metodología activo más reciente
+    // ESTRATEGIA 1: Buscar plan de metodología activo (ideal)
     const activeMethodologyQuery = await pool.query(
       `SELECT mp.id as methodology_plan_id, mp.methodology_type, mp.plan_data, mp.confirmed_at,
-              rp.id as routine_plan_id
+              rp.id as routine_plan_id, 'methodology' as source
        FROM app.methodology_plans mp
        LEFT JOIN app.routine_plans rp ON rp.user_id = mp.user_id 
          AND rp.methodology_type = mp.methodology_type
@@ -1028,7 +1029,33 @@ router.get('/active-plan', authenticateToken, async (req, res) => {
       [userId]
     );
 
-    if (activeMethodologyQuery.rowCount === 0) {
+    // ESTRATEGIA 2: Si no hay methodology activo, buscar routine_plans activos (fallback)
+    let activePlan = null;
+    let planSource = 'methodology';
+    
+    if (activeMethodologyQuery.rowCount > 0) {
+      activePlan = activeMethodologyQuery.rows[0];
+    } else {
+      console.log(`⚠️ No methodology_plans activos para user ${userId}, buscando en routine_plans...`);
+      
+      const activeRoutineQuery = await pool.query(
+        `SELECT rp.id as routine_plan_id, rp.methodology_type, rp.plan_data, 
+                rp.confirmed_at, rp.id as methodology_plan_id, 'routine_fallback' as source
+         FROM app.routine_plans rp
+         WHERE rp.user_id = $1 AND rp.status = 'active' AND rp.is_active = true
+         ORDER BY rp.confirmed_at DESC
+         LIMIT 1`,
+        [userId]
+      );
+      
+      if (activeRoutineQuery.rowCount > 0) {
+        activePlan = activeRoutineQuery.rows[0];
+        planSource = 'routine_fallback';
+        console.log(`✅ Encontrado plan activo en routine_plans ID ${activePlan.routine_plan_id}`);
+      }
+    }
+
+    if (!activePlan) {
       return res.json({ 
         success: true, 
         hasActivePlan: false,
@@ -1036,19 +1063,22 @@ router.get('/active-plan', authenticateToken, async (req, res) => {
       });
     }
 
-    const activePlan = activeMethodologyQuery.rows[0];
     const planData = typeof activePlan.plan_data === 'string' 
       ? JSON.parse(activePlan.plan_data) 
       : activePlan.plan_data;
+
+    console.log(`✅ Recuperando plan activo desde ${planSource} para user ${userId}`);
 
     res.json({
       success: true,
       hasActivePlan: true,
       routinePlan: planData,
-      planSource: { label: 'IA' },
+      planSource: { label: planSource === 'routine_fallback' ? 'Recuperado' : 'IA' },
       planId: activePlan.routine_plan_id,
       methodology_plan_id: activePlan.methodology_plan_id,
-      confirmedAt: activePlan.confirmed_at
+      planType: activePlan.methodology_type,
+      confirmedAt: activePlan.confirmed_at,
+      recoverySource: planSource  // Para debugging
     });
 
   } catch (error) {
@@ -1057,6 +1087,120 @@ router.get('/active-plan', authenticateToken, async (req, res) => {
       success: false, 
       error: 'Error interno del servidor' 
     });
+  }
+});
+
+// POST /api/routines/confirm-and-activate
+// NUEVO ENDPOINT UNIFICADO: Confirma plan y lo deja listo para usar
+router.post('/confirm-and-activate', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    console.log('🚀 FLUJO UNIFICADO: confirm-and-activate iniciado');
+    await client.query('BEGIN');
+    
+    const userId = req.user?.userId || req.user?.id;
+    const { methodology_plan_id, plan_data } = req.body;
+    
+    if (!methodology_plan_id) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ 
+        success: false, 
+        error: 'methodology_plan_id es requerido' 
+      });
+    }
+    
+    console.log(`📋 Confirmando y activando plan ${methodology_plan_id} para user ${userId}`);
+    
+    // 1. VERIFICAR que el plan existe y pertenece al usuario
+    const planCheck = await client.query(
+      `SELECT id, status, methodology_type, plan_data 
+       FROM app.methodology_plans 
+       WHERE id = $1 AND user_id = $2`,
+      [methodology_plan_id, userId]
+    );
+    
+    if (planCheck.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Plan no encontrado' 
+      });
+    }
+    
+    const plan = planCheck.rows[0];
+    const finalPlanData = plan_data || plan.plan_data;
+    
+    // 2. CANCELAR planes activos anteriores para evitar conflictos
+    console.log('🧹 Cancelando planes anteriores...');
+    await client.query(
+      `UPDATE app.methodology_plans 
+       SET status = 'cancelled', updated_at = NOW() 
+       WHERE user_id = $1 AND status = 'active' AND id != $2`,
+      [userId, methodology_plan_id]
+    );
+    
+    await client.query(
+      `UPDATE app.routine_plans 
+       SET status = 'cancelled', updated_at = NOW() 
+       WHERE user_id = $1 AND status = 'active'`,
+      [userId]
+    );
+    
+    // 3. ACTIVAR el plan de metodología
+    console.log('✅ Activando methodology_plan...');
+    await client.query(
+      `UPDATE app.methodology_plans 
+       SET status = 'active', confirmed_at = NOW(), updated_at = NOW() 
+       WHERE id = $1 AND user_id = $2`,
+      [methodology_plan_id, userId]
+    );
+    
+    // 4. CREAR routine_plan correspondiente
+    console.log('✅ Creando routine_plan...');
+    const routinePlanResult = await client.query(
+      `INSERT INTO app.routine_plans (
+        user_id, methodology_type, plan_data, status, is_active,
+        confirmed_at, created_at, updated_at
+      ) VALUES ($1, $2, $3, 'active', true, NOW(), NOW(), NOW())
+       RETURNING id`,
+      [userId, plan.methodology_type, finalPlanData]
+    );
+    
+    const routinePlanId = routinePlanResult.rows[0].id;
+    console.log(`✅ routine_plan creado con ID ${routinePlanId}`);
+    
+    // 5. GENERAR sesiones de entrenamiento automáticamente
+    console.log('🏋️ Generando sesiones de entrenamiento...');
+    await ensureMethodologySessions(client, userId, methodology_plan_id, finalPlanData);
+    
+    await client.query('COMMIT');
+    
+    console.log('🎯 FLUJO UNIFICADO COMPLETADO exitosamente');
+    
+    // 6. RETORNAR todo listo para usar
+    res.json({
+      success: true,
+      message: '¡Tu rutina está lista!',
+      data: {
+        methodology_plan_id: methodology_plan_id,
+        routine_plan_id: routinePlanId,
+        methodology_type: plan.methodology_type,
+        plan_data: finalPlanData,
+        status: 'active',
+        ready_for_training: true
+      }
+    });
+    
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('❌ Error en confirm-and-activate:', error.message);
+    res.status(500).json({
+      success: false,
+      error: 'Error interno del servidor',
+      details: error.message
+    });
+  } finally {
+    client.release();
   }
 });
 
@@ -1097,22 +1241,29 @@ router.post('/cancel-routine', authenticateToken, async (req, res) => {
     }
 
     // Actualizar estado del plan de metodología a 'cancelled'
-    await client.query(
+    const methodologyUpdate = await client.query(
       `UPDATE app.methodology_plans 
        SET status = 'cancelled', updated_at = NOW() 
-       WHERE id = $1 AND user_id = $2`,
+       WHERE id = $1 AND user_id = $2
+       RETURNING methodology_type`,
       [methodology_plan_id, userId]
     );
 
-    // Si existe routine_plan_id, también actualizarlo
-    if (routine_plan_id) {
-      await client.query(
-        `UPDATE app.routine_plans 
-         SET status = 'cancelled', updated_at = NOW() 
-         WHERE id = $1 AND user_id = $2`,
-        [routine_plan_id, userId]
-      );
-    }
+    // MEJORA: Buscar automáticamente routine_plans asociados para cancelar
+    // Esto previene inconsistencias si el frontend no envía routine_plan_id
+    const routineUpdateQuery = `
+      UPDATE app.routine_plans 
+      SET status = 'cancelled', updated_at = NOW() 
+      WHERE user_id = $1 AND status = 'active'
+        AND (id = $2 OR methodology_type = $3)
+      RETURNING id`;
+    
+    const routineUpdate = await client.query(
+      routineUpdateQuery,
+      [userId, routine_plan_id || -1, methodologyUpdate.rows[0]?.methodology_type]
+    );
+    
+    console.log(`✅ Cancelados: methodology_plan ${methodology_plan_id}, routine_plans [${routineUpdate.rows.map(r => r.id).join(', ')}]`);
 
     // También cancelar las sesiones activas/pendientes
     await client.query(
@@ -1333,6 +1484,7 @@ router.get('/pending-exercises', authenticateToken, async (req, res) => {
       exercises: pendingData.exercises || []
     };
 
+    console.log('✅ Datos de ejercicios pendientes preparados');
     res.json(responseData);
 
   } catch (error) {

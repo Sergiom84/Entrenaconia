@@ -1,6 +1,6 @@
 /**
  * Sistema de Base de Datos de Ejercicios para Calistenia
- * Integra con la tabla calistenia_exercises de PostgreSQL
+ * Integra con la tabla Ejercicios_Calistenia de PostgreSQL
  * 
  * @author Claude Code - Arquitectura Modular para Metodologías
  * @version 1.0.0

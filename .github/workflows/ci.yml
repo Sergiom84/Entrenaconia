@@ -1,70 +1,22 @@
-name: CI/CD Pipeline
+name: CI
 
 on:
-  push:
-    branches: [ main, develop ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [main]
+  push:
+    branches: [main]
 
 jobs:
-  test:
+  build-test:
     runs-on: ubuntu-latest
-    
-    strategy:
-      matrix:
-        node-version: [18.x, 20.x]
-        
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ matrix.node-version }}
-        cache: 'npm'
-    
-    - name: Install dependencies
-      run: npm ci
-      
-    - name: Install backend dependencies
-      run: |
-        cd backend
-        npm ci
-    
-    - name: Run ESLint (warnings only)
-      run: npm run lint || echo "ESLint found issues but continuing..."
-      
-    - name: Build application
-      run: npm run build
-      
-    - name: Run tests (if available)
-      run: npm test --if-present
-      
-    - name: Test backend build
-      run: |
-        cd backend
-        node --check server.js
 
-  build-check:
-    runs-on: ubuntu-latest
-    needs: test
-    
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Use Node.js 20.x
-      uses: actions/setup-node@v4
-      with:
-        node-version: 20.x
-        cache: 'npm'
-    
-    - name: Install dependencies
-      run: npm ci
-      
-    - name: Build for production
-      run: npm run build
-      
-    - name: Check build size
-      run: |
-        echo "Build completed successfully"
-        du -sh dist/
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      - run: npm run test

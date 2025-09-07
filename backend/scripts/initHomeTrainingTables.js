@@ -79,7 +79,7 @@ CREATE TABLE IF NOT EXISTS app.user_exercise_feedback (
   exercise_order   INTEGER,
   exercise_name    TEXT,
   exercise_key     TEXT,
-  sentiment        TEXT NOT NULL CHECK (sentiment IN ('dislike','hard','love')),
+  sentiment        TEXT NOT NULL CHECK (sentiment IN ('like','dislike','hard')),
   comment          TEXT,
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );

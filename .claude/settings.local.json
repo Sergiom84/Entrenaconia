@@ -85,7 +85,19 @@
       "Read(//c/Users/Sergio/Downloads/**)",
       "Bash(dir:*)",
       "Bash(python:*)",
-      "Bash(timeout:*)"
+      "Bash(timeout:*)",
+      "Bash(PORT=3010 npm run dev)",
+      "Bash(PORT=3011 npm run dev)",
+      "Bash(echo:*)",
+      "Bash(lsof:*)",
+      "Bash(del:*)",
+      "Bash(git config:*)",
+      "Bash(./scripts/git-aliases.sh)",
+      "Bash(git s:*)",
+      "Bash(git cm:*)",
+      "Bash(git lg:*)",
+      "Bash(./scripts/git-workflow.sh:*)",
+      "Bash(./scripts/release.sh:*)"
     ]
   }
 }

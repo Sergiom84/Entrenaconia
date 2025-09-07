@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Star, X } from 'lucide-react';
 
 const feedbackOptions = [
+  { key: 'like', label: 'Me gusta' },
   { key: 'dislike', label: 'No me gusta' },
   { key: 'hard', label: 'Es difícil' },
-  { key: 'love', label: 'Me ha encantado' },
 ];
 
 const ExerciseFeedbackModal = ({ show, onClose, onSubmit, exerciseName, initialFeedback = null }) => {

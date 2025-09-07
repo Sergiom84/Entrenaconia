@@ -23,6 +23,36 @@ import RoutineSessionModal from '../RoutineSessionModal';
 import RoutineSessionSummaryCard from '../RoutineSessionSummaryCard';
 import { startSession, updateExercise, finishSession, getTodaySessionStatus, cancelRoutine, getPendingExercises, getSessionProgress } from '../api';
 
+// Función para convertir IDs de ejercicios a nombres legibles
+const formatExerciseName = (exerciseId) => {
+  if (!exerciseId) return 'Ejercicio desconocido';
+  
+  // Mapeo de IDs conocidos a nombres reales
+  const exerciseNameMap = {
+    'flexion-contra-pared': 'Flexión contra pared',
+    'flexion-estandar': 'Flexión estándar',
+    'muscle-up-en-barra-strict': 'Muscle-up en barra (strict)',
+    'dominadas-asistidas': 'Dominadas asistidas',
+    'plancha-frontal': 'Plancha frontal',
+    'sentadillas-peso-corporal': 'Sentadillas peso corporal',
+    'fondos-en-paralelas': 'Fondos en paralelas',
+    'burpees': 'Burpees',
+    'mountain-climbers': 'Mountain climbers',
+    'jumping-jacks': 'Jumping jacks'
+  };
+  
+  // Si existe en el mapeo, usar el nombre real
+  if (exerciseNameMap[exerciseId]) {
+    return exerciseNameMap[exerciseId];
+  }
+  
+  // Si no existe, formatear el ID: remover guiones y capitalizar
+  return exerciseId
+    .split('-')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+};
+
 export default function TodayTrainingTab({
   plan,
   planId,
@@ -47,12 +77,12 @@ export default function TodayTrainingTab({
   // Función para obtener icono y color del sentimiento
   const getSentimentIcon = (sentiment) => {
     switch (sentiment) {
-      case 'love':
-        return { icon: Heart, color: 'text-green-400', bg: 'bg-green-900/30', border: 'border-green-500/30' };
-      case 'hard':
-        return { icon: AlertOctagon, color: 'text-yellow-400', bg: 'bg-yellow-900/30', border: 'border-yellow-500/30' };
+      case 'like':
+        return { icon: Heart, color: 'text-pink-400', bg: 'bg-pink-900/30', border: 'border-pink-500/30' };
       case 'dislike':
-        return { icon: Frown, color: 'text-red-400', bg: 'bg-red-900/30', border: 'border-red-500/30' };
+        return { icon: Frown, color: 'text-orange-400', bg: 'bg-orange-900/30', border: 'border-orange-500/30' };
+      case 'hard':
+        return { icon: AlertOctagon, color: 'text-red-400', bg: 'bg-red-900/30', border: 'border-red-500/30' };
       default:
         return null;
     }
@@ -128,6 +158,34 @@ export default function TodayTrainingTab({
 
     loadTodaySessionStatus();
   }, [todaySession, methodologyPlanId, ensureMethodologyPlan]);
+
+  // Cargar ejercicios pendientes al montar el componente
+  useEffect(() => {
+    const loadPendingExercises = async () => {
+      if (!methodologyPlanId) return;
+
+      try {
+        console.log('🔍 Cargando ejercicios pendientes para methodology_plan_id:', methodologyPlanId);
+        const pendingData = await getPendingExercises({ methodology_plan_id: methodologyPlanId });
+        console.log('📋 Datos de ejercicios pendientes:', pendingData);
+
+        if (pendingData?.hasPendingExercises) {
+          console.log('✅ Hay ejercicios pendientes, mostrando modal');
+          console.log('📊 Datos completos pendingData:', JSON.stringify(pendingData, null, 2));
+          setPendingExercises(pendingData);
+          // Mostrar el modal siempre que haya ejercicios pendientes
+          setShowPendingModal(true);
+          console.log('🎯 Estado del modal actualizado a: true');
+        } else {
+          console.log('ℹ️ No hay ejercicios pendientes');
+        }
+      } catch (e) {
+        console.error('❌ Error cargando ejercicios pendientes:', e);
+      }
+    };
+
+    loadPendingExercises();
+  }, [methodologyPlanId, todaySession]);
 
   const handleStartTraining = async () => {
     if (!todaySession) {
@@ -841,6 +899,16 @@ export default function TodayTrainingTab({
             )}
           </Button>
         )}
+
+        {/* Botón para cancelar rutina */}
+        <Button
+          onClick={() => setShowCancelConfirm(true)}
+          className="w-full mt-3 bg-red-600 hover:bg-red-700 text-white font-semibold py-2"
+          variant="destructive"
+        >
+          <X className="w-4 h-4 mr-2" />
+          Cancelar Rutina
+        </Button>
       </Card>
 
       {/* Preview de ejercicios de hoy */}
@@ -885,7 +953,7 @@ export default function TodayTrainingTab({
                           isSkipped ? 'text-orange-300' :
                           'text-white'
                         }`}>
-                          {ejercicio.nombre}
+                          {formatExerciseName(ejercicio.nombre)}
                         </p>
                         <p className="text-sm text-gray-400">
                           {exerciseProgress?.series_completed || 0}/{ejercicio.series} series × {ejercicio.repeticiones} reps
@@ -897,9 +965,8 @@ export default function TodayTrainingTab({
                             <div className={`flex items-center px-2 py-1 rounded-md ${sentimentData.bg} ${sentimentData.border} border`}>
                               <sentimentData.icon className={`w-3 h-3 mr-1 ${sentimentData.color}`} />
                               <span className={`text-xs ${sentimentData.color} capitalize`}>
-                                {sentiment === 'love' ? 'Me gusta' :
-                                 sentiment === 'normal' ? 'Normal' :
-                                 sentiment === 'hard' ? 'Difícil' :
+                                {sentiment === 'like' ? 'Me gusta' :
+                                 sentiment === 'hard' ? 'Es difícil' :
                                  sentiment === 'dislike' ? 'No me gusta' : sentiment}
                               </span>
                             </div>
@@ -1059,6 +1126,80 @@ export default function TodayTrainingTab({
           onSkipExercise={handleSkipExercise}
           onEndSession={handleEndSession}
         />
+      )}
+
+      {/* Modal de ejercicios pendientes */}
+      {showPendingModal && pendingExercises && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-gray-900/95 border border-yellow-400/30 rounded-2xl p-8 max-w-md mx-4 shadow-2xl">
+            <div className="text-center space-y-6">
+              <div className="w-16 h-16 bg-yellow-400/20 rounded-full flex items-center justify-center mx-auto">
+                <AlertTriangle className="w-8 h-8 text-yellow-400" />
+              </div>
+
+              <div className="space-y-3">
+                <h3 className="text-xl font-bold text-white">
+                  Ejercicios Pendientes
+                </h3>
+                <p className="text-gray-300">
+                  Tienes <span className="text-yellow-400 font-semibold">{pendingExercises?.totalPending} ejercicios pendientes</span> del {pendingExercises?.pendingDay}.
+                </p>
+                <p className="text-gray-400 text-sm">
+                  ¿Le damos caña?
+                </p>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => setShowPendingModal(false)}
+                  className="flex-1 px-4 py-3 border border-gray-600 text-gray-300 rounded-xl hover:bg-gray-800/50 transition-colors"
+                >
+                  Más tarde
+                </button>
+                <button
+                  onClick={handleResumePendingSession}
+                  className="flex-1 px-4 py-3 bg-yellow-400 text-black font-semibold rounded-xl hover:bg-yellow-300 transition-colors"
+                >
+                  ¡Vamos!
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de confirmación para cancelar entrenamiento */}
+      {showCancelConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full">
+            <div className="flex items-center gap-3 mb-4">
+              <AlertTriangle className="w-6 h-6 text-red-400" />
+              <h3 className="text-lg font-semibold text-white">
+                ¿Cancelar Entrenamiento?
+              </h3>
+            </div>
+
+            <p className="text-gray-300 mb-6">
+              Esta acción cancelará tu rutina actual pero conservará el histórico de ejercicios.
+              ¿Estás seguro de que quieres continuar?
+            </p>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowCancelConfirm(false)}
+                className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
+              >
+                No, continuar
+              </button>
+              <button
+                onClick={handleCancelTraining}
+                className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+              >
+                Sí, cancelar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

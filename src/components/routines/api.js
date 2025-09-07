@@ -179,5 +179,5 @@ export async function getPendingExercises({ methodology_plan_id }) {
     if (resp.status === 404) return null; // No hay ejercicios pendientes
     throw new Error(data.error || 'No se pudieron cargar los ejercicios pendientes');
   }
-  return data; // { hasPendingExercises, pendingDay, exercises, totalPending }
+  return data; // { hasPendingExercises, pendingDay, exercises, totalPending, sessionId, weekNumber }
 }

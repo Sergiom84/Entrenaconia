@@ -6,22 +6,24 @@ import { AI_MODULES } from '../config/aiConfigs.js';
 
 const router = express.Router();
 
-// Helper function to get user profile and equipment
+// Helper function to get user profile (sin equipamiento por ahora)
 async function getUserProfileWithEquipment(userId) {
+  // Obtener perfil del usuario desde la tabla users
   const userQuery = await pool.query(`
-    SELECT up.*, 
-           COALESCE(
-             array_agg(DISTINCT ue.equipment_name) FILTER (WHERE ue.equipment_name IS NOT NULL),
-             ARRAY[]::text[]
-           ) as equipamiento_disponible
-    FROM app.user_profiles up
-    LEFT JOIN app.user_equipment ue ON up.user_id = ue.user_id
-    WHERE up.user_id = $1
-    GROUP BY up.user_id, up.nombre, up.edad, up.peso_kg, up.altura_cm, up.experiencia_ejercicio, 
-             up.nivel_actividad, up.objetivo_fitness, up.lesiones_previas, up.preferencias_entrenamiento
+    SELECT * FROM app.users WHERE id = $1
   `, [userId]);
   
-  return userQuery.rows[0] || {};
+  if (userQuery.rowCount === 0) {
+    return {};
+  }
+  
+  const userProfile = userQuery.rows[0];
+  
+  // Por ahora, asumir equipamiento básico de calistenia (peso corporal + barra)
+  return {
+    ...userProfile,
+    equipamiento_disponible: ['peso_corporal', 'barra_dominadas', 'suelo']
+  };
 }
 
 // Helper function to get available calistenia exercises by level
@@ -30,7 +32,7 @@ async function getCalisteniaExercisesByLevel(level) {
     SELECT exercise_id, nombre, categoria, patron, equipamiento, 
            series_reps_objetivo, criterio_de_progreso, progresion_desde, 
            progresion_hacia, notas
-    FROM app.calistenia_exercises
+    FROM app."Ejercicios_Calistenia"
     WHERE nivel = $1
     ORDER BY categoria, nombre
   `, [level]);
@@ -76,8 +78,22 @@ router.post('/generate', authenticateToken, async (req, res) => {
     const userHistory = await getUserCalisteniaHistory(userId);
     console.log(`✅ Retrieved ${userHistory.length} historical exercises`);
     
+    // 4. Get current day for starting the routine
+    const activationDate = new Date();
+    const daysOfWeek = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+    const activationDay = daysOfWeek[activationDate.getDay()];
+    
+    console.log(`🗓️ CALISTENIA MANUAL: Plan comenzará desde ${activationDay} (${activationDate.toLocaleDateString('es-ES')})`);
+    console.log(`🎯 NO desde Lunes, sino desde el día actual: ${activationDay}`);
+    
     // 4. Build AI prompt context
     const promptContext = `
+🎯 INFORMACIÓN CRÍTICA DE INICIO:
+- El usuario está activando la calistenia HOY: ${activationDay} (${activationDate.toLocaleDateString('es-ES')})  
+- El plan debe comenzar INMEDIATAMENTE desde HOY (${activationDay})
+- La primera sesión debe ser para ${activationDay}, NO para Lunes
+- Estructura las semanas empezando desde ${activationDay}
+
 PERFIL DEL USUARIO:
 - Edad: ${userProfile.edad || 'No especificada'}
 - Peso: ${userProfile.peso_kg || 'No especificado'} kg
@@ -114,6 +130,8 @@ INSTRUCCIONES:
 6. Incluye sempre los campos: progresion_info y criterio_progreso
 7. Balancea las categorías de movimiento en cada sesión
 8. Evita ejercicios que el usuario haya hecho recientemente si es posible
+9. **CRÍTICO**: El plan debe comenzar INMEDIATAMENTE desde HOY (${activationDay}), NO desde Lunes
+10. **CRÍTICO**: La primera sesión debe ser para ${activationDay}, estructura las semanas empezando desde ${activationDay}
     `;
     
     // 5. Get AI configuration and prompt
@@ -239,7 +257,7 @@ router.get('/level-assessment', authenticateToken, async (req, res) => {
     // Get user's recent calistenia performances
     const assessmentQuery = await pool.query(`
       SELECT exercise_name, feedback_rating, notes,
-             AVG(CASE WHEN feedback_rating = 'love' THEN 5
+             AVG(CASE WHEN feedback_rating = 'like' THEN 5
                       WHEN feedback_rating = 'normal' THEN 3  
                       WHEN feedback_rating = 'hard' THEN 1
                       ELSE 3 END) as avg_difficulty,

@@ -1,0 +1,153 @@
+/**
+ * Calistenia Specialist AI Routes
+ * API para evaluación automática de nivel y generación de planes especializados
+ * 
+ * @author Claude Code - Sistema IA Especializado
+ * @version 1.0.0
+ */
+
+import express from 'express';
+import authenticateToken from '../middleware/auth.js';
+import { AI_MODULES } from '../config/aiConfigs.js';
+import { getModuleOpenAI } from '../lib/openaiClient.js';
+import { pool } from '../db.js';
+
+const router = express.Router();
+
+/**
+ * GET /api/calistenia-specialist/test
+ * Endpoint de prueba para verificar que las rutas se cargan correctamente
+ */
+router.get('/test', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Calistenia Specialist routes loaded successfully',
+    timestamp: new Date().toISOString()
+  });
+});
+
+/**
+ * POST /api/calistenia-specialist/evaluate-profile
+ * Evaluación automática del perfil del usuario para determinar nivel de calistenia
+ */
+router.post('/evaluate-profile', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    
+    console.log('🤸‍♀️ Iniciando evaluación de perfil para calistenia... Usuario ID:', userId);
+    
+    // TEMPORAL: Respuesta simplificada para probar conectividad
+    res.json({
+      success: true,
+      evaluation: {
+        recommended_level: 'intermedio',
+        confidence: 0.85,
+        reasoning: 'Evaluación temporal - sistema funcionando correctamente',
+        key_indicators: ['Sistema operativo', 'Endpoint conectado', 'Usuario autenticado'],
+        suggested_focus_areas: ['Implementar consulta a base de datos', 'Integrar IA especializada'],
+        exercise_recommendations: ['Dominadas básicas', 'Fondos', 'Sentadillas'],
+        progression_timeline: 'Sistema en desarrollo - pronto completamente funcional',
+        safety_considerations: ['Completar implementación de base de datos']
+      },
+      metadata: {
+        model_used: 'test-mode',
+        evaluation_timestamp: new Date().toISOString(),
+        temp_mode: true,
+        user_id: userId
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Error en evaluación de perfil:', error);
+    
+    res.status(500).json({
+      success: false,
+      error: 'Error interno del servidor',
+      message: error.message,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+});
+
+/**
+ * POST /api/calistenia-specialist/generate-plan
+ * Generación de plan especializado usando IA de calistenia
+ * TEMPORAL: Respuesta simplificada
+ */
+router.post('/generate-plan', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    const { userProfile, selectedLevel, goals } = req.body;
+    
+    console.log('🤸‍♀️ Generando plan especializado de calistenia... Usuario:', userId, 'Nivel:', selectedLevel);
+    
+    // TEMPORAL: Plan básico de respuesta
+    const mockPlan = {
+      selected_style: "Calistenia",
+      nivel_usuario: selectedLevel || "intermedio",
+      duracion_total_semanas: 4,
+      frecuencia_por_semana: 4,
+      rationale: "Plan temporal generado para probar funcionalidad",
+      semanas: [
+        {
+          semana: 1,
+          sesiones: [
+            {
+              dia: "Lunes",
+              duracion_sesion_min: 45,
+              objetivo_sesion: "Fuerza básica",
+              ejercicios: [
+                {
+                  nombre: "Flexiones",
+                  series: 3,
+                  repeticiones: "8-12",
+                  descanso_seg: 60,
+                  intensidad: "RPE 7",
+                  notas: "Mantener postura correcta",
+                  progresion: "Aumentar repeticiones semanalmente"
+                },
+                {
+                  nombre: "Sentadillas",
+                  series: 3,
+                  repeticiones: "12-15",
+                  descanso_seg: 60,
+                  intensidad: "RPE 6",
+                  notas: "Descenso controlado",
+                  progresion: "Añadir salto en semana 3"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      principios_clave: ["Progresión gradual", "Técnica correcta", "Consistencia"],
+      tips_progresion: ["Aumentar repeticiones antes que series", "Dominar la forma antes de avanzar"],
+      equipamiento_necesario: ["Ninguno - peso corporal"]
+    };
+    
+    res.json({
+      success: true,
+      plan: mockPlan,
+      planId: Date.now(), // ID temporal
+      routinePlanId: Date.now() + 1,
+      metadata: {
+        model_used: 'test-mode',
+        generation_timestamp: new Date().toISOString(),
+        level_used: selectedLevel,
+        temp_mode: true
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Error generando plan especializado:', error);
+    
+    res.status(500).json({
+      success: false,
+      error: 'Error interno del servidor',
+      message: error.message,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+});
+
+export default router;
