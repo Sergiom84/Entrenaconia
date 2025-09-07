@@ -7,7 +7,7 @@ export const FeatureKey = {
   HOME: "home",
   METHODOLOGIE: "methodologie",
   NUTRITION: "nutrition",
-  CALISTENIA_MANUAL: "calistenia_manual"
+  CALISTENIA_SPECIALIST: "calistenia_specialist"
 };
 
 const FILE_BY_FEATURE = {
@@ -16,7 +16,7 @@ const FILE_BY_FEATURE = {
   [FeatureKey.HOME]: "home_training.md",
   [FeatureKey.METHODOLOGIE]: "Methodologie_(Auto).md",
   [FeatureKey.NUTRITION]: "Nutrition_AI.md",
-  [FeatureKey.CALISTENIA_MANUAL]: "calistenia_manual_prompt.txt"
+  [FeatureKey.CALISTENIA_SPECIALIST]: "calistenia.md"
 };
 
 const cache = new Map();

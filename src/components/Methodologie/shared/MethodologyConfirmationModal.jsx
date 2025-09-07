@@ -207,12 +207,12 @@ export default function MethodologyConfirmationModal({
                 {isGenerating ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Generando...
+                    Preparando tu rutina...
                   </>
                 ) : (
                   <>
                     <CheckCircle className="w-4 h-4 mr-2" />
-                    Generar
+                    ¡Acepto! Quiero esta rutina
                   </>
                 )}
               </Button>

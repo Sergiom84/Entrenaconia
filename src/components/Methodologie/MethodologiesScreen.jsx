@@ -423,8 +423,8 @@ export default function MethodologiesScreen() {
     }, 1000);
   };
 
-  // Función para navegar a rutinas con el plan
-  const navigateToRoutines = (overridePlan = null) => {
+  // FUNCIÓN MEJORADA: Confirmar y activar plan de forma unificada
+  const navigateToRoutines = async (overridePlan = null) => {
     const planContainer = overridePlan || generatedRoutinePlan;
 
     if (!planContainer || !planContainer.plan) {
@@ -433,39 +433,52 @@ export default function MethodologiesScreen() {
       return;
     }
 
-    const model = planContainer?.metadata?.model;
-    // Usar routinePlanId para Rutinas, fallback a planId si no existe
-    const correctPlanId = planContainer?.routinePlanId || planContainer?.planId;
+    // NUEVO FLUJO UNIFICADO: Confirmar y activar plan de una vez
+    try {
+      setIsLoading(true);
+      console.log('🚀 FLUJO MEJORADO: Confirmando y activando plan...');
+      
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/routines/confirm-and-activate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          methodology_plan_id: planContainer?.planId,
+          plan_data: planContainer.plan
+        })
+      });
 
-    console.log('🛤️ Navegando a Rutinas:', {
-      methodologyPlanId: planContainer?.planId,
-      routinePlanId: planContainer?.routinePlanId,
-      usingPlanId: correctPlanId
-    });
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Error confirmando el plan');
+      }
 
-    console.log('📦 Full generatedRoutinePlan object:', planContainer);
-    console.log('📋 Routine plan structure:', planContainer.plan);
+      console.log('✅ Plan confirmado y activado exitosamente:', result);
 
-    const navigationState = {
-      routinePlan: planContainer.plan,
-      planSource: { label: 'OpenAI', detail: model ? `(${model})` : '' },
-      planMetadata: planContainer.metadata,
-      planId: correctPlanId,
-      methodology_plan_id: planContainer?.planId // ⭐ Crítico: ID del plan de metodología
-    };
+      // Navegar directamente - el plan ya está listo
+      navigate('/routines', {
+        state: {
+          planJustActivated: true,
+          planData: result.data,
+          successMessage: result.message,
+          planSource: { label: 'IA Perfecto', detail: planContainer?.metadata?.model ? `(${planContainer.metadata.model})` : '' }
+        }
+      });
 
-    console.log('🚀 About to navigate with state:', navigationState);
-
-    navigate('/routines', {
-      state: navigationState
-    });
-
-    // Limpiar estado después de un delay para asegurar que la navegación se complete
-    setTimeout(() => {
-      console.log('🧹 Clearing methodology state after navigation');
+      // Limpiar estado
       setGeneratedRoutinePlan(null);
       setShowPersonalizedMessage(false);
-    }, 100);
+      
+    } catch (error) {
+      console.error('❌ Error en flujo unificado:', error);
+      setError(`Error activando tu rutina: ${error.message}`);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (

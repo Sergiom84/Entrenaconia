@@ -7,6 +7,13 @@ import { fileURLToPath } from 'url';
 
 import { preloadAllPrompts } from './lib/promptRegistry.js';
 import { validateAPIKeys } from './lib/openaiClient.js';
+
+// Helper function for Spanish timezone (UTC+2/UTC+1 depending on DST)
+function getSpanishTimestamp() {
+  const now = new Date();
+  const madridTime = new Date(now.toLocaleString("en-US", {timeZone: "Europe/Madrid"}));
+  return madridTime.toISOString();
+}
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/users.js';
 import medicalDocsRoutes from './routes/medicalDocs.js';
@@ -74,7 +81,7 @@ const FRONTEND_DIST = path.join(__dirname, '../dist'); // ajusta si tu build sal
     const apiKeyStatus = validateAPIKeys();
     if (apiKeyStatus.allConfigured) {
       console.log('✅ Todas las API keys configuradas correctamente');
-      console.log('🤖 Features disponibles: photo, video, home, methodologie, nutrition');
+      console.log('🤖 Features disponibles: photo, video, home, methodologie, nutrition, calistenia_specialist');
     } else {
       console.warn('⚠️ API keys faltantes:', apiKeyStatus.missing.join(', '));
       console.log('🔍 Estado detallado:', apiKeyStatus.features);
@@ -101,7 +108,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Middleware para logging de peticiones
 app.use((req, res, next) => {
-  console.log(`📥 ${req.method} ${req.path} - ${new Date().toISOString()}`);
+  console.log(`📥 ${req.method} ${req.path} - ${getSpanishTimestamp()}`);
   if (req.body && Object.keys(req.body).length > 0) {
     console.log('📦 Body:', JSON.stringify(req.body, null, 2));
   }
