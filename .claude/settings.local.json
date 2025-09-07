@@ -94,7 +94,9 @@
       "Bash(git config:*)",
       "Bash(./scripts/git-aliases.sh)",
       "Bash(git s:*)",
-      "Bash(git cm:*)"
+      "Bash(git cm:*)",
+      "Bash(git lg:*)",
+      "Bash(./scripts/git-workflow.sh:*)"
     ]
   }
 }

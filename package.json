@@ -8,14 +8,12 @@
     "dev:backend": "npm --prefix backend run dev",
     "dev:all": "concurrently -n FRONT,API -c green,cyan \"npm run dev\" \"npm run dev:backend\"",
     "install:all": "npm install && npm --prefix backend install",
-    "build": "vite build",
     "lint": "eslint --config .eslint.config.mjs .",
-    "lint:fix": "eslint --config .eslint.config.mjs . --fix",
+    "build": "vite build",
     "test": "echo \"⚠️  Tests not configured yet\" && exit 0",
-    "test:quick": "echo \"⚡ Quick tests not configured yet\" && exit 0",
+    "prepare": "husky",
     "pre-commit": "lint-staged",
-    "preview": "vite preview",
-    "prepare": "husky"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.61.0",

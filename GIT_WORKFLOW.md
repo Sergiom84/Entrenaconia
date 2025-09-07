@@ -1,48 +1,232 @@
-# 🚀 Git Workflow - Entrena con IA
+# 🚀 Development Workflow - Entrena con IA
 
-Flujo de trabajo optimizado para evitar pérdida de código y conflictos complejos.
+_Configurado: Septiembre 2025 — Proyecto: Entrena con IA_
 
-## 🎯 Objetivos
+## 📋 Flujo de Desarrollo
 
-- **Nunca perder funcionalidades** al hacer merge
-- **Detectar conflictos temprano** con rebases frecuentes
-- **Mantener historial limpio** con conventional commits
-- **Automatizar verificaciones** con hooks de calidad
-
-## 🛠️ Herramientas Configuradas
-
-### ✅ GitLens (VS Code)
-
-- **Configuración**: `.vscode/settings.json`
-- **Funciones**: CodeLens, blame inline, historial visual
-- **Instalación**: Automática via `.vscode/extensions.json`
-
-### ✅ Pre-commit Hooks (Husky)
-
-- **Lint automático** en archivos modificados
-- **Verificación de sintaxis** del backend
-- **Conventional commits** obligatorios
-- **Archivos**: `.husky/pre-commit`, `.husky/commit-msg`
-
-### ✅ Git Configuration
+### 1. Crear Nueva Funcionalidad
 
 ```bash
-git config --global rerere.enabled true        # Recuerda resoluciones de conflictos
-git config --global pull.rebase true           # Rebase por defecto en pull
-git config --global rebase.autoStash true      # Auto-stash durante rebase
+git checkout main
+git pull origin main
+git checkout -b feat/nombre-descriptivo
 ```
 
-### ✅ Git Aliases
+### 2. Tipos de Ramas
+
+- **feat/** - Nuevas funcionalidades
+- **fix/** - Corrección de bugs
+- **refactor/** - Refactoring de código
+- **docs/** - Solo documentación
+- **perf/** - Mejoras de rendimiento
+- **test/** - Añadir tests
+
+### 3. Durante el Desarrollo
 
 ```bash
-git s           # Status resumido
-git lg          # Log con gráfico
-git dfm         # Diff con main
-git sync        # Rebase con origin/main
-git new-branch  # Crear rama desde main actualizado
+git add .
+git commit -m "feat: add exercise completion persistence"
+git push origin feat/nombre-rama
 ```
 
-## 📋 Flujo de Trabajo Diario
+### 4. Sincronización con main
+
+```bash
+git fetch origin
+git rebase origin/main
+# o
+git merge origin/main
+```
+
+### 5. Pre-commit Automático
+
+```bash
+npm i -D husky lint-staged eslint prettier
+npm run prepare
+npx husky add .husky/pre-commit "npx lint-staged"
+npx husky add .husky/pre-push "npm run test && npm run build"
+```
+
+**package.json:**
+
+```json
+{
+  "scripts": {
+    "lint": "eslint .",
+    "build": "npm run build",
+    "test": "npm run test",
+    "prepare": "husky install"
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx}": ["eslint --fix", "git add"],
+    "*.{md,json,css,scss}": ["prettier --write", "git add"]
+  }
+}
+```
+
+### 6. Crear Pull Request
+
+```bash
+git push origin feat/nombre-rama
+```
+
+**Checklist:**
+
+- ✅ Compila sin errores
+- ✅ Lint ok
+- ✅ Probado manual
+- ✅ No rompe funcionalidades
+- ✅ Commits descriptivos
+
+### 7. Plantilla PR
+
+`.github/pull_request_template.md` ya configurada con:
+
+- ✅ Qué cambia
+- ✅ Cómo se probó
+- ✅ Riesgos
+- ✅ Checklist completo
+
+### 8. Convención Commits
+
+- **feat(scope):** Nueva funcionalidad
+- **fix(scope):** Corrección de bug
+- **docs:** Documentación
+- **refactor:** Refactoring
+- **test:** Tests
+- **perf:** Rendimiento
+
+### 9. Estrategia de Merge + Protección
+
+- **Squash & Merge** (recomendado)
+- Branch protection en main: PR requerido, checks verdes, no force push
+
+### 10. CI GitHub Actions
+
+`.github/workflows/ci.yml` configurado:
+
+```yaml
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "18" }
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      - run: npm run test
+```
+
+### 11. Releases
+
+```bash
+./scripts/release.sh create_release v1.3.0
+./scripts/release.sh list_releases
+```
+
+### 12. Rollback
+
+```bash
+./scripts/release.sh rollback v1.2.0
+```
+
+## 🔧 Comandos Útiles
+
+### Testing
+
+```bash
+npm run lint
+npm run build
+npm run dev
+```
+
+### Ramas
+
+```bash
+git branch -a
+git checkout feat/mi-rama
+git checkout main
+git pull origin main
+git checkout feat/mi-rama
+git merge main
+```
+
+### Limpieza
+
+```bash
+git branch -d feat/rama-mergeada
+git push origin --delete feat/rama-mergeada
+```
+
+## 🚨 Reglas
+
+- ❌ No commits directos a main
+- ❌ No cambios masivos
+- ❌ No push sin probar
+- ❌ No merge sin review
+- ✅ Siempre PR
+- ✅ Commits descriptivos
+- ✅ Cambios pequeños
+
+## 🛠️ Configuración VS Code
+
+`.vscode/settings.json`:
+
+```json
+{
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": { "source.fixAll.eslint": "explicit" },
+  "eslint.validate": ["javascript", "typescript", "react"],
+  "git.autofetch": true
+}
+```
+
+**Extensiones:**
+
+- ESLint
+- Prettier
+- GitLens
+- Auto Import
+
+## 📞 Troubleshooting
+
+### Pre-commit failed
+
+```bash
+npm run lint
+npm run build
+git commit --amend
+```
+
+### Cannot push to main
+
+```bash
+git checkout -b feat/mi-cambio
+git push origin feat/mi-cambio
+```
+
+### Conflictos
+
+```bash
+git checkout main
+git pull origin main
+git checkout feat/mi-rama
+git merge main
+# Resolver en VS Code/GitLens
+git add .
+git commit
+```
+
+---
+
+## 📋 Flujo de Trabajo Diario (Scripts Automatizados)
 
 ### 1. 🌅 Al Empezar el Día
 
