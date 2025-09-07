@@ -36,37 +36,36 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    return plan.semanas.map((semana, weekIndex) => {
+    const totalWeeks = plan.duracion_total_semanas || plan.semanas.length;
+    const expandedWeeks = Array.from({
+      length: totalWeeks
+    }, (_, i) => plan.semanas[i] || plan.semanas[0]);
+
+    return expandedWeeks.map((semana, weekIndex) => {
       // Calcular fecha base para esta semana
       const weekStartDate = new Date(startDate);
       weekStartDate.setDate(startDate.getDate() + (weekIndex * 7));
 
-      // Crear array de 7 días para la semana (empezando por lunes)
+      // Crear array de 7 días para la semana a partir de la fecha de inicio
       const weekDays = [];
-      
-      // Ajustar para que la semana empiece el lunes
-      const mondayDate = new Date(weekStartDate);
-      const currentDay = mondayDate.getDay(); // 0 = domingo, 1 = lunes, etc.
-      const daysToMonday = currentDay === 0 ? -6 : 1 - currentDay; // Si es domingo, retroceder 6 días
-      mondayDate.setDate(mondayDate.getDate() + daysToMonday);
-      
+
       for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
-        const dayDate = new Date(mondayDate);
-        dayDate.setDate(mondayDate.getDate() + dayIndex);
+        const dayDate = new Date(weekStartDate);
+        dayDate.setDate(weekStartDate.getDate() + dayIndex);
         // Normalizar hora para comparar correctamente con "hoy"
         dayDate.setHours(0, 0, 0, 0);
 
         const dayName = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'][dayDate.getDay()];
         const dayNameShort = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][dayDate.getDay()];
-        
+
         // Buscar si hay sesión para este día
         const session = semana.sesiones?.find(ses => {
           const sessionDay = ses.dia?.toLowerCase();
           const currentDayLower = dayName.toLowerCase();
-          return sessionDay === currentDayLower || 
+          return sessionDay === currentDayLower ||
                  sessionDay === dayNameShort.toLowerCase() ||
                  sessionDay === dayNameShort.toLowerCase().replace('é', 'e') ||
-                 sessionDay === 'mie' && currentDayLower === 'miércoles';
+                 (sessionDay === 'mie' && currentDayLower === 'miércoles');
         });
 
         const isPast = dayDate < today;
@@ -81,12 +80,12 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
           isPast,
           isToday,
           isFuture,
-          weekNumber: semana.semana
+          weekNumber: weekIndex + 1
         });
       }
 
       return {
-        weekNumber: semana.semana,
+        weekNumber: weekIndex + 1,
         weekStartDate,
         days: weekDays
       };
