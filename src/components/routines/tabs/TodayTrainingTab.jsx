@@ -23,31 +23,51 @@ import RoutineSessionModal from '../RoutineSessionModal';
 import RoutineSessionSummaryCard from '../RoutineSessionSummaryCard';
 import { startSession, updateExercise, finishSession, getTodaySessionStatus, cancelRoutine, getPendingExercises, getSessionProgress } from '../api';
 
-// Función para convertir IDs de ejercicios a nombres legibles
-const formatExerciseName = (exerciseId) => {
-  if (!exerciseId) return 'Ejercicio desconocido';
+// Función para formatear nombres de ejercicios (ahora recibe nombres directos de la DB)
+const formatExerciseName = (exerciseName) => {
+  if (!exerciseName) return 'Ejercicio desconocido';
   
-  // Mapeo de IDs conocidos a nombres reales
+  // Si ya es un nombre formateado (contiene espacios), devolverlo tal como está
+  if (exerciseName.includes(' ') || exerciseName.includes('(')) {
+    return exerciseName;
+  }
+  
+  // Mapeo de IDs legacy a nombres reales (por compatibilidad)
   const exerciseNameMap = {
     'flexion-contra-pared': 'Flexión contra pared',
+    'flexiones-pared': 'Flexiones contra pared',
+    'flexiones-inclinadas': 'Flexiones inclinadas',
+    'flexiones-rodillas': 'Flexiones de rodillas',
     'flexion-estandar': 'Flexión estándar',
+    'flexiones-diamante': 'Flexiones diamante',
     'muscle-up-en-barra-strict': 'Muscle-up en barra (strict)',
     'dominadas-asistidas': 'Dominadas asistidas',
+    'dominadas-completas': 'Dominadas completas',
+    'dominadas-supinas': 'Dominadas supinas',
+    'dominadas-comando': 'Dominadas comando',
+    'colgado-activo': 'Colgado activo',
+    'dominadas-negativas': 'Dominadas negativas',
     'plancha-frontal': 'Plancha frontal',
-    'sentadillas-peso-corporal': 'Sentadillas peso corporal',
+    'plancha-lateral': 'Plancha lateral',
     'fondos-en-paralelas': 'Fondos en paralelas',
-    'burpees': 'Burpees',
-    'mountain-climbers': 'Mountain climbers',
-    'jumping-jacks': 'Jumping jacks'
+    'fondos-banco': 'Fondos en banco',
+    'fondos-paralelas': 'Fondos en paralelas',
+    'l-sit-progresion': 'L-sit progresión',
+    'toes-to-bar': 'Toes to bar',
+    'pistol-asistida': 'Pistol squat asistida',
+    'sentadillas-basicas': 'Sentadillas básicas',
+    'sentadillas-salto': 'Sentadillas con salto',
+    'zancadas-estaticas': 'Zancadas estáticas',
+    'zancadas-caminando': 'Zancadas caminando'
   };
   
   // Si existe en el mapeo, usar el nombre real
-  if (exerciseNameMap[exerciseId]) {
-    return exerciseNameMap[exerciseId];
+  if (exerciseNameMap[exerciseName]) {
+    return exerciseNameMap[exerciseName];
   }
   
   // Si no existe, formatear el ID: remover guiones y capitalizar
-  return exerciseId
+  return exerciseName
     .split('-')
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');

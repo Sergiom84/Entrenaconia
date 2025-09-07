@@ -399,9 +399,14 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
           role: 'system',
           content: `${config.systemPrompt}
 
-Genera un plan completo de calistenia usando ÚNICAMENTE los ejercicios proporcionados en available_exercises.
+⚠️ REGLAS CRÍTICAS - NO NEGOCIABLES ⚠️
 
-IMPORTANTE: El plan debe comenzar desde el día actual especificado en start_day y start_date del payload. No empezar siempre en lunes.
+1. USA SOLO ejercicios de available_exercises
+2. Para campo "nombre" en JSON: USA el campo 'nombre' de la DB, NO 'exercise_id' 
+3. OBLIGATORIO: mínimo 4-6 ejercicios diferentes por sesión
+4. Plan DEBE comenzar desde start_day especificado (NO siempre lunes)
+
+Genera un plan completo de calistenia siguiendo estas reglas críticas.
 
 ESTRUCTURA REQUERIDA DEL PLAN JSON:
 {
@@ -420,7 +425,7 @@ ESTRUCTURA REQUERIDA DEL PLAN JSON:
           "objetivo_sesion": "Descripción del enfoque",
           "ejercicios": [
             {
-              "nombre": "USAR EXACTAMENTE exercise_id de available_exercises",
+              "nombre": "USAR EXACTAMENTE campo 'nombre' de available_exercises (NO exercise_id)",
               "series": number,
               "repeticiones": "rango o número",
               "descanso_seg": number,
@@ -439,7 +444,9 @@ ESTRUCTURA REQUERIDA DEL PLAN JSON:
 }
 
 REGLAS CRÍTICAS:
-- USA SOLO ejercicios de available_exercises (campo exercise_id como nombre)
+- USA SOLO ejercicios de available_exercises (campo 'nombre' como nombre, NO exercise_id)
+- MÍNIMO 4-6 ejercicios diferentes por sesión (OBLIGATORIO)
+- COMIENZA desde start_day especificado (NO siempre lunes)
 - EVITA ejercicios de recent_exercises cuando sea posible
 - PROGRESIÓN gradual semanal
 - Respeta el nivel seleccionado
