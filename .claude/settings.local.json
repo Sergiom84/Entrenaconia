@@ -97,7 +97,8 @@
       "Bash(git cm:*)",
       "Bash(git lg:*)",
       "Bash(./scripts/git-workflow.sh:*)",
-      "Bash(./scripts/release.sh:*)"
+      "Bash(./scripts/release.sh:*)",
+      "Read(//c/Users/Sergio/Desktop/**)"
     ]
   }
 }
