@@ -158,25 +158,35 @@ router.post('/evaluate-profile', authenticateToken, async (req, res) => {
     logSeparator('CALISTENIA PROFILE EVALUATION');
     logUserProfile(normalizedProfile, userId);
     
-    // Obtener ejercicios disponibles de calistenia
+    // Obtener SOLO ejercicios representativos por nivel para evaluación (optimizado)
     const exercisesResult = await pool.query(`
-      SELECT exercise_id, nombre, nivel, categoria, patron, equipamiento, 
-             series_reps_objetivo, criterio_de_progreso, notas
-      FROM app."Ejercicios_Calistenia"
+      WITH representative_exercises AS (
+        SELECT DISTINCT ON (nivel, categoria) 
+               exercise_id, nombre, nivel, categoria, patron, equipamiento, 
+               series_reps_objetivo, criterio_de_progreso, notas
+        FROM app."Ejercicios_Calistenia"
+        WHERE categoria IN ('Empuje', 'Tracción', 'Core', 'Piernas')
+        ORDER BY nivel, categoria, 
+          CASE 
+            WHEN LOWER(nivel) = 'básico' THEN 1
+            WHEN LOWER(nivel) = 'intermedio' THEN 2  
+            WHEN LOWER(nivel) = 'avanzado' THEN 3
+          END, nombre
+      )
+      SELECT * FROM representative_exercises
       ORDER BY 
         CASE 
           WHEN LOWER(nivel) = 'básico' THEN 1
           WHEN LOWER(nivel) = 'intermedio' THEN 2
           WHEN LOWER(nivel) = 'avanzado' THEN 3
-          ELSE 4
-        END, categoria, nombre
+        END, categoria
     `);
     
     const availableExercises = exercisesResult.rows;
     if (availableExercises.length === 0) {
       throw new Error('No se encontraron ejercicios de calistenia en la base de datos');
     }
-    console.log(`📋 ${availableExercises.length} ejercicios de calistenia disponibles`);
+    console.log(`📋 ${availableExercises.length} ejercicios representativos para evaluación (optimizado desde 65)`);
     
     // Obtener historial de ejercicios recientes del usuario
     const recentExercisesResult = await pool.query(`
