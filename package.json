@@ -10,8 +10,12 @@
     "install:all": "npm install && npm --prefix backend install",
     "build": "vite build",
     "lint": "eslint --config .eslint.config.mjs .",
+    "lint:fix": "eslint --config .eslint.config.mjs . --fix",
+    "test": "echo \"⚠️  Tests not configured yet\" && exit 0",
+    "test:quick": "echo \"⚡ Quick tests not configured yet\" && exit 0",
+    "pre-commit": "lint-staged",
     "preview": "vite preview",
-    "prepare": "husky || true"
+    "prepare": "husky"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.61.0",
@@ -48,6 +52,19 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^16.3.0",
-    "husky": "^9.1.7"
+    "husky": "^9.1.7",
+    "lint-staged": "^16.1.6",
+    "prettier": "^3.6.2"
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx}": [
+      "eslint --config .eslint.config.mjs --fix"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ],
+    "backend/**/*.js": [
+      "node -c"
+    ]
   }
 }

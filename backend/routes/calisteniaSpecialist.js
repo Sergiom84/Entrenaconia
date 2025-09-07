@@ -88,7 +88,7 @@ router.post('/evaluate-profile', authenticateToken, async (req, res) => {
     const exercisesResult = await pool.query(`
       SELECT exercise_id, nombre, nivel, categoria, patron, equipamiento, 
              series_reps_objetivo, criterio_de_progreso, notas
-      FROM app.calistenia_exercises
+      FROM app."Ejercicios_Calistenia"
       ORDER BY 
         CASE 
           WHEN LOWER(nivel) = 'básico' THEN 1
@@ -296,7 +296,7 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
       SELECT exercise_id, nombre, nivel, categoria, patron, equipamiento, 
              series_reps_objetivo, criterio_de_progreso, progresion_desde, 
              progresion_hacia, notas
-      FROM app.calistenia_exercises
+      FROM app."Ejercicios_Calistenia"
       WHERE LOWER(nivel) <= 
         CASE 
           WHEN LOWER($1) = 'avanzado' THEN 'avanzado'

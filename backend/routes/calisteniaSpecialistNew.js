@@ -375,7 +375,7 @@ router.post('/generate-ai-plan', authenticateToken, async (req, res) => {
       SELECT exercise_id, nombre, categoria, patron, equipamiento, 
              series_reps_objetivo, criterio_de_progreso, progresion_desde, 
              progresion_hacia, notas
-      FROM app.calistenia_exercises
+      FROM app."Ejercicios_Calistenia"
       WHERE nivel = $1
       ORDER BY categoria, nombre
     `, [levelCapitalized]);

@@ -17,7 +17,7 @@ async function verifyCalisteniaFlow() {
         COUNT(CASE WHEN LOWER(nivel) = 'intermedio' THEN 1 END) as intermedio_count,
         COUNT(CASE WHEN LOWER(nivel) = 'avanzado' THEN 1 END) as avanzado_count,
         COUNT(DISTINCT categoria) as total_categories
-      FROM app.calistenia_exercises
+      FROM app."Ejercicios_Calistenia"
     `);
 
     if (exercisesResult.rows[0].total_exercises > 0) {
@@ -37,7 +37,7 @@ async function verifyCalisteniaFlow() {
     console.log('\n2️⃣ EJEMPLOS DE EJERCICIOS POR NIVEL:');
     const levelExamples = await client.query(`
       SELECT nivel, nombre, categoria, equipamiento
-      FROM app.calistenia_exercises
+      FROM app."Ejercicios_Calistenia"
       ORDER BY 
         CASE 
           WHEN LOWER(nivel) = 'básico' THEN 1
