@@ -80,9 +80,10 @@ router.post('/generate-manual', authenticateToken, async (req, res) => {
     const userQuery = `
       SELECT 
         u.id, u.nombre, u.apellido, u.email,
-        p.edad, p.peso, p.altura, p.sexo, p.nivel_actividad, p.suplementacion,
-        p.grasa_corporal, p.masa_muscular, p.pecho, p.brazos, p.nivel_entrenamiento,
-        p.anos_entrenando, p.objetivo_principal, p.medicamentos
+        u.edad, u.peso, u.altura, u.sexo, u.nivel_actividad, u.suplementacion,
+        u.grasa_corporal, u.masa_muscular, u.pecho, u.brazos, u.nivel_entrenamiento,
+        u.anos_entrenando, u.medicamentos,
+        p.objetivo_principal, p.limitaciones_fisicas, p.metodologia_preferida
       FROM app.users u
       LEFT JOIN app.user_profiles p ON u.id = p.user_id
       WHERE u.id = $1

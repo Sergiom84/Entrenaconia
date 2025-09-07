@@ -256,11 +256,12 @@ router.post('/generate', authenticateToken, async (req, res) => {
     const { rows } = await pool.query(
       `SELECT 
         u.id, u.nombre, u.apellido, u.email, u.created_at, u.updated_at,
-        p.edad, p.sexo, p.peso, p.altura,
-        p.nivel_actividad, p.nivel_entrenamiento, p.anos_entrenando,
-        p.objetivo_principal, p.alergias, p.medicamentos, p.suplementacion,
-        p.alimentos_excluidos, p.lesiones, p.limitaciones_fisicas,
-        p.grasa_corporal, p.masa_muscular, p.pecho, p.brazos
+        u.edad, u.sexo, u.peso, u.altura,
+        u.nivel_actividad, u.nivel_entrenamiento, u.anos_entrenando,
+        u.alergias, u.medicamentos, u.suplementacion,
+        u.alimentos_excluidos, u.lesiones,
+        u.grasa_corporal, u.masa_muscular, u.pecho, u.brazos,
+        p.objetivo_principal, p.limitaciones_fisicas, p.metodologia_preferida
       FROM app.users u
       LEFT JOIN app.user_profiles p ON u.id = p.user_id
       WHERE u.id = $1`,

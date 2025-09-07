@@ -103,7 +103,7 @@ Responde con JSON de evaluación:
       "objetivo_semana": "Adaptación y evaluación técnica",
       "sesiones": [
         {
-          "dia": "Lunes|Miércoles|Viernes|Sábado|Domingo",
+          "dia": "USAR DÍAS DESDE start_day (ej: si start_day='miércoles', comenzar miércoles, viernes, lunes...)",
           "descripcion": "Descripción del enfoque de la sesión",
           "duracion_sesion_min": 30-60,
           "objetivo_sesion": "Objetivo específico de esta sesión",
@@ -213,7 +213,7 @@ Responde con JSON de evaluación:
 5. **ADAPTA** el volumen al nivel real del usuario, no a sus expectativas
 6. **PRIORIZA** la técnica perfecta sobre el volumen o intensidad
 7. **CONSIDERA** el equipo disponible del usuario
-8. **COMIENZA DESDE EL DÍA ACTUAL** especificado en el contexto del usuario
+8. **COMIENZA DESDE EL DÍA ACTUAL** especificado en start_day y start_date del plan_requirements (NO siempre desde lunes)
 9. **MÚLTIPLES EJERCICIOS**: Cada sesión DEBE incluir al menos 4-6 ejercicios diferentes
 10. **VARIEDAD**: Evita repetir los mismos ejercicios del historial reciente
 

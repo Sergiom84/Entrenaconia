@@ -76,7 +76,7 @@ router.post('/record', authenticateToken, async (req, res) => {
     let imc = null;
     if (peso) {
       const userResult = await pool.query(
-        'SELECT p.altura FROM app.users u LEFT JOIN app.user_profiles p ON u.id = p.user_id WHERE u.id = $1',
+        'SELECT u.altura FROM app.users u WHERE u.id = $1',
         [userId]
       );
       

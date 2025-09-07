@@ -1,8 +1,11 @@
 # 📋 Patrón Estándar para Consultas de Perfil de Usuario
 
-## 🎯 Problema Identificado
+## 🎯 Problema Identificado (**CORREGIDO**)
 
-Múltiples archivos en la aplicación estaban haciendo consultas solo a la tabla `app.users` para obtener datos de perfil, pero los datos reales del perfil (edad, peso, altura, objetivos, etc.) están almacenados en la tabla `app.user_profiles`.
+**ERROR INICIAL**: Asumimos incorrectamente que los datos del perfil estaban en `app.user_profiles`.
+
+**REALIDAD**: Los datos principales del perfil (edad, peso, altura, alergias, etc.) **SÍ están en `app.users`**.  
+La tabla `app.user_profiles` solo contiene campos específicos: `objetivo_principal`, `limitaciones_fisicas`, `metodologia_preferida`, `music_config`.
 
 ## ✅ Solución Implementada
 

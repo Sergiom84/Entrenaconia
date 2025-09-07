@@ -49,11 +49,12 @@ router.post('/evaluate-profile', authenticateToken, async (req, res) => {
     const userQuery = await pool.query(`
       SELECT 
         u.id, u.nombre, u.apellido, u.email,
-        p.edad, p.sexo, p.peso, p.altura, 
-        p.anos_entrenando, p.nivel_entrenamiento, p.objetivo_principal,
-        p.nivel_actividad, p.grasa_corporal, p.masa_muscular, 
-        p.pecho, p.brazos, p.alergias, p.medicamentos, 
-        p.suplementacion, p.limitaciones_fisicas
+        u.edad, u.sexo, u.peso, u.altura, 
+        u.anos_entrenando, u.nivel_entrenamiento, 
+        u.nivel_actividad, u.grasa_corporal, u.masa_muscular, 
+        u.pecho, u.brazos, u.alergias, u.medicamentos, 
+        u.suplementacion,
+        p.limitaciones_fisicas, p.objetivo_principal, p.metodologia_preferida
       FROM app.users u
       LEFT JOIN app.user_profiles p ON u.id = p.user_id
       WHERE u.id = $1
@@ -357,6 +358,11 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
     
     const recentExercises = recentExercisesResult.rows.map(row => row.exercise_name);
     
+    // Obtener el día actual en español para que la IA comience desde hoy
+    const today = new Date();
+    const daysOfWeek = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+    const currentDay = daysOfWeek[today.getDay()];
+    
     // Preparar payload para generación de plan
     const planPayload = {
       task: 'generate_calistenia_plan',
@@ -371,10 +377,13 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
         sessions_per_week: selectedLevel === 'basico' ? 3 : selectedLevel === 'intermedio' ? 4 : 5,
         session_duration_min: selectedLevel === 'basico' ? 30 : selectedLevel === 'intermedio' ? 45 : 60,
         progression_type: 'gradual',
-        focus_areas: exercisePreferences || ['empuje', 'traccion', 'piernas', 'core']
+        focus_areas: exercisePreferences || ['empuje', 'traccion', 'piernas', 'core'],
+        start_day: currentDay,
+        start_date: today.toISOString().split('T')[0] // Formato YYYY-MM-DD
       }
     };
     
+    console.log(`📅 Plan comenzará desde: ${currentDay} (${today.toISOString().split('T')[0]})`);
     logAIPayload('CALISTENIA_PLAN', planPayload);
     
     // Llamada a IA
@@ -391,6 +400,8 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
           content: `${config.systemPrompt}
 
 Genera un plan completo de calistenia usando ÚNICAMENTE los ejercicios proporcionados en available_exercises.
+
+IMPORTANTE: El plan debe comenzar desde el día actual especificado en start_day y start_date del payload. No empezar siempre en lunes.
 
 ESTRUCTURA REQUERIDA DEL PLAN JSON:
 {

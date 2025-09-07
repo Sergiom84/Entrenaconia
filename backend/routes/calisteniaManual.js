@@ -12,11 +12,12 @@ async function getUserProfileWithEquipment(userId) {
   const userQuery = await pool.query(`
     SELECT 
       u.id, u.nombre, u.apellido, u.email,
-      p.edad, p.sexo, p.peso, p.altura, 
-      p.anos_entrenando, p.nivel_entrenamiento, p.objetivo_principal,
-      p.nivel_actividad, p.grasa_corporal, p.masa_muscular, 
-      p.pecho, p.brazos, p.alergias, p.medicamentos, 
-      p.suplementacion, p.limitaciones_fisicas
+      u.edad, u.sexo, u.peso, u.altura, 
+      u.anos_entrenando, u.nivel_entrenamiento,
+      u.nivel_actividad, u.grasa_corporal, u.masa_muscular, 
+      u.pecho, u.brazos, u.alergias, u.medicamentos, 
+      u.suplementacion,
+      p.objetivo_principal, p.limitaciones_fisicas, p.metodologia_preferida
     FROM app.users u
     LEFT JOIN app.user_profiles p ON u.id = p.user_id
     WHERE u.id = $1

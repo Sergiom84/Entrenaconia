@@ -56,13 +56,13 @@ router.post('/generate', authenticateToken, async (req, res) => {
     const userProfileQuery = `
       SELECT 
         u.id, u.nombre, u.apellido, u.email,
-        p.edad, p.sexo, p.peso, p.altura,
-        p.nivel_entrenamiento, p.anos_entrenando, p.frecuencia_semanal,
-        p.grasa_corporal, p.masa_muscular, p.agua_corporal, p.metabolismo_basal,
-        p.cintura, p.pecho, p.brazos, p.muslos, p.cuello, p.antebrazos, p.cadera,
-        p.objetivo_principal, p.limitaciones_fisicas, p.alergias, p.medicamentos,
-        p.metodologia_preferida, p.nivel_actividad, p.horario_preferido,
-        p.enfoque_entrenamiento, p.historial_medico
+        u.edad, u.sexo, u.peso, u.altura,
+        u.nivel_entrenamiento, u.anos_entrenando, u.frecuencia_semanal,
+        u.grasa_corporal, u.masa_muscular, u.agua_corporal, u.metabolismo_basal,
+        u.cintura, u.pecho, u.brazos, u.muslos, u.cuello, u.antebrazos, u.cadera,
+        u.alergias, u.medicamentos, u.nivel_actividad, u.horario_preferido,
+        u.enfoque_entrenamiento, u.historial_medico,
+        p.objetivo_principal, p.limitaciones_fisicas, p.metodologia_preferida
       FROM app.users u 
       LEFT JOIN app.user_profiles p ON u.id = p.user_id
       WHERE u.id = $1

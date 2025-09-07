@@ -17,16 +17,17 @@ router.get('/:id', authenticateToken, async (req, res) => {
     const result = await pool.query(
       `SELECT 
         u.id, u.nombre, u.apellido, u.email, u.created_at,
-        p.edad, p.sexo, p.peso, p.altura,
-        p.nivel_entrenamiento, p.anos_entrenando, p.frecuencia_semanal,
-        p.metodologia_preferida, p.nivel_actividad, p.cintura, p.pecho, p.brazos,
-        p.muslos, p.cuello, p.antebrazos, p.historial_medico, p.limitaciones_fisicas,
-        p.alergias, p.medicamentos, p.objetivo_principal, p.meta_peso, p.meta_grasa,
-        p.fecha_inicio_objetivo, p.fecha_meta_objetivo, p.notas_progreso,
-        p.meta_grasa_corporal, p.enfoque_entrenamiento, p.horario_preferido,
-        p.comidas_por_dia, p.suplementacion, p.alimentos_excluidos,
-        p.grasa_corporal, p.masa_muscular, p.agua_corporal, p.metabolismo_basal,
-        p.cadera
+        u.edad, u.sexo, u.peso, u.altura,
+        u.nivel_entrenamiento, u.anos_entrenando, u.frecuencia_semanal,
+        u.nivel_actividad, u.cintura, u.pecho, u.brazos,
+        u.muslos, u.cuello, u.antebrazos, u.historial_medico, 
+        u.alergias, u.medicamentos, u.meta_peso, u.meta_grasa,
+        u.fecha_inicio_objetivo, u.fecha_meta_objetivo, u.notas_progreso,
+        u.meta_grasa_corporal, u.enfoque_entrenamiento, u.horario_preferido,
+        u.comidas_por_dia, u.suplementacion, u.alimentos_excluidos,
+        u.grasa_corporal, u.masa_muscular, u.agua_corporal, u.metabolismo_basal,
+        u.cadera,
+        p.metodologia_preferida, p.limitaciones_fisicas, p.objetivo_principal
       FROM app.users u
       LEFT JOIN app.user_profiles p ON u.id = p.user_id
       WHERE u.id = $1`,
