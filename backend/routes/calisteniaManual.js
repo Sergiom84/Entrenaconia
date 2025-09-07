@@ -8,9 +8,18 @@ const router = express.Router();
 
 // Helper function to get user profile (sin equipamiento por ahora)
 async function getUserProfileWithEquipment(userId) {
-  // Obtener perfil del usuario desde la tabla users
+  // Obtener perfil completo del usuario desde ambas tablas
   const userQuery = await pool.query(`
-    SELECT * FROM app.users WHERE id = $1
+    SELECT 
+      u.id, u.nombre, u.apellido, u.email,
+      p.edad, p.sexo, p.peso, p.altura, 
+      p.anos_entrenando, p.nivel_entrenamiento, p.objetivo_principal,
+      p.nivel_actividad, p.grasa_corporal, p.masa_muscular, 
+      p.pecho, p.brazos, p.alergias, p.medicamentos, 
+      p.suplementacion, p.limitaciones_fisicas
+    FROM app.users u
+    LEFT JOIN app.user_profiles p ON u.id = p.user_id
+    WHERE u.id = $1
   `, [userId]);
   
   if (userQuery.rowCount === 0) {

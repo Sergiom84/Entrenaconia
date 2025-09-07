@@ -252,16 +252,18 @@ router.post('/generate', authenticateToken, async (req, res) => {
     const client = getOpenAIClient("home");
     const systemPrompt = await getPrompt(FeatureKey.HOME);
 
-    // Cargar perfil del usuario completo (no usar la vista que tiene problemas de mapeo)
+    // Cargar perfil del usuario completo desde ambas tablas
     const { rows } = await pool.query(
       `SELECT 
-        id, nombre, apellido, email, edad, sexo, peso, altura,
-        nivel_actividad, nivel_entrenamiento, anos_entrenando, "años_entrenando",
-        objetivo_principal, alergias, medicamentos, suplementacion,
-        alimentos_excluidos, alimentos_evitar, lesiones, limitaciones_fisicas,
-        grasa_corporal, masa_muscular, pecho, brazos, created_at, updated_at
-      FROM app.users 
-      WHERE id = $1`,
+        u.id, u.nombre, u.apellido, u.email, u.created_at, u.updated_at,
+        p.edad, p.sexo, p.peso, p.altura,
+        p.nivel_actividad, p.nivel_entrenamiento, p.anos_entrenando,
+        p.objetivo_principal, p.alergias, p.medicamentos, p.suplementacion,
+        p.alimentos_excluidos, p.lesiones, p.limitaciones_fisicas,
+        p.grasa_corporal, p.masa_muscular, p.pecho, p.brazos
+      FROM app.users u
+      LEFT JOIN app.user_profiles p ON u.id = p.user_id
+      WHERE u.id = $1`,
       [userId]
     );
     if (!rows.length) {

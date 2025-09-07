@@ -46,7 +46,18 @@ router.post('/evaluate-profile', authenticateToken, async (req, res) => {
     console.log('🤸‍♀️ Iniciando evaluación de perfil para calistenia...');
     
     // Obtener perfil completo del usuario desde la base de datos
-    const userQuery = await pool.query('SELECT * FROM app.users WHERE id = $1', [userId]);
+    const userQuery = await pool.query(`
+      SELECT 
+        u.id, u.nombre, u.apellido, u.email,
+        p.edad, p.sexo, p.peso, p.altura, 
+        p.anos_entrenando, p.nivel_entrenamiento, p.objetivo_principal,
+        p.nivel_actividad, p.grasa_corporal, p.masa_muscular, 
+        p.pecho, p.brazos, p.alergias, p.medicamentos, 
+        p.suplementacion, p.limitaciones_fisicas
+      FROM app.users u
+      LEFT JOIN app.user_profiles p ON u.id = p.user_id
+      WHERE u.id = $1
+    `, [userId]);
     
     if (userQuery.rowCount === 0) {
       return res.status(404).json({
@@ -148,7 +159,7 @@ router.post('/evaluate-profile', authenticateToken, async (req, res) => {
     const client = getCalisteniaSpecialistClient();
     const config = AI_MODULES.CALISTENIA_SPECIALIST;
     
-    logAPICall('CALISTENIA_SPECIALIST', 'profile-evaluation');
+    logAPICall('CALISTENIA_SPECIALIST', 'profile-evaluation', userId);
     
     const completion = await client.chat.completions.create({
       model: config.model,
@@ -193,28 +204,45 @@ Analiza el perfil considerando experiencia, fuerza actual, objetivos y limitacio
     logTokens(completion.usage);
     
     // Parsear respuesta IA (limpiar markdown si existe)
-    let cleanResponse = aiResponse;
-    if (aiResponse.includes('```json')) {
-      // Extraer JSON del markdown
-      const jsonMatch = aiResponse.match(/```json\s*([\s\S]*?)\s*```/);
-      if (jsonMatch) {
-        cleanResponse = jsonMatch[1];
+    let cleanResponse = aiResponse.trim();
+    
+    // Función robusta para limpiar respuestas de IA
+    if (cleanResponse.includes('```')) {
+      // Intentar extraer JSON de diferentes formatos de markdown
+      let jsonMatch;
+      
+      // Formato: ```json\n{...}\n```
+      jsonMatch = cleanResponse.match(/```json\s*([\s\S]*?)\s*```/);
+      if (!jsonMatch) {
+        // Formato: ```\n{...}\n```
+        jsonMatch = cleanResponse.match(/```\s*([\s\S]*?)\s*```/);
       }
-    } else if (aiResponse.includes('```')) {
-      // Fallback para otros tipos de code blocks
-      const codeMatch = aiResponse.match(/```\s*([\s\S]*?)\s*```/);
-      if (codeMatch) {
-        cleanResponse = codeMatch[1];
+      if (!jsonMatch) {
+        // Formato: ` ``` ` con posibles espacios
+        jsonMatch = cleanResponse.match(/`{3,}\s*(?:json)?\s*([\s\S]*?)\s*`{3,}/);
+      }
+      
+      if (jsonMatch) {
+        cleanResponse = jsonMatch[1].trim();
+      } else {
+        console.warn('⚠️ No se pudo extraer JSON de markdown en evaluación, intentando parsing directo');
       }
     }
+    
+    // Limpiar caracteres adicionales que podrían causar problemas
+    cleanResponse = cleanResponse
+      .replace(/^[`\s]*/, '')  // Quitar backticks y espacios al inicio
+      .replace(/[`\s]*$/, '')  // Quitar backticks y espacios al final
+      .trim();
     
     let evaluation;
     try {
       evaluation = JSON.parse(cleanResponse);
     } catch (parseError) {
-      console.error('❌ Error parseando respuesta IA:', parseError);
-      console.error('Respuesta raw:', aiResponse);
-      throw new Error('Respuesta de IA inválida');
+      console.error('❌ Error parseando respuesta IA:', parseError.message);
+      console.error('📄 Respuesta raw:', aiResponse.substring(0, 200) + '...');
+      console.error('🔧 Respuesta limpia:', cleanResponse.substring(0, 200) + '...');
+      throw new Error('Respuesta de IA inválida: ' + parseError.message);
     }
     
     // Validar respuesta
@@ -353,7 +381,7 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
     const client = getCalisteniaSpecialistClient();
     const config = AI_MODULES.CALISTENIA_SPECIALIST;
     
-    logAPICall('CALISTENIA_SPECIALIST', 'plan-generation');
+    logAPICall('CALISTENIA_SPECIALIST', 'plan-generation', userId);
     
     const completion = await client.chat.completions.create({
       model: config.model,
@@ -421,28 +449,45 @@ REGLAS CRÍTICAS:
     logTokens(completion.usage);
     
     // Parsear y validar plan (limpiar markdown si existe)
-    let cleanPlanResponse = aiResponse;
-    if (aiResponse.includes('```json')) {
-      // Extraer JSON del markdown
-      const jsonMatch = aiResponse.match(/```json\s*([\s\S]*?)\s*```/);
-      if (jsonMatch) {
-        cleanPlanResponse = jsonMatch[1];
+    let cleanPlanResponse = aiResponse.trim();
+    
+    // Función robusta para limpiar respuestas de IA
+    if (cleanPlanResponse.includes('```')) {
+      // Intentar extraer JSON de diferentes formatos de markdown
+      let jsonMatch;
+      
+      // Formato: ```json\n{...}\n```
+      jsonMatch = cleanPlanResponse.match(/```json\s*([\s\S]*?)\s*```/);
+      if (!jsonMatch) {
+        // Formato: ```\n{...}\n```
+        jsonMatch = cleanPlanResponse.match(/```\s*([\s\S]*?)\s*```/);
       }
-    } else if (aiResponse.includes('```')) {
-      // Fallback para otros tipos de code blocks
-      const codeMatch = aiResponse.match(/```\s*([\s\S]*?)\s*```/);
-      if (codeMatch) {
-        cleanPlanResponse = codeMatch[1];
+      if (!jsonMatch) {
+        // Formato: ` ``` ` con posibles espacios
+        jsonMatch = cleanPlanResponse.match(/`{3,}\s*(?:json)?\s*([\s\S]*?)\s*`{3,}/);
+      }
+      
+      if (jsonMatch) {
+        cleanPlanResponse = jsonMatch[1].trim();
+      } else {
+        console.warn('⚠️ No se pudo extraer JSON de markdown, intentando parsing directo');
       }
     }
+    
+    // Limpiar caracteres adicionales que podrían causar problemas
+    cleanPlanResponse = cleanPlanResponse
+      .replace(/^[`\s]*/, '')  // Quitar backticks y espacios al inicio
+      .replace(/[`\s]*$/, '')  // Quitar backticks y espacios al final
+      .trim();
     
     let generatedPlan;
     try {
       generatedPlan = JSON.parse(cleanPlanResponse);
     } catch (parseError) {
-      console.error('❌ Error parseando plan generado:', parseError);
-      console.error('Respuesta raw:', aiResponse);
-      throw new Error('Plan generado inválido');
+      console.error('❌ Error parseando plan generado:', parseError.message);
+      console.error('📄 Respuesta raw:', aiResponse.substring(0, 200) + '...');
+      console.error('🔧 Respuesta limpia:', cleanPlanResponse.substring(0, 200) + '...');
+      throw new Error('Plan generado inválido: ' + parseError.message);
     }
     
     // Validar estructura básica del plan

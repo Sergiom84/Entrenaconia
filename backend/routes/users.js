@@ -16,17 +16,20 @@ router.get('/:id', authenticateToken, async (req, res) => {
 
     const result = await pool.query(
       `SELECT 
-        id, nombre, apellido, email, edad, sexo, peso, altura,
-        nivel_entrenamiento, anos_entrenando, frecuencia_semanal,
-        metodologia_preferida, nivel_actividad, cintura, pecho, brazos,
-        muslos, cuello, antebrazos, historial_medico, limitaciones_fisicas,
-        alergias, medicamentos, objetivo_principal, meta_peso, meta_grasa,
-        fecha_inicio_objetivo, fecha_meta_objetivo, notas_progreso,
-        meta_grasa_corporal, enfoque_entrenamiento, horario_preferido,
-        comidas_por_dia, suplementacion, alimentos_excluidos,
-        grasa_corporal, masa_muscular, agua_corporal, metabolismo_basal,
-        cadera, created_at
-      FROM app.users WHERE id = $1`,
+        u.id, u.nombre, u.apellido, u.email, u.created_at,
+        p.edad, p.sexo, p.peso, p.altura,
+        p.nivel_entrenamiento, p.anos_entrenando, p.frecuencia_semanal,
+        p.metodologia_preferida, p.nivel_actividad, p.cintura, p.pecho, p.brazos,
+        p.muslos, p.cuello, p.antebrazos, p.historial_medico, p.limitaciones_fisicas,
+        p.alergias, p.medicamentos, p.objetivo_principal, p.meta_peso, p.meta_grasa,
+        p.fecha_inicio_objetivo, p.fecha_meta_objetivo, p.notas_progreso,
+        p.meta_grasa_corporal, p.enfoque_entrenamiento, p.horario_preferido,
+        p.comidas_por_dia, p.suplementacion, p.alimentos_excluidos,
+        p.grasa_corporal, p.masa_muscular, p.agua_corporal, p.metabolismo_basal,
+        p.cadera
+      FROM app.users u
+      LEFT JOIN app.user_profiles p ON u.id = p.user_id
+      WHERE u.id = $1`,
       [id]
     );
 

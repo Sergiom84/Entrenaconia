@@ -69,15 +69,17 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
     // Leer perfil completo desde BD (incluye composición corporal)
     const { rows } = await (await import('../db.js')).pool.query(
       `SELECT 
-        u.id, u.nombre, u.apellido, u.email, u.edad, u.sexo, u.peso, u.altura,
-        u.nivel_entrenamiento, u.anos_entrenando, u.frecuencia_semanal,
-        u.grasa_corporal, u.masa_muscular, u.agua_corporal, u.metabolismo_basal,
-        u.cintura, u.pecho, u.brazos, u.muslos, u.cuello, u.antebrazos, u.cadera,
-        u.objetivo_principal, u.limitaciones_fisicas, u.alergias, u.medicamentos,
-        u.metodologia_preferida, u.nivel_actividad, u.horario_preferido,
-        u.comidas_por_dia, u.suplementacion, u.alimentos_excluidos, u.meta_peso,
-        u.meta_grasa_corporal, u.enfoque_entrenamiento, u.historial_medico
+        u.id, u.nombre, u.apellido, u.email,
+        p.edad, p.sexo, p.peso, p.altura,
+        p.nivel_entrenamiento, p.anos_entrenando, p.frecuencia_semanal,
+        p.grasa_corporal, p.masa_muscular, p.agua_corporal, p.metabolismo_basal,
+        p.cintura, p.pecho, p.brazos, p.muslos, p.cuello, p.antebrazos, p.cadera,
+        p.objetivo_principal, p.limitaciones_fisicas, p.alergias, p.medicamentos,
+        p.metodologia_preferida, p.nivel_actividad, p.horario_preferido,
+        p.comidas_por_dia, p.suplementacion, p.alimentos_excluidos, p.meta_peso,
+        p.meta_grasa_corporal, p.enfoque_entrenamiento, p.historial_medico
       FROM app.users u 
+      LEFT JOIN app.user_profiles p ON u.id = p.user_id
       WHERE u.id = $1`,
       [userId]
     );

@@ -79,11 +79,13 @@ router.post('/generate-manual', authenticateToken, async (req, res) => {
     // Obtener perfil del usuario y ejercicios recientes
     const userQuery = `
       SELECT 
-        edad, peso, altura, sexo, nivel_actividad, suplementacion,
-        grasa_corporal, masa_muscular, pecho, brazos, nivel_entrenamiento,
-        anos_entrenando, objetivo_principal, medicamentos
-      FROM app.users 
-      WHERE id = $1
+        u.id, u.nombre, u.apellido, u.email,
+        p.edad, p.peso, p.altura, p.sexo, p.nivel_actividad, p.suplementacion,
+        p.grasa_corporal, p.masa_muscular, p.pecho, p.brazos, p.nivel_entrenamiento,
+        p.anos_entrenando, p.objetivo_principal, p.medicamentos
+      FROM app.users u
+      LEFT JOIN app.user_profiles p ON u.id = p.user_id
+      WHERE u.id = $1
     `;
     
     const userResult = await pool.query(userQuery, [userId]);
