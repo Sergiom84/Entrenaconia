@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useMemo } from 'react';
+import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { Play, Pause, RotateCcw, Info, X as IconX, Square, SkipForward, Star, Target } from 'lucide-react';
 import { getExerciseGifUrl } from '@/config/exerciseGifs.js';
 import ExerciseFeedbackModal from '../HomeTraining/ExerciseFeedbackModal';
@@ -11,6 +11,7 @@ export default function RoutineSessionModal({
   onClose,
   onFinishExercise, // (exerciseIndex, seriesCompleted, timeSpent)
   onSkipExercise, // (exerciseIndex)
+  onCancelExercise, // (exerciseIndex)
   onEndSession,
   sessionId, // Necesario para guardar feedback
   allowManualTimer = true,
@@ -173,6 +174,19 @@ export default function RoutineSessionModal({
   }, [sessionId]);
 
 
+  // Encontrar el siguiente ejercicio no completado (declarada antes de usarla en efectos)
+  const findNextIncompleteExercise = useCallback((fromIndex = currentIndex + 1) => {
+    if (!session?.exerciseProgress) return fromIndex;
+
+    for (let i = fromIndex; i < exercises.length; i++) {
+      const progress = session.exerciseProgress.find(p => p.exercise_order === i);
+      if (!progress || progress.status !== 'completed') {
+        return i;
+      }
+    }
+    return exercises.length; // No hay más ejercicios incompletos
+  }, [currentIndex, session, exercises]);
+
 
   useEffect(() => {
     if (timeLeft === 0 && isRunning) {
@@ -221,20 +235,8 @@ export default function RoutineSessionModal({
         }
       }
     }
-  }, [timeLeft, isRunning, phase, currentIndex, exercises, series, total, onFinishExercise, spent, seriesTotal, baseDuration, anySkipped, advancedManually, timePerSeries]);
+  }, [timeLeft, isRunning, phase, currentIndex, exercises, series, total, onFinishExercise, spent, seriesTotal, baseDuration, anySkipped, advancedManually, timePerSeries, findNextIncompleteExercise]);
 
-  // Encontrar el siguiente ejercicio no completado
-  const findNextIncompleteExercise = (fromIndex = currentIndex + 1) => {
-    if (!session?.exerciseProgress) return fromIndex;
-
-    for (let i = fromIndex; i < exercises.length; i++) {
-      const progress = session.exerciseProgress.find(p => p.exercise_order === i);
-      if (!progress || progress.status !== 'completed') {
-        return i;
-      }
-    }
-    return exercises.length; // No hay más ejercicios incompletos
-  };
 
   const startExercise = () => {
     setAdvancedManually(false);
@@ -274,6 +276,28 @@ export default function RoutineSessionModal({
       setTimeLeft(0);
       setAdvancedManually(false);
       console.log('⏩ Saltando a ejercicio', nextIncompleteIndex, '(siguiente incompleto)');
+    } else {
+      setPhase('done');
+      setIsRunning(false);
+      setEndMessage('Rutina finalizada sin haber realizado todos los ejercicios');
+      setShowEndModal(true);
+    }
+  };
+
+  const cancelExercise = () => {
+    onCancelExercise?.(currentIndex);
+    setAnySkipped(true);
+
+    // Buscar el siguiente ejercicio no completado
+    const nextIncompleteIndex = findNextIncompleteExercise();
+
+    if (nextIncompleteIndex < total) {
+      setCurrentIndex(nextIncompleteIndex);
+      setSeries(1);
+      setPhase('ready');
+      setIsRunning(false);
+      setTimeLeft(0);
+      console.log('⛔ Cancelando ejercicio', currentIndex, 'y avanzando a', nextIncompleteIndex);
     } else {
       setPhase('done');
       setIsRunning(false);
@@ -521,7 +545,7 @@ export default function RoutineSessionModal({
                 )}
                 <button onClick={() => { setPhase('ready'); setSeries(1); setTimeLeft(0); setIsRunning(false); setAdvancedManually(false); }} className="flex items-center gap-2 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded" title="Reiniciar ejercicio actual"><RotateCcw className="w-4 h-4" /> Repetir</button>
                 <button onClick={skipToNext} className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded"><SkipForward className="w-4 h-4" /> Saltar Ejercicio</button>
-                <button onClick={skipToNext} className="flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white font-semibold py-2 px-4 rounded"><Square className="w-4 h-4" /> Cancelar Ejercicio</button>
+                <button onClick={cancelExercise} className="flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white font-semibold py-2 px-4 rounded"><Square className="w-4 h-4" /> Cancelar Ejercicio</button>
               </div>
 
               {/* Selector de tiempo por serie cuando es por repeticiones */}

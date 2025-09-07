@@ -24,10 +24,11 @@ export default function RoutineScreen() {
   const [activeTab, setActiveTab] = useState('today');
   const [isConfirming, setIsConfirming] = useState(false);
   const [isCheckingPlanStatus, setIsCheckingPlanStatus] = useState(true);
-  
+
   // State para rutina recuperada
   const [recoveredPlan, setRecoveredPlan] = useState(null);
   const [isRecoveringPlan, setIsRecoveringPlan] = useState(false);
+  const [progressUpdatedAt, setProgressUpdatedAt] = useState(Date.now());
 
   // Fecha de inicio del plan (día actual cuando se genera)
   const planStartDate = useMemo(() => new Date().toISOString(), []);
@@ -247,6 +248,7 @@ export default function RoutineScreen() {
               planStartDate={planStartDate}
               ensureMethodologyPlan={ensureMethodologyPlan}
               onGenerateAnother={handleGenerateAnother}
+              onProgressUpdate={() => setProgressUpdatedAt(Date.now())}
             />
           </TabsContent>
 
@@ -256,6 +258,7 @@ export default function RoutineScreen() {
               planStartDate={planStartDate}
               methodologyPlanId={methodologyPlanId}
               ensureMethodologyPlan={ensureMethodologyPlan}
+              refreshTrigger={progressUpdatedAt}
             />
           </TabsContent>
 

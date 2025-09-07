@@ -16,9 +16,9 @@ import {
   Frown,
   AlertOctagon
 } from 'lucide-react';
-import { getTodaySessionStatus } from '../api';
+import { getTodaySessionStatus, getSessionProgress } from '../api';
 
-export default function CalendarTab({ plan, planStartDate, methodologyPlanId, ensureMethodologyPlan }) {
+export default function CalendarTab({ plan, planStartDate, methodologyPlanId, ensureMethodologyPlan, refreshTrigger }) {
   const [currentWeek, setCurrentWeek] = useState(0);
   const [selectedDay, setSelectedDay] = useState(null);
   const [showDayModal, setShowDayModal] = useState(false);
@@ -130,6 +130,15 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
                 week_number: currentWeekData.weekNumber || 1,
                 day_name: day.dayNameShort || day.dayName,
               });
+              if (data?.session?.id) {
+                try {
+                  const progress = await getSessionProgress(data.session.id);
+                  return [key, progress];
+                } catch (e) {
+                  console.warn('Fallo al cargar progreso por sessionId, uso today-status:', e);
+                  return [key, data];
+                }
+              }
               return [key, data];
             } catch {
               return [key, null];
@@ -154,7 +163,7 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
     const id = setInterval(loadWeekStatuses, 8000);
 
     return () => { cancelled = true; clearInterval(id); };
-  }, [currentWeekData, methodologyPlanId, ensureMethodologyPlan]);
+  }, [currentWeekData, methodologyPlanId, ensureMethodologyPlan, refreshTrigger]);
 
   const handlePrevWeek = () => {
     setCurrentWeek(Math.max(0, currentWeek - 1));

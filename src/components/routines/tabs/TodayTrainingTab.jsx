@@ -80,7 +80,8 @@ export default function TodayTrainingTab({
   todayName,
   planStartDate,
   ensureMethodologyPlan,
-  onGenerateAnother
+  onGenerateAnother,
+  onProgressUpdate
 }) {
   const [showSessionModal, setShowSessionModal] = useState(false);
   const [selectedSession, setSelectedSession] = useState(null);
@@ -106,6 +107,24 @@ export default function TodayTrainingTab({
       default:
         return null;
     }
+  };
+
+  const computeSessionSummary = (status) => {
+    if (!status) return status;
+    const exercises = Array.isArray(status.exercises) ? status.exercises : [];
+    const completedCount = exercises.filter(ex => (ex.status || '').toLowerCase() === 'completed').length;
+    const skippedCount = exercises.filter(ex => (ex.status || '').toLowerCase() === 'skipped').length;
+    const cancelledCount = exercises.filter(ex => (ex.status || '').toLowerCase() === 'cancelled').length;
+    return {
+      ...status,
+      summary: {
+        ...(status.summary || {}),
+        completed: completedCount,
+        skipped: skippedCount,
+        cancelled: cancelledCount,
+        isComplete: completedCount === exercises.length
+      }
+    };
   };
 
   // Obtener la sesión del día actual (buscar sesión específica para hoy)
@@ -161,14 +180,25 @@ export default function TodayTrainingTab({
           day_name: todaySession.dia
         });
 
-        setTodaySessionStatus(sessionStatus);
-
-        // Si hay una sesión existente, configurar el ID para poder reanudar
+        // Fuente de verdad: si existe sessionId, usar getSessionProgress
+        let statusSource = sessionStatus;
         if (sessionStatus?.session?.id) {
-          setRoutineSessionId(sessionStatus.session.id);
+          try {
+            statusSource = await getSessionProgress(sessionStatus.session.id);
+          } catch (e) {
+            console.warn('Fallo al cargar progreso por sessionId, uso today-status:', e);
+          }
         }
 
-        console.log('📊 Estado de sesión cargado:', sessionStatus);
+        const recomputed = computeSessionSummary(statusSource);
+        setTodaySessionStatus(recomputed);
+
+        // Si hay una sesión existente, configurar el ID para poder reanudar
+        if (recomputed?.session?.id) {
+          setRoutineSessionId(recomputed.session.id);
+        }
+
+        console.log('📊 Estado de sesión cargado:', statusSource);
 
       } catch (error) {
         // Es normal que no haya sesión si es la primera vez
@@ -239,8 +269,24 @@ export default function TodayTrainingTab({
       setSelectedSession(todaySession);
       setShowSessionModal(true);
 
-      // Recargar estado después de iniciar
-      setTodaySessionStatus(null);
+      // Inicializar estado de progreso para mostrar actualizaciones inmediatas
+      setTodaySessionStatus({
+        session: { id: resp.session_id, canResume: true },
+        exercises: todaySession.ejercicios.map((_, idx) => ({
+          exercise_order: idx,
+          status: 'pending',
+          series_completed: 0,
+          time_spent_seconds: 0
+        })),
+        summary: {
+          total: resp.total_exercises || todaySession.ejercicios.length,
+          completed: 0,
+          skipped: 0,
+          isComplete: false
+        }
+      });
+
+      onProgressUpdate?.();
     } catch (e) {
       console.error('Error iniciando sesión:', e);
       setError(e.message || 'No se pudo iniciar el entrenamiento');
@@ -256,23 +302,35 @@ export default function TodayTrainingTab({
     }
 
     try {
-      // Obtener el estado más actualizado antes de abrir el modal
       const mId = await ensureMethodologyPlan();
-      const freshStatus = await getTodaySessionStatus({
-        methodology_plan_id: mId,
-        week_number: todaySession.weekNumber || 1,
-        day_name: todaySession.dia
-      });
+      let statusSource = null;
+      // Si ya tenemos sessionId, ir directo a su progreso
+      if (todaySessionStatus?.session?.id) {
+        statusSource = await getSessionProgress(todaySessionStatus.session.id);
+      } else {
+        const ts = await getTodaySessionStatus({
+          methodology_plan_id: mId,
+          week_number: todaySession.weekNumber || 1,
+          day_name: todaySession.dia
+        });
+        if (ts?.session?.id) {
+          statusSource = await getSessionProgress(ts.session.id);
+        } else {
+          statusSource = ts;
+        }
+      }
 
-      setRoutineSessionId(freshStatus.session.id);
+      const recomputed = computeSessionSummary(statusSource);
+
+      setRoutineSessionId(recomputed.session.id);
       setSelectedSession({
         ...todaySession,
         // Agregar información del progreso existente más actualizada
-        exerciseProgress: freshStatus.exercises
+        exerciseProgress: recomputed.exercises
       });
-      setTodaySessionStatus(freshStatus); // Actualizar estado local también
+      setTodaySessionStatus(recomputed); // Actualizar estado local también
       setShowSessionModal(true);
-      console.log('📊 Modal abierto con datos actualizados:', freshStatus.exercises.length, 'ejercicios');
+      console.log('📊 Modal abierto con datos actualizados:', (recomputed.exercises || []).length, 'ejercicios');
     } catch (error) {
       console.error('Error cargando datos frescos para reanudar:', error);
       // Fallback a datos existentes si falla
@@ -331,34 +389,6 @@ export default function TodayTrainingTab({
     }
   };
 
-  // Cargar ejercicios pendientes al montar el componente
-  useEffect(() => {
-    const loadPendingExercises = async () => {
-      if (!methodologyPlanId) return;
-
-      try {
-        console.log('🔍 Cargando ejercicios pendientes para methodology_plan_id:', methodologyPlanId);
-        const pendingData = await getPendingExercises({ methodology_plan_id: methodologyPlanId });
-        console.log('📋 Datos de ejercicios pendientes:', pendingData);
-
-        if (pendingData?.hasPendingExercises) {
-          console.log('✅ Hay ejercicios pendientes, mostrando modal');
-          console.log('📊 Datos completos pendingData:', JSON.stringify(pendingData, null, 2));
-          setPendingExercises(pendingData);
-          // Mostrar el modal siempre que haya ejercicios pendientes
-          setShowPendingModal(true);
-          console.log('🎯 Estado del modal actualizado a: true');
-        } else {
-          console.log('ℹ️ No hay ejercicios pendientes');
-        }
-      } catch (e) {
-        console.error('❌ Error cargando ejercicios pendientes:', e);
-      }
-    };
-
-    loadPendingExercises();
-  }, [methodologyPlanId, todaySession]);
-
   const handleFinishExercise = async (exerciseIndex, seriesCompleted, timeSpent) => {
     if (!routineSessionId) return;
     try {
@@ -373,16 +403,17 @@ export default function TodayTrainingTab({
       // Actualizar estado local inmediatamente
       setTodaySessionStatus(prev => {
         if (!prev?.exercises) return prev;
-        
-        const updatedExercises = prev.exercises.map(ex => 
-          ex.exercise_order === exerciseIndex 
+
+        const updatedExercises = prev.exercises.map(ex =>
+          ex.exercise_order === exerciseIndex
             ? { ...ex, status: 'completed', series_completed: seriesCompleted, time_spent_seconds: timeSpent }
             : ex
         );
-        
+
         const completedCount = updatedExercises.filter(ex => ex.status === 'completed').length;
         const skippedCount = updatedExercises.filter(ex => ex.status === 'skipped').length;
-        
+        const cancelledCount = updatedExercises.filter(ex => ex.status === 'cancelled').length;
+
         return {
           ...prev,
           exercises: updatedExercises,
@@ -390,11 +421,14 @@ export default function TodayTrainingTab({
             ...prev.summary,
             completed: completedCount,
             skipped: skippedCount,
-            isComplete: completedCount + skippedCount === updatedExercises.length
+            cancelled: cancelledCount,
+            isComplete: completedCount === updatedExercises.length
           }
         };
       });
-      
+
+      onProgressUpdate?.();
+
       console.log('✅ Ejercicio', exerciseIndex, 'marcado como completado y estado actualizado');
     } catch (e) {
       console.error('No se pudo guardar el progreso del ejercicio', e);
@@ -415,16 +449,17 @@ export default function TodayTrainingTab({
       // Actualizar estado local inmediatamente
       setTodaySessionStatus(prev => {
         if (!prev?.exercises) return prev;
-        
-        const updatedExercises = prev.exercises.map(ex => 
-          ex.exercise_order === exerciseIndex 
+
+        const updatedExercises = prev.exercises.map(ex =>
+          ex.exercise_order === exerciseIndex
             ? { ...ex, status: 'skipped', series_completed: 0, time_spent_seconds: 0 }
             : ex
         );
-        
+
         const completedCount = updatedExercises.filter(ex => ex.status === 'completed').length;
         const skippedCount = updatedExercises.filter(ex => ex.status === 'skipped').length;
-        
+        const cancelledCount = updatedExercises.filter(ex => ex.status === 'cancelled').length;
+
         return {
           ...prev,
           exercises: updatedExercises,
@@ -432,14 +467,60 @@ export default function TodayTrainingTab({
             ...prev.summary,
             completed: completedCount,
             skipped: skippedCount,
-            isComplete: completedCount + skippedCount === updatedExercises.length
+            cancelled: cancelledCount,
+            isComplete: completedCount === updatedExercises.length
           }
         };
       });
-      
+
+      onProgressUpdate?.();
+
       console.log('⏩ Ejercicio', exerciseIndex, 'marcado como saltado y estado actualizado');
     } catch (e) {
       console.error('No se pudo marcar como saltado', e);
+    }
+  };
+
+  const handleCancelExercise = async (exerciseIndex) => {
+    if (!routineSessionId) return;
+    try {
+      await updateExercise({
+        sessionId: routineSessionId,
+        exerciseOrder: exerciseIndex,
+        series_completed: 0,
+        status: 'cancelled',
+        time_spent_seconds: 0
+      });
+
+      setTodaySessionStatus(prev => {
+        if (!prev?.exercises) return prev;
+
+        const updatedExercises = prev.exercises.map(ex =>
+          ex.exercise_order === exerciseIndex
+            ? { ...ex, status: 'cancelled', series_completed: 0, time_spent_seconds: 0 }
+            : ex
+        );
+
+        const completedCount = updatedExercises.filter(ex => ex.status === 'completed').length;
+        const skippedCount = updatedExercises.filter(ex => ex.status === 'skipped').length;
+        const cancelledCount = updatedExercises.filter(ex => ex.status === 'cancelled').length;
+
+        return {
+          ...prev,
+          exercises: updatedExercises,
+          summary: {
+            ...prev.summary,
+            completed: completedCount,
+            skipped: skippedCount,
+            cancelled: cancelledCount,
+            isComplete: completedCount === updatedExercises.length
+          }
+        };
+      });
+
+      console.log('⛔ Ejercicio', exerciseIndex, 'marcado como cancelado y estado actualizado');
+    } catch (e) {
+      console.error('No se pudo cancelar el ejercicio', e);
     }
   };
 
@@ -452,13 +533,11 @@ export default function TodayTrainingTab({
         // Recargar el estado después de finalizar para mostrar como completado
         setTimeout(async () => {
           try {
-            const mId = await ensureMethodologyPlan();
-            const updatedStatus = await getTodaySessionStatus({
-              methodology_plan_id: mId,
-              week_number: todaySession.weekNumber || 1,
-              day_name: todaySession.dia
-            });
-            setTodaySessionStatus(updatedStatus);
+            // Preferir progreso por sessionId recién finalizada
+            const updatedStatus = await getSessionProgress(routineSessionId);
+            const recomputed = computeSessionSummary(updatedStatus);
+            setTodaySessionStatus(recomputed);
+            onProgressUpdate?.();
           } catch (error) {
             console.log('Error recargando estado tras finalización:', error);
           }
@@ -503,6 +582,8 @@ export default function TodayTrainingTab({
       setTodaySessionStatus(null);
       setLastSessionId(null);
 
+      onProgressUpdate?.();
+
       // 4. Redirigir a metodologías para generar nueva rutina
       if (onGenerateAnother) {
         onGenerateAnother();
@@ -525,9 +606,7 @@ export default function TodayTrainingTab({
   };
 
   // Mostrar resumen de sesión completada
-  console.log('🔍 EARLY RETURN CHECK 1 - lastSessionId:', lastSessionId, 'showPendingModal:', showPendingModal);
   if (lastSessionId) {
-    console.log('🚪 EARLY RETURN 1: Mostrando resumen de sesión completada');
     return (
       <div className="space-y-6">
         <RoutineSessionSummaryCard
@@ -542,46 +621,6 @@ export default function TodayTrainingTab({
           }}
         />
 
-        {/* Modal de ejercicios pendientes - debe mostrarse incluso con resumen de sesión */}
-        {console.log('🔍 RENDER CHECK (Session Summary) - showPendingModal:', showPendingModal, 'pendingExercises:', !!pendingExercises)}
-        {showPendingModal && pendingExercises && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
-            <div className="bg-gray-900/95 border border-yellow-400/30 rounded-2xl p-8 max-w-md mx-4 shadow-2xl">
-              <div className="text-center space-y-6">
-                <div className="w-16 h-16 bg-yellow-400/20 rounded-full flex items-center justify-center mx-auto">
-                  <AlertTriangle className="w-8 h-8 text-yellow-400" />
-                </div>
-
-                <div className="space-y-3">
-                  <h3 className="text-xl font-bold text-white">
-                    Ejercicios Pendientes
-                  </h3>
-                  <p className="text-gray-300">
-                    Tienes <span className="text-yellow-400 font-semibold">{pendingExercises?.totalPending} ejercicios pendientes</span> del {pendingExercises?.pendingDay}.
-                  </p>
-                  <p className="text-gray-400 text-sm">
-                    ¿Le damos caña?
-                  </p>
-                </div>
-
-                <div className="flex gap-3 pt-4">
-                  <button
-                    onClick={() => setShowPendingModal(false)}
-                    className="flex-1 px-4 py-3 border border-gray-600 text-gray-300 rounded-xl hover:bg-gray-800/50 transition-colors"
-                  >
-                    Más tarde
-                  </button>
-                  <button
-                    onClick={handleResumePendingSession}
-                    className="flex-1 px-4 py-3 bg-yellow-400 text-black font-semibold rounded-xl hover:bg-yellow-300 transition-colors"
-                  >
-                    ¡Vamos!
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Modal de sesión activa - disponible también en esta rama */}
         {showSessionModal && selectedSession && (
@@ -591,6 +630,7 @@ export default function TodayTrainingTab({
             onClose={() => { console.log('🚪 Cerrando RoutineSessionModal'); setShowSessionModal(false); }}
             onFinishExercise={handleFinishExercise}
             onSkipExercise={handleSkipExercise}
+            onCancelExercise={handleCancelExercise}
             onEndSession={handleEndSession}
           />
         )}
@@ -598,9 +638,7 @@ export default function TodayTrainingTab({
     );
   }
 
-  console.log('🔍 EARLY RETURN CHECK 2 - plan:', !!plan, 'showPendingModal:', showPendingModal);
   if (!plan) {
-    console.log('🚪 EARLY RETURN 2: No hay plan disponible');
     return (
       <div className="space-y-6">
         <div className="text-center py-12">
@@ -614,46 +652,6 @@ export default function TodayTrainingTab({
           </Button>
         </div>
 
-        {/* Modal de ejercicios pendientes - debe mostrarse incluso sin plan */}
-        {console.log('🔍 RENDER CHECK (No Plan) - showPendingModal:', showPendingModal, 'pendingExercises:', !!pendingExercises)}
-        {showPendingModal && pendingExercises && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
-            <div className="bg-gray-900/95 border border-yellow-400/30 rounded-2xl p-8 max-w-md mx-4 shadow-2xl">
-              <div className="text-center space-y-6">
-                <div className="w-16 h-16 bg-yellow-400/20 rounded-full flex items-center justify-center mx-auto">
-                  <AlertTriangle className="w-8 h-8 text-yellow-400" />
-                </div>
-
-                <div className="space-y-3">
-                  <h3 className="text-xl font-bold text-white">
-                    Ejercicios Pendientes
-                  </h3>
-                  <p className="text-gray-300">
-                    Tienes <span className="text-yellow-400 font-semibold">{pendingExercises?.totalPending} ejercicios pendientes</span> del {pendingExercises?.pendingDay}.
-                  </p>
-                  <p className="text-gray-400 text-sm">
-                    ¿Le damos caña?
-                  </p>
-                </div>
-
-                <div className="flex gap-3 pt-4">
-                  <button
-                    onClick={() => setShowPendingModal(false)}
-                    className="flex-1 px-4 py-3 border border-gray-600 text-gray-300 rounded-xl hover:bg-gray-800/50 transition-colors"
-                  >
-                    Más tarde
-                  </button>
-                  <button
-                    onClick={handleResumePendingSession}
-                    className="flex-1 px-4 py-3 bg-yellow-400 text-black font-semibold rounded-xl hover:bg-yellow-300 transition-colors"
-                  >
-                    ¡Vamos!
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Modal de sesión activa - disponible también sin plan */}
         {showSessionModal && selectedSession && (
@@ -663,6 +661,7 @@ export default function TodayTrainingTab({
             onClose={() => { console.log('🚪 Cerrando RoutineSessionModal'); setShowSessionModal(false); }}
             onFinishExercise={handleFinishExercise}
             onSkipExercise={handleSkipExercise}
+            onCancelExercise={handleCancelExercise}
             onEndSession={handleEndSession}
           />
         )}
@@ -671,9 +670,7 @@ export default function TodayTrainingTab({
     );
   }
 
-  console.log('🔍 EARLY RETURN CHECK 3 - todaySession:', !!todaySession, 'showPendingModal:', showPendingModal);
   if (!todaySession) {
-    console.log('🚪 EARLY RETURN 3: No hay sesión de hoy');
     return (
       <div className="space-y-6">
         <Alert className="bg-orange-900/30 border-orange-400/40">
@@ -697,58 +694,8 @@ export default function TodayTrainingTab({
             Generar Nueva Rutina
           </Button>
 
-          {/* Botón para cancelar rutina incluso en día de descanso */}
-          <Button
-            onClick={() => setShowCancelConfirm(true)}
-            className="mt-3 bg-red-600 hover:bg-red-700 text-white"
-          >
-            <X className="w-4 h-4 mr-2" />
-            Cancelar Rutina
-          </Button>
         </Card>
 
-        {/* Modal de ejercicios pendientes - debe mostrarse incluso sin sesión de hoy */}
-        {console.log('🔍 RENDER CHECK (No Today Session) - showPendingModal:', showPendingModal, 'pendingExercises:', !!pendingExercises)}
-        {showPendingModal && pendingExercises && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
-            <div className="bg-gray-900/95 border border-yellow-400/30 rounded-2xl p-8 max-w-md mx-4 shadow-2xl">
-              <div className="text-center space-y-6">
-                <div className="w-16 h-16 bg-yellow-400/20 rounded-full flex items-center justify-center mx-auto">
-                  <AlertTriangle className="w-8 h-8 text-yellow-400" />
-                </div>
-
-                <div className="space-y-3">
-                  <h3 className="text-xl font-bold text-white">
-                    Ejercicios Pendientes
-                  </h3>
-                  <p className="text-gray-300">
-                    Tienes <span className="text-yellow-400 font-semibold">{pendingExercises?.totalPending} ejercicios pendientes</span> del {pendingExercises?.pendingDay}.
-                  </p>
-                  <p className="text-gray-400 text-sm">
-                    ¿Le damos caña?
-                  </p>
-                </div>
-
-                <div className="flex gap-3 pt-4">
-                  <button
-                    onClick={() => setShowPendingModal(false)}
-                    className="flex-1 px-4 py-3 border border-gray-600 text-gray-300 rounded-xl hover:bg-gray-800/50 transition-colors"
-                  >
-
-
-                    Más tarde
-                  </button>
-                  <button
-                    onClick={handleResumePendingSession}
-                    className="flex-1 px-4 py-3 bg-yellow-400 text-black font-semibold rounded-xl hover:bg-yellow-300 transition-colors"
-                  >
-                    ¡Vamos!
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Modal de sesión activa - disponible también sin sesión de hoy */}
         {showSessionModal && selectedSession && (
@@ -758,6 +705,7 @@ export default function TodayTrainingTab({
             onClose={() => { console.log('🚪 Cerrando RoutineSessionModal'); setShowSessionModal(false); }}
             onFinishExercise={handleFinishExercise}
             onSkipExercise={handleSkipExercise}
+            onCancelExercise={handleCancelExercise}
             onEndSession={handleEndSession}
           />
         )}
@@ -800,7 +748,6 @@ export default function TodayTrainingTab({
     );
   }
 
-  console.log('✅ LLEGANDO AL RENDER PRINCIPAL - showPendingModal:', showPendingModal, 'pendingExercises:', !!pendingExercises);
   return (
     <div className="space-y-6">
       {error && (
@@ -875,7 +822,7 @@ export default function TodayTrainingTab({
             {/* Mostrar progreso si existe */}
             {todaySessionStatus?.summary && !loadingStatus && (
               <div className="text-xs text-gray-500 mt-1">
-                {todaySessionStatus.summary.completed} completados, {todaySessionStatus.summary.skipped} saltados
+            {todaySessionStatus.summary.completed} completados, {todaySessionStatus.summary.skipped} saltados{todaySessionStatus.summary.cancelled ? `, ${todaySessionStatus.summary.cancelled} cancelados` : ''}
               </div>
             )}
           </div>
@@ -925,15 +872,6 @@ export default function TodayTrainingTab({
           </Button>
         )}
 
-        {/* Botón para cancelar rutina */}
-        <Button
-          onClick={() => setShowCancelConfirm(true)}
-          className="w-full mt-3 bg-red-600 hover:bg-red-700 text-white font-semibold py-2"
-          variant="destructive"
-        >
-          <X className="w-4 h-4 mr-2" />
-          Cancelar Rutina
-        </Button>
       </Card>
 
       {/* Preview de ejercicios de hoy */}
@@ -951,6 +889,7 @@ export default function TodayTrainingTab({
                 const exerciseProgress = todaySessionStatus?.exercises?.find(ex => ex.exercise_order === index);
                 const isCompleted = exerciseProgress?.status === 'completed';
                 const isSkipped = exerciseProgress?.status === 'skipped';
+                const isCancelled = exerciseProgress?.status === 'cancelled';
 
                 // Obtener datos del sentimiento
                 const sentiment = exerciseProgress?.sentiment;
@@ -963,6 +902,7 @@ export default function TodayTrainingTab({
                     className={`flex justify-between items-center p-3 rounded-lg border transition-colors ${
                       isCompleted ? 'bg-green-900/30 border-green-500/30' :
                       isSkipped ? 'bg-orange-900/30 border-orange-500/30' :
+                      isCancelled ? 'bg-red-900/30 border-red-500/30' :
                       'bg-black/40 border-transparent'
                     }`}
                   >
@@ -971,11 +911,15 @@ export default function TodayTrainingTab({
                       {isSkipped && <div className="w-4 h-4 bg-orange-400 rounded-full mr-3 flex items-center justify-center">
                         <span className="text-xs text-black font-bold">!</span>
                       </div>}
+                      {isCancelled && <div className="w-4 h-4 bg-red-400 rounded-full mr-3 flex items-center justify-center">
+                        <X className="w-3 h-3 text-black" />
+                      </div>}
 
                       <div>
                         <p className={`font-medium ${
                           isCompleted ? 'text-green-300' :
                           isSkipped ? 'text-orange-300' :
+                          isCancelled ? 'text-red-300' :
                           'text-white'
                         }`}>
                           {formatExerciseName(ejercicio.nombre)}
@@ -1014,6 +958,11 @@ export default function TodayTrainingTab({
                       {isSkipped && (
                         <Badge variant="outline" className="border-orange-500 text-orange-400 text-xs">
                           Saltado
+                        </Badge>
+                      )}
+                      {isCancelled && (
+                        <Badge variant="outline" className="border-red-500 text-red-400 text-xs">
+                          Cancelado
                         </Badge>
                       )}
 
@@ -1083,49 +1032,8 @@ export default function TodayTrainingTab({
         </div>
       )}
 
-      {/* Modal de ejercicios pendientes */}
-      {console.log('🔍 RENDER CHECK - showPendingModal:', showPendingModal, 'pendingExercises:', !!pendingExercises)}
-      {showPendingModal && pendingExercises && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-900/95 border border-yellow-400/30 rounded-2xl p-8 max-w-md mx-4 shadow-2xl">
-            <div className="text-center space-y-6">
-              <div className="w-16 h-16 bg-yellow-400/20 rounded-full flex items-center justify-center mx-auto">
-                <AlertTriangle className="w-8 h-8 text-yellow-400" />
-              </div>
-
-              <div className="space-y-3">
-                <h3 className="text-xl font-bold text-white">
-                  Ejercicios Pendientes
-                </h3>
-                <p className="text-gray-300">
-                  Tienes <span className="text-yellow-400 font-semibold">{pendingExercises?.totalPending} ejercicios pendientes</span> del {pendingExercises?.pendingDay}.
-                </p>
-                <p className="text-gray-400 text-sm">
-                  ¿Le damos caña?
-                </p>
-              </div>
-
-              <div className="flex gap-3 pt-4">
-                <button
-                  onClick={() => setShowPendingModal(false)}
-                  className="flex-1 px-4 py-3 border border-gray-600 text-gray-300 rounded-xl hover:bg-gray-800/50 transition-colors"
-                >
-                  Más tarde
-                </button>
-                <button
-                  onClick={handleResumePendingSession}
-                  className="flex-1 px-4 py-3 bg-yellow-400 text-black font-semibold rounded-xl hover:bg-yellow-300 transition-colors"
-                >
-                  ¡Vamos!
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Modal de sesión activa */}
-      {console.log('🔍 RENDER CHECK RoutineSessionModal - showSessionModal:', showSessionModal, 'selectedSession:', !!selectedSession, 'routineSessionId:', routineSessionId)}
       {showSessionModal && selectedSession && (
         <RoutineSessionModal
           session={selectedSession}
@@ -1136,12 +1044,15 @@ export default function TodayTrainingTab({
             // Recargar el estado de la sesión al cerrar modal
             try {
               const mId = await ensureMethodologyPlan();
-              const updatedStatus = await getTodaySessionStatus({
-                methodology_plan_id: mId,
-                week_number: todaySession.weekNumber || 1,
-                day_name: todaySession.dia
-              });
-              setTodaySessionStatus(updatedStatus);
+              const updatedStatus = routineSessionId
+                ? await getSessionProgress(routineSessionId)
+                : await getTodaySessionStatus({
+                    methodology_plan_id: mId,
+                    week_number: todaySession.weekNumber || 1,
+                    day_name: todaySession.dia
+                  });
+              const recomputed = computeSessionSummary(updatedStatus);
+              setTodaySessionStatus(recomputed);
               console.log('🔄 Estado sincronizado al cerrar modal');
             } catch (error) {
               console.log('Error recargando estado:', error);
@@ -1151,46 +1062,6 @@ export default function TodayTrainingTab({
           onSkipExercise={handleSkipExercise}
           onEndSession={handleEndSession}
         />
-      )}
-
-      {/* Modal de ejercicios pendientes */}
-      {showPendingModal && pendingExercises && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-900/95 border border-yellow-400/30 rounded-2xl p-8 max-w-md mx-4 shadow-2xl">
-            <div className="text-center space-y-6">
-              <div className="w-16 h-16 bg-yellow-400/20 rounded-full flex items-center justify-center mx-auto">
-                <AlertTriangle className="w-8 h-8 text-yellow-400" />
-              </div>
-
-              <div className="space-y-3">
-                <h3 className="text-xl font-bold text-white">
-                  Ejercicios Pendientes
-                </h3>
-                <p className="text-gray-300">
-                  Tienes <span className="text-yellow-400 font-semibold">{pendingExercises?.totalPending} ejercicios pendientes</span> del {pendingExercises?.pendingDay}.
-                </p>
-                <p className="text-gray-400 text-sm">
-                  ¿Le damos caña?
-                </p>
-              </div>
-
-              <div className="flex gap-3 pt-4">
-                <button
-                  onClick={() => setShowPendingModal(false)}
-                  className="flex-1 px-4 py-3 border border-gray-600 text-gray-300 rounded-xl hover:bg-gray-800/50 transition-colors"
-                >
-                  Más tarde
-                </button>
-                <button
-                  onClick={handleResumePendingSession}
-                  className="flex-1 px-4 py-3 bg-yellow-400 text-black font-semibold rounded-xl hover:bg-yellow-300 transition-colors"
-                >
-                  ¡Vamos!
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
       )}
 
       {/* Modal de confirmación para cancelar entrenamiento */}
@@ -1222,6 +1093,46 @@ export default function TodayTrainingTab({
               >
                 Sí, cancelar
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de ejercicios pendientes - INSTANCIA ÚNICA */}
+      {showPendingModal && pendingExercises && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-gray-900/95 border border-yellow-400/30 rounded-2xl p-8 max-w-md mx-4 shadow-2xl">
+            <div className="text-center space-y-6">
+              <div className="w-16 h-16 bg-yellow-400/20 rounded-full flex items-center justify-center mx-auto">
+                <AlertTriangle className="w-8 h-8 text-yellow-400" />
+              </div>
+
+              <div className="space-y-3">
+                <h3 className="text-xl font-bold text-white">
+                  Ejercicios Pendientes
+                </h3>
+                <p className="text-gray-300">
+                  Tienes <span className="text-yellow-400 font-semibold">{pendingExercises?.totalPending} ejercicios pendientes</span> del {pendingExercises?.pendingDay}.
+                </p>
+                <p className="text-gray-400 text-sm">
+                  ¿Le damos caña?
+                </p>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => setShowPendingModal(false)}
+                  className="flex-1 px-4 py-3 border border-gray-600 text-gray-300 rounded-xl hover:bg-gray-800/50 transition-colors"
+                >
+                  Más tarde
+                </button>
+                <button
+                  onClick={handleResumePendingSession}
+                  className="flex-1 px-4 py-3 bg-yellow-400 text-black font-semibold rounded-xl hover:bg-yellow-300 transition-colors"
+                >
+                  ¡Vamos!
+                </button>
+              </div>
             </div>
           </div>
         </div>
