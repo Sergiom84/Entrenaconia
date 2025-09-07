@@ -16,16 +16,16 @@ export default function RoutineSessionModal({
   allowManualTimer = true,
 }) {
   const exercises = useMemo(() => Array.isArray(session?.ejercicios) ? session.ejercicios : [], [session?.ejercicios]);
-  
+
   // Función para formatear nombres de ejercicios (ahora recibe nombres directos de la DB)
   const formatExerciseName = (exerciseName) => {
     if (!exerciseName) return 'Ejercicio desconocido';
-    
+
     // Si ya es un nombre formateado (contiene espacios), devolverlo tal como está
     if (exerciseName.includes(' ') || exerciseName.includes('(')) {
       return exerciseName;
     }
-    
+
     // Mapeo de IDs legacy a nombres reales (por compatibilidad)
     const exerciseNameMap = {
       'flexion-contra-pared': 'Flexión contra pared',
@@ -54,23 +54,23 @@ export default function RoutineSessionModal({
       'zancadas-estaticas': 'Zancadas estáticas',
       'zancadas-caminando': 'Zancadas caminando'
     };
-    
+
     // Si existe en el mapeo, usar el nombre real
     if (exerciseNameMap[exerciseName]) {
       return exerciseNameMap[exerciseName];
     }
-    
+
     // Si no existe, formatear el ID: remover guiones y capitalizar
     return exerciseName
       .split('-')
       .map(word => word.charAt(0).toUpperCase() + word.slice(1))
       .join(' ');
   };
-  
+
   // Calcular índice inicial basado en progreso existente
   const getInitialExerciseIndex = useMemo(() => {
     if (!session?.exerciseProgress) return 0;
-    
+
     // Buscar el primer ejercicio que no esté completado
     for (let i = 0; i < exercises.length; i++) {
       const progress = session.exerciseProgress.find(p => p.exercise_order === i);
@@ -78,7 +78,7 @@ export default function RoutineSessionModal({
         return i;
       }
     }
-    
+
     // Si todos están completados, empezar desde el último
     return Math.max(0, exercises.length - 1);
   }, [session?.exerciseProgress, exercises.length]);
@@ -98,6 +98,7 @@ export default function RoutineSessionModal({
   const [endMessage, setEndMessage] = useState('');
   const [showExerciseToast, setShowExerciseToast] = useState(false);
   const [exerciseFeedback, setExerciseFeedback] = useState({}); // { exerciseIndex: { sentiment, comment } }
+  const [advancedManually, setAdvancedManually] = useState(false);
   const intervalRef = useRef(null);
   const total = exercises.length;
 
@@ -149,18 +150,18 @@ export default function RoutineSessionModal({
   useEffect(() => {
     const loadExistingFeedback = async () => {
       if (!sessionId) return;
-      
+
       try {
         const feedbackData = await getSessionFeedback({ sessionId });
         const feedbackMap = {};
-        
+
         feedbackData.forEach(fb => {
           feedbackMap[fb.exercise_order] = {
             sentiment: fb.sentiment,
             comment: fb.comment
           };
         });
-        
+
         setExerciseFeedback(feedbackMap);
         console.log('📝 Feedback cargado:', feedbackMap);
       } catch (error) {
@@ -183,17 +184,24 @@ export default function RoutineSessionModal({
         setIsRunning(true);
       } else if (phase === 'rest') {
         if (series < seriesTotal) {
-          setSeries((s) => s + 1);
-          setPhase('exercise');
-          setTimeLeft(baseDuration);
-          setIsRunning(true);
+          if (advancedManually) {
+            setAdvancedManually(false);
+            setPhase('exercise');
+            setTimeLeft(baseDuration);
+            setIsRunning(timePerSeries !== 0 && baseDuration > 0);
+          } else {
+            setSeries((s) => s + 1);
+            setPhase('exercise');
+            setTimeLeft(baseDuration);
+            setIsRunning(true);
+          }
         } else {
           // ejercicio completado
           onFinishExercise?.(currentIndex, seriesTotal, spent);
-          
+
           // Buscar el siguiente ejercicio no completado
           const nextIncompleteIndex = findNextIncompleteExercise();
-          
+
           if (nextIncompleteIndex < total) {
             setCurrentIndex(nextIncompleteIndex);
             setSeries(1);
@@ -213,12 +221,12 @@ export default function RoutineSessionModal({
         }
       }
     }
-  }, [timeLeft, isRunning, phase, currentIndex, exercises, series, total, onFinishExercise, spent, seriesTotal, baseDuration, anySkipped]);
+  }, [timeLeft, isRunning, phase, currentIndex, exercises, series, total, onFinishExercise, spent, seriesTotal, baseDuration, anySkipped, advancedManually, timePerSeries]);
 
   // Encontrar el siguiente ejercicio no completado
   const findNextIncompleteExercise = (fromIndex = currentIndex + 1) => {
     if (!session?.exerciseProgress) return fromIndex;
-    
+
     for (let i = fromIndex; i < exercises.length; i++) {
       const progress = session.exerciseProgress.find(p => p.exercise_order === i);
       if (!progress || progress.status !== 'completed') {
@@ -229,24 +237,42 @@ export default function RoutineSessionModal({
   };
 
   const startExercise = () => {
+    setAdvancedManually(false);
     setPhase('exercise');
-    setTimeLeft(baseDuration);
+    if (baseDuration > 0) {
+      setTimeLeft(baseDuration);
+      setIsRunning(true);
+    } else {
+      setTimeLeft(0);
+      setIsRunning(false);
+    }
+  };
+
+  const handleManualAdvance = () => {
+    const rest = Math.min(120, Math.max(30, Number(exercises[currentIndex]?.descanso_seg) || 60));
+    if (series < seriesTotal) {
+      setSeries((s) => s + 1);
+      setAdvancedManually(true);
+    }
+    setPhase('rest');
+    setTimeLeft(rest);
     setIsRunning(true);
   };
 
   const skipToNext = () => {
     onSkipExercise?.(currentIndex);
     setAnySkipped(true);
-    
+
     // Buscar el siguiente ejercicio no completado
     const nextIncompleteIndex = findNextIncompleteExercise();
-    
+
     if (nextIncompleteIndex < total) {
       setCurrentIndex(nextIncompleteIndex);
       setSeries(1);
       setPhase('ready');
       setIsRunning(false);
       setTimeLeft(0);
+      setAdvancedManually(false);
       console.log('⏩ Saltando a ejercicio', nextIncompleteIndex, '(siguiente incompleto)');
     } else {
       setPhase('done');
@@ -293,19 +319,18 @@ export default function RoutineSessionModal({
                 <div className="relative w-32 h-32 mx-auto mb-2">
                   <div className="absolute inset-0 rounded-full border-4 border-gray-700"></div>
                   <div
-                    className={`absolute inset-0 rounded-full border-4 border-t-transparent transition-all duration-1000 ${
-                      phase === 'exercise' ? 'border-green-400' : phase === 'rest' ? 'border-yellow-400' : 'border-blue-400'
-                    }`}
-                    style={{ transform: `rotate(${(((baseDuration) - timeLeft) / (baseDuration)) * 360}deg)` }}
+                    className={`absolute inset-0 rounded-full border-4 border-t-transparent transition-all duration-1000 ${phase === 'exercise' ? 'border-green-400' : phase === 'rest' ? 'border-yellow-400' : 'border-blue-400'
+                      }`}
+                    style={{ transform: `rotate(${baseDuration > 0 ? (((baseDuration - timeLeft) / baseDuration) * 360) : 0}deg)` }}
                   ></div>
                   <div className="absolute inset-0 flex items-center justify-center flex-col">
-                    <span className={`text-3xl font-bold ${timeLeft === 0 ? 'text-green-400 animate-pulse' : 'text-white'}`}>
-                      {timeLeft === 0 ? '¡Listo!' : formatTime(timeLeft)}
+                    <span className={`text-3xl font-bold ${timePerSeries === 0 && phase === 'exercise' ? 'text-white' : timeLeft === 0 ? 'text-green-400 animate-pulse' : 'text-white'}`}>
+                      {timePerSeries === 0 && phase === 'exercise' ? '--:--' : timeLeft === 0 ? '¡Listo!' : formatTime(timeLeft)}
                     </span>
                     {!isRunning && (phase === 'exercise' || phase === 'rest') && timeLeft > 0 && (
                       <div className="text-xs text-gray-400 mt-1">Pausado</div>
                     )}
-                    {timeLeft === 0 && phase === 'exercise' && (
+                    {timeLeft === 0 && phase === 'exercise' && timePerSeries !== 0 && (
                       <div className="text-xs text-green-400 mt-1 animate-pulse">Serie completada</div>
                     )}
                     {timeLeft === 0 && phase === 'rest' && (
@@ -362,24 +387,23 @@ export default function RoutineSessionModal({
                     <div className="flex items-center">
                       <span className="w-2 h-2 bg-green-400 rounded-full mr-2"></span>
                       <span className="text-gray-300">Patrón:</span>
-                      <span className="text-white font-medium ml-1 capitalize">{String(ex.patron).replaceAll('_',' ')}</span>
+                      <span className="text-white font-medium ml-1 capitalize">{String(ex.patron).replaceAll('_', ' ')}</span>
                     </div>
                   )}
                   {ex?.implemento && (
                     <div className="flex items-center">
                       <span className="w-2 h-2 bg-blue-400 rounded-full mr-2"></span>
                       <span className="text-gray-300">Implemento:</span>
-                      <span className="text-white font-medium ml-1 capitalize">{String(ex.implemento).replaceAll('_',' ')}</span>
+                      <span className="text-white font-medium ml-1 capitalize">{String(ex.implemento).replaceAll('_', ' ')}</span>
                     </div>
                   )}
                   {/* Botón de feedback - siempre visible */}
                   <button
                     onClick={() => setShowFeedback(true)}
-                    className={`ml-auto flex items-center gap-2 border px-3 py-1 rounded-md transition-colors ${
-                      exerciseFeedback[currentIndex] 
-                        ? 'text-green-300 border-green-400/50 bg-green-400/10 hover:text-green-200' 
+                    className={`ml-auto flex items-center gap-2 border px-3 py-1 rounded-md transition-colors ${exerciseFeedback[currentIndex]
+                        ? 'text-green-300 border-green-400/50 bg-green-400/10 hover:text-green-200'
                         : 'text-yellow-300 hover:text-yellow-200 border-yellow-400/30 hover:bg-yellow-400/10'
-                    }`}
+                      }`}
                     title={exerciseFeedback[currentIndex] ? 'Feedback guardado - Editar valoración' : 'Cómo has sentido este ejercicio?'}
                   >
                     <Star className={`w-4 h-4 ${exerciseFeedback[currentIndex] ? 'fill-current' : ''}`} />
@@ -395,20 +419,19 @@ export default function RoutineSessionModal({
                     <Star className="w-4 h-4 text-green-400 mr-2 mt-1 flex-shrink-0 fill-current" />
                     <h4 className="text-green-200 font-semibold text-sm">Tu valoración guardada</h4>
                   </div>
-                  
+
                   <div className="mb-2">
                     <span className="text-sm text-green-200">Sensación: </span>
-                    <span className={`text-sm font-medium ${
-                      exerciseFeedback[currentIndex].sentiment === 'like' ? 'text-green-400' :
-                      exerciseFeedback[currentIndex].sentiment === 'hard' ? 'text-red-400' :
-                      'text-orange-400'
-                    }`}>
+                    <span className={`text-sm font-medium ${exerciseFeedback[currentIndex].sentiment === 'like' ? 'text-green-400' :
+                        exerciseFeedback[currentIndex].sentiment === 'hard' ? 'text-red-400' :
+                          'text-orange-400'
+                      }`}>
                       {exerciseFeedback[currentIndex].sentiment === 'like' ? '😍 Me gusta' :
-                       exerciseFeedback[currentIndex].sentiment === 'hard' ? '😰 Es difícil' :
-                       '😞 No me gusta'}
+                        exerciseFeedback[currentIndex].sentiment === 'hard' ? '😰 Es difícil' :
+                          '😞 No me gusta'}
                     </span>
                   </div>
-                  
+
                   {exerciseFeedback[currentIndex].comment && (
                     <div>
                       <span className="text-sm text-green-200">Comentario: </span>
@@ -486,12 +509,17 @@ export default function RoutineSessionModal({
                     <Play className="w-4 h-4" /> Comenzar
                   </button>
                 )}
-                {phase !== 'ready' && (
-                  <button onClick={()=> setIsRunning(r=>!r)} className="flex items-center gap-2 bg-gray-200 hover:bg-white text-black font-semibold py-2 px-4 rounded">
+                {phase !== 'ready' && (isTimeBased || timePerSeries !== 0 || phase === 'rest') && (
+                  <button onClick={() => setIsRunning(r => !r)} className="flex items-center gap-2 bg-gray-200 hover:bg-white text-black font-semibold py-2 px-4 rounded">
                     {isRunning ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />} {isRunning ? 'Pausar' : 'Reanudar'}
                   </button>
                 )}
-                <button onClick={() => { setPhase('ready'); setSeries(1); setTimeLeft(0); setIsRunning(false); }} className="flex items-center gap-2 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded" title="Reiniciar ejercicio actual"><RotateCcw className="w-4 h-4" /> Repetir</button>
+                {phase === 'exercise' && timePerSeries === 0 && (
+                  <button onClick={handleManualAdvance} className="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white font-semibold py-2 px-4 rounded">
+                    <SkipForward className="w-4 h-4" /> Avanzar
+                  </button>
+                )}
+                <button onClick={() => { setPhase('ready'); setSeries(1); setTimeLeft(0); setIsRunning(false); setAdvancedManually(false); }} className="flex items-center gap-2 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded" title="Reiniciar ejercicio actual"><RotateCcw className="w-4 h-4" /> Repetir</button>
                 <button onClick={skipToNext} className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded"><SkipForward className="w-4 h-4" /> Saltar Ejercicio</button>
                 <button onClick={skipToNext} className="flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white font-semibold py-2 px-4 rounded"><Square className="w-4 h-4" /> Cancelar Ejercicio</button>
               </div>
@@ -500,8 +528,25 @@ export default function RoutineSessionModal({
               {!isTimeBased && allowManualTimer && (
                 <div className="mt-3 flex items-center gap-2 justify-center text-sm text-gray-400">
                   <span>Tiempo por serie:</span>
-                  {[30,45,60].map((opt)=> (
-                    <button key={opt} onClick={()=> { setTimePerSeries(opt); if (phase==='exercise') setTimeLeft(opt); }} className={`px-2 py-1 border rounded ${timePerSeries===opt? 'border-yellow-400 text-yellow-300':'border-gray-600'}`}>{opt}s</button>
+                  {[
+                    { label: '30s', value: 30 },
+                    { label: '45s', value: 45 },
+                    { label: '60s', value: 60 },
+                    { label: 'Off', value: 0 }
+                  ].map((opt) => (
+                    <button
+                      key={opt.value}
+                      onClick={() => {
+                        setTimePerSeries(opt.value);
+                        if (phase === 'exercise') {
+                          setTimeLeft(opt.value);
+                          setIsRunning(opt.value > 0);
+                        }
+                      }}
+                      className={`px-2 py-1 border rounded ${timePerSeries === opt.value ? 'border-yellow-400 text-yellow-300' : 'border-gray-600'}`}
+                    >
+                      {opt.label}
+                    </button>
                   ))}
                 </div>
               )}
@@ -521,7 +566,7 @@ export default function RoutineSessionModal({
           onSubmit={async (payload) => {
             try {
               console.log('Enviando feedback rutina:', payload);
-              
+
               if (!sessionId) {
                 throw new Error('No se puede guardar feedback: falta sessionId');
               }

@@ -111,9 +111,14 @@ export default function TodayTrainingTab({
   // Obtener la sesión del día actual (buscar sesión específica para hoy)
   const todaySession = useMemo(() => {
     if (!plan?.semanas?.length) return null;
+    const totalWeeks = plan.duracion_total_semanas || plan.semanas.length;
+    const expandedWeeks = Array.from({
+      length: totalWeeks
+    }, (_, i) => plan.semanas[i] || plan.semanas[0]);
 
     // Buscar en todas las semanas la sesión correspondiente al día actual
-    for (const semana of plan.semanas) {
+    for (let idx = 0; idx < expandedWeeks.length; idx++) {
+      const semana = expandedWeeks[idx];
       if (semana.sesiones?.length) {
         // Buscar la sesión que coincida con el día actual
         const todaySessionFound = semana.sesiones.find(session => {
@@ -129,8 +134,8 @@ export default function TodayTrainingTab({
         if (todaySessionFound) {
           return {
             ...todaySessionFound,
-            semana: semana.semana,
-            weekNumber: semana.semana
+            semana: idx + 1,
+            weekNumber: idx + 1
           };
         }
       }

@@ -34,14 +34,18 @@ export default function ProgressTab({ plan, methodologyPlanId }) {
         console.error('Error cargando datos de progreso:', err);
         setError(err.message);
         // Fallback a datos vacíos si no se pueden cargar los reales
+        const totalWeeks = plan?.duracion_total_semanas || plan?.semanas?.length || 0;
+        const semanas = Array.isArray(plan?.semanas) ? plan.semanas : [];
+        const expandedWeeks = Array.from({ length: totalWeeks }, (_, i) => semanas[i] || semanas[0] || { sesiones: [] });
+
         setProgressData({
-          totalWeeks: plan?.semanas?.length || 0,
+          totalWeeks,
           currentWeek: 1,
-          totalSessions: plan?.semanas?.reduce((acc, semana) => acc + (semana.sesiones?.length || 0), 0) || 0,
+          totalSessions: expandedWeeks.reduce((acc, semana) => acc + (semana.sesiones?.length || 0), 0),
           completedSessions: 0,
-          totalExercises: plan?.semanas?.reduce((acc, semana) => 
-            acc + semana.sesiones?.reduce((sessAcc, sesion) => 
-              sessAcc + (sesion.ejercicios?.length || 0), 0) || 0, 0) || 0,
+          totalExercises: expandedWeeks.reduce((acc, semana) =>
+            acc + (semana.sesiones?.reduce((sessAcc, sesion) =>
+              sessAcc + (sesion.ejercicios?.length || 0), 0) || 0), 0),
           completedExercises: 0,
           totalSeriesCompleted: 0,
           totalTimeSpentSeconds: 0,
