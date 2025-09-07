@@ -23,6 +23,68 @@ import {
 
 const router = express.Router();
 
+// ===============================================
+// FUNCIONES HELPER PARA PARSING JSON ROBUSTO
+// ===============================================
+
+/**
+ * Función principal de parsing JSON que maneja múltiples formatos
+ */
+function parseAIResponse(response) {
+  let cleanResponse = response.trim();
+  
+  // Si contiene markdown code blocks
+  if (cleanResponse.includes('```')) {
+    // Intentar diferentes patrones de extracción
+    const patterns = [
+      /```json\s*([\s\S]*?)\s*```/,  // ```json ... ```
+      /```\s*([\s\S]*?)\s*```/,      // ``` ... ```
+      /`{3,}\s*(?:json)?\s*([\s\S]*?)\s*`{3,}/  // ``` con variaciones
+    ];
+    
+    for (const pattern of patterns) {
+      const match = cleanResponse.match(pattern);
+      if (match && match[1]) {
+        cleanResponse = match[1].trim();
+        break;
+      }
+    }
+  }
+  
+  // Limpiar caracteres problemáticos
+  cleanResponse = cleanResponse
+    .replace(/^[`\s]*/, '')  
+    .replace(/[`\s]*$/, '')  
+    .trim();
+  
+  return cleanResponse;
+}
+
+/**
+ * Función súper robusta de último recurso
+ */
+function parseAIResponseRobust(response) {
+  let text = response.trim();
+  
+  // Buscar el primer { y el último }
+  const firstBrace = text.indexOf('{');
+  const lastBrace = text.lastIndexOf('}');
+  
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    text = text.substring(firstBrace, lastBrace + 1);
+  }
+  
+  // Limpiar completamente cualquier markdown residual
+  text = text
+    .replace(/^.*?```.*?\n?/g, '')  // Quitar líneas con ```
+    .replace(/```.*$/g, '')         // Quitar ``` al final
+    .replace(/^[`\s]*/, '')         // Quitar backticks iniciales
+    .replace(/[`\s]*$/, '')         // Quitar backticks finales
+    .trim();
+    
+  return text;
+}
+
 /**
  * Obtener cliente OpenAI para Calistenia Specialist
  */
@@ -204,46 +266,23 @@ Analiza el perfil considerando experiencia, fuerza actual, objetivos y limitacio
     logAIResponse(aiResponse);
     logTokens(completion.usage);
     
-    // Parsear respuesta IA (limpiar markdown si existe)
-    let cleanResponse = aiResponse.trim();
-    
-    // Función robusta para limpiar respuestas de IA
-    if (cleanResponse.includes('```')) {
-      // Intentar extraer JSON de diferentes formatos de markdown
-      let jsonMatch;
-      
-      // Formato: ```json\n{...}\n```
-      jsonMatch = cleanResponse.match(/```json\s*([\s\S]*?)\s*```/);
-      if (!jsonMatch) {
-        // Formato: ```\n{...}\n```
-        jsonMatch = cleanResponse.match(/```\s*([\s\S]*?)\s*```/);
-      }
-      if (!jsonMatch) {
-        // Formato: ` ``` ` con posibles espacios
-        jsonMatch = cleanResponse.match(/`{3,}\s*(?:json)?\s*([\s\S]*?)\s*`{3,}/);
-      }
-      
-      if (jsonMatch) {
-        cleanResponse = jsonMatch[1].trim();
-      } else {
-        console.warn('⚠️ No se pudo extraer JSON de markdown en evaluación, intentando parsing directo');
-      }
-    }
-    
-    // Limpiar caracteres adicionales que podrían causar problemas
-    cleanResponse = cleanResponse
-      .replace(/^[`\s]*/, '')  // Quitar backticks y espacios al inicio
-      .replace(/[`\s]*$/, '')  // Quitar backticks y espacios al final
-      .trim();
-    
+    // Parsear respuesta IA con lógica robusta mejorada
     let evaluation;
     try {
-      evaluation = JSON.parse(cleanResponse);
+      evaluation = JSON.parse(parseAIResponse(aiResponse));
     } catch (parseError) {
       console.error('❌ Error parseando respuesta IA:', parseError.message);
-      console.error('📄 Respuesta raw:', aiResponse.substring(0, 200) + '...');
-      console.error('🔧 Respuesta limpia:', cleanResponse.substring(0, 200) + '...');
-      throw new Error('Respuesta de IA inválida: ' + parseError.message);
+      console.error('📄 Respuesta raw:', aiResponse.substring(0, 300) + '...');
+      
+      // Función de parsing super robusta como último recurso
+      const lastResort = parseAIResponseRobust(aiResponse);
+      try {
+        evaluation = JSON.parse(lastResort);
+        console.log('✅ Parsing exitoso con método robusto de último recurso');
+      } catch (finalError) {
+        console.error('🔧 Respuesta limpia final:', lastResort.substring(0, 300) + '...');
+        throw new Error('Respuesta de IA inválida después de todos los intentos: ' + finalError.message);
+      }
     }
     
     // Validar respuesta
