@@ -93,7 +93,7 @@ export default function MethodologyVersionSelectionModal({
       selectionMode,
       version: selectedVersion,
       userLevel: userLevel,
-      isRecommended: selectedVersion === getAutomaticRecommendation(),
+      isRecommended: selectedVersion === autoRecommendation,
       customWeeks: customWeeks
     });
   };
@@ -102,7 +102,7 @@ export default function MethodologyVersionSelectionModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-6xl w-[95vw] max-h-[85vh] overflow-y-auto bg-gray-900 border-gray-700">
+      <DialogContent className="max-w-7xl w-[98vw] max-h-[90vh] overflow-y-auto bg-gray-900 border-gray-700">
         <DialogHeader>
           <DialogTitle className="text-xl font-bold text-white flex items-center gap-2">
             <Target className="h-6 w-6 text-yellow-400" />
@@ -110,7 +110,7 @@ export default function MethodologyVersionSelectionModal({
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-6">
+        <div className="space-y-8 px-2">
           {/* Información del usuario */}
           <div className="bg-gray-800 p-4 rounded-lg">
             <div className="flex items-center gap-2 mb-2">
@@ -124,30 +124,38 @@ export default function MethodologyVersionSelectionModal({
               {selectedMethodology && (
                 <p><span className="text-gray-400">Metodología:</span> <span className="text-yellow-400">{selectedMethodology}</span></p>
               )}
+              <div className="mt-3 pt-2 border-t border-gray-700">
+                <p className="text-blue-300">
+                  Basándome en tu perfil ({userLevel}, {getTrainingYears()} años de experiencia), 
+                  recomiendo la <span className="text-white font-medium">
+                    versión {autoRecommendation === 'adapted' ? 'adaptada' : 'estricta'}
+                  </span> durante <span className="text-purple-400 font-medium">{customWeeks} semanas</span>.
+                </p>
+              </div>
             </div>
           </div>
 
           {/* Selector de modo */}
           <div>
-            <h3 className="text-white font-medium mb-4">Selecciona cómo quieres proceder:</h3>
+            <h3 className="text-white font-semibold text-lg mb-6">Selecciona cómo quieres proceder:</h3>
             <RadioGroup value={selectionMode} onValueChange={setSelectionMode}>
-              <div className="space-y-3">
-                <div className="flex items-start space-x-3">
-                  <RadioGroupItem value="automatic" id="automatic" className="mt-1" />
+              <div className="grid md:grid-cols-2 gap-6">
+                <div className="flex items-start space-x-4">
+                  <RadioGroupItem value="automatic" id="automatic" className="mt-2" />
                   <Label htmlFor="automatic" className="flex-1">
-                    <Card className="p-4 bg-gray-800 border-gray-700 hover:border-yellow-500/50 transition-colors cursor-pointer">
-                      <div className="flex items-start gap-3">
-                        <div className="p-2 bg-yellow-500/20 rounded-lg">
-                          <Lock className="h-5 w-5 text-yellow-400" />
+                    <Card className="p-6 bg-gray-800 border-gray-700 hover:border-yellow-500/50 transition-colors cursor-pointer h-full">
+                      <div className="flex items-start gap-4">
+                        <div className="p-3 bg-yellow-500/20 rounded-lg">
+                          <Lock className="h-6 w-6 text-yellow-400" />
                         </div>
                         <div className="flex-1">
-                          <h4 className="text-white font-medium mb-1">🔒 Selección Automática (Recomendado)</h4>
-                          <p className="text-sm text-gray-300 mb-2">
+                          <h4 className="text-white font-semibold text-lg mb-3">🔒 Selección Automática (Recomendado)</h4>
+                          <p className="text-base text-gray-300 mb-4 leading-relaxed">
                             La IA asigna automáticamente la versión más apropiada según tu nivel y experiencia.
                           </p>
                           <div className="flex items-center gap-2">
-                            <CheckCircle className="h-4 w-4 text-green-400" />
-                            <span className="text-sm text-green-400">Recomendado para la mayoría de usuarios</span>
+                            <CheckCircle className="h-5 w-5 text-green-400" />
+                            <span className="text-base text-green-400">Recomendado para la mayoría de usuarios</span>
                           </div>
                         </div>
                       </div>
@@ -155,22 +163,22 @@ export default function MethodologyVersionSelectionModal({
                   </Label>
                 </div>
 
-                <div className="flex items-start space-x-3">
-                  <RadioGroupItem value="manual" id="manual" className="mt-1" />
+                <div className="flex items-start space-x-4">
+                  <RadioGroupItem value="manual" id="manual" className="mt-2" />
                   <Label htmlFor="manual" className="flex-1">
-                    <Card className="p-4 bg-gray-800 border-gray-700 hover:border-blue-500/50 transition-colors cursor-pointer">
-                      <div className="flex items-start gap-3">
-                        <div className="p-2 bg-blue-500/20 rounded-lg">
-                          <Unlock className="h-5 w-5 text-blue-400" />
+                    <Card className="p-6 bg-gray-800 border-gray-700 hover:border-blue-500/50 transition-colors cursor-pointer h-full">
+                      <div className="flex items-start gap-4">
+                        <div className="p-3 bg-blue-500/20 rounded-lg">
+                          <Unlock className="h-6 w-6 text-blue-400" />
                         </div>
                         <div className="flex-1">
-                          <h4 className="text-white font-medium mb-1">🔓 Selección Manual</h4>
-                          <p className="text-sm text-gray-300 mb-2">
+                          <h4 className="text-white font-semibold text-lg mb-3">🔓 Selección Manual</h4>
+                          <p className="text-base text-gray-300 mb-4 leading-relaxed">
                             Tú eliges manualmente entre versión adaptada o estricta.
                           </p>
                           <div className="flex items-center gap-2">
-                            <AlertTriangle className="h-4 w-4 text-amber-400" />
-                            <span className="text-sm text-amber-400">Requiere experiencia en la metodología</span>
+                            <AlertTriangle className="h-5 w-5 text-amber-400" />
+                            <span className="text-base text-amber-400">Requiere experiencia en la metodología</span>
                           </div>
                         </div>
                       </div>
@@ -184,20 +192,20 @@ export default function MethodologyVersionSelectionModal({
           {/* Selector de versión */}
           {selectionMode === 'manual' && (
             <div>
-              <h3 className="text-white font-medium mb-4">Selecciona la versión:</h3>
+              <h3 className="text-white font-semibold text-lg mb-6">Selecciona la versión:</h3>
               <RadioGroup value={selectedVersion} onValueChange={setSelectedVersion}>
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="flex items-start space-x-3">
-                    <RadioGroupItem value="adapted" id="adapted" className="mt-1" />
+                <div className="grid md:grid-cols-2 gap-6">
+                  <div className="flex items-start space-x-4">
+                    <RadioGroupItem value="adapted" id="adapted" className="mt-2" />
                     <Label htmlFor="adapted" className="flex-1">
-                      <Card className="p-4 bg-gray-800 border-gray-700 hover:border-green-500/50 transition-colors cursor-pointer">
-                        <div className="flex items-start gap-3">
-                          <div className="p-2 bg-green-500/20 rounded-lg">
-                            <Shield className="h-5 w-5 text-green-400" />
+                      <Card className="p-6 bg-gray-800 border-gray-700 hover:border-green-500/50 transition-colors cursor-pointer h-full">
+                        <div className="flex items-start gap-4">
+                          <div className="p-3 bg-green-500/20 rounded-lg">
+                            <Shield className="h-6 w-6 text-green-400" />
                           </div>
                           <div className="flex-1">
-                            <h4 className="text-white font-medium mb-2">Versión Adaptada</h4>
-                            <div className="space-y-2 text-sm text-gray-300">
+                            <h4 className="text-white font-semibold text-lg mb-4">Versión Adaptada</h4>
+                            <div className="space-y-3 text-base text-gray-300">
                               <p>• Intensidad inicial moderada</p>
                               <p>• Volumen bajo a medio</p>
                               <p>• Descanso personalizado</p>
@@ -210,17 +218,17 @@ export default function MethodologyVersionSelectionModal({
                     </Label>
                   </div>
 
-                  <div className="flex items-start space-x-3">
-                    <RadioGroupItem value="strict" id="strict" className="mt-1" />
+                  <div className="flex items-start space-x-4">
+                    <RadioGroupItem value="strict" id="strict" className="mt-2" />
                     <Label htmlFor="strict" className="flex-1">
-                      <Card className="p-4 bg-gray-800 border-gray-700 hover:border-red-500/50 transition-colors cursor-pointer">
-                        <div className="flex items-start gap-3">
-                          <div className="p-2 bg-red-500/20 rounded-lg">
-                            <Zap className="h-5 w-5 text-red-400" />
+                      <Card className="p-6 bg-gray-800 border-gray-700 hover:border-red-500/50 transition-colors cursor-pointer h-full">
+                        <div className="flex items-start gap-4">
+                          <div className="p-3 bg-red-500/20 rounded-lg">
+                            <Zap className="h-6 w-6 text-red-400" />
                           </div>
                           <div className="flex-1">
-                            <h4 className="text-white font-medium mb-2">Versión Estricta</h4>
-                            <div className="space-y-2 text-sm text-gray-300">
+                            <h4 className="text-white font-semibold text-lg mb-4">Versión Estricta</h4>
+                            <div className="space-y-3 text-base text-gray-300">
                               <p>• Intensidad inicial alta</p>
                               <p>• Volumen medio a alto</p>
                               <p>• Descanso estándar</p>
@@ -238,19 +246,19 @@ export default function MethodologyVersionSelectionModal({
           )}
 
           {/* Selector de duración personalizada */}
-          <div className="bg-gray-800 p-4 rounded-lg">
-            <div className="flex items-center gap-2 mb-3">
-              <Calendar className="h-5 w-5 text-purple-400" />
-              <h3 className="text-white font-medium">Duración del Plan</h3>
+          <div className="bg-gray-800 p-6 rounded-lg">
+            <div className="flex items-center gap-3 mb-4">
+              <Calendar className="h-6 w-6 text-purple-400" />
+              <h3 className="text-white font-semibold text-lg">Duración del Plan</h3>
             </div>
-            <p className="text-sm text-gray-300 mb-4">
+            <p className="text-base text-gray-300 mb-6 leading-relaxed">
               La IA se encarga de prepararte el entrenamiento, pero si prefieres modificar las semanas, házlo aquí:
             </p>
-            <div className="flex items-center gap-4">
-              <Label htmlFor="weeks" className="text-gray-300 text-sm">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+              <Label htmlFor="weeks" className="text-gray-300 text-base font-medium">
                 Número de semanas:
               </Label>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3">
                 <Input
                   id="weeks"
                   type="number"
@@ -261,36 +269,16 @@ export default function MethodologyVersionSelectionModal({
                     const value = Math.max(1, Math.min(7, parseInt(e.target.value) || 4));
                     setCustomWeeks(value);
                   }}
-                  className="w-20 bg-gray-700 border-gray-600 text-white text-center"
+                  className="w-24 h-12 bg-gray-700 border-gray-600 text-white text-center text-lg font-semibold"
                 />
-                <span className="text-gray-400 text-sm">semanas (1-7)</span>
+                <span className="text-gray-400 text-base">semanas (1-7)</span>
               </div>
             </div>
-            <div className="mt-3 text-xs text-gray-400">
-              💡 Recomendación: 4-5 semanas para principiantes, 5-6 para intermedios, 6-7 para avanzados
+            <div className="mt-4 text-sm text-gray-400 bg-gray-700/50 p-3 rounded-lg">
+              💡 <strong>Recomendación:</strong> 4-5 semanas para principiantes, 5-6 para intermedios, 6-7 para avanzados
             </div>
           </div>
 
-          {/* Recomendación de la IA */}
-          <div className="bg-blue-900/30 border border-blue-700/50 p-4 rounded-lg">
-            <div className="flex items-start gap-3">
-              <Brain className="h-5 w-5 text-blue-400 mt-0.5" />
-              <div>
-                <h4 className="text-blue-400 font-medium mb-2">Recomendación de la IA</h4>
-                <p className="text-sm text-gray-300">
-                  Basándome en tu perfil ({userLevel}, {getTrainingYears()} años de experiencia), 
-                  recomiendo la <span className="text-white font-medium">
-                    versión {autoRecommendation === 'adapted' ? 'adaptada' : 'estricta'}
-                  </span> durante <span className="text-purple-400 font-medium">{customWeeks} semanas</span>.
-                </p>
-                {userLevel === 'principiante' && (
-                  <p className="text-sm text-blue-300 mt-2">
-                    💡 Para usuarios principiantes recomiendo usar la versión adaptada durante mínimo 4-6 semanas.
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
 
           {/* Advertencia */}
           {showWarning && (
@@ -305,37 +293,37 @@ export default function MethodologyVersionSelectionModal({
           )}
 
           {/* Comparativa */}
-          <div className="bg-gray-800 p-4 rounded-lg">
-            <h4 className="text-white font-medium mb-3">Comparativa de Versiones</h4>
+          <div className="bg-gray-800 p-6 rounded-lg">
+            <h4 className="text-white font-semibold text-lg mb-4">Comparativa de Versiones</h4>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-base">
                 <thead>
-                  <tr className="border-b border-gray-700">
-                    <th className="text-left text-gray-300 py-2">Característica</th>
-                    <th className="text-center text-green-400 py-2">Adaptada</th>
-                    <th className="text-center text-red-400 py-2">Estricta</th>
+                  <tr className="border-b-2 border-gray-600">
+                    <th className="text-left text-gray-300 py-4 font-semibold">Característica</th>
+                    <th className="text-center text-green-400 py-4 font-semibold">Adaptada</th>
+                    <th className="text-center text-red-400 py-4 font-semibold">Estricta</th>
                   </tr>
                 </thead>
                 <tbody className="text-gray-300">
-                  <tr className="border-b border-gray-700/50">
-                    <td className="py-2">Intensidad inicial</td>
-                    <td className="text-center text-green-400">Moderada</td>
-                    <td className="text-center text-red-400">Alta</td>
+                  <tr className="border-b border-gray-700/50 hover:bg-gray-700/30">
+                    <td className="py-4 font-medium">Intensidad inicial</td>
+                    <td className="text-center text-green-400 py-4 font-medium">Moderada</td>
+                    <td className="text-center text-red-400 py-4 font-medium">Alta</td>
                   </tr>
-                  <tr className="border-b border-gray-700/50">
-                    <td className="py-2">Volumen semanal</td>
-                    <td className="text-center text-green-400">Bajo a medio</td>
-                    <td className="text-center text-red-400">Medio a alto</td>
+                  <tr className="border-b border-gray-700/50 hover:bg-gray-700/30">
+                    <td className="py-4 font-medium">Volumen semanal</td>
+                    <td className="text-center text-green-400 py-4 font-medium">Bajo a medio</td>
+                    <td className="text-center text-red-400 py-4 font-medium">Medio a alto</td>
                   </tr>
-                  <tr className="border-b border-gray-700/50">
-                    <td className="py-2">Riesgo sobreentrenamiento</td>
-                    <td className="text-center text-green-400">Bajo</td>
-                    <td className="text-center text-red-400">Alto</td>
+                  <tr className="border-b border-gray-700/50 hover:bg-gray-700/30">
+                    <td className="py-4 font-medium">Riesgo sobreentrenamiento</td>
+                    <td className="text-center text-green-400 py-4 font-medium">Bajo</td>
+                    <td className="text-center text-red-400 py-4 font-medium">Alto</td>
                   </tr>
-                  <tr className="border-b border-gray-700/50">
-                    <td className="py-2">Nivel requerido</td>
-                    <td className="text-center text-green-400">Principiante+</td>
-                    <td className="text-center text-red-400">Intermedio+</td>
+                  <tr className="hover:bg-gray-700/30">
+                    <td className="py-4 font-medium">Nivel requerido</td>
+                    <td className="text-center text-green-400 py-4 font-medium">Principiante+</td>
+                    <td className="text-center text-red-400 py-4 font-medium">Intermedio+</td>
                   </tr>
                 </tbody>
               </table>
@@ -344,18 +332,22 @@ export default function MethodologyVersionSelectionModal({
         </div>
 
         {/* Botones */}
-        <div className="flex justify-between pt-4">
-          <Button variant="outline" onClick={onClose} className="border-gray-600 text-gray-300 hover:bg-gray-800">
+        <div className="flex justify-between pt-6 px-2">
+          <Button 
+            variant="outline" 
+            onClick={onClose} 
+            className="border-gray-600 text-gray-300 hover:bg-gray-800 px-8 py-3 text-base font-medium"
+          >
             Cancelar
           </Button>
           <Button 
             onClick={handleConfirm}
-            className="bg-yellow-500 hover:bg-yellow-600 text-black font-medium"
+            className="bg-yellow-500 hover:bg-yellow-600 text-black font-semibold px-8 py-3 text-base"
             disabled={requiresConfirmation && selectionMode === 'manual' && selectedVersion === 'strict'}
           >
             {requiresConfirmation && selectionMode === 'manual' && selectedVersion === 'strict' 
               ? 'Confirmar Advertencia Primero' 
-              : 'Continuar'
+              : 'Generar Entrenamiento'
             }
           </Button>
         </div>

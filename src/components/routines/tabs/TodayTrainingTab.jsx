@@ -122,7 +122,7 @@ export default function TodayTrainingTab({
         completed: completedCount,
         skipped: skippedCount,
         cancelled: cancelledCount,
-        isComplete: completedCount === exercises.length
+        isComplete: exercises.length > 0 && completedCount === exercises.length
       }
     };
   };
