@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { Card } from '@/components/ui/card.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
@@ -19,10 +19,46 @@ import {
 import { getTodaySessionStatus, getSessionProgress } from '../api';
 
 export default function CalendarTab({ plan, planStartDate, methodologyPlanId, ensureMethodologyPlan, refreshTrigger }) {
-  const [currentWeek, setCurrentWeek] = useState(0);
+  // Calcular qué semana mostrar inicialmente basándose en la fecha actual
+  const getInitialWeek = useCallback(() => {
+    if (!planStartDate) return 0;
+    const startDate = new Date(planStartDate);
+    startDate.setHours(0, 0, 0, 0);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    // Calcular diferencia en días desde el inicio
+    const daysSinceStart = Math.floor((today - startDate) / (1000 * 60 * 60 * 24));
+    
+    // Si es negativo (fecha futura), mostrar semana 0
+    if (daysSinceStart < 0) return 0;
+    
+    // Calcular en qué semana estamos (0-indexed)
+    const currentWeek = Math.floor(daysSinceStart / 7);
+    
+    // Asegurar que no excedemos el total de semanas
+    const totalWeeks = plan?.duracion_total_semanas || 4;
+    return Math.min(currentWeek, totalWeeks - 1);
+  }, [planStartDate, plan]);
+
+  const [currentWeek, setCurrentWeek] = useState(getInitialWeek);
   const [selectedDay, setSelectedDay] = useState(null);
   const [showDayModal, setShowDayModal] = useState(false);
+
+  // Logs de depuración para sincronización de fechas
+  useEffect(() => {
+    console.log('📅 Plan Start Date:', planStartDate);
+    console.log('📅 Today:', new Date().toISOString());
+    console.log('📅 Initial Week:', getInitialWeek());
+  }, [planStartDate, plan, getInitialWeek]);
   const [weekStatuses, setWeekStatuses] = useState({});
+  const [apiCache, setApiCache] = useState({});
+  const apiCacheRef = useRef({});
+  
+  // Mantener la ref sincronizada con el estado
+  useEffect(() => {
+    apiCacheRef.current = apiCache;
+  }, [apiCache]);
 
   // Días de la semana (empezando por lunes) - used for display reference
   // const weekDays = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
@@ -30,35 +66,36 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
 
   // Procesar el plan para crear estructura de calendario
   const calendarData = useMemo(() => {
-    if (!plan?.semanas?.length) return [];
+    if (!plan?.semanas?.length || !planStartDate) return [];
 
     const startDate = new Date(planStartDate);
+    startDate.setHours(0, 0, 0, 0);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     const totalWeeks = plan.duracion_total_semanas || plan.semanas.length;
-    const expandedWeeks = Array.from({
-      length: totalWeeks
-    }, (_, i) => plan.semanas[i] || plan.semanas[0]);
 
-    return expandedWeeks.map((semana, weekIndex) => {
-      // Calcular fecha base para esta semana
+    // Crear semanas basadas en la fecha de inicio del plan
+    return Array.from({ length: totalWeeks }, (_, weekIndex) => {
+      const semana = plan.semanas[weekIndex] || plan.semanas[0];
+      
+      // Calcular el primer día de esta semana del plan
       const weekStartDate = new Date(startDate);
       weekStartDate.setDate(startDate.getDate() + (weekIndex * 7));
+      weekStartDate.setHours(0, 0, 0, 0);
 
-      // Crear array de 7 días para la semana a partir de la fecha de inicio
+      // Crear array de 7 días consecutivos desde el inicio de esta semana del plan
       const weekDays = [];
 
       for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
         const dayDate = new Date(weekStartDate);
         dayDate.setDate(weekStartDate.getDate() + dayIndex);
-        // Normalizar hora para comparar correctamente con "hoy"
         dayDate.setHours(0, 0, 0, 0);
 
         const dayName = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'][dayDate.getDay()];
         const dayNameShort = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][dayDate.getDay()];
 
-        // Buscar si hay sesión para este día
+        // Buscar sesión para este día en la semana actual del plan
         const session = semana.sesiones?.find(ses => {
           const sessionDay = ses.dia?.toLowerCase();
           const currentDayLower = dayName.toLowerCase();
@@ -80,7 +117,9 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
           isPast,
           isToday,
           isFuture,
-          weekNumber: weekIndex + 1
+          weekNumber: weekIndex + 1,
+          isWithinPlan: true,
+          planWeekNumber: weekIndex + 1
         });
       }
 
@@ -112,23 +151,57 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
     }
   };
 
-  // Sincronización: cargar estado para los 7 días visibles
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadWeekStatuses = async () => {
+  // Función de carga con cache memoizada
+  const loadWeekStatuses = useCallback(async () => {
       if (!currentWeekData) return;
+      
+      const cacheKey = `week-${currentWeekData.weekNumber}-${methodologyPlanId}`;
+      const now = Date.now();
+      
+      // Verificar cache existente - cache más agresivo para evitar spam
+      if (apiCacheRef.current[cacheKey] && (now - apiCacheRef.current[cacheKey].timestamp) < 300000) { // 5 minutos
+        console.log('📦 Usando cache para semana', currentWeekData.weekNumber);
+        return;
+      }
+
       try {
         const mId = await (ensureMethodologyPlan ? ensureMethodologyPlan() : methodologyPlanId);
+        
+        // Determinar qué días necesitan actualización según su estado temporal
+        const daysToLoad = currentWeekData.days.filter(day => {
+          if (!day.session) return false;
+          
+          const dayKey = getDayKey(currentWeekData.weekNumber || 1, day);
+          const dayCache = apiCacheRef.current[`${cacheKey}-${dayKey}`];
+          
+          if (!dayCache) return true; // No hay cache, cargar
+          
+          const cacheAge = now - dayCache.timestamp;
+          
+          // Cache más agresivo para reducir spam de API
+          if (day.isPast) {
+            return cacheAge > 600000; // 10 minutos para días pasados (no cambian)
+          } else if (day.isToday) {
+            return cacheAge > 180000; // 3 minutos para hoy
+          } else {
+            return cacheAge > 900000; // 15 minutos para días futuros
+          }
+        });
+
+        console.log(`🔄 Cargando ${daysToLoad.length}/${currentWeekData.days.length} días para semana ${currentWeekData.weekNumber}`);
+        
+        if (daysToLoad.length === 0) return;
+
         const entries = await Promise.all(
-          currentWeekData.days.map(async (day) => {
+          daysToLoad.map(async (day) => {
             const key = getDayKey(currentWeekData.weekNumber || 1, day);
-            if (!day.session) return [key, null];
             try {
               const data = await getTodaySessionStatus({
                 methodology_plan_id: mId,
                 week_number: currentWeekData.weekNumber || 1,
                 day_name: day.dayNameShort || day.dayName,
+                // No enviamos session_date ya que no existe en la BD, 
+                // dejamos que busque por week_number y day_name
               });
               if (data?.session?.id) {
                 try {
@@ -145,25 +218,47 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
             }
           })
         );
-        if (cancelled) return;
+
+
+        // Actualizar cache y estado
+        setApiCache(prev => ({
+          ...prev,
+          [cacheKey]: { timestamp: now },
+          ...Object.fromEntries(
+            entries.map(([key, value]) => [`${cacheKey}-${key}`, { timestamp: now, data: value }])
+          )
+        }));
+
         setWeekStatuses((prev) => {
           const next = { ...prev };
           entries.forEach(([k, v]) => { next[k] = v; });
           return next;
         });
       } catch (e) {
+        console.warn('Error cargando estados de semana:', e);
         // ignorar errores para días sin sesión
       }
+  }, [currentWeekData, methodologyPlanId, ensureMethodologyPlan]);
+
+  // Sincronización: cargar estado para los 7 días visibles
+  useEffect(() => {
+    let cancelled = false;
+
+    const wrappedLoad = async () => {
+      if (cancelled) return;
+      await loadWeekStatuses();
     };
 
     // carga inicial
-    loadWeekStatuses();
+    wrappedLoad();
 
-    // auto-refresco ligero cada 8s mientras esta semana esté visible
-    const id = setInterval(loadWeekStatuses, 8000);
+    // **REMOVER AUTO-REFRESCO AUTOMÁTICO** - solo refresh manual o por refreshTrigger
+    // El auto-refresco causa bucles innecesarios
 
-    return () => { cancelled = true; clearInterval(id); };
-  }, [currentWeekData, methodologyPlanId, ensureMethodologyPlan, refreshTrigger]);
+    return () => { 
+      cancelled = true; 
+    };
+  }, [loadWeekStatuses, refreshTrigger]);
 
   const handlePrevWeek = () => {
     setCurrentWeek(Math.max(0, currentWeek - 1));

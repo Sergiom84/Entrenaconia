@@ -30,8 +30,49 @@ export default function RoutineScreen() {
   const [isRecoveringPlan, setIsRecoveringPlan] = useState(false);
   const [progressUpdatedAt, setProgressUpdatedAt] = useState(Date.now());
 
-  // Fecha de inicio del plan (día actual cuando se genera)
-  const planStartDate = useMemo(() => new Date().toISOString(), []);
+  // Fecha de inicio del plan (persiste entre sesiones)
+  const [planStartDate, setPlanStartDate] = useState(() => {
+    const stored = localStorage.getItem('currentRoutinePlanStartDate');
+    if (stored) {
+      // Verificar que la fecha almacenada sea válida
+      const storedDate = new Date(stored);
+      if (!isNaN(storedDate.getTime())) {
+        return stored;
+      }
+    }
+    // Si no hay fecha válida almacenada, usar hoy
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayISO = today.toISOString();
+    localStorage.setItem('currentRoutinePlanStartDate', todayISO);
+    return todayISO;
+  });
+
+  useEffect(() => {
+    if (incomingPlan) {
+      // Cuando llega un nuevo plan, usar la fecha de confirmación si está disponible
+      // o la fecha de creación como fallback, no siempre "hoy"
+      let planDate;
+      
+      // Si el plan tiene confirmed_at, usarla (es más precisa)
+      if (incomingState?.confirmed_at) {
+        planDate = new Date(incomingState.confirmed_at);
+      } else if (incomingState?.created_at) {
+        planDate = new Date(incomingState.created_at);
+      } else {
+        // Solo si no hay información de fechas, usar hoy
+        planDate = new Date();
+      }
+      
+      planDate.setHours(0, 0, 0, 0);
+      const planDateISO = planDate.toISOString();
+      setPlanStartDate(planDateISO);
+      localStorage.setItem('currentRoutinePlanStartDate', planDateISO);
+      console.log('📅 Plan iniciado en fecha:', planDateISO, 'usando:', 
+        incomingState?.confirmed_at ? 'confirmed_at' : 
+        incomingState?.created_at ? 'created_at' : 'hoy');
+    }
+  }, [incomingPlan, incomingState]);
 
   // Día actual (el día que el usuario activó la IA)
   const todayName = useMemo(() => {
@@ -56,6 +97,17 @@ export default function RoutineScreen() {
             console.log('✅ Rutina activa recuperada:', activeData);
             setRecoveredPlan(activeData.routinePlan);
             setMethodologyPlanId(activeData.methodology_plan_id);
+            
+            // Establecer fecha de inicio basada en la fecha de confirmación del plan recuperado
+            if (activeData.confirmedAt || activeData.createdAt) {
+              const planDate = new Date(activeData.confirmedAt || activeData.createdAt);
+              planDate.setHours(0, 0, 0, 0);
+              const planDateISO = planDate.toISOString();
+              setPlanStartDate(planDateISO);
+              localStorage.setItem('currentRoutinePlanStartDate', planDateISO);
+              console.log('📅 Plan recuperado con fecha de inicio:', planDateISO, 
+                'usando:', activeData.confirmedAt ? 'confirmedAt' : 'createdAt');
+            }
           } else {
             console.log('No hay rutina activa. Redirecting to Methodologies.');
             navigate('/methodologies', { replace: true });
@@ -140,6 +192,7 @@ export default function RoutineScreen() {
 
   const handleGenerateAnother = () => {
     // Descartar plan y volver a metodologías
+    localStorage.removeItem('currentRoutinePlanStartDate');
     navigate('/methodologies', { replace: true });
   };
 

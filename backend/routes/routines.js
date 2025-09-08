@@ -501,15 +501,31 @@ router.get('/sessions/today-status', authenticateToken, async (req, res) => {
 
     const normalizedDay = normalizeDayAbbrev(day_name);
 
-    // Buscar la sesión del día
-    const sessionQuery = await pool.query(
-      `SELECT * FROM app.methodology_exercise_sessions
-       WHERE user_id = $1 AND methodology_plan_id = $2 
-         AND week_number = $3 AND day_name = $4
-       ORDER BY created_at DESC
-       LIMIT 1`,
-      [userId, methodology_plan_id, week_number, normalizedDay]
-    );
+    // Buscar la sesión del día por fecha específica (más preciso)
+    const { session_date } = req.query;
+    
+    let sessionQuery;
+    if (session_date) {
+      // Si se proporciona fecha específica, buscar por fecha exacta
+      sessionQuery = await pool.query(
+        `SELECT * FROM app.methodology_exercise_sessions
+         WHERE user_id = $1 AND methodology_plan_id = $2 
+           AND session_date::date = $3::date
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [userId, methodology_plan_id, session_date]
+      );
+    } else {
+      // Fallback: buscar por week_number y day_name (comportamiento anterior)
+      sessionQuery = await pool.query(
+        `SELECT * FROM app.methodology_exercise_sessions
+         WHERE user_id = $1 AND methodology_plan_id = $2 
+           AND week_number = $3 AND day_name = $4
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [userId, methodology_plan_id, week_number, normalizedDay]
+      );
+    }
 
     if (sessionQuery.rowCount === 0) {
       return res.status(404).json({ 
@@ -1017,7 +1033,8 @@ router.get('/active-plan', authenticateToken, async (req, res) => {
 
     // ESTRATEGIA 1: Buscar plan de metodología activo (ideal)
     const activeMethodologyQuery = await pool.query(
-      `SELECT mp.id as methodology_plan_id, mp.methodology_type, mp.plan_data, mp.confirmed_at,
+      `SELECT mp.id as methodology_plan_id, mp.methodology_type, mp.plan_data, 
+              mp.confirmed_at, mp.created_at,
               rp.id as routine_plan_id, 'methodology' as source
        FROM app.methodology_plans mp
        LEFT JOIN app.routine_plans rp ON rp.user_id = mp.user_id 
@@ -1040,7 +1057,7 @@ router.get('/active-plan', authenticateToken, async (req, res) => {
       
       const activeRoutineQuery = await pool.query(
         `SELECT rp.id as routine_plan_id, rp.methodology_type, rp.plan_data, 
-                rp.confirmed_at, rp.id as methodology_plan_id, 'routine_fallback' as source
+                rp.confirmed_at, rp.created_at, rp.id as methodology_plan_id, 'routine_fallback' as source
          FROM app.routine_plans rp
          WHERE rp.user_id = $1 AND rp.status = 'active' AND rp.is_active = true
          ORDER BY rp.confirmed_at DESC
@@ -1078,6 +1095,7 @@ router.get('/active-plan', authenticateToken, async (req, res) => {
       methodology_plan_id: activePlan.methodology_plan_id,
       planType: activePlan.methodology_type,
       confirmedAt: activePlan.confirmed_at,
+      createdAt: activePlan.created_at,
       recoverySource: planSource  // Para debugging
     });
 
