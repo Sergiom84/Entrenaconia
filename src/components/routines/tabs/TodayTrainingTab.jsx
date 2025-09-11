@@ -14,7 +14,7 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button.jsx';
 import { Alert, AlertDescription } from '@/components/ui/alert.jsx';
-import { RefreshCw, Calendar, AlertTriangle } from 'lucide-react';
+import { RefreshCw, Calendar, AlertTriangle, Dumbbell, ChevronRight } from 'lucide-react';
 
 import RoutineSessionModal from '../RoutineSessionModal';
 import RoutineSessionSummaryCard from '../RoutineSessionSummaryCard';
@@ -51,10 +51,13 @@ export default function TodayTrainingTab({
     loadingStatus,
     pendingExercises,
     showPendingModal,
+    yesterdayPendingExercises,
+    loadingYesterdayPending,
     error,
     refreshSessionStatus,
     closePendingModal,
-    setTodaySessionStatus
+    setTodaySessionStatus,
+    setYesterdayPendingExercises
   } = useTodaySession({ plan, todayName, methodologyPlanId });
 
   /**
@@ -201,6 +204,94 @@ export default function TodayTrainingTab({
   };
 
   /**
+   * Continuar con ejercicios pendientes del día anterior
+   */
+  const handleContinueYesterdayExercises = async () => {
+    console.log('🎯 DEBUG: handleContinueYesterdayExercises ejecutado');
+    console.log('🎯 DEBUG: yesterdayPendingExercises:', yesterdayPendingExercises);
+    console.log('🎯 DEBUG: showSessionModal antes:', showSessionModal);
+    console.log('🎯 DEBUG: selectedSession antes:', selectedSession);
+    
+    if (!yesterdayPendingExercises?.sessionId) {
+      console.log('❌ DEBUG: No sessionId encontrado');
+      logger.warn('No hay sesión del día anterior para continuar', null, 'Routines');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      console.log('🔄 DEBUG: setIsLoading(true) ejecutado');
+      
+      // Configurar la sesión con los ejercicios pendientes del día anterior
+      // Formatear los ejercicios para que coincidan con el formato esperado
+      const formattedExercises = (yesterdayPendingExercises.exercises || []).map(ex => ({
+        nombre: ex.exercise_name,
+        series: ex.series_total,
+        repeticiones: ex.repeticiones,
+        descanso_seg: ex.descanso_seg,
+        intensidad: ex.intensidad,
+        tempo: ex.tempo,
+        notas: ex.notas,
+        exercise_order: ex.exercise_order
+      }));
+
+      console.log('🎯 DEBUG: formattedExercises:', formattedExercises);
+
+      const pendingSession = {
+        dia: yesterdayPendingExercises.dayName,
+        weekNumber: yesterdayPendingExercises.weekNumber,
+        ejercicios: formattedExercises,
+        sessionId: yesterdayPendingExercises.sessionId
+      };
+
+      console.log('🎯 DEBUG: pendingSession:', pendingSession);
+
+      setRoutineSessionId(yesterdayPendingExercises.sessionId);
+      setLastSessionId(yesterdayPendingExercises.sessionId);
+      
+      const finalSession = {
+        ...pendingSession,
+        currentExerciseIndex: 0
+      };
+      
+      console.log('🎯 DEBUG: finalSession para setSelectedSession:', finalSession);
+      console.log('🎯 DEBUG: finalSession.ejercicios.length:', finalSession.ejercicios.length);
+      console.log('🎯 DEBUG: finalSession.sessionId:', finalSession.sessionId);
+      
+      setSelectedSession(finalSession);
+      
+      // Usar setTimeout para asegurar que el estado se actualice
+      setTimeout(() => {
+        console.log('🎯 DEBUG: Ejecutando setShowSessionModal(true) en setTimeout');
+        console.log('🎯 DEBUG: selectedSession en setTimeout:', finalSession);
+        setShowSessionModal(true);
+        
+        // Limpiar el estado DESPUÉS de mostrar el modal
+        console.log('🎯 DEBUG: Limpiando yesterdayPendingExercises después de mostrar modal');
+        setYesterdayPendingExercises(null);
+        
+        // Verificar después de 200ms que el estado se actualizó
+        setTimeout(() => {
+          console.log('🎯 DEBUG VERIFICACIÓN: showSessionModal después =', showSessionModal);
+        }, 200);
+      }, 100);
+      
+      logger.info('Continuando con ejercicios pendientes del día anterior', {
+        sessionId: yesterdayPendingExercises.sessionId,
+        totalPending: yesterdayPendingExercises.totalPending
+      }, 'Routines');
+      
+      console.log('✅ DEBUG: Función handleContinueYesterdayExercises completada');
+    } catch (error) {
+      console.error('❌ DEBUG: Error en handleContinueYesterdayExercises:', error);
+      logger.error('Error continuando ejercicios del día anterior', error, 'Routines');
+    } finally {
+      setIsLoading(false);
+      console.log('🔄 DEBUG: setIsLoading(false) ejecutado');
+    }
+  };
+
+  /**
    * Confirmar cancelación de rutina
    */
   const handleConfirmCancel = async () => {
@@ -266,6 +357,47 @@ export default function TodayTrainingTab({
           <p className="text-gray-400 mb-6">
             No hay entrenamientos programados para hoy. ¡Disfruta tu día de recuperación!
           </p>
+          
+          {/* Sección de ejercicios pendientes del día anterior */}
+          {loadingYesterdayPending ? (
+            <div className="mb-6">
+              <RefreshCw className="w-5 h-5 text-yellow-400 animate-spin mx-auto" />
+              <p className="text-gray-400 text-sm mt-2">Verificando ejercicios pendientes...</p>
+            </div>
+          ) : yesterdayPendingExercises && yesterdayPendingExercises.totalPending > 0 ? (
+            <div className="mb-6 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg max-w-md mx-auto">
+              <div className="flex items-center justify-center gap-2 mb-3">
+                <Dumbbell className="w-5 h-5 text-yellow-400" />
+                <h4 className="text-yellow-400 font-medium">
+                  ¿Te quedaron ejercicios pendientes?
+                </h4>
+              </div>
+              <p className="text-gray-300 text-sm mb-4">
+                Tienes {yesterdayPendingExercises.totalPending} ejercicio{yesterdayPendingExercises.totalPending > 1 ? 's' : ''} 
+                {' '}pendiente{yesterdayPendingExercises.totalPending > 1 ? 's' : ''} del día {yesterdayPendingExercises.dayName}
+              </p>
+              <div className="flex gap-2 justify-center">
+                <Button
+                  onClick={handleContinueYesterdayExercises}
+                  variant="default"
+                  className="bg-yellow-500 hover:bg-yellow-600 text-black"
+                  disabled={isLoading}
+                >
+                  Vamos
+                  <ChevronRight className="w-4 h-4 ml-1" />
+                </Button>
+                <Button
+                  onClick={() => setYesterdayPendingExercises(null)}
+                  variant="outline"
+                  className="border-gray-600 text-gray-400 hover:bg-gray-800"
+                  disabled={isLoading}
+                >
+                  Omitir
+                </Button>
+              </div>
+            </div>
+          ) : null}
+          
           <Button
             onClick={onGenerateAnother}
             variant="outline"
@@ -274,6 +406,26 @@ export default function TodayTrainingTab({
             Generar nueva rutina
           </Button>
         </div>
+
+        {/* MODALES PARA DÍAS DE DESCANSO - Deben estar aquí para ser renderizados */}
+        {showSessionModal && selectedSession && (
+          <RoutineSessionModal
+            session={selectedSession}
+            sessionId={routineSessionId}
+            onClose={() => {
+              console.log('🔄 DEBUG: Cerrando modal desde onClose (día descanso)');
+              setShowSessionModal(false);
+            }}
+            onFinishExercise={handleFinishExercise}
+            onSkipExercise={handleSkipExercise}
+            onCancelExercise={handleCancelExercise}
+            onEndSession={handleEndSession}
+          />
+        )}
+        
+        {/* DEBUG: Estado del modal en día de descanso */}
+        {console.log('🎯 DEBUG RENDER (día descanso): showSessionModal =', showSessionModal, 'selectedSession =', selectedSession)}
+        
       </SafeComponent>
     );
   }
@@ -324,13 +476,20 @@ export default function TodayTrainingTab({
         {showSessionModal && selectedSession && (
           <RoutineSessionModal
             session={selectedSession}
-            onClose={() => setShowSessionModal(false)}
+            sessionId={routineSessionId}
+            onClose={() => {
+              console.log('🔄 DEBUG: Cerrando modal desde onClose');
+              setShowSessionModal(false);
+            }}
             onFinishExercise={handleFinishExercise}
             onSkipExercise={handleSkipExercise}
             onCancelExercise={handleCancelExercise}
             onEndSession={handleEndSession}
           />
         )}
+        
+        {/* DEBUG: Estado del modal */}
+        {console.log('🎯 DEBUG RENDER: showSessionModal =', showSessionModal, 'selectedSession =', selectedSession)}
 
         <CancelConfirmModal
           isOpen={showCancelConfirm}

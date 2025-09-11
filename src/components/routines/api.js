@@ -194,3 +194,16 @@ export async function getPendingExercises({ methodology_plan_id }) {
   }
   return data; // { hasPendingExercises, pendingDay, exercises, totalPending, sessionId, weekNumber }
 }
+
+export async function getYesterdayPendingExercises({ methodology_plan_id }) {
+  const token = localStorage.getItem('token');
+  const resp = await fetch(`/api/routines/sessions/yesterday-pending?methodology_plan_id=${encodeURIComponent(methodology_plan_id)}`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok || !data.success) {
+    if (resp.status === 404) return null; // No hay ejercicios pendientes del día anterior
+    throw new Error(data.error || 'No se pudieron cargar los ejercicios pendientes del día anterior');
+  }
+  return data; // { hasYesterdayPending, dayName, exercises, totalPending, sessionId, weekNumber, pendingCount, skippedCount }
+}

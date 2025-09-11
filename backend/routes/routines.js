@@ -1091,7 +1091,7 @@ router.get('/active-plan', authenticateToken, async (req, res) => {
       hasActivePlan: true,
       routinePlan: planData,
       planSource: { label: planSource === 'routine_fallback' ? 'Recuperado' : 'IA' },
-      planId: activePlan.routine_plan_id,
+      planId: activePlan.routine_plan_id || activePlan.methodology_plan_id, // Usar methodology_plan_id si no hay routine_plan_id
       methodology_plan_id: activePlan.methodology_plan_id,
       planType: activePlan.methodology_type,
       confirmedAt: activePlan.confirmed_at,
@@ -1494,6 +1494,238 @@ router.get('/pending-exercises', authenticateToken, async (req, res) => {
 
   } catch (error) {
     console.error('❌ Error obteniendo ejercicios pendientes:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Error interno del servidor' 
+    });
+  }
+});
+
+// Endpoint para obtener ejercicios pendientes específicamente del día anterior
+router.get('/sessions/yesterday-pending', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    const { methodology_plan_id } = req.query;
+
+    if (!methodology_plan_id) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'methodology_plan_id es requerido' 
+      });
+    }
+
+    console.log('🔍 Buscando ejercicios pendientes del día anterior:', { userId, methodology_plan_id });
+
+    // Obtener el día de ayer
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayName = yesterday.toLocaleDateString('es-ES', { weekday: 'long' }).toLowerCase();
+    
+    console.log('📅 Día de ayer:', yesterdayName);
+
+    // ENFOQUE HÍBRIDO: Buscar tanto sesiones iniciadas como no iniciadas de ayer
+    
+    // 1. PRIMERA BÚSQUEDA: Sesiones ya existentes del día anterior con ejercicios pendientes
+    const yesterdayStart = new Date(yesterday.setHours(0, 0, 0, 0));
+    const yesterdayEnd = new Date(yesterday.setHours(23, 59, 59, 999));
+    
+    const existingSessionsQuery = await pool.query(`
+      SELECT 
+        mes.id as session_id,
+        mes.day_name,
+        mes.week_number,
+        mes.started_at,
+        mes.created_at,
+        COUNT(mep.id) as total_exercises,
+        SUM(CASE WHEN mep.status = 'pending' THEN 1 ELSE 0 END) as pending_exercises,
+        SUM(CASE WHEN mep.status = 'skipped' THEN 1 ELSE 0 END) as skipped_exercises,
+        array_agg(
+          json_build_object(
+            'exercise_order', mep.exercise_order,
+            'exercise_name', mep.exercise_name,
+            'status', mep.status,
+            'series_total', mep.series_total,
+            'repeticiones', mep.repeticiones,
+            'descanso_seg', mep.descanso_seg,
+            'intensidad', mep.intensidad,
+            'tempo', mep.tempo,
+            'notas', mep.notas
+          ) ORDER BY mep.exercise_order
+        ) FILTER (WHERE mep.status IN ('pending', 'skipped')) as pending_exercises_list
+      FROM app.methodology_exercise_sessions mes
+      LEFT JOIN app.methodology_exercise_progress mep ON mes.id = mep.methodology_session_id
+      WHERE mes.user_id = $1 
+        AND mes.methodology_plan_id = $2
+        AND (
+          (mes.started_at >= $3 AND mes.started_at <= $4) OR
+          (mes.started_at IS NULL AND mes.created_at >= $3 AND mes.created_at <= $4)
+        )
+      GROUP BY mes.id, mes.day_name, mes.week_number, mes.started_at, mes.created_at
+      HAVING SUM(CASE WHEN mep.status IN ('pending', 'skipped') THEN 1 ELSE 0 END) > 0
+      ORDER BY COALESCE(mes.started_at, mes.created_at) DESC
+      LIMIT 1
+    `, [userId, methodology_plan_id, yesterdayStart, yesterdayEnd]);
+
+    // Si encontramos sesión existente con ejercicios pendientes, la retornamos
+    if (existingSessionsQuery.rowCount > 0) {
+      const sessionData = existingSessionsQuery.rows[0];
+      const totalPendingCount = parseInt(sessionData.pending_exercises) + parseInt(sessionData.skipped_exercises);
+
+      console.log('📋 Sesión existente del día anterior con ejercicios pendientes:', {
+        sessionId: sessionData.session_id,
+        dayName: sessionData.day_name,
+        totalPending: totalPendingCount
+      });
+
+      const responseData = {
+        success: true,
+        hasYesterdayPending: true,
+        sessionId: sessionData.session_id,
+        dayName: sessionData.day_name,
+        weekNumber: sessionData.week_number,
+        totalPending: totalPendingCount,
+        pendingCount: parseInt(sessionData.pending_exercises),
+        skippedCount: parseInt(sessionData.skipped_exercises),
+        exercises: sessionData.pending_exercises_list || [],
+        startedAt: sessionData.started_at
+      };
+
+      console.log('✅ Retornando datos de sesión existente');
+      return res.json(responseData);
+    }
+
+    console.log('🔍 No se encontraron sesiones existentes, verificando plan programado para ayer');
+
+    // 2. SEGUNDA BÚSQUEDA: Si no hay sesiones existentes, buscar en el plan qué estaba programado para ayer
+    const methodologyPlanQuery = await pool.query(`
+      SELECT plan_data, confirmed_at
+      FROM app.methodology_plans 
+      WHERE id = $1 AND user_id = $2 AND status = 'active'
+    `, [methodology_plan_id, userId]);
+
+    if (methodologyPlanQuery.rowCount === 0) {
+      console.log('❌ Plan de metodología no encontrado o no activo');
+      return res.json({ 
+        success: true, 
+        hasYesterdayPending: false 
+      });
+    }
+
+    const planData = methodologyPlanQuery.rows[0].plan_data;
+    const planStartDate = new Date(methodologyPlanQuery.rows[0].confirmed_at);
+    
+    // Calcular qué semana era ayer basado en la fecha de inicio del plan
+    const daysSinceStart = Math.floor((yesterday - planStartDate) / (1000 * 60 * 60 * 24));
+    const weekNumber = Math.floor(daysSinceStart / 7) + 1;
+    
+    console.log('📊 Calculando semana:', { daysSinceStart, weekNumber, planStartDate });
+
+    // Buscar en el plan qué ejercicios estaban programados para ayer
+    let yesterdaySession = null;
+    if (planData?.semanas && planData.semanas.length > 0) {
+      for (const semana of planData.semanas) {
+        if (semana.sesiones) {
+          const session = semana.sesiones.find(s => {
+            const sessionDay = s.dia?.toLowerCase();
+            return sessionDay === yesterdayName ||
+                   sessionDay === yesterdayName.replace('é', 'e') ||
+                   (sessionDay === 'mie' && yesterdayName === 'miércoles') ||
+                   (sessionDay === 'sab' && yesterdayName === 'sábado');
+          });
+          if (session) {
+            yesterdaySession = { ...session, weekNumber: semana.semana || weekNumber };
+            break;
+          }
+        }
+      }
+    }
+
+    if (!yesterdaySession || !yesterdaySession.ejercicios) {
+      console.log('✅ No había ejercicios programados para ayer');
+      return res.json({ 
+        success: true, 
+        hasYesterdayPending: false 
+      });
+    }
+
+    console.log('📋 Ejercicios programados para ayer encontrados (nunca iniciados):', {
+      dia: yesterdaySession.dia,
+      ejercicios: yesterdaySession.ejercicios.length
+    });
+
+    // Como no había sesión existente, todos los ejercicios están pendientes
+    const exercisesWithStatus = yesterdaySession.ejercicios.map((ejercicio, index) => ({
+      exercise_order: index,
+      exercise_name: ejercicio.nombre,
+      status: 'pending',
+      series_total: ejercicio.series,
+      repeticiones: ejercicio.repeticiones,
+      descanso_seg: ejercicio.descanso_seg || 120,
+      intensidad: ejercicio.intensidad,
+      tempo: ejercicio.tempo,
+      notas: ejercicio.notas
+    }));
+
+    // Todos los ejercicios están pendientes porque la sesión nunca se inició
+    const pendingExercises = exercisesWithStatus; // Todos están en 'pending'
+
+    console.log('📋 Ejercicios pendientes del día anterior encontrados (sin iniciar):', {
+      dayName: yesterdaySession.dia,
+      totalPending: pendingExercises.length
+    });
+
+    // Crear sesión temporal para poder reanudar los ejercicios del día anterior
+    console.log('🔄 Creando sesión temporal para ejercicios pendientes del día anterior');
+    const createSessionQuery = await pool.query(`
+      INSERT INTO app.methodology_exercise_sessions 
+      (user_id, methodology_plan_id, week_number, day_name, created_at)
+      VALUES ($1, $2, $3, $4, NOW())
+      RETURNING id
+    `, [userId, methodology_plan_id, weekNumber, yesterdaySession.dia]);
+    
+    let sessionId = null;
+    if (createSessionQuery.rowCount > 0) {
+      sessionId = createSessionQuery.rows[0].id;
+      
+      // Crear los ejercicios en estado pending
+      for (let i = 0; i < yesterdaySession.ejercicios.length; i++) {
+        const ejercicio = yesterdaySession.ejercicios[i];
+        await pool.query(`
+          INSERT INTO app.methodology_exercise_progress 
+          (methodology_session_id, exercise_name, exercise_order, series_total, repeticiones, descanso_seg, intensidad, tempo, notas, status)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending')
+        `, [
+          sessionId, 
+          ejercicio.nombre, 
+          i, 
+          ejercicio.series, 
+          ejercicio.repeticiones, 
+          ejercicio.descanso_seg || 120,
+          ejercicio.intensidad,
+          ejercicio.tempo,
+          ejercicio.notas
+        ]);
+      }
+    }
+
+    const responseData = {
+      success: true,
+      hasYesterdayPending: true,
+      sessionId: sessionId,
+      dayName: yesterdaySession.dia,
+      weekNumber: weekNumber,
+      totalPending: pendingExercises.length,
+      pendingCount: pendingExercises.length,
+      skippedCount: 0,
+      exercises: pendingExercises,
+      startedAt: null
+    };
+
+    console.log('✅ Datos de ejercicios pendientes del día anterior preparados (nunca iniciados)');
+    res.json(responseData);
+
+  } catch (error) {
+    console.error('❌ Error obteniendo ejercicios pendientes del día anterior:', error);
     res.status(500).json({ 
       success: false, 
       error: 'Error interno del servidor' 

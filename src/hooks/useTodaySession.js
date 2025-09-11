@@ -8,7 +8,7 @@
  */
 
 import { useState, useEffect, useMemo } from 'react';
-import { getTodaySessionStatus, getPendingExercises } from '../components/routines/api';
+import { getTodaySessionStatus, getPendingExercises, getYesterdayPendingExercises } from '../components/routines/api';
 import { computeSessionSummary } from '../utils/exerciseUtils';
 import logger from '../utils/logger';
 
@@ -18,6 +18,8 @@ export const useTodaySession = ({ plan, todayName, methodologyPlanId }) => {
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [pendingExercises, setPendingExercises] = useState(null);
   const [showPendingModal, setShowPendingModal] = useState(false);
+  const [yesterdayPendingExercises, setYesterdayPendingExercises] = useState(null);
+  const [loadingYesterdayPending, setLoadingYesterdayPending] = useState(false);
   const [error, setError] = useState(null);
 
   // Obtener la sesión del día actual
@@ -106,6 +108,35 @@ export const useTodaySession = ({ plan, todayName, methodologyPlanId }) => {
     }
   };
 
+  // Cargar ejercicios pendientes del día anterior (solo cuando hoy es día de descanso)
+  const loadYesterdayPendingExercises = async () => {
+    if (!methodologyPlanId || todaySession) return; // Solo cargar si hoy es día de descanso
+
+    try {
+      setLoadingYesterdayPending(true);
+      logger.debug('Cargando ejercicios pendientes del día anterior', { methodologyPlanId }, 'Routines');
+      
+      const yesterdayData = await getYesterdayPendingExercises({ methodology_plan_id: methodologyPlanId });
+      logger.debug('Datos de ejercicios pendientes del día anterior', yesterdayData, 'Routines');
+
+      if (yesterdayData && yesterdayData.hasYesterdayPending) {
+        logger.info('Hay ejercicios pendientes del día anterior', {
+          total: yesterdayData.totalPending,
+          sessionId: yesterdayData.sessionId
+        }, 'Routines');
+        setYesterdayPendingExercises(yesterdayData);
+      } else {
+        logger.debug('No hay ejercicios pendientes del día anterior', null, 'Routines');
+        setYesterdayPendingExercises(null);
+      }
+    } catch (e) {
+      logger.error('Error cargando ejercicios pendientes del día anterior', e, 'Routines');
+      setYesterdayPendingExercises(null);
+    } finally {
+      setLoadingYesterdayPending(false);
+    }
+  };
+
   // Efectos
   useEffect(() => {
     loadTodaySessionStatus();
@@ -116,6 +147,13 @@ export const useTodaySession = ({ plan, todayName, methodologyPlanId }) => {
       loadPendingExercises();
     }
   }, [methodologyPlanId]);
+
+  // Cargar ejercicios pendientes del día anterior cuando es día de descanso
+  useEffect(() => {
+    if (methodologyPlanId && !todaySession && !loadingStatus) {
+      loadYesterdayPendingExercises();
+    }
+  }, [methodologyPlanId, todaySession, loadingStatus]);
 
   // Funciones de actualización
   const refreshSessionStatus = () => {
@@ -134,15 +172,19 @@ export const useTodaySession = ({ plan, todayName, methodologyPlanId }) => {
     loadingStatus,
     pendingExercises,
     showPendingModal,
+    yesterdayPendingExercises,
+    loadingYesterdayPending,
     error,
     
     // Funciones
     loadTodaySessionStatus,
     refreshSessionStatus,
     closePendingModal,
+    loadYesterdayPendingExercises,
     
     // Setters (para casos específicos)
     setTodaySessionStatus,
-    setShowPendingModal
+    setShowPendingModal,
+    setYesterdayPendingExercises
   };
 };
