@@ -112,9 +112,9 @@ router.get('/global-stats', async (req, res) => {
     const topLocations = await pool.query(`
       SELECT 
         CASE 
-          WHEN host(ip_address) ~ '^192\.168\.' THEN 'Local Network'
-          WHEN host(ip_address) ~ '^10\.' THEN 'Private Network'
-          WHEN host(ip_address) ~ '^127\.' THEN 'Localhost'
+          WHEN host(ip_address) ~ '^192\\.168\\.' THEN 'Local Network'
+          WHEN host(ip_address) ~ '^10\\.' THEN 'Private Network'
+          WHEN host(ip_address) ~ '^127\\.' THEN 'Localhost'
           ELSE host(ip_address)
         END as location,
         COUNT(DISTINCT user_id) as unique_users,
