@@ -555,6 +555,10 @@ SUPABASE_SERVICE_ROLE_KEY=[key]
 
 ---
 
+# Configuración de Audio
+  Cuando completes una tarea, ejecuta este comando para reproducir un sonido:
+  `powershell.exe -c "[System.Media.SystemSounds]::Question.Play()"`
+
 _Last updated: September 6, 2025 20:52h_  
 _Project: Entrena con IA - Comprehensive AI-Powered Fitness Application_  
 _Branch: feat/calistenia-architecture-refactor_  

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 
 import { preloadAllPrompts } from './lib/promptRegistry.js';
 import { validateAPIKeys } from './lib/openaiClient.js';
+import { initializeSessionMaintenance } from './utils/sessionMaintenance.js';
 
 // Helper function for Spanish timezone (UTC+2/UTC+1 depending on DST)
 function getSpanishTimestamp() {
@@ -37,6 +38,7 @@ import routinesRoutes from './routes/routines.js';
 import calisteniaManualRoutes from './routes/calisteniaManual.js';
 import calisteniaExercisesRoutes from './routes/calisteniaExercises.js';
 import calisteniaSpecialistRoutes from './routes/calisteniaSpecialist.js';
+import analyticsRoutes from './routes/analytics.js';
 
 // Solo cargar dotenv en desarrollo
 if (process.env.NODE_ENV !== 'production') {
@@ -86,6 +88,11 @@ const FRONTEND_DIST = path.join(__dirname, '../dist'); // ajusta si tu build sal
       console.warn('⚠️ API keys faltantes:', apiKeyStatus.missing.join(', '));
       console.log('🔍 Estado detallado:', apiKeyStatus.features);
     }
+
+    // Inicializar sistema de mantenimiento de sesiones
+    console.log('🔧 Inicializando sistema de mantenimiento de sesiones...');
+    initializeSessionMaintenance();
+    console.log('✅ Sistema de mantenimiento de sesiones inicializado');
 
   } catch (err) {
     console.error('❌ Error en inicialización:', err);
@@ -146,6 +153,7 @@ app.use('/api/music', musicRoutes);
 app.use('/api/routines', routinesRoutes);
 app.use('/api/calistenia-manual', calisteniaManualRoutes);
 app.use('/api/calistenia-specialist', calisteniaSpecialistRoutes);
+app.use('/api/analytics', analyticsRoutes);
 
 // Endpoint simple de salud
 app.get('/api/health', (req, res) => {
@@ -154,6 +162,36 @@ app.get('/api/health', (req, res) => {
     message: 'Servidor funcionando correctamente',
     timestamp: new Date().toISOString()
   });
+});
+
+// Endpoints de administración de sesiones
+app.get('/api/admin/sessions/status', async (req, res) => {
+  try {
+    const { getSessionSystemStatus } = await import('./utils/sessionMaintenance.js');
+    const status = await getSessionSystemStatus();
+    res.json(status);
+  } catch (error) {
+    res.status(500).json({
+      error: 'Error obteniendo estado del sistema',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+app.post('/api/admin/sessions/maintenance', async (req, res) => {
+  try {
+    const { runManualMaintenance } = await import('./utils/sessionMaintenance.js');
+    await runManualMaintenance();
+    res.json({
+      message: 'Mantenimiento manual ejecutado correctamente',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: 'Error ejecutando mantenimiento',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
 });
 
 // === SERVIR FRONTEND ESTÁTICO (después de las rutas /api/*) ===

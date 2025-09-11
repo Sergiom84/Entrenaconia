@@ -16,7 +16,7 @@ const FILE_BY_FEATURE = {
   [FeatureKey.HOME]: "home_training.md",
   [FeatureKey.METHODOLOGIE]: "Methodologie_(Auto).md",
   [FeatureKey.NUTRITION]: "Nutrition_AI.md",
-  [FeatureKey.CALISTENIA_SPECIALIST]: "calistenia.md"
+  [FeatureKey.CALISTENIA_SPECIALIST]: "calistenia_principiantes.txt"
 };
 
 const cache = new Map();

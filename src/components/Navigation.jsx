@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { LogOut, User, Home, Dumbbell, UserCircle, BookOpen, Calendar, Apple } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { memo, useCallback, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 
 const Navigation = () => {
@@ -8,21 +9,27 @@ const Navigation = () => {
   const location = useLocation();
   const { user, isAuthenticated, logout } = useAuth();
 
-  // Verificar si hay rutinas disponibles
-  const hasRoutines = localStorage.getItem('currentRoutinePlan');
+  // Verificar si hay rutinas disponibles (memoizado)
+  const hasRoutines = useMemo(() => 
+    localStorage.getItem('currentRoutinePlan'), 
+    []
+  );
+
+  // Helper para determinar si un botón está activo (memoizado)
+  const isActive = useCallback((path) => 
+    location.pathname === path, 
+    [location.pathname]
+  );
+
+  const handleLogout = useCallback(() => {
+    if (confirm('¿Estás seguro de que quieres cerrar sesión?')) {
+      logout();
+    }
+  }, [logout]);
 
   if (!isAuthenticated) {
     return null; // No mostrar navegación si no está autenticado
   }
-
-  // Helper para determinar si un botón está activo
-  const isActive = (path) => location.pathname === path;
-
-  const handleLogout = () => {
-    if (confirm('¿Estás seguro de que quieres cerrar sesión?')) {
-      logout();
-    }
-  };
 
   return (
     <>
@@ -160,4 +167,4 @@ const Navigation = () => {
   );
 };
 
-export default Navigation;
+export default memo(Navigation);

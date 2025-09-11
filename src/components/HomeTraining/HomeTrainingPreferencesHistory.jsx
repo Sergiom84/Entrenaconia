@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import useVirtualizedList, { VirtualizedListSearch, VirtualizedListLoader } from '../../hooks/useVirtualizedList.jsx';
 import { ArrowLeft, Heart, ThumbsDown, Zap, Clock, TrendingUp, RotateCcw, Trash2, AlertTriangle, CheckCircle } from 'lucide-react';
 
 const HomeTrainingPreferencesHistory = ({ onBack }) => {

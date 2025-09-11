@@ -79,9 +79,22 @@ export async function confirmRoutinePlan({ methodology_plan_id, routine_plan_id 
   return data; // { success, confirmed_at, status, etc }
 }
 
-export async function getTodaySessionStatus({ methodology_plan_id, week_number, day_name }) {
+export async function getTodaySessionStatus({ methodology_plan_id, week_number, day_name, session_date }) {
   const token = localStorage.getItem('token');
-  const resp = await fetch(`/api/routines/sessions/today-status?methodology_plan_id=${encodeURIComponent(methodology_plan_id)}&week_number=${encodeURIComponent(week_number)}&day_name=${encodeURIComponent(day_name)}`, {
+  
+  // Construir query parameters
+  const params = new URLSearchParams({
+    methodology_plan_id,
+    week_number,
+    day_name
+  });
+  
+  // Agregar session_date si se proporciona
+  if (session_date) {
+    params.set('session_date', session_date);
+  }
+  
+  const resp = await fetch(`/api/routines/sessions/today-status?${params.toString()}`, {
     headers: { 'Authorization': `Bearer ${token}` }
   });
   const data = await resp.json().catch(() => ({}));

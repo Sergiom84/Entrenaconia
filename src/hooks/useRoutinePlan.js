@@ -14,6 +14,7 @@ export default function useRoutinePlan(location) {
   const clearLocalSessionState = useCallback(() => {
     localStorage.removeItem('currentRoutineSessionId');
     localStorage.removeItem('currentRoutineSessionStartAt');
+    localStorage.removeItem('currentRoutinePlanStartDate');
   }, []);
 
   const loadLatestRoutinePlan = useCallback(async () => {

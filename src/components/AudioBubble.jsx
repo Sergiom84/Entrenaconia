@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, memo } from 'react';
 import { Play, Pause, Music, Volume2, MoreHorizontal, X, Minus, List, Plus, Edit3, Trash2, Save, SkipForward, SkipBack, RotateCcw } from 'lucide-react';
 import { FaSpotify, FaYoutube, FaApple } from 'react-icons/fa';
 import { useAuth } from '../contexts/AuthContext';
@@ -1142,4 +1142,4 @@ const AudioBubble = ({ musicConfig = {}, currentExercise = null }) => {
   );
 };
 
-export default AudioBubble;
+export default memo(AudioBubble);

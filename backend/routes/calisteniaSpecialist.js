@@ -11,6 +11,7 @@ import authenticateToken from '../middleware/auth.js';
 import { AI_MODULES } from '../config/aiConfigs.js';
 import { getModuleOpenAI } from '../lib/openaiClient.js';
 import { pool } from '../db.js';
+import { getPrompt, FeatureKey, clearPromptCache } from '../lib/promptRegistry.js';
 import { 
   logSeparator, 
   logUserProfile, 
@@ -28,24 +29,28 @@ const router = express.Router();
 // ===============================================
 
 /**
- * Función principal de parsing JSON que maneja múltiples formatos
+ * Función mejorada de parsing JSON que maneja múltiples formatos y errores
  */
 function parseAIResponse(response) {
   let cleanResponse = response.trim();
   
+  console.log(`📝 Respuesta raw (primeros 200 chars): ${cleanResponse.substring(0, 200)}...`);
+  
   // Si contiene markdown code blocks
   if (cleanResponse.includes('```')) {
+    console.log('🔧 Detectado markdown, extrayendo JSON...');
     // Intentar diferentes patrones de extracción
     const patterns = [
-      /```json\s*([\s\S]*?)\s*```/,  // ```json ... ```
-      /```\s*([\s\S]*?)\s*```/,      // ``` ... ```
-      /`{3,}\s*(?:json)?\s*([\s\S]*?)\s*`{3,}/  // ``` con variaciones
+      /```json\s*([\s\S]*?)\s*```/i,  // ```json ... ```
+      /```\s*([\s\S]*?)\s*```/,       // ``` ... ```
+      /`{3,}\s*(?:json)?\s*([\s\S]*?)\s*`{3,}/i  // ``` con variaciones
     ];
     
     for (const pattern of patterns) {
       const match = cleanResponse.match(pattern);
       if (match && match[1]) {
         cleanResponse = match[1].trim();
+        console.log('✅ JSON extraído exitosamente del markdown');
         break;
       }
     }
@@ -54,8 +59,22 @@ function parseAIResponse(response) {
   // Limpiar caracteres problemáticos
   cleanResponse = cleanResponse
     .replace(/^[`\s]*/, '')  
-    .replace(/[`\s]*$/, '')  
+    .replace(/[`\s]*$/, '')
+    .replace(/^\s*json\s*/i, '') // Remover palabra 'json' al inicio
     .trim();
+  
+  // Validar que empiece y termine con llaves
+  if (!cleanResponse.startsWith('{') || !cleanResponse.endsWith('}')) {
+    console.warn('⚠️ Respuesta no parece ser JSON válido, intentando extracción manual...');
+    const firstBrace = cleanResponse.indexOf('{');
+    const lastBrace = cleanResponse.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      cleanResponse = cleanResponse.substring(firstBrace, lastBrace + 1);
+      console.log('🔧 JSON extraído manualmente');
+    }
+  }
+  
+  console.log(`🔍 JSON limpiado (primeros 200 chars): ${cleanResponse.substring(0, 200)}...`);
   
   return cleanResponse;
 }
@@ -158,35 +177,20 @@ router.post('/evaluate-profile', authenticateToken, async (req, res) => {
     logSeparator('CALISTENIA PROFILE EVALUATION');
     logUserProfile(normalizedProfile, userId);
     
-    // Obtener SOLO ejercicios representativos por nivel para evaluación (optimizado)
-    const exercisesResult = await pool.query(`
-      WITH representative_exercises AS (
-        SELECT DISTINCT ON (nivel, categoria) 
-               exercise_id, nombre, nivel, categoria, patron, equipamiento, 
-               series_reps_objetivo, criterio_de_progreso, notas
-        FROM app."Ejercicios_Calistenia"
-        WHERE categoria IN ('Empuje', 'Tracción', 'Core', 'Piernas')
-        ORDER BY nivel, categoria, 
-          CASE 
-            WHEN LOWER(nivel) = 'básico' THEN 1
-            WHEN LOWER(nivel) = 'intermedio' THEN 2  
-            WHEN LOWER(nivel) = 'avanzado' THEN 3
-          END, nombre
-      )
-      SELECT * FROM representative_exercises
-      ORDER BY 
-        CASE 
-          WHEN LOWER(nivel) = 'básico' THEN 1
-          WHEN LOWER(nivel) = 'intermedio' THEN 2
-          WHEN LOWER(nivel) = 'avanzado' THEN 3
-        END, categoria
+    // OPTIMIZACIÓN: No cargar ejercicios para evaluación de perfil
+    // Solo verificamos que existen ejercicios en la base de datos
+    const exerciseCountResult = await pool.query(`
+      SELECT COUNT(*) as total
+      FROM app."Ejercicios_Calistenia"
+      WHERE LOWER(nivel) = 'básico'
+        AND categoria IN ('Empuje', 'Tracción', 'Core', 'Piernas', 'Equilibrio/Soporte')
     `);
     
-    const availableExercises = exercisesResult.rows;
-    if (availableExercises.length === 0) {
+    const exerciseCount = parseInt(exerciseCountResult.rows[0]?.total) || 0;
+    if (exerciseCount === 0) {
       throw new Error('No se encontraron ejercicios de calistenia en la base de datos');
     }
-    console.log(`📋 ${availableExercises.length} ejercicios representativos para evaluación (optimizado desde 65)`);
+    console.log(`📋 ${exerciseCount} ejercicios básicos disponibles (no cargados para optimizar tokens)`);
     
     // Obtener historial de ejercicios recientes del usuario
     const recentExercisesResult = await pool.query(`
@@ -199,29 +203,34 @@ router.post('/evaluate-profile', authenticateToken, async (req, res) => {
     
     const recentExercises = recentExercisesResult.rows.map(row => row.exercise_name);
     
-    // Preparar payload para IA
+    // PAYLOAD OPTIMIZADO: Solo perfil del usuario y criterios de evaluación
     const aiPayload = {
       task: 'evaluate_calistenia_level',
       user_profile: {
         ...normalizedProfile,
         recent_exercises: recentExercises
       },
-      available_exercises: availableExercises,
+      // REMOVIDO: available_exercises (ahorro de ~7000 caracteres)
       evaluation_criteria: [
         'Años de entrenamiento en calistenia o peso corporal',
-        'Nivel actual de fuerza relativa',
+        'Nivel actual de fuerza relativa (IMC, experiencia)',
         'Capacidad de realizar movimientos básicos',
         'Experiencia con ejercicios avanzados',
         'Objetivos específicos de calistenia',
-        'Limitaciones físicas o lesiones'
+        'Limitaciones físicas o lesiones',
+        'Edad y condición física general'
       ],
+      level_descriptions: {
+        basico: 'Principiantes: 0-1 años experiencia, enfoque en técnica básica',
+        intermedio: 'Experiencia: 1-3 años, domina movimientos básicos',
+        avanzado: 'Expertos: +3 años, ejecuta ejercicios complejos'
+      },
       expected_output: {
         recommended_level: 'basico|intermedio|avanzado',
-        confidence: 0.0, // 0.0 - 1.0
-        reasoning: 'Explicación del nivel recomendado',
-        key_indicators: ['Factores que determinan el nivel'],
+        confidence: 'float 0.0-1.0 (ser realista, no siempre 1.0)',
+        reasoning: 'Explicación detallada del nivel recomendado',
+        key_indicators: ['Factores específicos que determinan el nivel'],
         suggested_focus_areas: ['Áreas específicas a trabajar'],
-        exercise_recommendations: ['Ejercicios iniciales recomendados'],
         progression_timeline: 'Tiempo estimado para avanzar al siguiente nivel'
       }
     };
@@ -239,37 +248,51 @@ router.post('/evaluate-profile', authenticateToken, async (req, res) => {
       messages: [
         {
           role: 'system',
-          content: `${config.systemPrompt}
+          content: `Eres un especialista en calistenia que evalúa perfiles de usuarios para determinar su nivel de entrenamiento apropiado.
 
-Tu tarea es evaluar el perfil del usuario y recomendar un nivel apropiado de calistenia.
+ANÁLISIS REALISTA:
+- Evalúa objetivamente la experiencia, fuerza y condición física del usuario
+- No siempre asignes 100% de confianza - sé realista con las incertidumbres
+- Considera edad, peso, experiencia previa, limitaciones y objetivos
 
-NIVELES DISPONIBLES:
-- básico: 0-6 meses, movimientos fundamentales
-- intermedio: 6-24 meses, progresiones complejas
-- avanzado: 24+ meses, habilidades especializadas
+NIVELES DE CALISTENIA:
+- BÁSICO: 0-1 años experiencia, aprendiendo movimientos fundamentales
+- INTERMEDIO: 1-3 años, domina básicos, progresa a variaciones
+- AVANZADO: +3 años, ejecuta movimientos complejos y skills
 
-RESPONDE EN JSON CON ESTA ESTRUCTURA EXACTA:
+FACTORES CLAVE A EVALUAR:
+1. Años de entrenamiento específico en calistenia o peso corporal
+2. Capacidad actual (flexiones, dominadas, sentadillas, planchas)
+3. IMC y condición física general
+4. Edad y posibles limitaciones
+5. Objetivos específicos del usuario
+6. Historial de lesiones o limitaciones
+
+INSTRUCCIONES CRÍTICAS:
+- RESPONDE SOLO EN JSON PURO, SIN MARKDOWN
+- NO uses backticks (\`\`\`) ni texto adicional
+- Evalúa con criterio realista, no siempre básico ni siempre 100% confianza
+- Para principiantes reales (0 experiencia), sí recomienda básico con alta confianza
+- Para usuarios con experiencia, evalúa apropiadamente
+
+FORMATO DE RESPUESTA (JSON puro):
 {
   "recommended_level": "basico|intermedio|avanzado",
-  "confidence": 0.85,
-  "reasoning": "Explicación clara del porqué de este nivel",
-  "key_indicators": ["Factor 1", "Factor 2", "Factor 3"],
-  "suggested_focus_areas": ["Área 1", "Área 2"],
-  "exercise_recommendations": ["ejercicio_1", "ejercicio_2", "ejercicio_3"],
-  "progression_timeline": "Estimación de tiempo para siguiente nivel",
-  "safety_considerations": ["Consideración 1", "Consideración 2"]
-}
-
-Analiza el perfil considerando experiencia, fuerza actual, objetivos y limitaciones.`
+  "confidence": 0.75,
+  "reasoning": "Análisis detallado del por qué este nivel es apropiado",
+  "key_indicators": ["Factor 1 específico", "Factor 2 específico", "Factor 3 específico"],
+  "suggested_focus_areas": ["Área 1", "Área 2", "Área 3"],
+  "progression_timeline": "Tiempo estimado realista"
+}`
         },
         {
           role: 'user',
           content: JSON.stringify(aiPayload)
         }
       ],
-      temperature: config.temperature,
-      max_tokens: config.max_output_tokens,
-      top_p: config.top_p
+      temperature: 0.3, // Temperatura más baja para respuestas consistentes
+      max_tokens: 800,   // Suficiente para respuesta completa pero controlado
+      top_p: 0.9
     });
     
     const aiResponse = completion.choices[0].message.content;
@@ -330,8 +353,10 @@ Analiza el perfil considerando experiencia, fuerza actual, objetivos y limitacio
         model_used: config.model,
         prompt_id: config.promptId,
         evaluation_timestamp: new Date().toISOString(),
-        exercises_analyzed: availableExercises.length,
-        recent_exercises_count: recentExercises.length
+        exercises_available_count: exerciseCount, // Solo cantidad, no ejercicios completos
+        recent_exercises_count: recentExercises.length,
+        optimization: 'v4.0 - Eliminados ejercicios innecesarios del payload',
+        tokens_saved: '~7000 characters'
       }
     });
     
@@ -369,32 +394,22 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
     logSeparator('CALISTENIA PLAN GENERATION');
     logUserProfile(userProfile, userId);
     
-    // Obtener ejercicios disponibles filtrados por nivel
+    // Para principiantes solo usamos ejercicios básicos
     const exercisesResult = await pool.query(`
       SELECT exercise_id, nombre, nivel, categoria, patron, equipamiento, 
              series_reps_objetivo, criterio_de_progreso, progresion_desde, 
              progresion_hacia, notas
       FROM app."Ejercicios_Calistenia"
-      WHERE LOWER(nivel) <= 
-        CASE 
-          WHEN LOWER($1) = 'avanzado' THEN 'avanzado'
-          WHEN LOWER($1) = 'intermedio' THEN 'intermedio'
-          ELSE 'básico'
-        END
-      ORDER BY 
-        CASE 
-          WHEN LOWER(nivel) = 'básico' THEN 1
-          WHEN LOWER(nivel) = 'intermedio' THEN 2
-          WHEN LOWER(nivel) = 'avanzado' THEN 3
-          ELSE 4
-        END, categoria, nombre
-    `, [selectedLevel]);
+      WHERE LOWER(nivel) = 'básico'
+        AND categoria IN ('Empuje', 'Tracción', 'Core', 'Piernas', 'Equilibrio/Soporte')
+      ORDER BY categoria, nombre
+    `);
     
     const availableExercises = exercisesResult.rows;
     if (availableExercises.length === 0) {
-      throw new Error(`No se encontraron ejercicios de calistenia para el nivel ${selectedLevel} en la base de datos`);
+      throw new Error(`No se encontraron ejercicios de calistenia básicos en la base de datos`);
     }
-    console.log(`📋 ${availableExercises.length} ejercicios disponibles para nivel ${selectedLevel}`);
+    console.log(`📋 ${availableExercises.length} ejercicios básicos disponibles`);
     
     // Obtener historial reciente
     const recentExercisesResult = await pool.query(`
@@ -423,10 +438,10 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
       recent_exercises: recentExercises,
       plan_requirements: {
         duration_weeks: 4,
-        sessions_per_week: selectedLevel === 'basico' ? 3 : selectedLevel === 'intermedio' ? 4 : 5,
-        session_duration_min: selectedLevel === 'basico' ? 30 : selectedLevel === 'intermedio' ? 45 : 60,
+        sessions_per_week: 3, // Siempre 3 para principiantes
+        session_duration_min: 30, // Siempre 30min para principiantes
         progression_type: 'gradual',
-        focus_areas: exercisePreferences || ['empuje', 'traccion', 'piernas', 'core'],
+        focus_areas: ['empuje', 'traccion', 'piernas', 'core'], // Patrones básicos fijos
         start_day: currentDay,
         start_date: today.toISOString().split('T')[0] // Formato YYYY-MM-DD
       }
@@ -434,6 +449,18 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
     
     console.log(`📅 Plan comenzará desde: ${currentDay} (${today.toISOString().split('T')[0]})`);
     logAIPayload('CALISTENIA_PLAN', planPayload);
+    
+    // Limpiar caché para asegurar que obtenga la versión más reciente
+    clearPromptCache(FeatureKey.CALISTENIA_SPECIALIST);
+    
+    // Obtener prompt desde el registry
+    const systemPrompt = await getPrompt(FeatureKey.CALISTENIA_SPECIALIST);
+    if (!systemPrompt) {
+      throw new Error('Prompt no disponible para Calistenia Specialist');
+    }
+    
+    console.log('📋 Usando prompt desde registry para generar plan de calistenia');
+    console.log(`📝 Prompt preview (100 chars): ${systemPrompt.substring(0, 100)}...`);
     
     // Llamada a IA
     const client = getCalisteniaSpecialistClient();
@@ -446,60 +473,7 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
       messages: [
         {
           role: 'system',
-          content: `${config.systemPrompt}
-
-⚠️ REGLAS CRÍTICAS - NO NEGOCIABLES ⚠️
-
-1. USA SOLO ejercicios de available_exercises
-2. Para campo "nombre" en JSON: USA el campo 'nombre' de la DB, NO 'exercise_id' 
-3. OBLIGATORIO: mínimo 4-6 ejercicios diferentes por sesión
-4. Plan DEBE comenzar desde start_day especificado (NO siempre lunes)
-
-Genera un plan completo de calistenia siguiendo estas reglas críticas.
-
-ESTRUCTURA REQUERIDA DEL PLAN JSON:
-{
-  "selected_style": "Calistenia",
-  "nivel_usuario": "${selectedLevel}",
-  "duracion_total_semanas": 4,
-  "frecuencia_por_semana": number,
-  "rationale": "Explicación del plan generado",
-  "semanas": [
-    {
-      "semana": 1,
-      "sesiones": [
-        {
-          "dia": "Lunes|Miércoles|Viernes...",
-          "duracion_sesion_min": number,
-          "objetivo_sesion": "Descripción del enfoque",
-          "ejercicios": [
-            {
-              "nombre": "USAR EXACTAMENTE campo 'nombre' de available_exercises (NO exercise_id)",
-              "series": number,
-              "repeticiones": "rango o número",
-              "descanso_seg": number,
-              "intensidad": "descripción RPE o criterio",
-              "notas": "instrucciones específicas",
-              "progresion": "cómo progresar este ejercicio"
-            }
-          ]
-        }
-      ]
-    }
-  ],
-  "principios_clave": ["principio1", "principio2"],
-  "tips_progresion": ["tip1", "tip2"],
-  "equipamiento_necesario": ["item1", "item2"]
-}
-
-REGLAS CRÍTICAS:
-- USA SOLO ejercicios de available_exercises (campo 'nombre' como nombre, NO exercise_id)
-- MÍNIMO 4-6 ejercicios diferentes por sesión (OBLIGATORIO)
-- COMIENZA desde start_day especificado (NO siempre lunes)
-- EVITA ejercicios de recent_exercises cuando sea posible
-- PROGRESIÓN gradual semanal
-- Respeta el nivel seleccionado
-- Considera objetivos específicos del usuario`
+          content: systemPrompt
         },
         {
           role: 'user',

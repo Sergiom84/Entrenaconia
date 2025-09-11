@@ -99,7 +99,16 @@
       "Bash(./scripts/git-workflow.sh:*)",
       "Bash(./scripts/release.sh:*)",
       "Read(//c/Users/Sergio/Desktop/**)",
-      "Bash(npm ci:*)"
+      "Bash(npm ci:*)",
+      "Read(//c/Users/Sergio/Pictures/EntranaconIA/Procedimientos/Calistenia/**)",
+      "Bash(npx kill-port:*)",
+      "Bash(PORT=3003 npm start)",
+      "Bash(PORT=3003 npm run dev)",
+      "Bash(PORT=3010 npm start)",
+      "Bash(pkill:*)",
+      "Bash(npm start:*)",
+      "Bash(git restore:*)",
+      "Bash(cmd.exe /c start-dev.bat)"
     ]
   }
 }

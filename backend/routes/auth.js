@@ -2,6 +2,15 @@ import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { pool } from '../db.js';
+import { 
+  logUserLogin, 
+  logUserLogout, 
+  getUserActiveSessions, 
+  getUserSessionStats,
+  forceLogoutAllSessions,
+  sessionActivityMiddleware 
+} from '../utils/sessionUtils.js';
+import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -300,6 +309,16 @@ router.post('/login', async (req, res) => {
       { expiresIn: '7d' }
     );
 
+    // Registrar sesión de login
+    const loginResult = await logUserLogin(user.id, token, req, {
+      loginMethod: 'email_password',
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
+    if (!loginResult.success) {
+      console.warn('Warning: No se pudo registrar la sesión de login:', loginResult.error);
+    }
+
     res.json({
       message: 'Login exitoso',
       user: {
@@ -308,11 +327,48 @@ router.post('/login', async (req, res) => {
         apellido: user.apellido,
         email: user.email
       },
-      token
+      token,
+      sessionId: loginResult.success ? loginResult.sessionId : null
     });
 
   } catch (error) {
     console.error('Error en login:', error);
+    res.status(500).json({
+      error: 'Error interno del servidor',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// Logout de usuario
+router.post('/logout', authenticateToken, async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+    const { logoutType = 'manual' } = req.body;
+
+    // Registrar logout
+    const logoutResult = await logUserLogout(req.user.userId, token, logoutType, {
+      logoutTimestamp: new Date().toISOString(),
+      userAgent: req.headers['user-agent'] || 'unknown'
+    });
+
+    if (logoutResult.success) {
+      res.json({
+        message: 'Logout exitoso',
+        sessionId: logoutResult.sessionId,
+        sessionDuration: logoutResult.duration
+      });
+    } else {
+      // Aún así devolver éxito al cliente, solo logear el warning
+      console.warn('Warning: No se pudo registrar el logout:', logoutResult.error);
+      res.json({
+        message: 'Logout exitoso',
+        warning: 'Sesión no encontrada en logs'
+      });
+    }
+
+  } catch (error) {
+    console.error('Error en logout:', error);
     res.status(500).json({
       error: 'Error interno del servidor',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
@@ -345,6 +401,141 @@ router.get('/verify', async (req, res) => {
   } catch (error) {
     console.error('Error verificando token:', error);
     res.status(401).json({ error: 'Token inválido' });
+  }
+});
+
+// Obtener sesiones activas del usuario
+router.get('/sessions', authenticateToken, async (req, res) => {
+  try {
+    const sessionsResult = await getUserActiveSessions(req.user.userId);
+    
+    if (sessionsResult.success) {
+      res.json({
+        activeSessions: sessionsResult.sessions.map(session => ({
+          sessionId: session.session_id,
+          loginTime: session.login_time,
+          lastActivity: session.last_activity,
+          ipAddress: session.ip_address,
+          deviceInfo: session.device_info,
+          idleTime: session.idle_time,
+          sessionAge: session.session_age
+        }))
+      });
+    } else {
+      res.status(500).json({
+        error: 'Error obteniendo sesiones',
+        details: process.env.NODE_ENV === 'development' ? sessionsResult.error : undefined
+      });
+    }
+
+  } catch (error) {
+    console.error('Error obteniendo sesiones:', error);
+    res.status(500).json({
+      error: 'Error interno del servidor',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// Obtener estadísticas de sesiones del usuario
+router.get('/sessions/stats', authenticateToken, async (req, res) => {
+  try {
+    const statsResult = await getUserSessionStats(req.user.userId);
+    
+    if (statsResult.success) {
+      res.json({
+        stats: statsResult.stats
+      });
+    } else {
+      res.status(500).json({
+        error: 'Error obteniendo estadísticas',
+        details: process.env.NODE_ENV === 'development' ? statsResult.error : undefined
+      });
+    }
+
+  } catch (error) {
+    console.error('Error obteniendo estadísticas de sesión:', error);
+    res.status(500).json({
+      error: 'Error interno del servidor',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// Cerrar todas las sesiones del usuario (logout forzado)
+router.post('/sessions/logout-all', authenticateToken, async (req, res) => {
+  try {
+    const { reason = 'user_requested' } = req.body;
+    
+    const result = await forceLogoutAllSessions(req.user.userId, reason);
+    
+    if (result.success) {
+      res.json({
+        message: 'Todas las sesiones han sido cerradas',
+        closedSessions: result.closedSessions
+      });
+    } else {
+      res.status(500).json({
+        error: 'Error cerrando sesiones',
+        details: process.env.NODE_ENV === 'development' ? result.error : undefined
+      });
+    }
+
+  } catch (error) {
+    console.error('Error cerrando todas las sesiones:', error);
+    res.status(500).json({
+      error: 'Error interno del servidor',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// Obtener historial de sesiones (últimos 30 días)
+router.get('/sessions/history', authenticateToken, async (req, res) => {
+  try {
+    const { limit = 50, offset = 0 } = req.query;
+    
+    const result = await pool.query(`
+      SELECT 
+        session_id,
+        login_time,
+        logout_time,
+        session_duration,
+        ip_address,
+        device_info->>'userAgent' as user_agent_info,
+        logout_type,
+        is_active,
+        EXTRACT(EPOCH FROM session_duration) as duration_seconds
+      FROM app.user_sessions
+      WHERE user_id = $1
+        AND login_time >= CURRENT_DATE - INTERVAL '30 days'
+      ORDER BY login_time DESC
+      LIMIT $2 OFFSET $3
+    `, [req.user.userId, parseInt(limit), parseInt(offset)]);
+
+    const countResult = await pool.query(`
+      SELECT COUNT(*) as total
+      FROM app.user_sessions
+      WHERE user_id = $1
+        AND login_time >= CURRENT_DATE - INTERVAL '30 days'
+    `, [req.user.userId]);
+
+    res.json({
+      sessions: result.rows,
+      pagination: {
+        total: parseInt(countResult.rows[0].total),
+        limit: parseInt(limit),
+        offset: parseInt(offset),
+        hasMore: parseInt(offset) + result.rows.length < parseInt(countResult.rows[0].total)
+      }
+    });
+
+  } catch (error) {
+    console.error('Error obteniendo historial de sesiones:', error);
+    res.status(500).json({
+      error: 'Error interno del servidor',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 

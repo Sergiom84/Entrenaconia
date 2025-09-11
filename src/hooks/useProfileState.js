@@ -34,6 +34,7 @@ export const useProfileState = () => {
     limitaciones_fisicas: [],
     alergias: [],
     medicamentos: [],
+    lesiones: [],
     // Composición corporal
     grasa_corporal: '',
     masa_muscular: '',
@@ -90,6 +91,7 @@ export const useProfileState = () => {
     limitaciones_fisicas: u.limitaciones_fisicas || [],
     alergias: u.alergias || [],
     medicamentos: u.medicamentos || [],
+    lesiones: u.lesiones || [],
     // Composición
     grasa_corporal: u.grasa_corporal ?? '',
     masa_muscular: u.masa_muscular ?? '',
@@ -298,9 +300,11 @@ export const useProfileState = () => {
   // Listas para HealthTab
   const alergiasList = userProfile.alergias || []
   const medicamentosList = userProfile.medicamentos || []
+  const lesionesList = userProfile.lesiones || []
 
   const alergiasObjList = alergiasList.map(item => ({ name: item }))
   const medicamentosObjList = medicamentosList.map(item => ({ name: item }))
+  const lesionesObjList = lesionesList.map(item => ({ name: item }))
 
   // Props para documentos (simuladas por ahora)
   const docs = []
@@ -393,8 +397,10 @@ export const useProfileState = () => {
     // Props para HealthTab
     alergiasList,
     medicamentosList,
+    lesionesList,
     alergiasObjList,
     medicamentosObjList,
+    lesionesObjList,
     docs,
     fetchDocs,
     setDocsOpen,

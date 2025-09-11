@@ -1,9 +1,10 @@
 /**
- * Calistenia Manual Card - Nueva UX con Evaluación IA y Selección Inteligente
+ * Calistenia Manual Card - UX Optimizada con Evaluación IA Eficiente v4.0
  * Integra evaluación automática de nivel con IA especializada
+ * OPTIMIZACIÓN: Eliminado envío innecesario de ejercicios (ahorro ~7000 tokens)
  * 
- * @author Claude Code - Sistema IA Avanzado
- * @version 3.0.0
+ * @author Claude Code - Sistema IA Avanzado Optimizado
+ * @version 4.0.0 - Modal de Evaluación Optimizado
  */
 
 import React, { useState, useEffect } from 'react';
@@ -64,22 +65,17 @@ export default function CalisteniaManualCard({ onGenerate, isLoading }) {
   }, []); // Empty dependency array - run only once on mount
 
   /**
-   * Evaluación automática del perfil con IA especializada
+   * Evaluación automática del perfil con IA especializada - OPTIMIZADA v4.0
    */
   const evaluateUserProfile = async () => {
     setLoadingEvaluation(true);
     setEvaluationError(null);
     
     try {
-      console.log('🤖 Iniciando evaluación automática de perfil...');
+      console.log('🤖 Iniciando evaluación automática de perfil (optimizada v4.0)...');
       
-      // El backend ahora obtiene el perfil real directamente de la base de datos
-      // No necesitamos enviar datos del frontend, solo el token de autenticación
-      const fullProfile = {
-        // Solo enviamos el ID para referencia, el backend obtendrá los datos reales
-        id: userData?.id || user?.id || currentUser?.id
-      };
-      
+      // OPTIMIZACIÓN: El backend obtiene todos los datos de la base de datos
+      // Solo enviamos una llamada mínima para activar el proceso
       const token = localStorage.getItem('token');
       const response = await fetch('/api/calistenia-specialist/evaluate-profile', {
         method: 'POST',
@@ -88,21 +84,29 @@ export default function CalisteniaManualCard({ onGenerate, isLoading }) {
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          userProfile: fullProfile
+          // Payload mínimo - el backend se encarga de todo
+          source: 'modal_evaluation_v4'
         })
       });
       
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Error response:', errorText);
         throw new Error(`Error ${response.status}: ${response.statusText}`);
       }
       
       const result = await response.json();
       
       if (!result.success) {
-        throw new Error(result.error || 'Error en evaluación');
+        throw new Error(result.error || 'Error en evaluación de perfil');
       }
       
-      console.log('✅ Evaluación completada:', result.evaluation);
+      console.log('✅ Evaluación completada con optimización:', {
+        level: result.evaluation.recommended_level,
+        confidence: result.evaluation.confidence,
+        tokensUsed: result.metadata?.tokens_saved || 'N/A'
+      });
+      
       setAiEvaluation(result.evaluation);
       
       // Pre-seleccionar grupos musculares recomendados
@@ -205,8 +209,8 @@ export default function CalisteniaManualCard({ onGenerate, isLoading }) {
             <Brain className="w-8 h-8 text-yellow-400" />
           </div>
           <h2 className="text-3xl font-bold text-white">Evaluación IA Calistenia</h2>
-          <span className="text-xs px-2 py-1 bg-yellow-400/20 text-yellow-400 rounded-full border border-yellow-400/30">
-            v3.0
+          <span className="text-xs px-2 py-1 bg-green-500/20 text-green-400 rounded-full border border-green-500/30">
+            v4.0 OPTIMIZADO
           </span>
         </div>
         <p className="text-gray-400 max-w-2xl mx-auto">
@@ -218,11 +222,18 @@ export default function CalisteniaManualCard({ onGenerate, isLoading }) {
       <div className="bg-black/40 border border-yellow-400/20 rounded-xl p-6 mb-6">
         {loadingEvaluation ? (
           <div className="text-center py-8">
-            <Loader className="w-12 h-12 animate-spin text-yellow-400 mx-auto mb-4" />
+            <div className="relative">
+              <Loader className="w-12 h-12 animate-spin text-yellow-400 mx-auto mb-4" />
+              <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full animate-pulse"></div>
+            </div>
             <h3 className="text-xl font-semibold text-white mb-2">Analizando tu perfil...</h3>
-            <p className="text-gray-400">
+            <p className="text-gray-400 mb-3">
               La IA está evaluando tu experiencia, objetivos y capacidades actuales
             </p>
+            <div className="inline-flex items-center gap-2 px-3 py-1 bg-yellow-400/10 text-yellow-400 rounded-full text-sm border border-yellow-400/30">
+              <Sparkles className="w-4 h-4" />
+              Optimización v4.0 - Análisis eficiente
+            </div>
           </div>
         ) : evaluationError ? (
           <div className="text-center py-8">

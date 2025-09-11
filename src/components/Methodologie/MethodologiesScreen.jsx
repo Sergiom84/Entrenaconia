@@ -392,15 +392,19 @@ export default function MethodologiesScreen() {
       const enhancedMessage = `${baseMessage}\n\n💡 ${tip}`;
       setPersonalizedMessage(enhancedMessage);
       
-      // Navegar automáticamente a rutinas
-      console.log('🚀 Plan de calistenia generado, navegando a rutinas...');
+      // Para calistenia, mostrar modal del plan antes de confirmar
+      console.log('🚀 Plan de calistenia generado, mostrando modal del plan...');
       setTimeout(() => {
-        navigateToRoutines({
-          plan: result.plan,
-          planSource: planSource, 
-          planId: result.planId,
-          routinePlanId: result.routinePlanId,
-          metodologia: metodologia
+        navigate('/routines', {
+          state: {
+            routinePlan: result.plan,
+            planId: result.planId, // methodologyPlanId
+            routinePlanId: result.routinePlanId,
+            methodology_plan_id: result.planId,
+            planSource: planSource,
+            metodologia: metodologia,
+            showModal: true // Forzar mostrar modal
+          }
         });
       }, 1500);
       

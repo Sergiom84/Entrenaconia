@@ -541,20 +541,22 @@ Por favor, responde únicamente con el JSON solicitado según las especificacion
       
       // MIGRACIÓN AUTOMÁTICA: Crear plan en routine_plans para que Rutinas pueda usarlo
       try {
-        // PASO 1: Archivar todos los planes anteriores del usuario para empezar desde 0
-        console.log('🗄️ Archivando planes anteriores del usuario...');
+        // PASO 1: Cancelar TODOS los planes anteriores del usuario para empezar desde 0
+        console.log('🗄️ Cancelando planes anteriores del usuario...');
+        
+        // Cancelar methodology_plans activos anteriores
         await pool.query(
-          `UPDATE app.routine_plans 
-           SET archived_at = NOW(), is_active = false, updated_at = NOW() 
-           WHERE user_id = $1 AND archived_at IS NULL`,
+          `UPDATE app.methodology_plans 
+           SET status = 'cancelled', updated_at = NOW() 
+           WHERE user_id = $1 AND status = 'active'`,
           [userId]
         );
         
-        // PASO 2: Marcar methodology_plans anteriores como inactivos (no tiene archived_at)
+        // Cancelar routine_plans activos anteriores  
         await pool.query(
-          `UPDATE app.methodology_plans 
-           SET updated_at = NOW() 
-           WHERE user_id = $1`,
+          `UPDATE app.routine_plans 
+           SET status = 'cancelled', is_active = false, archived_at = NOW(), updated_at = NOW() 
+           WHERE user_id = $1 AND (status = 'active' OR is_active = true)`,
           [userId]
         );
         

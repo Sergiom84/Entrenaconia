@@ -103,28 +103,16 @@ export const PreferencesCard = ({
 
         {/* Segunda fila: Suplementación y Alimentos Excluidos */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="space-y-4">
-            <EditableField
-              label="Suplementación"
-              field="suplementacion"
-              value={suplementacionList}
-              editing={isEditing}
-              editedData={editedData}
-              onInputChange={handleInputChange}
-              isList={true}
-              displayObjects={suplementacionObjList}
-            />
-            {/* Comidas diarias debajo de Suplementación */}
-            <EditableField
-              label="Comidas diarias"
-              field="comidas_diarias"
-              value={userProfile.comidas_diarias}
-              type="number"
-              editing={isEditing}
-              editedData={editedData}
-              onInputChange={handleInputChange}
-            />
-          </div>
+          <EditableField
+            label="Suplementación"
+            field="suplementacion"
+            value={suplementacionList}
+            editing={isEditing}
+            editedData={editedData}
+            onInputChange={handleInputChange}
+            isList={true}
+            displayObjects={suplementacionObjList}
+          />
           <EditableField
             label="Alimentos Excluidos"
             field="alimentos_excluidos"
@@ -134,6 +122,19 @@ export const PreferencesCard = ({
             onInputChange={handleInputChange}
             isList={true}
             displayObjects={alimentosObjList}
+          />
+        </div>
+
+        {/* Fila separada para Comidas diarias para evitar que se salga de la tarjeta */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <EditableField
+            label="Comidas diarias"
+            field="comidas_diarias"
+            value={userProfile.comidas_diarias}
+            type="number"
+            editing={isEditing}
+            editedData={editedData}
+            onInputChange={handleInputChange}
           />
         </div>
       </CardContent>

@@ -22,8 +22,10 @@ export const HealthTab = (props) => {
     handleInputChange,
     alergiasList,
     medicamentosList,
+    lesionesList,
     alergiasObjList,
-    medicamentosObjList
+    medicamentosObjList,
+    lesionesObjList
   } = props
 
   const isEditing = editingSection === 'health'
@@ -40,7 +42,7 @@ export const HealthTab = (props) => {
       <Card className="bg-gray-900 border-yellow-400/20">
         <CardHeader>
           <CardTitle className="text-white flex items-center justify-between">
-            <span>Alergias y Medicamentos</span>
+            <span>Alergias, Medicamentos y Lesiones</span>
             <div className="flex items-center gap-2">
               {isEditing
                 ? (
@@ -58,12 +60,13 @@ export const HealthTab = (props) => {
                   onClick={() => {
                     startEdit('health', {
                       alergias: [...alergiasList],
-                      medicamentos: [...medicamentosList]
+                      medicamentos: [...medicamentosList],
+                      lesiones: [...lesionesList]
                     })
                   }}
                   disabled={!!(editingSection && editingSection !== 'health')}
                   className="p-2 text-gray-400 hover:text-yellow-400 transition-colors"
-                  title="Editar alergias y medicamentos"
+                  title="Editar alergias, medicamentos y lesiones"
                 >
                   <Pencil className="w-4 h-4" />
                 </button>
@@ -74,7 +77,7 @@ export const HealthTab = (props) => {
 
         <CardContent className="space-y-6">
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
           <EditableField
             label="Alergias"
             field="alergias"
@@ -96,6 +99,18 @@ export const HealthTab = (props) => {
             editedData={editedData}
             onInputChange={handleInputChange}
             displayObjects={medicamentosObjList}
+            {...props}
+          />
+
+          <EditableField
+            label="Lesiones"
+            field="lesiones"
+            editing={isEditing}
+            isList={true}
+            value={lesionesList}
+            editedData={editedData}
+            onInputChange={handleInputChange}
+            displayObjects={lesionesObjList}
             {...props}
           />
         </div>

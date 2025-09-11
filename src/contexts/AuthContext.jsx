@@ -60,9 +60,40 @@ export const AuthProvider = ({ children }) => {
     setIsAuthenticated(true);
   };
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      // Intentar notificar al servidor del logout
+      const token = localStorage.getItem('token');
+      if (token) {
+        await fetch('/api/auth/logout', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ logoutType: 'manual' })
+        }).catch(err => {
+          console.warn('No se pudo notificar logout al servidor:', err.message);
+        });
+      }
+    } catch (error) {
+      console.warn('Error en logout del servidor:', error);
+    }
+
+    // Limpiar datos de autenticación pero preservar algunos datos de rutinas para recovery
     localStorage.removeItem('token');
     localStorage.removeItem('user');
+    
+    // Preservar el methodologyPlanId para recovery posterior (si existe)
+    const currentMethodologyPlanId = localStorage.getItem('currentMethodologyPlanId');
+    if (currentMethodologyPlanId) {
+      localStorage.setItem('lastMethodologyPlanId', currentMethodologyPlanId);
+    }
+    
+    // Limpiar datos sensibles de sesión pero mantener el plan
+    localStorage.removeItem('currentRoutineSessionId');
+    localStorage.removeItem('currentRoutineSessionStartAt');
+    
     setUser(null);
     setIsAuthenticated(false);
     navigate('/login');

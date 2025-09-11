@@ -1,12 +1,13 @@
 import { ArrowLeft, Home, Dumbbell, Target, BarChart3 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo, useCallback, useMemo } from 'react';
 import HomeTrainingExerciseModal from './HomeTrainingExerciseModal';
 import HomeTrainingProgress from './HomeTrainingProgress';
 import HomeTrainingPlanModal from './HomeTrainingPlanModal';
 import HomeTrainingRejectionModal from './HomeTrainingRejectionModal';
 import HomeTrainingPreferencesHistory from './HomeTrainingPreferencesHistory';
 import UserEquipmentSummaryCard from './UserEquipmentSummaryCard';
+import logger from '../../utils/logger';
 
 
 const HomeTrainingSection = () => {
@@ -49,8 +50,8 @@ const HomeTrainingSection = () => {
   // Vista de historial de preferencias
   const [showPreferencesHistory, setShowPreferencesHistory] = useState(false);
 
-  // Función para resetear todo al estado inicial
-  const resetToInitialState = () => {
+  // Función para resetear todo al estado inicial (optimizada con useCallback)
+  const resetToInitialState = useCallback(() => {
     setSelectedEquipment(null);
     setSelectedTrainingType(null);
     setIsGenerating(false);
@@ -69,10 +70,10 @@ const HomeTrainingSection = () => {
     setShowRejectionModal(false);
     setPendingRegenerateAfterRejection(false);
     setShowPreferencesHistory(false);
-  };
+  }, []);
 
-  // Función para cancelar completamente la rutina (cerrar sesiones activas y resetear UI)
-  const cancelRoutineCompletely = async () => {
+  // Función para cancelar completamente la rutina (optimizada con useCallback)
+  const cancelRoutineCompletely = useCallback(async () => {
     try {
       const token = localStorage.getItem('token');
       if (!token) {
@@ -88,17 +89,17 @@ const HomeTrainingSection = () => {
           'Content-Type': 'application/json'
         }
       });
-      console.log('✅ Sesiones activas cerradas');
+      logger.info('Sesiones activas cerradas', null, 'HomeTraining');
 
       // Resetear todo al estado inicial
       resetToInitialState();
 
     } catch (error) {
-      console.error('❌ Error cancelando rutina:', error);
+      logger.error('Error cancelando rutina', error, 'HomeTraining');
       // Aún así resetear el frontend
       resetToInitialState();
     }
-  };
+  }, [resetToInitialState]);
 
   // Cargar datos al inicializar el componente
   useEffect(() => {
@@ -114,7 +115,7 @@ const HomeTrainingSection = () => {
     const handleBeforeUnload = (event) => {
       // Solo si hay una sesión activa y progreso sin guardar
       if (currentSession && (showExerciseModal || (exercisesProgress && exercisesProgress.length > 0))) {
-        console.log('🚪 Usuario abandonando sesión, guardando progreso...');
+        logger.info('Usuario abandonando sesión, guardando progreso', null, 'HomeTraining');
         
         // Usar sendBeacon para envío asíncrono confiable
         const token = localStorage.getItem('token');
@@ -144,7 +145,7 @@ const HomeTrainingSection = () => {
       
       if (document.hidden) {
         // Usuario cambió de tab/minimizó - marcar como abandonado temporalmente
-        console.log('👀 Usuario cambió de tab, marcando sesión como pausada');
+        logger.debug('Usuario cambió de tab, marcando sesión como pausada', null, 'HomeTraining');
         
         if (exercisesProgress && exercisesProgress.length > 0) {
           try {
@@ -160,12 +161,12 @@ const HomeTrainingSection = () => {
               })
             });
           } catch (error) {
-            console.error('❌ Error guardando progreso en cambio de visibilidad:', error);
+            logger.error('Error guardando progreso en cambio de visibilidad', error, 'HomeTraining');
           }
         }
       } else {
         // Usuario volvió - reactivar sesión
-        console.log('👁️ Usuario volvió, reactivando sesión');
+        logger.debug('Usuario volvió, reactivando sesión', null, 'HomeTraining');
         // Aquí podrías cargar progreso actualizado si fuera necesario
         await loadSessionProgress(currentSession.id);
       }
@@ -216,7 +217,7 @@ const HomeTrainingSection = () => {
         setShowProgress(false);
       }
     } catch (error) {
-      console.error('Error loading current plan:', error);
+      logger.error('Error loading current plan', error, 'HomeTraining');
     }
   };
 
@@ -237,7 +238,7 @@ const HomeTrainingSection = () => {
         setUserStats(data.stats);
       }
     } catch (error) {
-      console.error('Error loading user stats:', error);
+      logger.error('Error loading user stats', error, 'HomeTraining');
     }
   };
 
@@ -253,7 +254,7 @@ const HomeTrainingSection = () => {
 
       const data = await response.json();
       if (data.success) {
-        console.log('🔄 loadSessionProgress - Datos recibidos:', {
+        logger.debug('loadSessionProgress - Datos recibidos', {
           progress_percentage: data.progress?.percentage,
           current_exercise: data.progress?.currentExercise,
           total_exercises: data.exercises?.length,
@@ -275,13 +276,13 @@ const HomeTrainingSection = () => {
           setCurrentExerciseIndex(validIndex);
           
           if (validIndex !== currentExerciseFromServer) {
-            console.warn(`Ajustado índice de ejercicio de ${currentExerciseFromServer} a ${validIndex}`);
+            logger.warn('Ajustado índice de ejercicio', { from: currentExerciseFromServer, to: validIndex }, 'HomeTraining');
           }
         } else {
           setCurrentExerciseIndex(currentExerciseFromServer);
         }
         
-        console.log('✅ Actualizando exercisesProgress con:', data.exercises?.length, 'ejercicios');
+        logger.debug('Actualizando exercisesProgress', { count: data.exercises?.length }, 'HomeTraining');
         setExercisesProgress(data.exercises || []);
         
         // Log estado después de actualizar
@@ -292,7 +293,7 @@ const HomeTrainingSection = () => {
         }, 100);
       }
     } catch (error) {
-      console.error('Error loading session progress:', error);
+      logger.error('Error loading session progress', error, 'HomeTraining');
     }
   };
 
@@ -349,7 +350,7 @@ const HomeTrainingSection = () => {
       // ⑥ Persistir en BD (opcionalmente puedes hacerlo tras aceptar el plan)
       await savePlanToDatabase(data.plan, selectedEquipment, selectedTrainingType);
     } catch (error) {
-      console.error('Error:', error);
+      logger.error('Error generating plan', error, 'HomeTraining');
       setIsGenerating(false); // asegurar que se apague si falla
       alert('Error al generar el entrenamiento. Por favor, inténtalo de nuevo.');
     }
@@ -381,7 +382,7 @@ const HomeTrainingSection = () => {
         })
       });
     } catch (error) {
-      console.error('Error saving plan to database:', error);
+      logger.error('Error saving plan to database', error, 'HomeTraining');
     }
   };
 
@@ -1261,4 +1262,4 @@ const HomeTrainingSection = () => {
   );
 };
 
-export default HomeTrainingSection;
+export default memo(HomeTrainingSection);

@@ -1148,30 +1148,17 @@ router.post('/confirm-and-activate', authenticateToken, async (req, res) => {
     const plan = planCheck.rows[0];
     const finalPlanData = plan_data || plan.plan_data;
     
-    // 2. CANCELAR planes activos anteriores para evitar conflictos
-    console.log('🧹 Cancelando planes anteriores...');
-    await client.query(
-      `UPDATE app.methodology_plans 
-       SET status = 'cancelled', updated_at = NOW() 
-       WHERE user_id = $1 AND status = 'active' AND id != $2`,
-      [userId, methodology_plan_id]
+    // 2. USAR FUNCIÓN ATÓMICA para cancelar planes anteriores y activar el nuevo
+    console.log('🧹 Activando plan de forma atómica...');
+    const activationResult = await client.query(
+      'SELECT app.activate_plan_atomic($1, $2, $3) as success',
+      [userId, methodology_plan_id, null] // routine_plan_id se creará después
     );
     
-    await client.query(
-      `UPDATE app.routine_plans 
-       SET status = 'cancelled', updated_at = NOW() 
-       WHERE user_id = $1 AND status = 'active'`,
-      [userId]
-    );
-    
-    // 3. ACTIVAR el plan de metodología
-    console.log('✅ Activando methodology_plan...');
-    await client.query(
-      `UPDATE app.methodology_plans 
-       SET status = 'active', confirmed_at = NOW(), updated_at = NOW() 
-       WHERE id = $1 AND user_id = $2`,
-      [methodology_plan_id, userId]
-    );
+    const activationSuccess = activationResult.rows[0]?.success;
+    if (!activationSuccess) {
+      throw new Error('No se pudo activar el plan de metodología');
+    }
     
     // 4. CREAR routine_plan correspondiente
     console.log('✅ Creando routine_plan...');

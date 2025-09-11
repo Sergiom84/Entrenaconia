@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, memo, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.jsx';
 import { Calendar, Dumbbell, BarChart3, History } from 'lucide-react';
@@ -8,19 +8,32 @@ import CalendarTab from './tabs/CalendarTab';
 import ProgressTab from './tabs/ProgressTab';
 import HistoricalTab from './tabs/HistoricalTab';
 import { bootstrapPlan, confirmRoutinePlan, getPlanStatus, getActivePlan } from './api';
+import { useRoutineCache, CACHE_KEYS } from '@/hooks/useRoutineCache';
+import { validateRoutineState, cleanOrphanedState, migrateOldState, setupStateSyncListener } from '@/utils/stateValidator';
 
 // Pantalla de Rutinas con sistema de pestañas
-export default function RoutineScreen() {
+const RoutineScreen = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const { getOrLoad, invalidateCache } = useRoutineCache();
 
   // State recibido desde MethodologiesScreen.navigate('/routines', { state })
   const incomingState = location.state || {};
   const incomingPlan = incomingState?.routinePlan || null;
   const planId = incomingState?.planId || null; // routinePlanId preferido
 
-  const [showPlanModal, setShowPlanModal] = useState(false); // Cambiado: no mostrar por defecto
-  const [methodologyPlanId, setMethodologyPlanId] = useState(incomingState?.methodology_plan_id || null);
+  const [showPlanModal, setShowPlanModal] = useState(incomingState?.showModal || false); // Mostrar modal si viene indicado
+  // Recuperar methodologyPlanId desde múltiples fuentes
+  const [methodologyPlanId, setMethodologyPlanId] = useState(() => {
+    // Prioridad: 1) Navigation state, 2) localStorage, 3) null
+    const fromNavigation = incomingState?.methodology_plan_id;
+    if (fromNavigation) {
+      localStorage.setItem('currentMethodologyPlanId', String(fromNavigation));
+      return fromNavigation;
+    }
+    const fromStorage = localStorage.getItem('currentMethodologyPlanId');
+    return fromStorage ? Number(fromStorage) : null;
+  });
   const [activeTab, setActiveTab] = useState('today');
   const [isConfirming, setIsConfirming] = useState(false);
   const [isCheckingPlanStatus, setIsCheckingPlanStatus] = useState(true);
@@ -85,18 +98,56 @@ export default function RoutineScreen() {
   const effectivePlanSource = incomingState?.planSource || { label: 'IA' };
   const effectivePlanId = incomingState?.planId || null;
 
+  // Validar y limpiar estado al montar el componente
+  useEffect(() => {
+    // Migrar datos antiguos si existen
+    const migrated = migrateOldState();
+    if (migrated) {
+      console.log('📦 Estado migrado desde versión anterior');
+    }
+    
+    // Limpiar estados huérfanos o corruptos
+    const cleaned = cleanOrphanedState();
+    if (cleaned) {
+      console.log('🧹 Estado huérfano limpiado');
+    }
+    
+    // Validar estado actual
+    const validation = validateRoutineState();
+    if (validation.warnings.length > 0) {
+      console.warn('⚠️ Advertencias de estado:', validation.warnings);
+    }
+    if (!validation.isValid) {
+      console.error('❌ Estado inválido:', validation.errors);
+    }
+    
+    // Configurar sincronización entre pestañas
+    const cleanup = setupStateSyncListener((change) => {
+      console.log('📡 Cambio de estado detectado:', change);
+      // Recargar si cambia el methodologyPlanId desde otra pestaña
+      if (change.key === 'currentMethodologyPlanId' && change.newValue !== change.oldValue) {
+        window.location.reload();
+      }
+    });
+    
+    return cleanup;
+  }, []);
+
   useEffect(() => {
     // Si no hay plan entrante, intentar recuperar rutina activa
     if (!incomingPlan) {
       console.log('No incoming plan. Trying to recover active routine...');
       setIsRecoveringPlan(true);
       
-      getActivePlan()
+      // Usar caché para recuperar plan activo
+      getOrLoad(CACHE_KEYS.ACTIVE_PLAN, getActivePlan)
         .then(activeData => {
           if (activeData.hasActivePlan) {
             console.log('✅ Rutina activa recuperada:', activeData);
             setRecoveredPlan(activeData.routinePlan);
             setMethodologyPlanId(activeData.methodology_plan_id);
+            // Persistir el methodologyPlanId recuperado
+            localStorage.setItem('currentMethodologyPlanId', String(activeData.methodology_plan_id));
             
             // Establecer fecha de inicio basada en la fecha de confirmación del plan recuperado
             if (activeData.confirmedAt || activeData.createdAt) {
@@ -157,7 +208,13 @@ export default function RoutineScreen() {
     checkPlanStatus();
   }, [incomingPlan, methodologyPlanId, incomingState?.methodology_plan_id, navigate]);
 
-  const handleStart = async () => {
+  const handleStart = useCallback(async () => {
+    // 🔒 PREVENCIÓN DE DOBLE CLIC
+    if (isConfirming) {
+      console.log('⚠️ Confirmación ya en proceso, ignorando click adicional');
+      return;
+    }
+    
     setIsConfirming(true);
     try {
       // Obtener los IDs necesarios para la confirmación
@@ -188,13 +245,18 @@ export default function RoutineScreen() {
     } finally {
       setIsConfirming(false);
     }
-  };
+  }, [isConfirming, methodologyPlanId, incomingState?.methodology_plan_id, planId]);
 
-  const handleGenerateAnother = () => {
-    // Descartar plan y volver a metodologías
+  const handleGenerateAnother = useCallback(() => {
+    // Descartar plan y limpiar todo el estado de rutinas
     localStorage.removeItem('currentRoutinePlanStartDate');
+    localStorage.removeItem('currentMethodologyPlanId');
+    localStorage.removeItem('currentRoutineSessionId');
+    localStorage.removeItem('currentRoutineSessionStartAt');
+    // Invalidar caché del plan activo
+    invalidateCache(CACHE_KEYS.ACTIVE_PLAN);
     navigate('/methodologies', { replace: true });
-  };
+  }, [invalidateCache, navigate]);
 
   const ensureMethodologyPlan = async () => {
     if (methodologyPlanId) return methodologyPlanId;
@@ -331,4 +393,6 @@ export default function RoutineScreen() {
       )}
     </div>
   );
-}
+};
+
+export default memo(RoutineScreen);

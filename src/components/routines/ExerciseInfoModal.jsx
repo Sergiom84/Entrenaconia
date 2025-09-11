@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
-import { X, Info } from 'lucide-react';
+import React, { useEffect, useState, useCallback } from 'react';
+import { X, Info, Dumbbell, AlertTriangle, CheckCircle } from 'lucide-react';
 
-export default function ExerciseInfoModal({ show, exercise, onClose }) {
+export default function ExerciseInfoModal({ show, exercise, onClose, isNested = false }) {
   const [tab, setTab] = useState('ejecucion'); // ejecucion | consejos | errores
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -40,13 +40,48 @@ export default function ExerciseInfoModal({ show, exercise, onClose }) {
     return () => { isCancelled = true; };
   }, [show, exercise?.nombre]);
 
+  // Manejo de tecla Escape
+  useEffect(() => {
+    if (!show) return;
+
+    const handleEscape = (event) => {
+      if (event.key === 'Escape' || event.keyCode === 27) {
+        event.preventDefault();
+        onClose();
+      }
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [show, onClose]);
+
+  // Prevenir scroll del body cuando el modal está abierto
+  useEffect(() => {
+    if (show) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [show]);
+
+  const handleBackdropClick = useCallback((event) => {
+    if (event.target === event.currentTarget) {
+      onClose();
+    }
+  }, [onClose]);
+
   if (!show) return null;
   const ex = exercise || {};
 
+  // z-60 si es modal anidado, z-50 si es principal
+  const zIndex = isNested ? 'z-[60]' : 'z-50';
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/70" onClick={onClose} />
-      <div className="relative bg-gray-800 border border-gray-700 rounded-2xl max-w-xl w-full max-h-[85vh] overflow-y-auto">
+    <div className={`fixed inset-0 ${zIndex} flex items-center justify-center p-4`}>
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={handleBackdropClick} />
+      <div className="relative bg-gray-800 border border-gray-700 rounded-2xl max-w-xl w-full max-h-[85vh] overflow-y-auto transform transition-all duration-200 scale-100 opacity-100">
         <div className="flex items-center justify-between p-4 border-b border-gray-700">
           <div className="flex items-center gap-2">
             <Info className="text-blue-400" size={20} />
@@ -71,32 +106,56 @@ export default function ExerciseInfoModal({ show, exercise, onClose }) {
             <div className="flex gap-2 mb-3">
               <button
                 onClick={() => setTab('ejecucion')}
-                className={`px-3 py-2 rounded-md text-sm font-semibold ${tab === 'ejecucion' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-200'}`}
+                className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-semibold transition-colors ${
+                  tab === 'ejecucion' 
+                    ? 'bg-blue-600 text-white' 
+                    : 'bg-gray-700 text-gray-200 hover:bg-gray-600'
+                }`}
               >
+                <Dumbbell size={16} />
                 Cómo ejecutarlo
               </button>
               <button
                 onClick={() => setTab('consejos')}
-                className={`px-3 py-2 rounded-md text-sm font-semibold ${tab === 'consejos' ? 'bg-green-600 text-white' : 'bg-gray-700 text-gray-200'}`}
+                className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-semibold transition-colors ${
+                  tab === 'consejos' 
+                    ? 'bg-green-600 text-white' 
+                    : 'bg-gray-700 text-gray-200 hover:bg-gray-600'
+                }`}
               >
+                <CheckCircle size={16} />
                 Consejos
               </button>
               <button
                 onClick={() => setTab('errores')}
-                className={`px-3 py-2 rounded-md text-sm font-semibold ${tab === 'errores' ? 'bg-red-600 text-white' : 'bg-gray-700 text-gray-200'}`}
+                className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-semibold transition-colors ${
+                  tab === 'errores' 
+                    ? 'bg-red-600 text-white' 
+                    : 'bg-gray-700 text-gray-200 hover:bg-gray-600'
+                }`}
               >
+                <AlertTriangle size={16} />
                 Errores comunes
               </button>
             </div>
-            <div className="bg-gray-700/30 rounded-lg p-3 min-h-[120px]">
-              {loading && <p className="text-gray-300 text-sm">Cargando…</p>}
-              {!loading && error && <p className="text-red-300 text-sm">{error}</p>}
+            <div className="bg-gray-700/30 rounded-lg p-4 min-h-[120px]">
+              {loading && (
+                <div className="flex items-center justify-center h-20">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+                </div>
+              )}
+              {!loading && error && (
+                <div className="flex items-center gap-2 text-red-300 text-sm">
+                  <AlertTriangle size={16} />
+                  <span>{error}</span>
+                </div>
+              )}
               {!loading && !error && (
-                <p className="text-gray-200 text-sm leading-relaxed">
+                <div className="text-gray-200 text-sm leading-relaxed whitespace-pre-line">
                   {tab === 'ejecucion' && (data.ejecucion || 'Sin datos disponibles')}
                   {tab === 'consejos' && (data.consejos || 'Sin datos disponibles')}
                   {tab === 'errores' && (data.errores_evitar || 'Sin datos disponibles')}
-                </p>
+                </div>
               )}
             </div>
           </div>

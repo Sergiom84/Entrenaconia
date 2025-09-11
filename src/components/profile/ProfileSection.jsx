@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, memo } from 'react';
 import { ArrowLeft, User, Activity, Target, Heart, Settings, Ruler, Dumbbell, Music } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useProfileState } from '../../hooks/useProfileState';
@@ -197,4 +197,4 @@ const ProfileSection = () => {
   );
 };
 
-export default ProfileSection;
+export default memo(ProfileSection);
