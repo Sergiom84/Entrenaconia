@@ -108,7 +108,21 @@
       "Bash(pkill:*)",
       "Bash(npm start:*)",
       "Bash(git restore:*)",
-      "Bash(cmd.exe /c start-dev.bat)"
+      "Bash(cmd.exe /c start-dev.bat)",
+      "Bash(where psql)",
+      "Read(//c/Users/Sergio/Pictures/**)",
+      "Bash(PORT=5175 npm run dev)",
+      "Bash(VITE_PORT=5176 npm run dev)",
+      "Bash(tasklist)",
+      "Bash(VITE_API_PORT=3003 VITE_PORT=5176 npm run dev)",
+      "Bash(VITE_API_PORT=3003 VITE_API_URL=http://localhost:3003 VITE_PORT=5176 npm run dev)",
+      "Bash(VITE_API_PORT=3003 VITE_API_URL=http://localhost:3003 VITE_PORT=5177 npm run dev)",
+      "Bash(PORT=3004 npm run dev)",
+      "Bash(VITE_API_PORT=3004 VITE_API_URL=http://localhost:3004 VITE_PORT=5177 npm run dev)",
+      "Bash(VITE_API_PORT=3004 VITE_API_URL=http://localhost:3004 VITE_PORT=5178 npm run dev)",
+      "Bash(./check-and-restart.sh:*)",
+      "Bash(PORT=3005 cd backend)",
+      "Bash(VITE_PORT=5180 npm run dev)"
     ]
   }
 }

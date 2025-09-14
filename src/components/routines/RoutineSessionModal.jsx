@@ -15,6 +15,7 @@ export default function RoutineSessionModal({
   onEndSession,
   sessionId, // Necesario para guardar feedback
   allowManualTimer = true,
+  navigateToRoutines = null, // Función opcional para navegar a rutinas
 }) {
   const exercises = useMemo(() => Array.isArray(session?.ejercicios) ? session.ejercicios : [], [session?.ejercicios]);
 
@@ -94,13 +95,120 @@ export default function RoutineSessionModal({
   const [timePerSeries, setTimePerSeries] = useState(45);
   const [showFeedback, setShowFeedback] = useState(false);
   const [showExerciseInfo, setShowExerciseInfo] = useState(false);
-  const [anySkipped, setAnySkipped] = useState(false);
+  const [exerciseStates, setExerciseStates] = useState({}); // Track individual exercise states
   const [showEndModal, setShowEndModal] = useState(false);
   const [endMessage, setEndMessage] = useState('');
+  const [endTitle, setEndTitle] = useState('Resumen de la sesión');
   const [showExerciseToast, setShowExerciseToast] = useState(false);
   const [exerciseFeedback, setExerciseFeedback] = useState({}); // { exerciseIndex: { sentiment, comment } }
+  const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
   const [advancedManually, setAdvancedManually] = useState(false);
   const intervalRef = useRef(null);
+
+  // Function to generate specific end messages based on exercise states
+  const generateEndMessage = useCallback(() => {
+    const states = Object.values(exerciseStates);
+    const totalExercises = exercises.length;
+    const completed = states.filter(state => state === 'completed').length;
+    const skipped = states.filter(state => state === 'skipped').length;
+    const cancelled = states.filter(state => state === 'cancelled').length;
+    const remaining = totalExercises - completed - skipped - cancelled;
+
+    // Scenario 1: All exercises completed
+    if (completed === totalExercises) {
+      return {
+        title: '¡Felicidades!',
+        message: '¡Has completado todo el entrenamiento! Excelente trabajo.'
+      };
+    }
+
+    // Scenario 3: All exercises skipped
+    if (skipped === totalExercises) {
+      return {
+        title: 'Entrenamiento saltado',
+        message: 'Has saltado todos los ejercicios. ¡La próxima vez puedes hacerlo mejor!'
+      };
+    }
+
+    // Scenario 4: All exercises cancelled
+    if (cancelled === totalExercises) {
+      return {
+        title: 'Entrenamiento cancelado',
+        message: 'Has cancelado todos los ejercicios. No te preocupes, siempre puedes volver a intentarlo.'
+      };
+    }
+
+    // Scenario 5: All exercises never started (remaining = total)
+    if (remaining === totalExercises) {
+      return {
+        title: 'Sin entrenar',
+        message: 'No has iniciado ningún ejercicio. ¡Anímate a comenzar tu rutina!'
+      };
+    }
+
+    // Scenario 2 & Mixed states
+    if (completed > 0) {
+      const parts = [`Has completado ${completed} ejercicio${completed > 1 ? 's' : ''}`];
+      if (skipped > 0) parts.push(`saltado ${skipped}`);
+      if (cancelled > 0) parts.push(`cancelado ${cancelled}`);
+      if (remaining > 0) parts.push(`${remaining} pendiente${remaining > 1 ? 's' : ''}`);
+
+      return {
+        title: 'Entrenamiento parcial',
+        message: `${parts.join(', ')}. Aún tienes ejercicios por hacer.`
+      };
+    }
+
+    // No exercises completed
+    return {
+      title: 'Entrenamiento incompleto',
+      message: 'No has completado ningún ejercicio. Aún tienes ejercicios por hacer.'
+    };
+  }, [exerciseStates, exercises.length]);
+
+  // Function to detect if current exercise is in progress
+  const isCurrentExerciseInProgress = useCallback(() => {
+    return phase === 'exercise' || phase === 'rest' || (phase === 'ready' && series > 1);
+  }, [phase, series]);
+
+  // Function to handle smart exit with X button
+  const handleSmartExit = useCallback(() => {
+    const currentInProgress = isCurrentExerciseInProgress();
+
+    if (currentInProgress) {
+      // Show confirmation modal for in-progress exercise
+      setShowExitConfirmModal(true);
+    } else {
+      // No exercise in progress, safe to exit
+      onClose?.();
+    }
+  }, [isCurrentExerciseInProgress, onClose]);
+
+  // Function to handle exit confirmation choices
+  const handleExitConfirmation = useCallback((action) => {
+    const currentInProgress = isCurrentExerciseInProgress();
+
+    if (currentInProgress) {
+      if (action === 'save-as-partial') {
+        // Mark current exercise as partially completed (use current series count)
+        const partialSeries = Math.max(1, series - 1); // At least 1 series if started
+        onFinishExercise?.(currentIndex, partialSeries, spent);
+        setExerciseStates(prev => ({ ...prev, [currentIndex]: 'completed' }));
+      } else if (action === 'skip-current') {
+        // Mark current exercise as skipped
+        onSkipExercise?.(currentIndex);
+        setExerciseStates(prev => ({ ...prev, [currentIndex]: 'skipped' }));
+      } else if (action === 'cancel-current') {
+        // Mark current exercise as cancelled
+        onCancelExercise?.(currentIndex);
+        setExerciseStates(prev => ({ ...prev, [currentIndex]: 'cancelled' }));
+      }
+    }
+
+    setShowExitConfirmModal(false);
+    onClose?.();
+  }, [isCurrentExerciseInProgress, series, currentIndex, spent, onFinishExercise, onSkipExercise, onCancelExercise, onClose]);
+
   const total = exercises.length;
 
   const ex = exercises[currentIndex] || null;
@@ -213,6 +321,9 @@ export default function RoutineSessionModal({
           // ejercicio completado
           onFinishExercise?.(currentIndex, seriesTotal, spent);
 
+          // Registrar estado como completado
+          setExerciseStates(prev => ({ ...prev, [currentIndex]: 'completed' }));
+
           // Buscar el siguiente ejercicio no completado
           const nextIncompleteIndex = findNextIncompleteExercise();
 
@@ -229,13 +340,15 @@ export default function RoutineSessionModal({
           } else {
             setPhase('done');
             setIsRunning(false);
-            setEndMessage(anySkipped ? 'Rutina finalizada sin haber realizado todos los ejercicios' : '¡Rutina completada!');
+            const messageData = generateEndMessage();
+            setEndTitle(messageData.title);
+            setEndMessage(messageData.message);
             setShowEndModal(true);
           }
         }
       }
     }
-  }, [timeLeft, isRunning, phase, currentIndex, exercises, series, total, onFinishExercise, spent, seriesTotal, baseDuration, anySkipped, advancedManually, timePerSeries, findNextIncompleteExercise]);
+  }, [timeLeft, isRunning, phase, currentIndex, exercises, series, total, onFinishExercise, spent, seriesTotal, baseDuration, advancedManually, timePerSeries, findNextIncompleteExercise, generateEndMessage]);
 
 
   const startExercise = () => {
@@ -263,7 +376,9 @@ export default function RoutineSessionModal({
 
   const skipToNext = () => {
     onSkipExercise?.(currentIndex);
-    setAnySkipped(true);
+
+    // Registrar estado como saltado
+    setExerciseStates(prev => ({ ...prev, [currentIndex]: 'skipped' }));
 
     // Buscar el siguiente ejercicio no completado
     const nextIncompleteIndex = findNextIncompleteExercise();
@@ -279,14 +394,18 @@ export default function RoutineSessionModal({
     } else {
       setPhase('done');
       setIsRunning(false);
-      setEndMessage('Rutina finalizada sin haber realizado todos los ejercicios');
+      const messageData = generateEndMessage();
+      setEndTitle(messageData.title);
+      setEndMessage(messageData.message);
       setShowEndModal(true);
     }
   };
 
   const cancelExercise = () => {
     onCancelExercise?.(currentIndex);
-    setAnySkipped(true);
+
+    // Registrar estado como cancelado
+    setExerciseStates(prev => ({ ...prev, [currentIndex]: 'cancelled' }));
 
     // Buscar el siguiente ejercicio no completado
     const nextIncompleteIndex = findNextIncompleteExercise();
@@ -301,7 +420,9 @@ export default function RoutineSessionModal({
     } else {
       setPhase('done');
       setIsRunning(false);
-      setEndMessage('Rutina finalizada sin haber realizado todos los ejercicios');
+      const messageData = generateEndMessage();
+      setEndTitle(messageData.title);
+      setEndMessage(messageData.message);
       setShowEndModal(true);
     }
   };
@@ -319,7 +440,7 @@ export default function RoutineSessionModal({
             <h2 className="text-xl text-white font-bold">{formatExerciseName(ex?.nombre) || 'Ejercicio'}</h2>
             <p className="text-sm text-gray-400">Ejercicio {currentIndex + 1} de {total}</p>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-white" aria-label="Cerrar">
+          <button onClick={handleSmartExit} className="text-gray-400 hover:text-white" aria-label="Cerrar">
             <IconX className="w-5 h-5" />
           </button>
         </div>
@@ -644,10 +765,102 @@ export default function RoutineSessionModal({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60" onClick={() => { setShowEndModal(false); onEndSession?.(); }} />
           <div className="relative bg-gray-800 border border-gray-700 rounded-xl p-6 w-full max-w-md">
-            <h3 className="text-white text-lg font-semibold mb-2">Resumen de la sesión</h3>
+            <h3 className="text-white text-lg font-semibold mb-2">{endTitle}</h3>
             <p className="text-gray-300 mb-4">{endMessage}</p>
+
+            {/* Mostrar resumen de ejercicios */}
+            <div className="bg-gray-700/30 rounded-lg p-3 mb-4">
+              <div className="text-sm text-gray-400 space-y-1">
+                {Object.values(exerciseStates).filter(state => state === 'completed').length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 bg-green-400 rounded-full"></span>
+                    <span>Completados: {Object.values(exerciseStates).filter(state => state === 'completed').length}</span>
+                  </div>
+                )}
+                {Object.values(exerciseStates).filter(state => state === 'skipped').length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 bg-yellow-400 rounded-full"></span>
+                    <span>Saltados: {Object.values(exerciseStates).filter(state => state === 'skipped').length}</span>
+                  </div>
+                )}
+                {Object.values(exerciseStates).filter(state => state === 'cancelled').length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 bg-red-400 rounded-full"></span>
+                    <span>Cancelados: {Object.values(exerciseStates).filter(state => state === 'cancelled').length}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
             <div className="flex gap-2 justify-end">
-              <button onClick={() => { setShowEndModal(false); onEndSession?.(); }} className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-md">Aceptar</button>
+              <button
+                onClick={async () => {
+                  console.log('🎯 Terminando sesión y navegando a rutinas');
+                  setShowEndModal(false);
+
+                  // Llamar a onEndSession primero para guardar los datos
+                  if (onEndSession) {
+                    await onEndSession();
+                  }
+
+                  // Si se proporcionó una función de navegación, usarla
+                  // De lo contrario, intentar navegar manualmente
+                  if (navigateToRoutines) {
+                    navigateToRoutines();
+                  } else if (typeof window !== 'undefined' && window.location) {
+                    // Fallback: navegación directa si no hay función de navegación
+                    setTimeout(() => {
+                      window.location.href = '/routines';
+                    }, 100);
+                  }
+                }}
+                className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-md font-semibold transition-colors"
+              >
+                Ver progreso en Rutinas
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de confirmación de salida para ejercicios en progreso */}
+      {showExitConfirmModal && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/80" onClick={() => setShowExitConfirmModal(false)} />
+          <div className="relative bg-gray-800 border border-gray-700 rounded-xl p-6 w-full max-w-md">
+            <h3 className="text-white text-lg font-semibold mb-3">⚠️ Ejercicio en progreso</h3>
+            <p className="text-gray-300 mb-4">
+              Tienes un ejercicio en progreso. ¿Qué quieres hacer antes de salir?
+            </p>
+
+            <div className="space-y-2">
+              <button
+                onClick={() => handleExitConfirmation('save-as-partial')}
+                className="w-full px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-md text-sm"
+              >
+                💾 Guardar progreso parcial (series: {Math.max(1, series - 1)})
+              </button>
+
+              <button
+                onClick={() => handleExitConfirmation('skip-current')}
+                className="w-full px-4 py-2 bg-yellow-600 hover:bg-yellow-500 text-white rounded-md text-sm"
+              >
+                ⏭️ Marcar como saltado
+              </button>
+
+              <button
+                onClick={() => handleExitConfirmation('cancel-current')}
+                className="w-full px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-md text-sm"
+              >
+                ❌ Marcar como cancelado
+              </button>
+
+              <button
+                onClick={() => setShowExitConfirmModal(false)}
+                className="w-full px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded-md text-sm"
+              >
+                🔙 Continuar entrenando
+              </button>
             </div>
           </div>
         </div>

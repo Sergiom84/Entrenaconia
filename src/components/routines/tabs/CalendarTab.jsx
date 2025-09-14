@@ -1,3 +1,22 @@
+/**
+ * CalendarTab - Calendario de entrenamiento con vista semanal
+ *
+ * IMPORTANTE - MAPEO DE SESIONES:
+ * Este componente maneja dos modos de mapeo de sesiones:
+ *
+ * 1. MODO LEGACY: Las sesiones vienen con nombres de días (Lunes, Miércoles, Viernes)
+ *    - Se buscan por coincidencia de nombre de día
+ *    - Problema: Si se genera un sábado, el sábado no tiene sesión asignada
+ *
+ * 2. MODO NUEVO: Las sesiones se distribuyen secuencialmente desde el día de inicio
+ *    - Si se genera un sábado: Sábado = Día 1, Domingo = Día 2, etc.
+ *    - Las sesiones se distribuyen uniformemente en la semana
+ *    - Soluciona el problema de rutinas que comienzan en cualquier día
+ *
+ * El componente detecta automáticamente qué modo usar basándose en el formato
+ * del campo 'dia' de las sesiones.
+ */
+
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { Card } from '@/components/ui/card.jsx';
 import { Button } from '@/components/ui/button.jsx';
@@ -17,6 +36,7 @@ import {
   AlertOctagon
 } from 'lucide-react';
 import { getTodaySessionStatus, getSessionProgress } from '../api';
+import { mapSessionsToWeekDays } from '../../../utils/calendarMapping';
 
 export default function CalendarTab({ plan, planStartDate, methodologyPlanId, ensureMethodologyPlan, refreshTrigger }) {
   // Calcular qué semana mostrar inicialmente basándose en la fecha actual
@@ -50,6 +70,12 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
     console.log('📅 Plan Start Date:', planStartDate);
     console.log('📅 Today:', new Date().toISOString());
     console.log('📅 Initial Week:', getInitialWeek());
+
+    // Log adicional para verificar el mapeo de sesiones
+    if (plan?.semanas?.[0]?.sesiones) {
+      console.log('📅 Primera semana - sesiones:', plan.semanas[0].sesiones.map(s => s.dia));
+      console.log('📅 Mapeo esperado: Las sesiones se distribuirán uniformemente desde', new Date(planStartDate).toLocaleDateString('es-ES'));
+    }
   }, [planStartDate, plan, getInitialWeek]);
   const [weekStatuses, setWeekStatuses] = useState({});
   const [apiCache, setApiCache] = useState({});
@@ -75,41 +101,46 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
 
     const totalWeeks = plan.duracion_total_semanas || plan.semanas.length;
 
-    // Crear semanas basadas en la fecha de inicio del plan
+    // IMPORTANTE: El plan comienza desde el día actual en que se genera, no desde el lunes
+    // Si el usuario genera la rutina un sábado, el sábado es el Día 1 de entrenamiento
+    const firstWeekStart = new Date(startDate);
+    firstWeekStart.setHours(0, 0, 0, 0);
+
+    // Crear semanas basadas en períodos de 7 días desde la fecha de inicio
     return Array.from({ length: totalWeeks }, (_, weekIndex) => {
       const semana = plan.semanas[weekIndex] || plan.semanas[0];
-      
+
       // Calcular el primer día de esta semana del plan
-      const weekStartDate = new Date(startDate);
-      weekStartDate.setDate(startDate.getDate() + (weekIndex * 7));
+      const weekStartDate = new Date(firstWeekStart);
+      weekStartDate.setDate(firstWeekStart.getDate() + (weekIndex * 7));
       weekStartDate.setHours(0, 0, 0, 0);
 
-      // Crear array de 7 días consecutivos desde el inicio de esta semana del plan
-      const weekDays = [];
+      // Usar la función de mapeo inteligente
+      const mappedDays = mapSessionsToWeekDays(
+        semana.sesiones,
+        weekStartDate,
+        startDate,
+        weekIndex
+      );
 
-      for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
-        const dayDate = new Date(weekStartDate);
-        dayDate.setDate(weekStartDate.getDate() + dayIndex);
-        dayDate.setHours(0, 0, 0, 0);
-
+      // Construir el array de días con toda la información necesaria
+      const weekDays = mappedDays.map((mappedDay, dayIndex) => {
+        const dayDate = mappedDay.date;
         const dayName = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'][dayDate.getDay()];
         const dayNameShort = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][dayDate.getDay()];
-
-        // Buscar sesión para este día en la semana actual del plan
-        const session = semana.sesiones?.find(ses => {
-          const sessionDay = ses.dia?.toLowerCase();
-          const currentDayLower = dayName.toLowerCase();
-          return sessionDay === currentDayLower ||
-                 sessionDay === dayNameShort.toLowerCase() ||
-                 sessionDay === dayNameShort.toLowerCase().replace('é', 'e') ||
-                 (sessionDay === 'mie' && currentDayLower === 'miércoles');
-        });
 
         const isPast = dayDate < today;
         const isToday = dayDate.getTime() === today.getTime();
         const isFuture = dayDate > today;
 
-        weekDays.push({
+        // Añadir información adicional a la sesión si existe
+        const session = mappedDay.session;
+        if (session) {
+          session.planDayNumber = (weekIndex * 7) + dayIndex + 1;
+          session.weekNumber = weekIndex + 1;
+        }
+
+        return {
           date: dayDate,
           dayName,
           dayNameShort,
@@ -120,8 +151,8 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
           weekNumber: weekIndex + 1,
           isWithinPlan: true,
           planWeekNumber: weekIndex + 1
-        });
-      }
+        };
+      });
 
       return {
         weekNumber: weekIndex + 1,

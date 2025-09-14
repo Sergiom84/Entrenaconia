@@ -110,7 +110,7 @@ const LoginPage = () => {
       setErrorPopup({
         show: true,
         title: 'Error de conexión',
-        message: 'No se pudo conectar con el servidor. Verifica que el backend esté ejecutándose en el puerto 3001.'
+        message: 'No se pudo conectar con el servidor. Verifica que el backend esté ejecutándose.'
       });
     } finally {
       setIsLoading(false);

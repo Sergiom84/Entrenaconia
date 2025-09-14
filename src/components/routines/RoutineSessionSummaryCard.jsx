@@ -6,13 +6,37 @@ import { getSessionProgress } from './api';
  * Muestra el resumen de la sesión con barra de progreso y listado de ejercicios
  * - Colores por estado: completed (verde), skipped (gris), cancelled (rojo)
  * - Muestra comentarios y "Es difícil" si el feedback lo indica
+ * 
+ * Props flexibles:
+ * - Opción 1: sessionId (carga datos vía API)
+ * - Opción 2: session + exercises (datos ya cargados)
  */
-export default function RoutineSessionSummaryCard({ sessionId, plan, planSource, selectedSession, onGenerateAnother, onContinueTraining }) {
-  const [loading, setLoading] = useState(true);
+export default function RoutineSessionSummaryCard({ 
+  sessionId, 
+  session: propsSession, 
+  exercises: propsExercises,
+  plan, 
+  planSource, 
+  selectedSession, 
+  onGenerateAnother, 
+  onContinueTraining 
+}) {
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [data, setData] = useState(null); // { session, exercises, summary }
 
+  // Si recibimos session y exercises directamente, usarlos
+  const hasDirectData = propsSession && propsExercises;
+
   useEffect(() => {
+    // Si tenemos datos directos, no necesitamos cargar nada
+    if (hasDirectData) {
+      setData({ session: propsSession, exercises: propsExercises });
+      setLoading(false);
+      return;
+    }
+
+    // Solo cargar si tenemos sessionId y no tenemos datos directos
     let mounted = true;
     const load = async () => {
       if (!sessionId) return;
@@ -29,7 +53,7 @@ export default function RoutineSessionSummaryCard({ sessionId, plan, planSource,
     };
     load();
     return () => { mounted = false; };
-  }, [sessionId]);
+  }, [sessionId, hasDirectData, propsSession, propsExercises]);
 
   const exercises = useMemo(() => Array.isArray(data?.exercises) ? data.exercises : [], [data]);
   const session = data?.session || {};
@@ -59,7 +83,8 @@ export default function RoutineSessionSummaryCard({ sessionId, plan, planSource,
     return 'border-gray-700 bg-gray-800/40';
   };
 
-  if (!sessionId) return null;
+  // Mostrar el componente si tenemos sessionId O si tenemos datos directos
+  if (!sessionId && !hasDirectData) return null;
 
   return (
     <div className="bg-gray-900/50 border border-gray-700 rounded-2xl p-5 text-white">

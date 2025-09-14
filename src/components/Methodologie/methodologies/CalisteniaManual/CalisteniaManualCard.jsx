@@ -34,10 +34,10 @@ import { CalisteniaExerciseDatabase, CalisteniaExerciseUtils } from '../../exerc
 import { useAuth } from '@/contexts/AuthContext';
 import { useUserContext } from '@/contexts/UserContext';
 
-export default function CalisteniaManualCard({ onGenerate, isLoading }) {
+export default function CalisteniaManualCard({ onGenerate, isLoading, error }) {
   const { currentUser, user } = useAuth();
   const { userData } = useUserContext();
-  
+
   // Estados principales
   const [currentStep, setCurrentStep] = useState('evaluation'); // 'evaluation' | 'manual_selection' | 'final'
   const [aiEvaluation, setAiEvaluation] = useState(null);
@@ -482,6 +482,19 @@ export default function CalisteniaManualCard({ onGenerate, isLoading }) {
 
   return (
     <div className="p-6 bg-black text-white min-h-[80vh]">
+      {/* Mostrar error global si existe */}
+      {error && (
+        <div className="mb-6 p-4 bg-red-900/30 border border-red-500/50 rounded-lg">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-red-400 mt-0.5 flex-shrink-0" />
+            <div>
+              <h3 className="font-semibold text-red-400 mb-1">Error al generar el plan</h3>
+              <p className="text-red-300 text-sm">{error}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {currentStep === 'evaluation' ? renderEvaluationStep() : renderManualSelection()}
     </div>
   );

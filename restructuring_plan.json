@@ -1,0 +1,61 @@
+{
+  "tablas_a_mantener": {
+    "ejercicios": ["Ejercicios_Calistenia", "Ejercicios_Hipertrofia"],
+    "historico_y_progreso": ["historico_ejercicios", "progreso_usuario"],
+    "metodologias": ["methodology_plans"],
+    "usuarios": ["user_profiles"],
+    "musica": ["music_playlists"],
+    "hometraining": [
+      "hometraining_ejercicios",
+      "hometraining_progreso",
+      "hometraining_historico",
+      "hometraining_feedback"
+    ]
+  },
+  "estructura_historico_ejercicios": {
+    "campos_requeridos": [
+      "id",
+      "user_id",
+      "nombre_ejercicio",
+      "repeticiones",
+      "tiempo",
+      "series",
+      "comentarios",
+      "feedback",
+      "fecha_ejercicio",
+      "tipo_ejercicio"
+    ]
+  },
+  "estructura_progreso_usuario": {
+    "campos_requeridos": [
+      "id",
+      "user_id",
+      "fecha",
+      "peso",
+      "nivel_fuerza",
+      "objetivos_completados",
+      "tiempo_total_entrenamiento",
+      "ejercicios_dominados",
+      "notas"
+    ]
+  },
+  "methodology_plans_consolidado": {
+    "campos_requeridos": [
+      "id",
+      "nombre_ejercicio",
+      "nivel",
+      "repeticiones",
+      "series",
+      "duracion",
+      "categoria",
+      "patron",
+      "equipamiento",
+      "criterio_progreso",
+      "progresion_desde",
+      "progresion_hacia",
+      "notas",
+      "created_at",
+      "updated_at"
+    ]
+  }
+}

@@ -236,70 +236,22 @@ router.post('/generate-manual', authenticateToken, async (req, res) => {
     
     const methodologyPlanId = insertResult.rows[0].id;
     
-    // MIGRACIÓN AUTOMÁTICA: Crear plan en routine_plans para que Rutinas pueda usarlo
-    try {
-      // PASO 1: Archivar todos los planes anteriores del usuario para empezar desde 0
-      console.log('🗄️ Archivando planes anteriores del usuario...');
-      await pool.query(
-        `UPDATE app.routine_plans 
-         SET archived_at = NOW(), is_active = false, updated_at = NOW() 
-         WHERE user_id = $1 AND archived_at IS NULL`,
-        [userId]
-      );
-      
-      // PASO 2: Marcar methodology_plans anteriores como inactivos (no tiene archived_at)
-      await pool.query(
-        `UPDATE app.methodology_plans 
-         SET updated_at = NOW() 
-         WHERE user_id = $1`,
-        [userId]
-      );
-      
-      console.log('✅ Planes anteriores archivados - Empezando desde 0');
-      
-      // PASO 3: Crear nuevo plan en routine_plans como ACTIVO
-      const routinePlanQuery = `
-        INSERT INTO app.routine_plans (
-          user_id, methodology_type, plan_data, generation_mode, 
-          frequency_per_week, total_weeks, is_active, status, created_at, updated_at
-        ) VALUES ($1, $2, $3, 'manual', $4, $5, true, 'active', NOW(), NOW())
-        RETURNING id
-      `;
-      
-      const routinePlanResult = await pool.query(routinePlanQuery, [
-        userId,
-        canonical,
-        JSON.stringify(planData),
-        planData.frecuencia_por_semana || 3,
-        planData.duracion_total_semanas || 4
-      ]);
-      
-      const routinePlanId = routinePlanResult.rows[0].id;
-      console.log(`✅ Plan migrado automáticamente: methodology_plans(${methodologyPlanId}) -> routine_plans(${routinePlanId})`);
-      
-      res.json({
-        success: true,
-        plan: planData,
-        planId: methodologyPlanId, // ID original de methodology_plans
-        routinePlanId: routinePlanId, // ID nuevo de routine_plans para usar en Rutinas
-        message: `Plan de ${metodologia_solicitada} generado exitosamente`,
-        migrationInfo: {
-          methodology_plan_id: methodologyPlanId,
-          routine_plan_id: routinePlanId
-        }
-      });
-      
-    } catch (migrationError) {
-      console.error('❌ Error en migración automática:', migrationError.message);
-      // Aún devolver respuesta exitosa pero sin routine_plan_id
-      res.json({
-        success: true,
-        plan: planData,
-        planId: methodologyPlanId,
-        message: `Plan de ${metodologia_solicitada} generado exitosamente`,
-        migrationError: migrationError.message
-      });
-    }
+    // Cancelar planes anteriores del usuario
+    await pool.query(
+      `UPDATE app.methodology_plans
+       SET status = 'cancelled', updated_at = NOW()
+       WHERE user_id = $1 AND status = 'active'`,
+      [userId]
+    );
+
+    console.log(`✅ Plan creado exitosamente: methodology_plans(${methodologyPlanId})`);
+
+    res.json({
+      success: true,
+      plan: planData,
+      planId: methodologyPlanId,
+      message: `Plan de ${metodologia_solicitada} generado exitosamente`
+    });
 
   } catch (error) {
     console.error('❌ Error en generate-manual:', error);

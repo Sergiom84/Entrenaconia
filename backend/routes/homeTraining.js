@@ -10,6 +10,35 @@ import authenticateToken from '../middleware/auth.js';
 
 const router = express.Router();
 
+// Helpers para normalizar combinaciones (evitar 500 por valores inesperados)
+const ALLOWED_EQUIPMENT = new Set(['minimo','basico','avanzado','personalizado','usar_este_equipamiento']);
+const ALLOWED_TRAINING  = new Set(['funcional','hiit','fuerza']);
+
+function normalizeEquipmentType(val) {
+  const v = String(val || '').toLowerCase().trim();
+  if (ALLOWED_EQUIPMENT.has(v)) return v;
+  // Mapear alias comunes
+  if (v === 'ninguno' || v === 'sin_equipo' || v === 'sin_equipamiento') return 'minimo';
+  if (v === 'custom' || v === 'personalizado_equipo') return 'personalizado';
+  // Por defecto, usar inventario del usuario
+  return 'usar_este_equipamiento';
+}
+
+function normalizeTrainingType(val) {
+  const v = String(val || '').toLowerCase().trim();
+  if (ALLOWED_TRAINING.has(v)) return v;
+  // Mapear alias/metodologías a categorías home-training
+  if (v.includes('hiit')) return 'hiit';
+  if (v.includes('fuerza') || v.includes('calistenia') || v.includes('strength')) return 'fuerza';
+  // Fallback genérico
+  return 'funcional';
+}
+
+function toExerciseKey(name) {
+  const s = String(name || '').toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu,'');
+  return s.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 100) || 'ejercicio';
+}
+
 // Crear un nuevo plan de entrenamiento en casa
 router.post('/plans', authenticateToken, async (req, res) => {
   try {
@@ -491,7 +520,7 @@ router.post('/sessions/:sessionId/exercise/:exerciseOrder/feedback', authenticat
 // Guardar ejercicios rechazados
 router.post('/rejections', authenticateToken, async (req, res) => {
   try {
-    const { rejections } = req.body;
+    const { rejections } = req.body || {};
     const user_id = req.user.userId || req.user.id;
 
     if (!Array.isArray(rejections) || rejections.length === 0) {
@@ -506,17 +535,16 @@ router.post('/rejections', authenticateToken, async (req, res) => {
       await client.query('BEGIN');
 
       const insertedRejections = [];
-      
-      for (const rejection of rejections) {
-        const {
-          exercise_name,
-          exercise_key,
-          equipment_type,
-          training_type,
-          rejection_reason,
-          rejection_category,
-          expires_in_days
-        } = rejection;
+
+      for (const raw of rejections) {
+        // Normalizar/validar campos para evitar violaciones NOT NULL / tamaños
+        const exercise_name = String(raw?.exercise_name || '').trim().slice(0, 255) || 'Ejercicio';
+        const exercise_key  = (raw?.exercise_key && String(raw.exercise_key).trim()) || toExerciseKey(exercise_name);
+        const equipment_type = normalizeEquipmentType(raw?.equipment_type);
+        const training_type  = normalizeTrainingType(raw?.training_type);
+        const rejection_reason = raw?.rejection_reason ? String(raw.rejection_reason).slice(0, 1000) : null;
+        const rejection_category = raw?.rejection_category ? String(raw.rejection_category) : null;
+        const expires_in_days = Number(raw?.expires_in_days) || null;
 
         // Calcular fecha de expiración si es temporal
         let expiresAt = null;
@@ -528,8 +556,8 @@ router.post('/rejections', authenticateToken, async (req, res) => {
         // Verificar si ya existe un rechazo activo para este ejercicio
         const existingResult = await client.query(
           `SELECT id FROM app.home_exercise_rejections
-           WHERE user_id = $1 AND exercise_key = $2 
-           AND equipment_type = $3 AND training_type = $4 
+           WHERE user_id = $1 AND exercise_key = $2
+           AND equipment_type = $3 AND training_type = $4
            AND is_active = true`,
           [user_id, exercise_key, equipment_type, training_type]
         );
@@ -538,7 +566,7 @@ router.post('/rejections', authenticateToken, async (req, res) => {
           // Actualizar rechazo existente
           const updateResult = await client.query(
             `UPDATE app.home_exercise_rejections
-             SET rejection_reason = $1, 
+             SET rejection_reason = $1,
                  rejection_category = $2,
                  expires_at = $3,
                  rejected_at = NOW(),
@@ -573,7 +601,8 @@ router.post('/rejections', authenticateToken, async (req, res) => {
 
     } catch (err) {
       await client.query('ROLLBACK');
-      throw err;
+      console.error('❌ Error dentro de transacción /rejections:', err);
+      return res.status(500).json({ success: false, message: 'Error al guardar las preferencias de ejercicios', details: err.message });
     } finally {
       client.release();
     }

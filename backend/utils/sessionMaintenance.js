@@ -56,13 +56,14 @@ async function runSessionMaintenance() {
 async function generateMaintenanceSummary() {
     try {
         const summaryResult = await pool.query(`
-            SELECT 
+            SELECT
                 COUNT(*) FILTER (WHERE is_active = TRUE) as active_sessions,
                 COUNT(*) FILTER (WHERE is_active = FALSE) as inactive_sessions,
                 COUNT(DISTINCT user_id) as unique_active_users,
                 COUNT(*) FILTER (WHERE login_time >= CURRENT_DATE) as today_logins,
                 COUNT(*) FILTER (WHERE logout_time >= CURRENT_DATE AND logout_type = 'timeout') as timeout_logouts,
-                AVG(EXTRACT(EPOCH FROM session_duration)) FILTER (WHERE session_duration IS NOT NULL) as avg_session_duration_seconds
+                AVG(EXTRACT(EPOCH FROM (COALESCE(logout_time, last_activity, CURRENT_TIMESTAMP) - login_time)))
+                    FILTER (WHERE login_time IS NOT NULL) as avg_session_duration_seconds
             FROM app.user_sessions
             WHERE login_time >= CURRENT_DATE - INTERVAL '1 day'
         `);
@@ -91,12 +92,12 @@ async function generateDailyStatsReport() {
     try {
         // Estadísticas generales
         const generalStats = await pool.query(`
-            SELECT 
+            SELECT
                 DATE(login_time) as date,
                 COUNT(*) as total_logins,
                 COUNT(DISTINCT user_id) as unique_users,
                 COUNT(DISTINCT ip_address) as unique_ips,
-                AVG(EXTRACT(EPOCH FROM session_duration)) as avg_session_seconds,
+                AVG(EXTRACT(EPOCH FROM (COALESCE(logout_time, last_activity, CURRENT_TIMESTAMP) - login_time))) as avg_session_seconds,
                 COUNT(*) FILTER (WHERE logout_type = 'manual') as manual_logouts,
                 COUNT(*) FILTER (WHERE logout_type = 'timeout') as timeout_logouts,
                 COUNT(*) FILTER (WHERE logout_type = 'forced') as forced_logouts
@@ -108,11 +109,11 @@ async function generateDailyStatsReport() {
         
         // Top usuarios más activos
         const topUsers = await pool.query(`
-            SELECT 
+            SELECT
                 u.email,
                 COUNT(us.session_id) as session_count,
                 MAX(us.login_time) as last_login,
-                AVG(EXTRACT(EPOCH FROM us.session_duration)) as avg_session_seconds
+                AVG(EXTRACT(EPOCH FROM (COALESCE(us.logout_time, us.last_activity, CURRENT_TIMESTAMP) - us.login_time))) as avg_session_seconds
             FROM app.user_sessions us
             JOIN app.users u ON us.user_id = u.id
             WHERE us.login_time >= CURRENT_DATE - INTERVAL '7 days'

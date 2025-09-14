@@ -217,31 +217,20 @@ INSTRUCCIONES:
     // 8. Save to database
     const insertResult = await client.query(`
       INSERT INTO app.methodology_plans (
-        user_id, methodology_type, plan_data, status, created_at
-      ) VALUES ($1, $2, $3, $4, NOW()) 
+        user_id, methodology_type, plan_data, generation_mode, status, created_at
+      ) VALUES ($1, $2, $3, $4, $5, NOW())
       RETURNING id
-    `, [userId, 'Calistenia Manual', JSON.stringify(parsedPlan), 'draft']);
+    `, [userId, 'Calistenia Manual', JSON.stringify(parsedPlan), 'manual', 'draft']);
     
     const planId = insertResult.rows[0].id;
     
-    // 9. Create corresponding routine plan
-    const routinePlanResult = await client.query(`
-      INSERT INTO app.routine_plans (
-        user_id, methodology_type, plan_data, status, source_methodology_plan_id, created_at
-      ) VALUES ($1, $2, $3, $4, $5, NOW()) 
-      RETURNING id
-    `, [userId, 'Calistenia Manual', JSON.stringify(parsedPlan), 'draft', planId]);
-    
-    const routinePlanId = routinePlanResult.rows[0].id;
-    
     await client.query('COMMIT');
-    
+
     console.log('✅ Calistenia manual plan generated successfully');
-    
+
     res.json({
       success: true,
       planId,
-      routinePlanId,
       plan: parsedPlan,
       message: 'Plan de calistenia manual generado exitosamente'
     });

@@ -25,6 +25,59 @@ import {
 const router = express.Router();
 
 // ===============================================
+// FUNCIONES HELPER PARA CONFIGURACIÓN DINÁMICA
+// ===============================================
+
+/**
+ * Obtener número de sesiones por semana según el nivel
+ */
+function getSessionsPerWeek(level) {
+  switch (level) {
+    case 'Básico':
+    case 'básico': return 3;      // Principiantes: 3 días/semana
+    case 'Intermedio':
+    case 'intermedio': return 4;  // Intermedios: 4 días/semana
+    case 'Avanzado':
+    case 'avanzado': return 5;    // Avanzados: 5 días/semana
+    default: return 3;
+  }
+}
+
+/**
+ * Obtener duración de sesión según el nivel
+ */
+function getSessionDuration(level) {
+  switch (level) {
+    case 'Básico':
+    case 'básico': return 30;      // Principiantes: 30 min
+    case 'Intermedio':
+    case 'intermedio': return 45;  // Intermedios: 45 min
+    case 'Avanzado':
+    case 'avanzado': return 60;    // Avanzados: 60 min
+    default: return 30;
+  }
+}
+
+/**
+ * Obtener áreas de enfoque según el nivel
+ */
+function getFocusAreas(level) {
+  switch (level) {
+    case 'Básico':
+    case 'básico':
+      return ['empuje', 'traccion', 'piernas', 'core']; // Fundamentos
+    case 'Intermedio':
+    case 'intermedio':
+      return ['empuje', 'traccion', 'piernas', 'core', 'equilibrio']; // + Equilibrio
+    case 'Avanzado':
+    case 'avanzado':
+      return ['empuje', 'traccion', 'piernas', 'core', 'equilibrio', 'skills']; // + Skills
+    default:
+      return ['empuje', 'traccion', 'piernas', 'core'];
+  }
+}
+
+// ===============================================
 // FUNCIONES HELPER PARA PARSING JSON ROBUSTO
 // ===============================================
 
@@ -381,35 +434,128 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
   try {
     const userId = req.user?.userId || req.user?.id;
     const { userProfile, selectedLevel, goals, exercisePreferences } = req.body;
-    
+
     console.log('🤸‍♀️ Generando plan especializado de calistenia...');
-    
+    console.log('📅 Request body recibido:', {
+      hasUserProfile: !!userProfile,
+      userProfileKeys: userProfile ? Object.keys(userProfile) : [],
+      selectedLevel,
+      goals: goals?.substring(0, 50) + '...',
+      exercisePreferencesCount: exercisePreferences?.length || 0
+    });
+
     if (!userProfile || !selectedLevel) {
       return res.status(400).json({
         success: false,
         error: 'Perfil de usuario y nivel seleccionado requeridos'
       });
     }
-    
+
+    // Si userProfile solo contiene ID, obtener datos completos de la base de datos
+    let fullUserProfile = userProfile;
+    if (userProfile && typeof userProfile === 'object' && Object.keys(userProfile).length === 1 && userProfile.id) {
+      console.log('📊 userProfile solo contiene ID, obteniendo datos completos de la DB...');
+
+      const userQuery = await pool.query(`
+        SELECT
+          u.id, u.nombre, u.apellido, u.email,
+          u.edad, u.sexo, u.peso, u.altura,
+          u.anos_entrenando, u.nivel_entrenamiento,
+          u.nivel_actividad, u.grasa_corporal, u.masa_muscular,
+          u.pecho, u.brazos, u.alergias, u.medicamentos,
+          u.suplementacion,
+          p.limitaciones_fisicas, p.objetivo_principal, p.metodologia_preferida
+        FROM app.users u
+        LEFT JOIN app.user_profiles p ON u.id = p.user_id
+        WHERE u.id = $1
+      `, [userId]); // Usar userId del token, no del userProfile
+
+      if (userQuery.rowCount === 0) {
+        return res.status(404).json({
+          success: false,
+          error: 'Usuario no encontrado en la base de datos'
+        });
+      }
+
+      const dbUserData = userQuery.rows[0];
+
+      // Construir perfil completo con datos reales de la DB
+      fullUserProfile = {
+        id: dbUserData.id,
+        nombre: dbUserData.nombre,
+        apellido: dbUserData.apellido,
+        email: dbUserData.email,
+        edad: dbUserData.edad,
+        sexo: dbUserData.sexo,
+        peso_kg: parseFloat(dbUserData.peso),
+        altura_cm: parseFloat(dbUserData.altura),
+        años_entrenando: dbUserData.anos_entrenando || dbUserData.años_entrenando,
+        nivel_entrenamiento: dbUserData.nivel_entrenamiento || 'principiante',
+        objetivo_principal: dbUserData.objetivo_principal || goals || 'general',
+        nivel_actividad: dbUserData.nivel_actividad,
+        grasa_corporal: parseFloat(dbUserData.grasa_corporal) || null,
+        masa_muscular: parseFloat(dbUserData.masa_muscular) || null,
+        pecho: parseFloat(dbUserData.pecho) || null,
+        brazos: parseFloat(dbUserData.brazos) || null,
+        alergias: dbUserData.alergias || [],
+        medicamentos: dbUserData.medicamentos || [],
+        suplementacion: dbUserData.suplementacion || [],
+        limitaciones_fisicas: dbUserData.limitaciones_fisicas || null
+      };
+
+      console.log('✅ Perfil completo obtenido de la base de datos');
+    }
+
     logSeparator('CALISTENIA PLAN GENERATION');
-    logUserProfile(userProfile, userId);
+    logUserProfile(fullUserProfile, userId);
     
-    // Para principiantes solo usamos ejercicios básicos
+    // Obtener ejercicios según el nivel evaluado del usuario
+    const normalizedLevel = selectedLevel.toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, ''); // Remove accents
+
+    // Mapear nivel a término de BD (con mayúscula inicial como está en la BD)
+    const levelMapping = {
+      'basico': 'Básico',
+      'intermedio': 'Intermedio',
+      'avanzado': 'Avanzado'
+    };
+
+    const dbLevel = levelMapping[normalizedLevel] || 'Básico';
+    console.log(`📊 Nivel usuario: ${selectedLevel} → Nivel BD: ${dbLevel}`);
+
+    // Obtener ejercicios apropiados para el nivel del usuario
+    // Incluir ejercicios del nivel actual y anteriores para progresión
+    let levelCondition;
+    if (dbLevel === 'Avanzado') {
+      levelCondition = "nivel IN ('Básico', 'Intermedio', 'Avanzado')";
+    } else if (dbLevel === 'Intermedio') {
+      levelCondition = "nivel IN ('Básico', 'Intermedio')";
+    } else {
+      levelCondition = "nivel = 'Básico'";
+    }
+
     const exercisesResult = await pool.query(`
-      SELECT exercise_id, nombre, nivel, categoria, patron, equipamiento, 
-             series_reps_objetivo, criterio_de_progreso, progresion_desde, 
+      SELECT exercise_id, nombre, nivel, categoria, patron, equipamiento,
+             series_reps_objetivo, criterio_de_progreso, progresion_desde,
              progresion_hacia, notas
       FROM app."Ejercicios_Calistenia"
-      WHERE LOWER(nivel) = 'básico'
+      WHERE ${levelCondition}
         AND categoria IN ('Empuje', 'Tracción', 'Core', 'Piernas', 'Equilibrio/Soporte')
-      ORDER BY categoria, nombre
+      ORDER BY categoria,
+               CASE nivel
+                 WHEN 'Básico' THEN 1
+                 WHEN 'Intermedio' THEN 2
+                 WHEN 'Avanzado' THEN 3
+               END,
+               nombre
     `);
     
     const availableExercises = exercisesResult.rows;
     if (availableExercises.length === 0) {
-      throw new Error(`No se encontraron ejercicios de calistenia básicos en la base de datos`);
+      throw new Error(`No se encontraron ejercicios de calistenia para nivel ${dbLevel} en la base de datos`);
     }
-    console.log(`📋 ${availableExercises.length} ejercicios básicos disponibles`);
+    console.log(`📋 ${availableExercises.length} ejercicios disponibles para nivel ${dbLevel}`);
     
     // Obtener historial reciente
     const recentExercisesResult = await pool.query(`
@@ -430,7 +576,7 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
     // Preparar payload para generación de plan
     const planPayload = {
       task: 'generate_calistenia_plan',
-      user_profile: userProfile,
+      user_profile: fullUserProfile, // Usar el perfil completo obtenido
       selected_level: selectedLevel,
       goals: goals || '',
       exercise_preferences: exercisePreferences || [],
@@ -438,10 +584,10 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
       recent_exercises: recentExercises,
       plan_requirements: {
         duration_weeks: 4,
-        sessions_per_week: 3, // Siempre 3 para principiantes
-        session_duration_min: 30, // Siempre 30min para principiantes
+        sessions_per_week: getSessionsPerWeek(dbLevel),
+        session_duration_min: getSessionDuration(dbLevel),
         progression_type: 'gradual',
-        focus_areas: ['empuje', 'traccion', 'piernas', 'core'], // Patrones básicos fijos
+        focus_areas: getFocusAreas(dbLevel),
         start_day: currentDay,
         start_date: today.toISOString().split('T')[0] // Formato YYYY-MM-DD
       }
@@ -544,32 +690,21 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
       // Insertar en methodology_plans
       const methodologyResult = await dbClient.query(`
         INSERT INTO app.methodology_plans (
-          user_id, methodology_type, plan_data, status, created_at
-        ) VALUES ($1, $2, $3, $4, NOW())
+          user_id, methodology_type, plan_data, generation_mode, status, created_at
+        ) VALUES ($1, $2, $3, $4, $5, NOW())
         RETURNING id
-      `, [userId, 'Calistenia', JSON.stringify(generatedPlan), 'draft']);
+      `, [userId, 'Calistenia', JSON.stringify(generatedPlan), 'automatic', 'draft']);
       
       const methodologyPlanId = methodologyResult.rows[0].id;
       
-      // Insertar en routine_plans para compatibilidad
-      const routineResult = await dbClient.query(`
-        INSERT INTO app.routine_plans (
-          user_id, methodology_type, plan_data, status, created_at
-        ) VALUES ($1, $2, $3, $4, NOW())
-        RETURNING id
-      `, [userId, 'Calistenia', JSON.stringify(generatedPlan), 'draft']);
-      
-      const routinePlanId = routineResult.rows[0].id;
-      
       await dbClient.query('COMMIT');
-      
-      console.log(`✅ Plan de calistenia guardado - Methodology ID: ${methodologyPlanId}, Routine ID: ${routinePlanId}`);
+
+      console.log(`✅ Plan de calistenia guardado - Methodology ID: ${methodologyPlanId}`);
       
       res.json({
         success: true,
         plan: generatedPlan,
         planId: methodologyPlanId,
-        routinePlanId: routinePlanId,
         metadata: {
           model_used: config.model,
           prompt_id: config.promptId,
@@ -589,13 +724,35 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
     
   } catch (error) {
     console.error('❌ Error generando plan especializado:', error);
+    console.error('📍 Stack trace:', error.stack);
     logError('CALISTENIA_SPECIALIST', error);
-    
-    res.status(500).json({
+
+    // Determinar tipo de error y mensaje apropiado
+    let statusCode = 500;
+    let errorMessage = 'Error interno del servidor';
+
+    if (error.message?.includes('No se encontraron ejercicios')) {
+      statusCode = 404;
+      errorMessage = 'No hay ejercicios disponibles para el nivel seleccionado';
+    } else if (error.message?.includes('Usuario no encontrado')) {
+      statusCode = 404;
+      errorMessage = 'Usuario no encontrado en la base de datos';
+    } else if (error.message?.includes('API key')) {
+      statusCode = 503;
+      errorMessage = 'Servicio de IA temporalmente no disponible';
+    } else if (error.message?.includes('Plan generado inválido')) {
+      statusCode = 502;
+      errorMessage = 'Error al procesar respuesta de IA';
+    }
+
+    res.status(statusCode).json({
       success: false,
-      error: 'Error interno del servidor',
+      error: errorMessage,
       message: error.message,
-      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      details: process.env.NODE_ENV === 'development' ? {
+        stack: error.stack,
+        originalError: error.toString()
+      } : undefined
     });
   }
 });

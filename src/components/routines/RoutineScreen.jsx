@@ -19,10 +19,14 @@ const RoutineScreen = () => {
 
   // State recibido desde MethodologiesScreen.navigate('/routines', { state })
   const incomingState = location.state || {};
-  const incomingPlan = incomingState?.routinePlan || null;
+  // Buscar el plan en diferentes propiedades posibles (routinePlan o plan)
+  const incomingPlan = incomingState?.routinePlan || incomingState?.plan || null;
   const planId = incomingState?.planId || null; // routinePlanId preferido
 
-  const [showPlanModal, setShowPlanModal] = useState(incomingState?.showModal || false); // Mostrar modal si viene indicado
+  // Si viene desde una sesión, no mostrar modal y activar pestaña 'today'
+  const [showPlanModal, setShowPlanModal] = useState(
+    incomingState?.fromSession ? false : (incomingState?.showModal || false)
+  );
   // Recuperar methodologyPlanId desde múltiples fuentes
   const [methodologyPlanId, setMethodologyPlanId] = useState(() => {
     // Prioridad: 1) Navigation state, 2) localStorage, 3) null
@@ -34,12 +38,16 @@ const RoutineScreen = () => {
     const fromStorage = localStorage.getItem('currentMethodologyPlanId');
     return fromStorage ? Number(fromStorage) : null;
   });
-  const [activeTab, setActiveTab] = useState('today');
+  // Si viene con activeTab especificado o desde sesión, usarlo
+  const [activeTab, setActiveTab] = useState(
+    incomingState?.activeTab || (incomingState?.fromSession ? 'today' : 'today')
+  );
   const [isConfirming, setIsConfirming] = useState(false);
   const [isCheckingPlanStatus, setIsCheckingPlanStatus] = useState(true);
 
   // State para rutina recuperada
   const [recoveredPlan, setRecoveredPlan] = useState(null);
+  const [recoveredPlanId, setRecoveredPlanId] = useState(null);
   const [isRecoveringPlan, setIsRecoveringPlan] = useState(false);
   const [progressUpdatedAt, setProgressUpdatedAt] = useState(Date.now());
 
@@ -96,7 +104,7 @@ const RoutineScreen = () => {
   // Plan efectivo a usar (entrante o recuperado)
   const effectivePlan = incomingPlan || recoveredPlan;
   const effectivePlanSource = incomingState?.planSource || { label: 'IA' };
-  const effectivePlanId = incomingState?.planId || null;
+  const effectivePlanId = incomingState?.planId || recoveredPlanId || null;
 
   // Validar y limpiar estado al montar el componente
   useEffect(() => {
@@ -136,19 +144,37 @@ const RoutineScreen = () => {
   useEffect(() => {
     // Si no hay plan entrante, intentar recuperar rutina activa
     if (!incomingPlan) {
-      console.log('No incoming plan. Trying to recover active routine...');
+      // Si viene desde una sesión pero sin plan, intentar recuperar
+      if (incomingState?.fromSession) {
+        console.log('🔄 Coming from session, trying to recover active routine...', {
+          methodology_plan_id: incomingState?.methodology_plan_id,
+          methodologyPlanId,
+          planStartDate: incomingState?.planStartDate,
+          activeTab: incomingState?.activeTab
+        });
+      } else {
+        console.log('No incoming plan. Trying to recover active routine...');
+      }
       setIsRecoveringPlan(true);
-      
-      // Usar caché para recuperar plan activo
-      getOrLoad(CACHE_KEYS.ACTIVE_PLAN, getActivePlan)
-        .then(activeData => {
+
+      // Si viene de una sesión, no usar caché para evitar datos obsoletos
+      const shouldUseCache = !incomingState?.fromSession;
+      console.log('📋 Llamando a getActivePlan...', { shouldUseCache, fromSession: incomingState?.fromSession });
+
+      const loadActivePlan = shouldUseCache
+        ? getOrLoad(CACHE_KEYS.ACTIVE_PLAN, getActivePlan)
+        : getActivePlan();
+
+      loadActivePlan.then(activeData => {
+          console.log('📦 Respuesta de getActivePlan:', activeData);
           if (activeData.hasActivePlan) {
             console.log('✅ Rutina activa recuperada:', activeData);
             setRecoveredPlan(activeData.routinePlan);
             setMethodologyPlanId(activeData.methodology_plan_id);
+            setRecoveredPlanId(activeData.planId || null);
             // Persistir el methodologyPlanId recuperado
             localStorage.setItem('currentMethodologyPlanId', String(activeData.methodology_plan_id));
-            
+
             // Establecer fecha de inicio basada en la fecha de confirmación del plan recuperado
             if (activeData.confirmedAt || activeData.createdAt) {
               const planDate = new Date(activeData.confirmedAt || activeData.createdAt);
@@ -156,17 +182,65 @@ const RoutineScreen = () => {
               const planDateISO = planDate.toISOString();
               setPlanStartDate(planDateISO);
               localStorage.setItem('currentRoutinePlanStartDate', planDateISO);
-              console.log('📅 Plan recuperado con fecha de inicio:', planDateISO, 
+              console.log('📅 Plan recuperado con fecha de inicio:', planDateISO,
                 'usando:', activeData.confirmedAt ? 'confirmedAt' : 'createdAt');
             }
           } else {
-            console.log('No hay rutina activa. Redirecting to Methodologies.');
-            navigate('/methodologies', { replace: true });
+            console.log('⚠️ No se encontró plan activo, analizando contexto...', {
+              hasActivePlan: activeData.hasActivePlan,
+              fromSession: incomingState?.fromSession,
+              methodologyPlanId,
+              incomingMethodologyPlanId: incomingState?.methodology_plan_id
+            });
+
+            // Si viene desde una sesión, SIEMPRE intentar cargar con el methodologyPlanId
+            if (incomingState?.fromSession) {
+              const planIdToUse = incomingState?.methodology_plan_id || methodologyPlanId || localStorage.getItem('currentMethodologyPlanId');
+
+              if (planIdToUse) {
+                console.log('🔄 Recuperando desde sesión con methodology_plan_id:', planIdToUse);
+                console.log('📊 Intentando forzar recuperación del plan activo...');
+
+                // Establecer el methodology_plan_id para intentar cargar
+                setMethodologyPlanId(planIdToUse);
+                localStorage.setItem('currentMethodologyPlanId', String(planIdToUse));
+
+                // Intentar recuperar el plan directamente sin caché
+                getActivePlan()
+                  .then(freshData => {
+                    console.log('🔄 Datos frescos obtenidos:', freshData);
+                    if (freshData.hasActivePlan) {
+                      setRecoveredPlan(freshData.routinePlan);
+                      setMethodologyPlanId(freshData.methodology_plan_id);
+                      setRecoveredPlanId(freshData.planId || null);
+                    }
+                  })
+                  .catch(err => {
+                    console.error('Error recuperando plan fresco:', err);
+                  })
+                  .finally(() => {
+                    setIsCheckingPlanStatus(false);
+                  });
+              } else {
+                console.log('⚠️ Viene de sesión pero sin methodology_plan_id');
+                setIsCheckingPlanStatus(false);
+              }
+            } else if (methodologyPlanId) {
+              // Si no viene de sesión pero tenemos methodologyPlanId, intentar cargar
+              console.log('🔄 Intentando recuperar con methodology_plan_id guardado:', methodologyPlanId);
+              setIsCheckingPlanStatus(false);
+            } else {
+              console.log('🚫 No hay rutina activa. Redirecting to Methodologies.');
+              navigate('/methodologies', { replace: true });
+            }
           }
         })
         .catch(error => {
           console.error('Error recovering active plan:', error);
-          navigate('/methodologies', { replace: true });
+          // Si viene desde sesión, no redirigir inmediatamente
+          if (!incomingState?.fromSession) {
+            navigate('/methodologies', { replace: true });
+          }
         })
         .finally(() => {
           setIsRecoveringPlan(false);
@@ -259,10 +333,23 @@ const RoutineScreen = () => {
   }, [invalidateCache, navigate]);
 
   const ensureMethodologyPlan = async () => {
-    if (methodologyPlanId) return methodologyPlanId;
+    // Si tenemos un methodologyPlanId, validarlo primero
+    if (methodologyPlanId) {
+      try {
+        const status = await getPlanStatus({ methodologyPlanId: methodologyPlanId });
+        if (status?.success) return methodologyPlanId; // válido
+      } catch (_) {
+        // inválido: continuamos para bootstrap
+      }
+    }
+
+    // Si vino por navegación con id válido
     if (incomingState?.methodology_plan_id) return incomingState.methodology_plan_id;
-    if (planId) {
-      const mId = await bootstrapPlan(planId);
+
+    // Bootstrap a partir de un routine_plan_id conocido
+    const candidatePlanId = incomingState?.planId || recoveredPlanId || planId;
+    if (candidatePlanId) {
+      const mId = await bootstrapPlan(candidatePlanId);
       setMethodologyPlanId(mId);
       return mId;
     }

@@ -284,14 +284,13 @@ router.post('/generate', authenticateToken, async (req, res) => {
     if (equipment_type === 'personalizado' || equipment_type === 'usar_este_equipamiento') {
       // Solo para modo personalizado cargamos el equipamiento del usuario
       const curatedEqRes = await pool.query(
-        `SELECT COALESCE(ue.equipment_key, ei.key) AS equipment_key
+        `SELECT ue.equipment_type AS equipment_key
          FROM app.user_equipment ue
-         LEFT JOIN app.equipment_items ei ON ei.key = ue.equipment_id::text
-         WHERE ue.user_id = $1`,
+         WHERE ue.user_id = $1 AND ue.has_equipment = true`,
         [userId]
       );
       const customEqRes = await pool.query(
-        `SELECT name FROM app.user_custom_equipment WHERE user_id = $1 ORDER BY created_at DESC`,
+        `SELECT equipment_name as name FROM app.user_custom_equipment WHERE user_id = $1 ORDER BY created_at DESC`,
         [userId]
       );
       actualEquipment = curatedEqRes.rows.map(r => r.equipment_key);

@@ -1,7 +1,11 @@
 // Capa ligera de API para Rutinas (metodologías)
+import apiClient from '../../lib/apiClient.js';
+
+// Función helper para obtener token
+const getToken = () => apiClient.getAuthToken();
 
 export async function getPlan({ id, type }) {
-  const token = localStorage.getItem('token');
+  const token = getToken();
   const resp = await fetch(`/api/routines/plan?id=${encodeURIComponent(id)}&type=${encodeURIComponent(type)}`, {
     headers: { 'Authorization': `Bearer ${token}` }
   });
@@ -11,7 +15,7 @@ export async function getPlan({ id, type }) {
 }
 
 export async function bootstrapPlan(routine_plan_id) {
-  const token = localStorage.getItem('token');
+  const token = getToken();
   const resp = await fetch('/api/routines/bootstrap-plan', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -23,7 +27,7 @@ export async function bootstrapPlan(routine_plan_id) {
 }
 
 export async function startSession({ methodology_plan_id, week_number, day_name }) {
-  const token = localStorage.getItem('token');
+  const token = getToken();
   const resp = await fetch('/api/routines/sessions/start', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -35,7 +39,7 @@ export async function startSession({ methodology_plan_id, week_number, day_name 
 }
 
 export async function updateExercise({ sessionId, exerciseOrder, series_completed, status, time_spent_seconds }) {
-  const token = localStorage.getItem('token');
+  const token = getToken();
   const resp = await fetch(`/api/routines/sessions/${sessionId}/exercise/${exerciseOrder}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -47,7 +51,7 @@ export async function updateExercise({ sessionId, exerciseOrder, series_complete
 }
 
 export async function finishSession(sessionId) {
-  const token = localStorage.getItem('token');
+  const token = getToken();
   const resp = await fetch(`/api/routines/sessions/${sessionId}/finish`, {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${token}` }
@@ -58,7 +62,7 @@ export async function finishSession(sessionId) {
 }
 
 export async function getSessionProgress(sessionId) {
-  const token = localStorage.getItem('token');
+  const token = getToken();
   const resp = await fetch(`/api/routines/sessions/${sessionId}/progress`, {
     headers: { 'Authorization': `Bearer ${token}` }
   });
@@ -68,7 +72,7 @@ export async function getSessionProgress(sessionId) {
 }
 
 export async function confirmRoutinePlan({ methodology_plan_id, routine_plan_id }) {
-  const token = localStorage.getItem('token');
+  const token = getToken();
   const resp = await fetch('/api/routines/confirm-plan', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -80,7 +84,7 @@ export async function confirmRoutinePlan({ methodology_plan_id, routine_plan_id 
 }
 
 export async function getTodaySessionStatus({ methodology_plan_id, week_number, day_name, session_date }) {
-  const token = localStorage.getItem('token');
+  const token = getToken();
   
   // Construir query parameters
   const params = new URLSearchParams({
@@ -106,7 +110,7 @@ export async function getTodaySessionStatus({ methodology_plan_id, week_number, 
 }
 
 export async function getProgressData({ methodology_plan_id }) {
-  const token = localStorage.getItem('token');
+  const token = getToken();
   const resp = await fetch(`/api/routines/progress-data?methodology_plan_id=${encodeURIComponent(methodology_plan_id)}`, {
     headers: { 'Authorization': `Bearer ${token}` }
   });
@@ -116,7 +120,7 @@ export async function getProgressData({ methodology_plan_id }) {
 }
 
 export async function getActivePlan() {
-  const token = localStorage.getItem('token');
+  const token = getToken();
   const resp = await fetch('/api/routines/active-plan', {
     headers: { 'Authorization': `Bearer ${token}` }
   });
@@ -126,7 +130,7 @@ export async function getActivePlan() {
 }
 
 export async function saveExerciseFeedback({ sessionId, exerciseOrder, sentiment, comment, exerciseName }) {
-  const token = localStorage.getItem('token');
+  const token = getToken();
   const resp = await fetch(`/api/routines/sessions/${sessionId}/exercise/${exerciseOrder}/feedback`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -138,7 +142,7 @@ export async function saveExerciseFeedback({ sessionId, exerciseOrder, sentiment
 }
 
 export async function getSessionFeedback({ sessionId }) {
-  const token = localStorage.getItem('token');
+  const token = getToken();
   const resp = await fetch(`/api/routines/sessions/${sessionId}/feedback`, {
     headers: { 'Authorization': `Bearer ${token}` }
   });
@@ -148,7 +152,7 @@ export async function getSessionFeedback({ sessionId }) {
 }
 
 export async function getPlanStatus({ methodologyPlanId }) {
-  const token = localStorage.getItem('token');
+  const token = getToken();
   const resp = await fetch(`/api/routines/plan-status/${methodologyPlanId}`, {
     headers: { 'Authorization': `Bearer ${token}` }
   });
@@ -158,7 +162,7 @@ export async function getPlanStatus({ methodologyPlanId }) {
 }
 
 export async function cancelRoutine({ methodology_plan_id, routine_plan_id }) {
-  const token = localStorage.getItem('token');
+  const token = getToken();
   const resp = await fetch('/api/routines/cancel-routine', {
     method: 'POST',
     headers: { 
@@ -173,7 +177,7 @@ export async function cancelRoutine({ methodology_plan_id, routine_plan_id }) {
 }
 
 export async function getHistoricalData() {
-  const token = localStorage.getItem('token');
+  const token = getToken();
   const resp = await fetch('/api/routines/historical-data', {
     headers: { 'Authorization': `Bearer ${token}` }
   });
@@ -182,28 +186,19 @@ export async function getHistoricalData() {
   return data.data; // Datos históricos completos del usuario
 }
 
-export async function getPendingExercises({ methodology_plan_id }) {
-  const token = localStorage.getItem('token');
-  const resp = await fetch(`/api/routines/pending-exercises?methodology_plan_id=${encodeURIComponent(methodology_plan_id)}`, {
-    headers: { 'Authorization': `Bearer ${token}` }
-  });
-  const data = await resp.json().catch(() => ({}));
-  if (!resp.ok || !data.success) {
-    if (resp.status === 404) return null; // No hay ejercicios pendientes
-    throw new Error(data.error || 'No se pudieron cargar los ejercicios pendientes');
-  }
-  return data; // { hasPendingExercises, pendingDay, exercises, totalPending, sessionId, weekNumber }
-}
 
-export async function getYesterdayPendingExercises({ methodology_plan_id }) {
-  const token = localStorage.getItem('token');
-  const resp = await fetch(`/api/routines/sessions/yesterday-pending?methodology_plan_id=${encodeURIComponent(methodology_plan_id)}`, {
+
+// Nueva función: obtener datos de una sesión específica completada
+export async function getSessionById(sessionId) {
+  const token = getToken();
+  
+  const resp = await fetch(`/api/routines/sessions/${sessionId}/details`, {
     headers: { 'Authorization': `Bearer ${token}` }
   });
   const data = await resp.json().catch(() => ({}));
   if (!resp.ok || !data.success) {
-    if (resp.status === 404) return null; // No hay ejercicios pendientes del día anterior
-    throw new Error(data.error || 'No se pudieron cargar los ejercicios pendientes del día anterior');
+    if (resp.status === 404) return null;
+    throw new Error(data.error || 'No se pudo obtener la sesión');
   }
-  return data; // { hasYesterdayPending, dayName, exercises, totalPending, sessionId, weekNumber, pendingCount, skippedCount }
+  return data; // { session, exercises, summary }
 }

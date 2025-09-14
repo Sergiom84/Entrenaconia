@@ -13,19 +13,23 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.j
 import { METHODOLOGIES, sanitizeProfile } from './methodologiesData.js';
 import MethodologyCard from './shared/MethodologyCard.jsx';
 import MethodologyDetailsDialog from './shared/MethodologyDetailsDialog.jsx';
-import MethodologyConfirmationModal from './shared/MethodologyConfirmationModal.jsx';
+import TrainingPlanConfirmationModal from './TrainingPlanConfirmationModal.jsx';
+import RoutineSessionModal from '../routines/RoutineSessionModal.jsx';
+import WarmupModal from '../routines/WarmupModal.jsx';
+import { startSession, updateExercise } from '../routines/api.js';
+import { useRoutineCache, CACHE_KEYS } from '../../hooks/useRoutineCache.js';
 import MethodologyVersionSelectionModal from './shared/MethodologyVersionSelectionModal.jsx';
 import CalisteniaManualCard from './methodologies/CalisteniaManual/CalisteniaManualCard.jsx';
 
 export default function MethodologiesScreen() {
   const navigate = useNavigate();
+  const { invalidateCache } = useRoutineCache();
   const { currentUser, user } = useAuth();
   const { userData } = useUserContext();
   const [selectionMode, setSelectionMode] = useState('automatico');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [showManualSelectionModal, setShowManualSelectionModal] = useState(false);
-  const [pendingMethodology, setPendingMethodology] = useState(null);
+  const [pendingMethodology, setPendingMethodology] = useState(null); // Necesario para MethodologyVersionSelectionModal
   const [showDetails, setShowDetails] = useState(false);
   const [detailsMethod, setDetailsMethod] = useState(null);
   const [showPersonalizedMessage, setShowPersonalizedMessage] = useState(false);
@@ -36,6 +40,16 @@ export default function MethodologiesScreen() {
   const [showActiveTrainingWarning, setShowActiveTrainingWarning] = useState(false);
   const [activeTrainingInfo, setActiveTrainingInfo] = useState(null);
   const [showCalisteniaManual, setShowCalisteniaManual] = useState(false);
+
+  // Estados para el nuevo flujo unificado
+  const [showConfirmationModal, setShowConfirmationModal] = useState(false);
+  const [showRoutineSessionModal, setShowRoutineSessionModal] = useState(false);
+  const [showWarmupModal, setShowWarmupModal] = useState(false);
+  const [currentSession, setCurrentSession] = useState(null);
+  const [currentSessionId, setCurrentSessionId] = useState(null);
+  const [currentMethodologyPlanId, setCurrentMethodologyPlanId] = useState(null);
+  const [selectedMethodology, setSelectedMethodology] = useState('');
+  const [pendingWarmupData, setPendingWarmupData] = useState(null);
 
   // Función para verificar si hay entrenamiento activo
   const checkActiveTraining = async () => {
@@ -158,10 +172,17 @@ export default function MethodologiesScreen() {
       const enhancedMessage = `${baseMessage}\n\n💡 ${tip}`;
       setPersonalizedMessage(enhancedMessage);
       
-      // Navegar automáticamente a rutinas después de generar el plan
-      console.log('🚀 Plan generado, navegando a rutinas automáticamente...');
+      // NUEVO FLUJO AUTOMÁTICO: Mostrar modal de confirmación
+      console.log('🚀 Plan generado automáticamente, mostrando modal de confirmación...');
+      
+      // Guardar datos para el modal de confirmación
+      setGeneratedRoutinePlan(newGeneratedPlan.plan);
+      setCurrentMethodologyPlanId(newGeneratedPlan.planId);
+      setSelectedMethodology(newGeneratedPlan.metodologia || 'Automático');
+      setPersonalizedMessage(newGeneratedPlan.justification || 'Plan generado automáticamente basado en tu perfil.');
+      
       setTimeout(() => {
-        navigateToRoutines(newGeneratedPlan);
+        setShowConfirmationModal(true);
       }, 1500);
 
     } catch (err) {
@@ -283,7 +304,7 @@ export default function MethodologiesScreen() {
       setError(error.message || 'Error al generar el plan de entrenamiento');
     } finally {
       setIsLoading(false);
-      setShowManualSelectionModal(false);
+      // Limpiar estado de metodología pendiente
       setPendingMethodology(null);
     }
   };
@@ -302,18 +323,18 @@ export default function MethodologiesScreen() {
       setShowActiveTrainingWarning(true);
       return;
     }
-    
-    setShowCalisteniaManual(false);
+
+    // NO cerrar el modal hasta estar seguros de que todo salió bien
     setIsLoading(true);
     setError(null);
-    
+
     try {
       // Detectar si es generación con IA Specialist o selección manual
       const isAISpecialist = calisteniaData.source === 'ai_evaluation';
       const endpoint = isAISpecialist ? '/api/calistenia-specialist/generate-plan' : '/api/calistenia-manual/generate';
-      
+
       console.log(`🤸‍♀️ Generando plan de calistenia (${isAISpecialist ? 'IA Specialist' : 'Manual'})...`, calisteniaData);
-      
+
       // Preparar payload según el tipo de generación
       let requestBody;
       if (isAISpecialist) {
@@ -328,54 +349,71 @@ export default function MethodologiesScreen() {
         // Payload para selección manual (mantener formato original)
         requestBody = calisteniaData;
       }
-      
+
       const token = localStorage.getItem('token');
       const response = await fetch(endpoint, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify(requestBody)
       });
-      
-      const result = await response.json();
-      
+
+      // Intentar parsear la respuesta JSON
+      let result;
+      try {
+        result = await response.json();
+      } catch (jsonError) {
+        console.error('❌ Error parseando respuesta JSON:', jsonError);
+        throw new Error(`Error del servidor: respuesta no válida (${response.status})`);
+      }
+
+      console.log('📥 Respuesta del servidor:', {
+        ok: response.ok,
+        status: response.status,
+        success: result?.success,
+        hasplan: !!result?.plan,
+        planId: result?.planId
+      });
+
       if (!response.ok || !result.success) {
-        throw new Error(result.error || 'Error al generar el plan de calistenia');
+        // Mejorar el mensaje de error con más detalles
+        const errorMessage = result.message || result.error ||
+                           `Error ${response.status}: ${response.statusText || 'Error al generar el plan de calistenia'}`;
+        console.error('❌ Error del servidor:', errorMessage);
+        throw new Error(errorMessage);
       }
       
       console.log(`✅ Plan de calistenia ${isAISpecialist ? 'IA Specialist' : 'Manual'} generado exitosamente`);
-      
+
+      // AHORA SÍ cerrar el modal ya que todo salió bien
+      setShowCalisteniaManual(false);
+
       // Preparar plan source según el tipo
       const planSource = isAISpecialist ? 'calistenia_specialist' : 'calistenia_manual';
       const metodologia = isAISpecialist ? 'Calistenia Specialist' : 'Calistenia Manual';
-      
-      // Guardar plan y preparar navegación
-      setGeneratedRoutinePlan({
-        plan: result.plan,
-        planSource: planSource, 
-        planId: result.planId,
-        routinePlanId: result.routinePlanId,
-        metodologia: metodologia
-      });
-      
+
       console.log('🛤️ Plan de calistenia generado:', {
         type: isAISpecialist ? 'IA Specialist' : 'Manual',
         methodologyPlanId: result.planId,
-        routinePlanId: result.routinePlanId
+        routinePlanId: result.routinePlanId,
+        planSource: planSource
       });
       
       // Mensaje personalizado según el tipo de generación
       let baseMessage;
       if (isAISpecialist) {
         // Mensaje para IA Specialist
+        const duracion = result.plan?.duracion_total_semanas || 4;
+        const frecuencia = result.plan?.frecuencia_por_semana || 3;
         baseMessage = `🤖 La IA ha evaluado tu perfil y generado un plan de Calistenia nivel ${calisteniaData.level} optimizado para ti. ` +
-                      `Plan de ${result.plan.duracion_total_semanas} semanas con ${result.plan.frecuencia_por_semana} entrenamientos semanales.`;
+                      `Plan de ${duracion} semanas con ${frecuencia} entrenamientos semanales.`;
       } else {
         // Mensaje para selección manual (mantener original)
+        const frecuencia = result.plan?.frecuencia_por_semana || 3;
         baseMessage = `Tu plan de Calistenia Manual nivel ${calisteniaData.levelInfo?.name || calisteniaData.level} ha sido generado exitosamente. ` +
-                      `Entrenarás ${calisteniaData.levelInfo?.frequency || `${result.plan.frecuencia_por_semana}x por semana`} con ejercicios específicos de calistenia.`;
+                      `Entrenarás ${calisteniaData.levelInfo?.frequency || `${frecuencia}x por semana`} con ejercicios específicos de calistenia.`;
       }
       
       // Tips según nivel (funciona para ambos tipos)
@@ -392,39 +430,270 @@ export default function MethodologiesScreen() {
       const enhancedMessage = `${baseMessage}\n\n💡 ${tip}`;
       setPersonalizedMessage(enhancedMessage);
       
-      // Para calistenia, mostrar modal del plan antes de confirmar
-      console.log('🚀 Plan de calistenia generado, mostrando modal del plan...');
+      // NUEVO FLUJO: Mostrar modal de confirmación en lugar de navegar
+      console.log('🚀 Plan de calistenia generado, mostrando modal de confirmación...');
+
+      // Validar que tengamos un plan antes de continuar
+      if (!result.plan) {
+        throw new Error('El servidor no devolvió un plan válido');
+      }
+
+      // Guardar datos para el modal de confirmación
+      setGeneratedRoutinePlan(result.plan);
+      setCurrentMethodologyPlanId(result.planId);
+      setSelectedMethodology(metodologia);
+
+      // Log para depuración
+      console.log('📦 Datos guardados para confirmación:', {
+        plan: result.plan ? 'Disponible' : 'No disponible',
+        planId: result.planId,
+        metodologia: metodologia,
+        personalizedMessage: enhancedMessage
+      });
+
+      // Mostrar modal de confirmación (NO navegamos)
       setTimeout(() => {
-        navigate('/routines', {
-          state: {
-            routinePlan: result.plan,
-            planId: result.planId, // methodologyPlanId
-            routinePlanId: result.routinePlanId,
-            methodology_plan_id: result.planId,
-            planSource: planSource,
-            metodologia: metodologia,
-            showModal: true // Forzar mostrar modal
-          }
-        });
+        console.log('⏰ Abriendo modal de confirmación...');
+        setShowConfirmationModal(true);
       }, 1500);
       
     } catch (error) {
       console.error('❌ Error generando plan de calistenia:', error);
+
+      // NO cerrar el modal cuando hay error para que el usuario pueda reintentar
+      // El modal permanece abierto mostrando el error
       setError(error.message || 'Error al generar el plan de calistenia');
+
+      // Mostrar una alerta más detallada si es un error de servidor
+      if (error.message.includes('500') || error.message.includes('Error interno')) {
+        setError('El servidor está temporalmente no disponible. Por favor, intenta de nuevo en unos momentos.');
+      }
+
+      // Opcionalmente, podemos mostrar una notificación toast o alert
+      console.warn('⚠️ Modal de calistenia permanece abierto debido al error');
     } finally {
       setIsLoading(false);
     }
   };
 
 
-  // Función para proceder del mensaje personalizado al modal del plan (como en HomeTraining)
+  // NUEVA FUNCIÓN: Proceder al modal de confirmación
   const proceedToRoutinePlan = () => {
     setShowPersonalizedMessage(false);
-    // Navegar automáticamente a rutinas
-    console.log('🚀 Auto-navigating to routines with generated plan');
+    // Mostrar modal de confirmación en lugar de navegar
+    console.log('🚀 Mostrando modal de confirmación con plan generado');
     setTimeout(() => {
-      navigateToRoutines(generatedRoutinePlan);
+      setShowConfirmationModal(true);
     }, 1000);
+  };
+
+  // NUEVA FUNCIÓN: Iniciar sesión de entrenamiento directamente
+  const handleStartTraining = async () => {
+    try {
+      setIsLoading(true);
+      console.log('🚀 Iniciando sesión de entrenamiento directamente...');
+
+      if (!generatedRoutinePlan || !currentMethodologyPlanId) {
+        throw new Error('No hay plan generado para iniciar');
+      }
+
+      // PASO 1: ACTIVAR EL PLAN ANTES DE INICIAR LA SESIÓN
+      console.log('🔄 Activando plan de entrenamiento...');
+      const token = localStorage.getItem('token');
+      const activationResponse = await fetch('/api/routines/confirm-and-activate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          methodology_plan_id: currentMethodologyPlanId,
+          plan_data: generatedRoutinePlan
+        })
+      });
+
+      if (!activationResponse.ok) {
+        const errorData = await activationResponse.json();
+        throw new Error(errorData.error || 'Error al activar el plan');
+      }
+
+      const activationResult = await activationResponse.json();
+      console.log('✅ Plan activado exitosamente:', activationResult);
+
+      // PASO 2: AHORA SÍ INICIAR LA SESIÓN DE ENTRENAMIENTO
+      // Obtener día actual para empezar HOY, no el primer día del plan
+      const today = new Date();
+      const diasSemana = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+      const todayName = diasSemana[today.getDay()];
+
+      // Buscar la sesión del día actual en la primera semana
+      const firstWeek = generatedRoutinePlan.semanas?.[0];
+      let todaySession = null;
+
+      if (firstWeek?.sesiones) {
+        todaySession = firstWeek.sesiones.find(sesion => sesion.dia === todayName);
+      }
+
+      // Si no hay sesión para hoy, tomar la primera disponible como fallback
+      const sessionToUse = todaySession || firstWeek?.sesiones?.[0];
+
+      if (!sessionToUse) {
+        throw new Error('No se encontró sesión de entrenamiento');
+      }
+
+      console.log(`🎯 Iniciando rutina desde HOY (${todayName}) en lugar del primer día del plan`);
+
+      // Crear sesión en backend usando el día actual
+      const sessionResult = await startSession({
+        methodology_plan_id: currentMethodologyPlanId,
+        week_number: 1,
+        day_name: todayName // Usar día actual, no firstSession.dia
+      });
+
+      // Preparar datos para RoutineSessionModal usando la sesión encontrada
+      setCurrentSession(sessionToUse);
+      setCurrentSessionId(sessionResult.session_id);
+      
+      // Cerrar modal de confirmación y mostrar calentamiento PRIMERO
+      setShowConfirmationModal(false);
+
+      // Guardar datos para después del calentamiento
+      setPendingWarmupData({
+        session: sessionToUse,
+        sessionId: sessionResult.session_id
+      });
+
+      // Mostrar modal de calentamiento
+      setShowWarmupModal(true);
+      console.log('🔥 Iniciando calentamiento antes del entrenamiento...');
+      
+    } catch (error) {
+      console.error('❌ Error iniciando entrenamiento:', error);
+      setError(error.message || 'Error al iniciar el entrenamiento');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // FUNCIONES PARA MANEJAR WARMUP MODAL
+  const handleWarmupComplete = () => {
+    console.log('✅ Calentamiento completado, iniciando entrenamiento principal');
+    setShowWarmupModal(false);
+
+    if (pendingWarmupData) {
+      setCurrentSession(pendingWarmupData.session);
+      setCurrentSessionId(pendingWarmupData.sessionId);
+      setShowRoutineSessionModal(true);
+      setPendingWarmupData(null);
+    }
+  };
+
+  const handleSkipWarmup = () => {
+    console.log('⏭️ Calentamiento saltado, yendo directo al entrenamiento');
+    setShowWarmupModal(false);
+
+    if (pendingWarmupData) {
+      setCurrentSession(pendingWarmupData.session);
+      setCurrentSessionId(pendingWarmupData.sessionId);
+      setShowRoutineSessionModal(true);
+      setPendingWarmupData(null);
+    }
+  };
+
+  const handleCloseWarmup = () => {
+    console.log('❌ Calentamiento cancelado');
+    setShowWarmupModal(false);
+    setPendingWarmupData(null);
+    // TODO: Cancelar la sesión creada si es necesario
+  };
+
+  // NUEVA FUNCIÓN: Al terminar RoutineSessionModal
+  const handleEndSession = async () => {
+    console.log('🏁 Sesión terminada, navegando a TodayTrainingTab');
+    console.log('📋 Estado actual:', {
+      currentMethodologyPlanId,
+      sessionId: routineSessionData?.sessionId,
+      localStorage: {
+        methodology_plan_id: localStorage.getItem('currentMethodologyPlanId'),
+        planStartDate: localStorage.getItem('currentRoutinePlanStartDate')
+      }
+    });
+
+    setShowRoutineSessionModal(false);
+
+    // IMPORTANTE: Guardar estado en localStorage para persistencia
+    localStorage.setItem('currentMethodologyPlanId', String(currentMethodologyPlanId));
+    localStorage.setItem('currentRoutinePlanStartDate', new Date().toISOString().split('T')[0]);
+
+    // Invalidar el caché del plan activo para forzar una nueva consulta
+    console.log('🗑️ Invalidando caché de plan activo');
+    invalidateCache(CACHE_KEYS.ACTIVE_PLAN);
+
+    try {
+      // Primero, obtener el plan activo actual para navegación correcta
+      const token = localStorage.getItem('token');
+      console.log('🔍 Buscando plan activo después de sesión...');
+      const response = await fetch('/api/routines/active-plan', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      const activeData = await response.json();
+      console.log('📦 Respuesta de active-plan:', activeData);
+
+      // SIEMPRE navegar con el plan actual, independientemente de la respuesta de active-plan
+      // Esto es necesario porque el plan sigue activo después de completar una sesión
+      if (activeData.success && activeData.hasActivePlan) {
+        console.log('✅ Plan activo encontrado, navegando con datos completos:', {
+          hasActivePlan: activeData.hasActivePlan,
+          methodology_plan_id: activeData.methodology_plan_id,
+          planStartDate: activeData.planStartDate
+        });
+
+        // Navegar con el plan completo para que RoutineScreen lo reconozca
+        navigate('/routines', {
+          state: {
+            plan: activeData.routinePlan,
+            methodology_plan_id: activeData.methodology_plan_id || currentMethodologyPlanId,
+            planStartDate: activeData.planStartDate || new Date().toISOString().split('T')[0],
+            activeTab: 'today',
+            showProgress: true,
+            fromSession: true,
+            forceReload: true // Forzar recarga de datos
+          }
+        });
+      } else {
+        // IMPORTANTE: Si no encuentra plan activo pero tenemos methodology_plan_id,
+        // es probable que sea un problema de timing. Navegar de todos modos.
+        console.log('⚠️ No se encontró plan activo en API, pero navegando con datos conocidos');
+        console.log('📋 Usando metodología actual:', currentMethodologyPlanId);
+        console.log('📦 Plan de rutina actual:', currentRoutinePlan ? 'Disponible' : 'No disponible');
+
+        // Si tenemos el plan de rutina actual, usarlo
+        navigate('/routines', {
+          state: {
+            plan: currentRoutinePlan || null,
+            methodology_plan_id: currentMethodologyPlanId,
+            planStartDate: new Date().toISOString().split('T')[0],
+            activeTab: 'today',
+            showProgress: true,
+            fromSession: true,
+            forceReload: true
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Error obteniendo plan activo:', error);
+      // En caso de error, navegar con datos básicos
+      navigate('/routines', {
+        state: {
+          methodology_plan_id: currentMethodologyPlanId,
+          planStartDate: new Date().toISOString().split('T')[0],
+          activeTab: 'today',
+          showProgress: true,
+          fromSession: true
+        }
+      });
+    }
   };
 
   // FUNCIÓN MEJORADA: Confirmar y activar plan de forma unificada
@@ -589,18 +858,7 @@ export default function MethodologiesScreen() {
         </div>
       )}
       
-      {/* Modal de confirmación para selección manual */}
-      {showManualSelectionModal && pendingMethodology && (
-        <MethodologyConfirmationModal
-          methodology={pendingMethodology.name}
-          onConfirm={confirmManualSelection}
-          onCancel={() => {
-            setShowManualSelectionModal(false);
-            setPendingMethodology(null);
-          }}
-          isGenerating={isLoading}
-        />
-      )}
+      {/* Modal de confirmación eliminado - reemplazado por TrainingPlanConfirmationModal */}
       
       <MethodologyDetailsDialog
         open={showDetails}
@@ -693,12 +951,86 @@ export default function MethodologiesScreen() {
             <CalisteniaManualCard
               onGenerate={handleCalisteniaManualGenerate}
               isLoading={isLoading}
+              error={error}
             />
           </DialogContent>
         </Dialog>
       )}
 
-      {/* Auto-navigate to routines - no modal needed */}
+      {/* NUEVO: Modal de Confirmación Unificado */}
+      <TrainingPlanConfirmationModal
+        isOpen={showConfirmationModal}
+        onClose={() => setShowConfirmationModal(false)}
+        onStartTraining={handleStartTraining}
+        plan={generatedRoutinePlan}
+        methodology={selectedMethodology}
+        aiJustification={personalizedMessage}
+        isLoading={isLoading}
+      />
+
+      {/* NUEVO: Modal de Calentamiento */}
+      {showWarmupModal && (
+        <WarmupModal
+          level={generatedRoutinePlan?.level || 'básico'}
+          onComplete={handleWarmupComplete}
+          onSkip={handleSkipWarmup}
+          onClose={handleCloseWarmup}
+        />
+      )}
+
+      {/* NUEVO: Modal de Sesión de Entrenamiento */}
+      {showRoutineSessionModal && currentSession && (
+        <RoutineSessionModal
+          session={currentSession}
+          sessionId={currentSessionId}
+          onClose={() => setShowRoutineSessionModal(false)}
+          onFinishExercise={async (exerciseIndex, seriesCompleted, timeSpent) => {
+            console.log('✅ Ejercicio completado:', { exerciseIndex, seriesCompleted, timeSpent });
+            try {
+              // Actualizar progreso en backend
+              await updateExercise({
+                sessionId: currentSessionId,
+                exerciseOrder: exerciseIndex + 1, // API usa 1-based indexing
+                series_completed: seriesCompleted,
+                status: 'completado',
+                time_spent_seconds: timeSpent
+              });
+            } catch (error) {
+              console.error('❌ Error actualizando ejercicio:', error);
+            }
+          }}
+          onSkipExercise={async (exerciseIndex) => {
+            console.log('⏭️ Ejercicio saltado:', exerciseIndex);
+            try {
+              await updateExercise({
+                sessionId: currentSessionId,
+                exerciseOrder: exerciseIndex + 1,
+                series_completed: 0,
+                status: 'saltado',
+                time_spent_seconds: 0
+              });
+            } catch (error) {
+              console.error('❌ Error actualizando ejercicio saltado:', error);
+            }
+          }}
+          onCancelExercise={async (exerciseIndex) => {
+            console.log('❌ Ejercicio cancelado:', exerciseIndex);
+            try {
+              await updateExercise({
+                sessionId: currentSessionId,
+                exerciseOrder: exerciseIndex + 1,
+                series_completed: 0,
+                status: 'cancelado',
+                time_spent_seconds: 0
+              });
+            } catch (error) {
+              console.error('❌ Error actualizando ejercicio cancelado:', error);
+            }
+          }}
+          onEndSession={handleEndSession}
+          navigateToRoutines={() => navigate('/routines')}
+        />
+      )}
     </div>
   );
 }

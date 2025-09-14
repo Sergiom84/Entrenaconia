@@ -124,7 +124,7 @@ router.get('/plan', authenticateToken, async (req, res) => {
 
     if (type === 'routine') {
       const r = await client.query(
-        'SELECT id, methodology_type, plan_data, generation_mode, frequency_per_week, total_weeks, is_active FROM app.routine_plans WHERE id = $1 AND user_id = $2',
+        'SELECT id, methodology_type, plan_data, generation_mode, frequency_per_week, total_weeks, status FROM app.methodology_plans WHERE id = $1 AND user_id = $2',
         [id, userId]
       );
       if (r.rowCount === 0) return res.status(404).json({ success: false, error: 'Plan no encontrado' });
@@ -164,7 +164,7 @@ router.post('/bootstrap-plan', authenticateToken, async (req, res) => {
     }
 
     const r = await client.query(
-      'SELECT id, methodology_type, plan_data, generation_mode FROM app.routine_plans WHERE id = $1 AND user_id = $2',
+      'SELECT id, methodology_type, plan_data, generation_mode FROM app.methodology_plans WHERE id = $1 AND user_id = $2',
       [routine_plan_id, userId]
     );
     if (r.rowCount === 0) {
@@ -294,7 +294,7 @@ router.post('/sessions/start', authenticateToken, async (req, res) => {
             WHERE methodology_session_id = $1 AND exercise_order = $3
          )`,
         [session.id, userId, order, ej.nombre || `Ejercicio ${i + 1}`,
-         Number(ej.series) || 3, String(ej.repeticiones || ''), Number(ej.descanso_seg) || 60,
+         String(ej.series || '3'), String(ej.repeticiones || '0'), Number(ej.descanso_seg) || 60,
          ej.intensidad || null, ej.tempo || null, ej.notas || null]
       );
     }
@@ -358,6 +358,9 @@ router.put('/sessions/:sessionId/exercise/:exerciseOrder', authenticateToken, as
     }
 
     // Actualizar progreso
+    // Para ejercicios saltados o cancelados, series_completed debe ser 0
+    const finalSeriesCompleted = (status === 'skipped' || status === 'cancelled') ? 0 : (series_completed ?? 0);
+    
     const upd = await client.query(
       `UPDATE app.methodology_exercise_progress
          SET series_completed = $1::int,
@@ -366,7 +369,7 @@ router.put('/sessions/:sessionId/exercise/:exerciseOrder', authenticateToken, as
              completed_at = CASE WHEN $2::varchar(20) = 'completed' THEN NOW() ELSE completed_at END
        WHERE methodology_session_id = $4 AND exercise_order = $5
        RETURNING *`,
-      [series_completed, status, time_spent_seconds ?? null, sessionId, exerciseOrder]
+      [finalSeriesCompleted, status, time_spent_seconds ?? null, sessionId, exerciseOrder]
     );
 
     // Actualizar sesión (contadores y estado)
@@ -1026,63 +1029,49 @@ router.get('/sessions/:sessionId/feedback', authenticateToken, async (req, res) 
 
 // GET /api/routines/active-plan  
 // Obtiene la rutina activa del usuario para restaurar después del login
-// SOLUCIÓN HÍBRIDA: Busca en methodology_plans activos, con fallback a routine_plans
+// Busca plan de metodología activo del usuario
 router.get('/active-plan', authenticateToken, async (req, res) => {
   try {
     const userId = req.user?.userId || req.user?.id;
+    console.log(`🔍 [/active-plan] Buscando plan activo para user ${userId}`);
 
-    // ESTRATEGIA 1: Buscar plan de metodología activo (ideal)
+    // Buscar plan de metodología activo
     const activeMethodologyQuery = await pool.query(
-      `SELECT mp.id as methodology_plan_id, mp.methodology_type, mp.plan_data, 
-              mp.confirmed_at, mp.created_at,
-              rp.id as routine_plan_id, 'methodology' as source
-       FROM app.methodology_plans mp
-       LEFT JOIN app.routine_plans rp ON rp.user_id = mp.user_id 
-         AND rp.methodology_type = mp.methodology_type
-         AND rp.status = 'active'
-       WHERE mp.user_id = $1 AND mp.status = 'active'
-       ORDER BY mp.confirmed_at DESC
+      `SELECT id as methodology_plan_id, methodology_type, plan_data,
+              confirmed_at, created_at, 'methodology' as source, status
+       FROM app.methodology_plans
+       WHERE user_id = $1 AND status = 'active'
+       ORDER BY confirmed_at DESC
        LIMIT 1`,
       [userId]
     );
 
-    // ESTRATEGIA 2: Si no hay methodology activo, buscar routine_plans activos (fallback)
+    console.log(`📊 [/active-plan] Query result: ${activeMethodologyQuery.rowCount} plans found`);
+    if (activeMethodologyQuery.rowCount > 0) {
+      console.log(`📊 [/active-plan] Plan status: ${activeMethodologyQuery.rows[0].status}, ID: ${activeMethodologyQuery.rows[0].methodology_plan_id}`);
+    }
+
     let activePlan = null;
-    let planSource = 'methodology';
-    
+
     if (activeMethodologyQuery.rowCount > 0) {
       activePlan = activeMethodologyQuery.rows[0];
-    } else {
-      console.log(`⚠️ No methodology_plans activos para user ${userId}, buscando en routine_plans...`);
-      
-      const activeRoutineQuery = await pool.query(
-        `SELECT rp.id as routine_plan_id, rp.methodology_type, rp.plan_data, 
-                rp.confirmed_at, rp.created_at, rp.id as methodology_plan_id, 'routine_fallback' as source
-         FROM app.routine_plans rp
-         WHERE rp.user_id = $1 AND rp.status = 'active' AND rp.is_active = true
-         ORDER BY rp.confirmed_at DESC
-         LIMIT 1`,
-        [userId]
-      );
-      
-      if (activeRoutineQuery.rowCount > 0) {
-        activePlan = activeRoutineQuery.rows[0];
-        planSource = 'routine_fallback';
-        console.log(`✅ Encontrado plan activo en routine_plans ID ${activePlan.routine_plan_id}`);
-      }
     }
 
     if (!activePlan) {
-      return res.json({ 
-        success: true, 
+      console.log(`⚠️ [/active-plan] No active plan found for user ${userId}`);
+      return res.json({
+        success: true,
         hasActivePlan: false,
-        message: 'No hay rutina activa' 
+        message: 'No hay rutina activa'
       });
     }
 
-    const planData = typeof activePlan.plan_data === 'string' 
-      ? JSON.parse(activePlan.plan_data) 
+    const planData = typeof activePlan.plan_data === 'string'
+      ? JSON.parse(activePlan.plan_data)
       : activePlan.plan_data;
+
+    // Usar el source que viene del query SQL (línea 1040)
+    const planSource = activePlan.source || 'methodology';
 
     console.log(`✅ Recuperando plan activo desde ${planSource} para user ${userId}`);
 
@@ -1090,8 +1079,8 @@ router.get('/active-plan', authenticateToken, async (req, res) => {
       success: true,
       hasActivePlan: true,
       routinePlan: planData,
-      planSource: { label: planSource === 'routine_fallback' ? 'Recuperado' : 'IA' },
-      planId: activePlan.routine_plan_id || activePlan.methodology_plan_id, // Usar methodology_plan_id si no hay routine_plan_id
+      planSource: { label: 'IA' }, // Siempre es IA cuando viene de methodology_plans
+      planId: activePlan.methodology_plan_id, // Solo tenemos methodology_plan_id
       methodology_plan_id: activePlan.methodology_plan_id,
       planType: activePlan.methodology_type,
       confirmedAt: activePlan.confirmed_at,
@@ -1160,19 +1149,7 @@ router.post('/confirm-and-activate', authenticateToken, async (req, res) => {
       throw new Error('No se pudo activar el plan de metodología');
     }
     
-    // 4. CREAR routine_plan correspondiente
-    console.log('✅ Creando routine_plan...');
-    const routinePlanResult = await client.query(
-      `INSERT INTO app.routine_plans (
-        user_id, methodology_type, plan_data, status, is_active,
-        confirmed_at, created_at, updated_at
-      ) VALUES ($1, $2, $3, 'active', true, NOW(), NOW(), NOW())
-       RETURNING id`,
-      [userId, plan.methodology_type, finalPlanData]
-    );
-    
-    const routinePlanId = routinePlanResult.rows[0].id;
-    console.log(`✅ routine_plan creado con ID ${routinePlanId}`);
+    console.log('✅ Plan confirmado y listo para uso');
     
     // 5. GENERAR sesiones de entrenamiento automáticamente
     console.log('🏋️ Generando sesiones de entrenamiento...');
@@ -1188,7 +1165,6 @@ router.post('/confirm-and-activate', authenticateToken, async (req, res) => {
       message: '¡Tu rutina está lista!',
       data: {
         methodology_plan_id: methodology_plan_id,
-        routine_plan_id: routinePlanId,
         methodology_type: plan.methodology_type,
         plan_data: finalPlanData,
         status: 'active',
@@ -1229,19 +1205,19 @@ router.post('/cancel-routine', authenticateToken, async (req, res) => {
 
     console.log('🚫 Cancelando rutina:', { methodology_plan_id, routine_plan_id, userId });
 
-    // Verificar que el plan pertenece al usuario y está activo
+    // Verificar que el plan pertenece al usuario y puede ser cancelado
     const planCheck = await client.query(
-      `SELECT id, status, methodology_type 
-       FROM app.methodology_plans 
-       WHERE id = $1 AND user_id = $2 AND status = 'active'`,
+      `SELECT id, status, methodology_type
+       FROM app.methodology_plans
+       WHERE id = $1 AND user_id = $2 AND status IN ('active', 'draft')`,
       [methodology_plan_id, userId]
     );
 
     if (planCheck.rowCount === 0) {
       await client.query('ROLLBACK');
-      return res.status(404).json({ 
-        success: false, 
-        error: 'Plan no encontrado o ya está cancelado' 
+      return res.status(404).json({
+        success: false,
+        error: 'Plan no encontrado o ya está cancelado'
       });
     }
 
@@ -1254,21 +1230,7 @@ router.post('/cancel-routine', authenticateToken, async (req, res) => {
       [methodology_plan_id, userId]
     );
 
-    // MEJORA: Buscar automáticamente routine_plans asociados para cancelar
-    // Esto previene inconsistencias si el frontend no envía routine_plan_id
-    const routineUpdateQuery = `
-      UPDATE app.routine_plans 
-      SET status = 'cancelled', updated_at = NOW() 
-      WHERE user_id = $1 AND status = 'active'
-        AND (id = $2 OR methodology_type = $3)
-      RETURNING id`;
-    
-    const routineUpdate = await client.query(
-      routineUpdateQuery,
-      [userId, routine_plan_id || -1, methodologyUpdate.rows[0]?.methodology_type]
-    );
-    
-    console.log(`✅ Cancelados: methodology_plan ${methodology_plan_id}, routine_plans [${routineUpdate.rows.map(r => r.id).join(', ')}]`);
+    console.log(`✅ Plan de metodología ${methodology_plan_id} cancelado exitosamente`);
 
     // También cancelar las sesiones activas/pendientes
     await client.query(
@@ -1407,325 +1369,77 @@ router.get('/historical-data', authenticateToken, async (req, res) => {
   }
 });
 
-// Endpoint para obtener ejercicios pendientes de días anteriores
-router.get('/pending-exercises', authenticateToken, async (req, res) => {
+
+
+// GET /api/routines/sessions/:sessionId/details
+// Obtener datos completos de una sesión específica
+router.get('/sessions/:sessionId/details', authenticateToken, async (req, res) => {
   try {
     const userId = req.user?.userId || req.user?.id;
-    const { methodology_plan_id } = req.query;
+    const { sessionId } = req.params;
 
-    if (!methodology_plan_id) {
-      return res.status(400).json({ 
+    // Obtener datos de la sesión
+    const sessionQuery = await pool.query(
+      `SELECT 
+        s.id, s.methodology_plan_id, s.week_number, s.day_name, s.status,
+        s.started_at, s.completed_at, s.user_id,
+        mp.methodology_type, mp.plan_data
+       FROM app.methodology_exercise_sessions s
+       JOIN app.methodology_plans mp ON s.methodology_plan_id = mp.id
+       WHERE s.id = $1 AND s.user_id = $2`,
+      [sessionId, userId]
+    );
+
+    if (sessionQuery.rowCount === 0) {
+      return res.status(404).json({ 
         success: false, 
-        error: 'methodology_plan_id es requerido' 
+        error: 'Sesión no encontrada' 
       });
     }
 
-    console.log('🔍 Buscando ejercicios pendientes para:', { userId, methodology_plan_id });
+    const session = sessionQuery.rows[0];
 
-    // Buscar sesiones con ejercicios pendientes o saltados de los últimos 7 días
-    const pendingQuery = await pool.query(`
-      SELECT 
-        mes.id as session_id,
-        mes.day_name,
-        mes.week_number,
-        mes.started_at,
-        COUNT(mep.id) as total_exercises,
-        SUM(CASE WHEN mep.status = 'pending' THEN 1 ELSE 0 END) as pending_exercises,
-        SUM(CASE WHEN mep.status = 'skipped' THEN 1 ELSE 0 END) as skipped_exercises,
-        array_agg(
-          json_build_object(
-            'exercise_order', mep.exercise_order,
-            'exercise_name', mep.exercise_name,
-            'status', mep.status,
-            'series_total', mep.series_total,
-            'repeticiones', mep.repeticiones,
-            'descanso_seg', mep.descanso_seg,
-            'intensidad', mep.intensidad,
-            'tempo', mep.tempo,
-            'notas', mep.notas
-          ) ORDER BY mep.exercise_order
-        ) as exercises
-      FROM app.methodology_exercise_sessions mes
-      LEFT JOIN app.methodology_exercise_progress mep ON mes.id = mep.methodology_session_id
-      WHERE mes.user_id = $1 
-        AND mes.methodology_plan_id = $2
-        AND mes.started_at IS NOT NULL
-        AND mes.started_at >= NOW() - INTERVAL '7 days'
-        AND mes.started_at < CURRENT_DATE
-      GROUP BY mes.id, mes.day_name, mes.week_number, mes.started_at
-      HAVING SUM(CASE WHEN mep.status IN ('pending', 'skipped') THEN 1 ELSE 0 END) > 0
-      ORDER BY mes.started_at DESC
-      LIMIT 1
-    `, [userId, methodology_plan_id]);
+    // Obtener progreso de ejercicios
+    const exercisesQuery = await pool.query(
+      `SELECT 
+        exercise_order, exercise_name, series_total, series_completed, 
+        status, time_spent_seconds, started_at, completed_at
+       FROM app.methodology_exercise_progress 
+       WHERE methodology_session_id = $1 
+       ORDER BY exercise_order ASC`,
+      [sessionId]
+    );
 
-    if (pendingQuery.rowCount === 0) {
-      console.log('✅ No se encontraron ejercicios pendientes');
-      return res.json({ 
-        success: true, 
-        hasPendingExercises: false 
-      });
-    }
+    const exercises = exercisesQuery.rows;
 
-    const pendingData = pendingQuery.rows[0];
-    
-    // Calcular total de ejercicios pendientes
-    const totalPendingCount = parseInt(pendingData.pending_exercises) + parseInt(pendingData.skipped_exercises);
+    // Calcular estadísticas de resumen
+    const totalExercises = exercises.length;
+    const completedExercises = exercises.filter(ex => ex.status === 'completed').length;
+    const skippedExercises = exercises.filter(ex => ex.status === 'skipped').length;
+    const cancelledExercises = exercises.filter(ex => ex.status === 'cancelled').length;
+    const totalTimeSpent = exercises.reduce((sum, ex) => sum + (ex.time_spent_seconds || 0), 0);
 
-    console.log('📋 Ejercicios pendientes encontrados:', {
-      sessionId: pendingData.session_id,
-      dayName: pendingData.day_name,
-      totalPending: totalPendingCount,
-      pending: pendingData.pending_exercises,
-      skipped: pendingData.skipped_exercises
-    });
-
-    const responseData = {
-      success: true,
-      hasPendingExercises: true,
-      sessionId: pendingData.session_id,
-      pendingDay: pendingData.day_name,
-      weekNumber: pendingData.week_number,
-      totalPending: totalPendingCount,
-      exercises: pendingData.exercises || []
+    const summary = {
+      totalExercises,
+      completedExercises,
+      skippedExercises,
+      cancelledExercises,
+      completionRate: totalExercises > 0 ? Math.round((completedExercises / totalExercises) * 100) : 0,
+      totalTimeSpent,
+      averageTimePerExercise: completedExercises > 0 ? Math.round(totalTimeSpent / completedExercises) : 0
     };
 
-    console.log('✅ Datos de ejercicios pendientes preparados');
-    res.json(responseData);
+    console.log(`✅ Detalles de sesión ${sessionId} obtenidos correctamente`);
+
+    res.json({ 
+      success: true, 
+      session,
+      exercises,
+      summary
+    });
 
   } catch (error) {
-    console.error('❌ Error obteniendo ejercicios pendientes:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Error interno del servidor' 
-    });
-  }
-});
-
-// Endpoint para obtener ejercicios pendientes específicamente del día anterior
-router.get('/sessions/yesterday-pending', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user?.userId || req.user?.id;
-    const { methodology_plan_id } = req.query;
-
-    if (!methodology_plan_id) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'methodology_plan_id es requerido' 
-      });
-    }
-
-    console.log('🔍 Buscando ejercicios pendientes del día anterior:', { userId, methodology_plan_id });
-
-    // Obtener el día de ayer
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayName = yesterday.toLocaleDateString('es-ES', { weekday: 'long' }).toLowerCase();
-    
-    console.log('📅 Día de ayer:', yesterdayName);
-
-    // ENFOQUE HÍBRIDO: Buscar tanto sesiones iniciadas como no iniciadas de ayer
-    
-    // 1. PRIMERA BÚSQUEDA: Sesiones ya existentes del día anterior con ejercicios pendientes
-    const yesterdayStart = new Date(yesterday.setHours(0, 0, 0, 0));
-    const yesterdayEnd = new Date(yesterday.setHours(23, 59, 59, 999));
-    
-    const existingSessionsQuery = await pool.query(`
-      SELECT 
-        mes.id as session_id,
-        mes.day_name,
-        mes.week_number,
-        mes.started_at,
-        mes.created_at,
-        COUNT(mep.id) as total_exercises,
-        SUM(CASE WHEN mep.status = 'pending' THEN 1 ELSE 0 END) as pending_exercises,
-        SUM(CASE WHEN mep.status = 'skipped' THEN 1 ELSE 0 END) as skipped_exercises,
-        array_agg(
-          json_build_object(
-            'exercise_order', mep.exercise_order,
-            'exercise_name', mep.exercise_name,
-            'status', mep.status,
-            'series_total', mep.series_total,
-            'repeticiones', mep.repeticiones,
-            'descanso_seg', mep.descanso_seg,
-            'intensidad', mep.intensidad,
-            'tempo', mep.tempo,
-            'notas', mep.notas
-          ) ORDER BY mep.exercise_order
-        ) FILTER (WHERE mep.status IN ('pending', 'skipped')) as pending_exercises_list
-      FROM app.methodology_exercise_sessions mes
-      LEFT JOIN app.methodology_exercise_progress mep ON mes.id = mep.methodology_session_id
-      WHERE mes.user_id = $1 
-        AND mes.methodology_plan_id = $2
-        AND (
-          (mes.started_at >= $3 AND mes.started_at <= $4) OR
-          (mes.started_at IS NULL AND mes.created_at >= $3 AND mes.created_at <= $4)
-        )
-      GROUP BY mes.id, mes.day_name, mes.week_number, mes.started_at, mes.created_at
-      HAVING SUM(CASE WHEN mep.status IN ('pending', 'skipped') THEN 1 ELSE 0 END) > 0
-      ORDER BY COALESCE(mes.started_at, mes.created_at) DESC
-      LIMIT 1
-    `, [userId, methodology_plan_id, yesterdayStart, yesterdayEnd]);
-
-    // Si encontramos sesión existente con ejercicios pendientes, la retornamos
-    if (existingSessionsQuery.rowCount > 0) {
-      const sessionData = existingSessionsQuery.rows[0];
-      const totalPendingCount = parseInt(sessionData.pending_exercises) + parseInt(sessionData.skipped_exercises);
-
-      console.log('📋 Sesión existente del día anterior con ejercicios pendientes:', {
-        sessionId: sessionData.session_id,
-        dayName: sessionData.day_name,
-        totalPending: totalPendingCount
-      });
-
-      const responseData = {
-        success: true,
-        hasYesterdayPending: true,
-        sessionId: sessionData.session_id,
-        dayName: sessionData.day_name,
-        weekNumber: sessionData.week_number,
-        totalPending: totalPendingCount,
-        pendingCount: parseInt(sessionData.pending_exercises),
-        skippedCount: parseInt(sessionData.skipped_exercises),
-        exercises: sessionData.pending_exercises_list || [],
-        startedAt: sessionData.started_at
-      };
-
-      console.log('✅ Retornando datos de sesión existente');
-      return res.json(responseData);
-    }
-
-    console.log('🔍 No se encontraron sesiones existentes, verificando plan programado para ayer');
-
-    // 2. SEGUNDA BÚSQUEDA: Si no hay sesiones existentes, buscar en el plan qué estaba programado para ayer
-    const methodologyPlanQuery = await pool.query(`
-      SELECT plan_data, confirmed_at
-      FROM app.methodology_plans 
-      WHERE id = $1 AND user_id = $2 AND status = 'active'
-    `, [methodology_plan_id, userId]);
-
-    if (methodologyPlanQuery.rowCount === 0) {
-      console.log('❌ Plan de metodología no encontrado o no activo');
-      return res.json({ 
-        success: true, 
-        hasYesterdayPending: false 
-      });
-    }
-
-    const planData = methodologyPlanQuery.rows[0].plan_data;
-    const planStartDate = new Date(methodologyPlanQuery.rows[0].confirmed_at);
-    
-    // Calcular qué semana era ayer basado en la fecha de inicio del plan
-    const daysSinceStart = Math.floor((yesterday - planStartDate) / (1000 * 60 * 60 * 24));
-    const weekNumber = Math.floor(daysSinceStart / 7) + 1;
-    
-    console.log('📊 Calculando semana:', { daysSinceStart, weekNumber, planStartDate });
-
-    // Buscar en el plan qué ejercicios estaban programados para ayer
-    let yesterdaySession = null;
-    if (planData?.semanas && planData.semanas.length > 0) {
-      for (const semana of planData.semanas) {
-        if (semana.sesiones) {
-          const session = semana.sesiones.find(s => {
-            const sessionDay = s.dia?.toLowerCase();
-            return sessionDay === yesterdayName ||
-                   sessionDay === yesterdayName.replace('é', 'e') ||
-                   (sessionDay === 'mie' && yesterdayName === 'miércoles') ||
-                   (sessionDay === 'sab' && yesterdayName === 'sábado');
-          });
-          if (session) {
-            yesterdaySession = { ...session, weekNumber: semana.semana || weekNumber };
-            break;
-          }
-        }
-      }
-    }
-
-    if (!yesterdaySession || !yesterdaySession.ejercicios) {
-      console.log('✅ No había ejercicios programados para ayer');
-      return res.json({ 
-        success: true, 
-        hasYesterdayPending: false 
-      });
-    }
-
-    console.log('📋 Ejercicios programados para ayer encontrados (nunca iniciados):', {
-      dia: yesterdaySession.dia,
-      ejercicios: yesterdaySession.ejercicios.length
-    });
-
-    // Como no había sesión existente, todos los ejercicios están pendientes
-    const exercisesWithStatus = yesterdaySession.ejercicios.map((ejercicio, index) => ({
-      exercise_order: index,
-      exercise_name: ejercicio.nombre,
-      status: 'pending',
-      series_total: ejercicio.series,
-      repeticiones: ejercicio.repeticiones,
-      descanso_seg: ejercicio.descanso_seg || 120,
-      intensidad: ejercicio.intensidad,
-      tempo: ejercicio.tempo,
-      notas: ejercicio.notas
-    }));
-
-    // Todos los ejercicios están pendientes porque la sesión nunca se inició
-    const pendingExercises = exercisesWithStatus; // Todos están en 'pending'
-
-    console.log('📋 Ejercicios pendientes del día anterior encontrados (sin iniciar):', {
-      dayName: yesterdaySession.dia,
-      totalPending: pendingExercises.length
-    });
-
-    // Crear sesión temporal para poder reanudar los ejercicios del día anterior
-    console.log('🔄 Creando sesión temporal para ejercicios pendientes del día anterior');
-    const createSessionQuery = await pool.query(`
-      INSERT INTO app.methodology_exercise_sessions 
-      (user_id, methodology_plan_id, week_number, day_name, created_at)
-      VALUES ($1, $2, $3, $4, NOW())
-      RETURNING id
-    `, [userId, methodology_plan_id, weekNumber, yesterdaySession.dia]);
-    
-    let sessionId = null;
-    if (createSessionQuery.rowCount > 0) {
-      sessionId = createSessionQuery.rows[0].id;
-      
-      // Crear los ejercicios en estado pending
-      for (let i = 0; i < yesterdaySession.ejercicios.length; i++) {
-        const ejercicio = yesterdaySession.ejercicios[i];
-        await pool.query(`
-          INSERT INTO app.methodology_exercise_progress 
-          (methodology_session_id, exercise_name, exercise_order, series_total, repeticiones, descanso_seg, intensidad, tempo, notas, status)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending')
-        `, [
-          sessionId, 
-          ejercicio.nombre, 
-          i, 
-          ejercicio.series, 
-          ejercicio.repeticiones, 
-          ejercicio.descanso_seg || 120,
-          ejercicio.intensidad,
-          ejercicio.tempo,
-          ejercicio.notas
-        ]);
-      }
-    }
-
-    const responseData = {
-      success: true,
-      hasYesterdayPending: true,
-      sessionId: sessionId,
-      dayName: yesterdaySession.dia,
-      weekNumber: weekNumber,
-      totalPending: pendingExercises.length,
-      pendingCount: pendingExercises.length,
-      skippedCount: 0,
-      exercises: pendingExercises,
-      startedAt: null
-    };
-
-    console.log('✅ Datos de ejercicios pendientes del día anterior preparados (nunca iniciados)');
-    res.json(responseData);
-
-  } catch (error) {
-    console.error('❌ Error obteniendo ejercicios pendientes del día anterior:', error);
+    console.error('❌ Error obteniendo detalles de sesión:', error);
     res.status(500).json({ 
       success: false, 
       error: 'Error interno del servidor' 
