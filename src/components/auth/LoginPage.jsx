@@ -3,117 +3,47 @@ import { motion } from 'framer-motion';
 import { Eye, EyeOff, User, Lock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import ErrorPopup from '../ui/ErrorPopup';
-import { useAuth } from '../../contexts/AuthContext';
+import { useFormValidation } from '../../hooks/useFormValidation';
+import { useAuth } from '../../hooks/useAuth';
 
 const LoginPage = () => {
   const navigate = useNavigate();
-  const { login } = useAuth();
-  const [formData, setFormData] = useState({
+  const { login, isLoading } = useAuth();
+
+  const {
+    formData,
+    errors,
+    handleInputChange,
+    validateForm,
+    setErrors
+  } = useFormValidation({
     email: '',
     password: ''
   });
+
   const [showPassword, setShowPassword] = useState(false);
-  const [errors, setErrors] = useState({});
   const [errorPopup, setErrorPopup] = useState({ show: false, message: '', title: '' });
-  const [isLoading, setIsLoading] = useState(false);
-
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
-    // Limpiar error cuando el usuario empiece a escribir
-    if (errors[name]) {
-      setErrors(prev => ({
-        ...prev,
-        [name]: ''
-      }));
-    }
-  };
-
-  const validateForm = () => {
-    const newErrors = {};
-    
-    if (!formData.email.trim()) {
-      newErrors.email = 'El email es requerido';
-    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      newErrors.email = 'El email no es válido';
-    }
-    
-    if (!formData.password.trim()) {
-      newErrors.password = 'La contraseña es requerida';
-    } else if (formData.password.length < 6) {
-      newErrors.password = 'La contraseña debe tener al menos 6 caracteres';
-    }
-    
-    return newErrors;
-  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    const newErrors = validateForm();
-    if (Object.keys(newErrors).length > 0) {
-      setErrors(newErrors);
+    const validationErrors = validateForm();
+    if (Object.keys(validationErrors).length > 0) {
+      setErrors(validationErrors);
       return;
     }
 
-    setIsLoading(true);
+    const result = await login({
+      email: formData.email,
+      password: formData.password
+    });
 
-    try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email: formData.email,
-          password: formData.password
-        })
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        setErrorPopup({
-          show: true,
-          title: 'Error de autenticación',
-          message: data.error || 'El email o la contraseña son incorrectos. Por favor, verifica tus credenciales e intenta nuevamente.'
-        });
-        return;
-      }
-
-      // Usar el hook de autenticación para hacer login
-      login(data.user, data.token);
-
-      // Redirigir al dashboard o página principal
-      navigate('/');
-
-    } catch (error) {
-      console.error('Error en login:', error);
-
-      // Si el backend no está disponible, usar credenciales de prueba
-      if (formData.email === 'test@test.com' && formData.password === 'password') {
-        // Simular usuario de prueba
-        const testUser = {
-          id: 1,
-          nombre: 'Usuario',
-          apellido: 'Prueba',
-          email: 'test@test.com'
-        };
-        login(testUser, 'test-token');
-        navigate('/');
-        return;
-      }
-
+    if (!result.success) {
       setErrorPopup({
         show: true,
-        title: 'Error de conexión',
-        message: 'No se pudo conectar con el servidor. Verifica que el backend esté ejecutándose.'
+        title: result.error.includes('servidor') ? 'Error de conexión' : 'Error de autenticación',
+        message: result.error
       });
-    } finally {
-      setIsLoading(false);
     }
   };
 
