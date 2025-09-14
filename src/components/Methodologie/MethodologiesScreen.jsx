@@ -11,7 +11,7 @@ import { Settings, Brain, User as UserIcon, CheckCircle, AlertCircle, Zap } from
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog.jsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.jsx';
 import { METHODOLOGIES, sanitizeProfile } from './methodologiesData.js';
-import MethodologyCard from './shared/MethodologyCard.jsx';
+import MethodologyCard from './MethodologyCard.jsx';
 import MethodologyDetailsDialog from './shared/MethodologyDetailsDialog.jsx';
 import TrainingPlanConfirmationModal from './TrainingPlanConfirmationModal.jsx';
 import RoutineSessionModal from '../routines/RoutineSessionModal.jsx';
