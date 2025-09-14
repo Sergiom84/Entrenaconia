@@ -1,4 +1,13 @@
-import React, { useState, useEffect, useMemo } from 'react';
+/**
+ * MethodologyVersionSelectionModal - Arquitectura Modular Profesional v3.0
+ * Advanced modal for methodology version selection with intelligent recommendations
+ * Refactored with centralized configuration, useReducer pattern, and modular components
+ *
+ * @author Claude Code - Arquitectura Modular Profesional
+ * @version 3.0.0 - Centralized Config & Component Composition
+ */
+
+import React, { useState, useEffect, useMemo, useReducer } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Card } from '@/components/ui/card.jsx';
@@ -8,6 +17,161 @@ import { Alert, AlertDescription } from '@/components/ui/alert.jsx';
 import { Input } from '@/components/ui/input.jsx';
 import { Lock, Unlock, AlertTriangle, CheckCircle, Brain, Target, Shield, Zap, Calendar } from 'lucide-react';
 
+// Configuraciones centralizadas
+const VERSION_SELECTION_CONFIG = {
+  THEME: {
+    PRIMARY: 'yellow-400',
+    SUCCESS: 'green-400',
+    WARNING: 'amber-400',
+    DANGER: 'red-400',
+    INFO: 'blue-400',
+    BACKGROUND: {
+      MODAL: 'gray-900',
+      CARD: 'gray-800',
+      CARD_HOVER: 'gray-700/30',
+      WARNING: 'red-900/30',
+      INFO: 'gray-700/50'
+    },
+    BORDER: {
+      DEFAULT: 'gray-700',
+      PRIMARY: 'yellow-500/50',
+      SUCCESS: 'green-500/50',
+      WARNING: 'amber-700',
+      DANGER: 'red-700',
+      DIVIDER: 'gray-600'
+    },
+    TEXT: {
+      PRIMARY: 'white',
+      SECONDARY: 'gray-300',
+      MUTED: 'gray-400',
+      SUCCESS: 'green-400',
+      WARNING: 'amber-200',
+      DANGER: 'red-400',
+      INFO: 'blue-300'
+    }
+  },
+  LIMITS: {
+    MIN_WEEKS: 1,
+    MAX_WEEKS: 7,
+    DEFAULT_WEEKS: 4
+  },
+  USER_LEVELS: {
+    BEGINNER: 'principiante',
+    INTERMEDIATE: 'intermedio',
+    ADVANCED: 'avanzado'
+  },
+  VERSIONS: {
+    ADAPTED: 'adapted',
+    STRICT: 'strict'
+  },
+  MODES: {
+    AUTOMATIC: 'automatic',
+    MANUAL: 'manual'
+  }
+};
+
+// Utilidades de validación y helpers
+const VersionSelectionUtils = {
+  validateUserProfile(profile) {
+    if (!profile || typeof profile !== 'object') {
+      console.warn('[MethodologyVersionSelectionModal] Invalid user profile provided');
+      return false;
+    }
+    return true;
+  },
+
+  normalizeProfile(userProfile) {
+    if (!userProfile) return {};
+    return userProfile.user || userProfile;
+  },
+
+  extractTrainingYears(profile) {
+    const normalized = this.normalizeProfile(profile);
+
+    return normalized.años_entrenando ||
+           normalized.anos_entrenando ||
+           normalized.years_training ||
+           normalized.experiencia_anos ||
+           profile.años_entrenando ||
+           profile.anos_entrenando ||
+           0;
+  },
+
+  extractCurrentLevel(profile) {
+    const normalized = this.normalizeProfile(profile);
+
+    return normalized.nivel_entrenamiento ||
+           normalized.nivel_actual_entreno ||
+           normalized.nivel_ent ||
+           normalized.training_userLevel ||
+           profile.nivel_entrenamiento ||
+           profile.nivel_actual_entreno ||
+           VERSION_SELECTION_CONFIG.USER_LEVELS.BEGINNER;
+  },
+
+  calculateUserLevel(userProfile) {
+    if (!userProfile) return VERSION_SELECTION_CONFIG.USER_LEVELS.BEGINNER;
+
+    const yearsTraining = this.extractTrainingYears(userProfile);
+    const currentLevel = this.extractCurrentLevel(userProfile);
+
+    if (yearsTraining >= 5 || currentLevel === 'avanzado' || currentLevel === 'competicion') {
+      return VERSION_SELECTION_CONFIG.USER_LEVELS.ADVANCED;
+    }
+    if (yearsTraining >= 2 || currentLevel === 'intermedio') {
+      return VERSION_SELECTION_CONFIG.USER_LEVELS.INTERMEDIATE;
+    }
+    return VERSION_SELECTION_CONFIG.USER_LEVELS.BEGINNER;
+  },
+
+  getAutoRecommendation(userLevel) {
+    return userLevel === VERSION_SELECTION_CONFIG.USER_LEVELS.BEGINNER
+      ? VERSION_SELECTION_CONFIG.VERSIONS.ADAPTED
+      : VERSION_SELECTION_CONFIG.VERSIONS.STRICT;
+  },
+
+  isInappropriateSelection(userLevel, selectedVersion) {
+    return userLevel === VERSION_SELECTION_CONFIG.USER_LEVELS.BEGINNER &&
+           selectedVersion === VERSION_SELECTION_CONFIG.VERSIONS.STRICT;
+  },
+
+  sanitizeWeeksValue(value) {
+    const { MIN_WEEKS, MAX_WEEKS, DEFAULT_WEEKS } = VERSION_SELECTION_CONFIG.LIMITS;
+    const parsed = parseInt(value);
+    if (isNaN(parsed)) return DEFAULT_WEEKS;
+    return Math.max(MIN_WEEKS, Math.min(MAX_WEEKS, parsed));
+  }
+};
+
+// Reducer para manejar estado complejo
+const versionSelectionReducer = (state, action) => {
+  switch (action.type) {
+    case 'SET_MODE':
+      return { ...state, selectionMode: action.payload };
+    case 'SET_VERSION':
+      return { ...state, selectedVersion: action.payload };
+    case 'SET_WEEKS':
+      return { ...state, customWeeks: VersionSelectionUtils.sanitizeWeeksValue(action.payload) };
+    case 'UPDATE_WARNINGS':
+      return {
+        ...state,
+        showWarning: action.payload.showWarning,
+        requiresConfirmation: action.payload.requiresConfirmation
+      };
+    case 'CLEAR_CONFIRMATION':
+      return { ...state, requiresConfirmation: false };
+    case 'RESET_TO_AUTO':
+      return {
+        ...state,
+        selectedVersion: action.payload.recommendation,
+        showWarning: false,
+        requiresConfirmation: false
+      };
+    default:
+      return state;
+  }
+};
+
 export default function MethodologyVersionSelectionModal({
   isOpen,
   onClose,
@@ -16,358 +180,418 @@ export default function MethodologyVersionSelectionModal({
   isAutomatic = false,
   selectedMethodology = null
 }) {
-  const [selectionMode, setSelectionMode] = useState('automatic'); // 'automatic' or 'manual'
-  const [selectedVersion, setSelectedVersion] = useState('adapted'); // 'adapted' or 'strict'
-  const [showWarning, setShowWarning] = useState(false);
-  const [requiresConfirmation, setRequiresConfirmation] = useState(false);
-  const [customWeeks, setCustomWeeks] = useState(4); // Default 4 weeks
+  // Estado usando useReducer para mejor manejo de estados complejos
+  const [state, dispatch] = useReducer(versionSelectionReducer, {
+    selectionMode: VERSION_SELECTION_CONFIG.MODES.AUTOMATIC,
+    selectedVersion: VERSION_SELECTION_CONFIG.VERSIONS.ADAPTED,
+    showWarning: false,
+    requiresConfirmation: false,
+    customWeeks: VERSION_SELECTION_CONFIG.LIMITS.DEFAULT_WEEKS
+  });
 
-  // Determinar el nivel del usuario basado en datos reales de BD - MEMOIZADO para evitar bucles
+  // Validar props de entrada
+  if (!VersionSelectionUtils.validateUserProfile(userProfile)) {
+    console.warn('[MethodologyVersionSelectionModal] Invalid user profile provided');
+  }
+
+  // Calcular nivel de usuario usando utilidad centralizada
   const userLevel = useMemo(() => {
-    if (!userProfile) return 'principiante';
-    
-    // Manejar tanto estructura plana como estructura anidada
-    const profile = userProfile.user || userProfile;
-    
-    // Leer de diferentes campos posibles en la BD
-    const yearsTraining = profile.años_entrenando || 
-                         profile.anos_entrenando || 
-                         profile.years_training || 
-                         profile.experiencia_anos ||
-                         userProfile.años_entrenando || 
-                         userProfile.anos_entrenando || 
-                         0;
-    
-    const currentLevel = profile.nivel_entrenamiento || 
-                        profile.nivel_actual_entreno || 
-                        profile.nivel_ent ||
-                        profile.training_userLevel ||
-                        userProfile.nivel_entrenamiento || 
-                        userProfile.nivel_actual_entreno ||
-                        'principiante';
-    
-    // Lógica más precisa basada en años y nivel declarado
-    if (yearsTraining >= 5 || currentLevel === 'avanzado' || currentLevel === 'competicion') return 'avanzado';
-    if (yearsTraining >= 2 || currentLevel === 'intermedio') return 'intermedio';
-    return 'principiante';
+    return VersionSelectionUtils.calculateUserLevel(userProfile);
   }, [userProfile]);
 
-  // Obtener años de entrenamiento reales
-  const getTrainingYears = () => {
-    if (!userProfile) return 0;
-    
-    // Manejar tanto estructura plana como estructura anidada
-    const profile = userProfile.user || userProfile;
-    
-    return profile.años_entrenando || 
-           profile.anos_entrenando || 
-           profile.years_training || 
-           profile.experiencia_anos ||
-           userProfile.años_entrenando || 
-           userProfile.anos_entrenando || 
-           0;
-  };
+  // Obtener años de entrenamiento usando utilidad centralizada
+  const trainingYears = useMemo(() => {
+    return VersionSelectionUtils.extractTrainingYears(userProfile);
+  }, [userProfile]);
 
-  // Obtener recomendación automática basada en el nivel - MEMOIZADO
+  // Obtener nivel declarado usando utilidad centralizada
+  const declaredLevel = useMemo(() => {
+    return VersionSelectionUtils.extractCurrentLevel(userProfile);
+  }, [userProfile]);
+
+  // Obtener recomendación automática usando utilidad centralizada
   const autoRecommendation = useMemo(() => {
-    return userLevel === 'principiante' ? 'adapted' : 'strict';
+    return VersionSelectionUtils.getAutoRecommendation(userLevel);
   }, [userLevel]);
 
+  // Effect para manejar cambios de modo y versión
   useEffect(() => {
-    
-    // Si está en modo automático, usar la recomendación
-    if (selectionMode === 'automatic') {
-      setSelectedVersion(autoRecommendation);
-      setShowWarning(false);
-      setRequiresConfirmation(false);
+    const { selectionMode, selectedVersion } = state;
+
+    if (selectionMode === VERSION_SELECTION_CONFIG.MODES.AUTOMATIC) {
+      dispatch({
+        type: 'RESET_TO_AUTO',
+        payload: { recommendation: autoRecommendation }
+      });
     } else {
-      // En modo manual, verificar si la selección es apropiada
-      const isInappropriate = (userLevel === 'principiante' && selectedVersion === 'strict');
-      setShowWarning(isInappropriate);
-      setRequiresConfirmation(isInappropriate);
+      const isInappropriate = VersionSelectionUtils.isInappropriateSelection(userLevel, selectedVersion);
+      dispatch({
+        type: 'UPDATE_WARNINGS',
+        payload: {
+          showWarning: isInappropriate,
+          requiresConfirmation: isInappropriate
+        }
+      });
     }
-  }, [selectionMode, selectedVersion, userProfile]);
+  }, [state.selectionMode, state.selectedVersion, userLevel, autoRecommendation]);
+
+  // Handlers para acciones del usuario
+  const handleModeChange = (mode) => {
+    dispatch({ type: 'SET_MODE', payload: mode });
+  };
+
+  const handleVersionChange = (version) => {
+    dispatch({ type: 'SET_VERSION', payload: version });
+  };
+
+  const handleWeeksChange = (weeks) => {
+    dispatch({ type: 'SET_WEEKS', payload: weeks });
+  };
+
+  const handleConfirmRisk = () => {
+    dispatch({ type: 'CLEAR_CONFIRMATION' });
+  };
 
   const handleConfirm = () => {
     onConfirm({
-      selectionMode,
-      version: selectedVersion,
+      selectionMode: state.selectionMode,
+      version: state.selectedVersion,
       userLevel: userLevel,
-      isRecommended: selectedVersion === autoRecommendation,
-      customWeeks: customWeeks
+      isRecommended: state.selectedVersion === autoRecommendation,
+      customWeeks: state.customWeeks
     });
   };
 
-  // userLevel y autoRecommendation ya están definidos con useMemo arriba
+  // Componentes modulares internos
+  const UserProfileSection = () => (
+    <div className={`bg-${VERSION_SELECTION_CONFIG.THEME.BACKGROUND.CARD} p-4 rounded-lg`}>
+      <div className="flex items-center gap-2 mb-2">
+        <Brain className={`h-5 w-5 text-${VERSION_SELECTION_CONFIG.THEME.INFO}`} />
+        <span className={`text-${VERSION_SELECTION_CONFIG.THEME.TEXT.PRIMARY} font-medium`}>
+          Tu Perfil de Entrenamiento
+        </span>
+      </div>
+      <div className={`text-sm text-${VERSION_SELECTION_CONFIG.THEME.TEXT.SECONDARY} space-y-1`}>
+        <p>
+          <span className={`text-${VERSION_SELECTION_CONFIG.THEME.TEXT.MUTED}`}>Nivel:</span>{' '}
+          <span className={`text-${VERSION_SELECTION_CONFIG.THEME.TEXT.PRIMARY} capitalize`}>
+            {userLevel}
+          </span>
+        </p>
+        <p>
+          <span className={`text-${VERSION_SELECTION_CONFIG.THEME.TEXT.MUTED}`}>Años entrenando:</span>{' '}
+          <span className={`text-${VERSION_SELECTION_CONFIG.THEME.TEXT.PRIMARY}`}>
+            {trainingYears} años
+          </span>
+        </p>
+        <p>
+          <span className={`text-${VERSION_SELECTION_CONFIG.THEME.TEXT.MUTED}`}>Nivel declarado:</span>{' '}
+          <span className={`text-${VERSION_SELECTION_CONFIG.THEME.INFO} capitalize`}>
+            {declaredLevel}
+          </span>
+        </p>
+        {selectedMethodology && (
+          <p>
+            <span className={`text-${VERSION_SELECTION_CONFIG.THEME.TEXT.MUTED}`}>Metodología:</span>{' '}
+            <span className={`text-${VERSION_SELECTION_CONFIG.THEME.PRIMARY}`}>
+              {selectedMethodology}
+            </span>
+          </p>
+        )}
+        <div className={`mt-3 pt-2 border-t border-${VERSION_SELECTION_CONFIG.THEME.BORDER.DEFAULT}`}>
+          <p className={`text-${VERSION_SELECTION_CONFIG.THEME.TEXT.INFO}`}>
+            Basándome en tu perfil ({userLevel}, {trainingYears} años de experiencia),
+            recomiendo la <span className={`text-${VERSION_SELECTION_CONFIG.THEME.TEXT.PRIMARY} font-medium`}>
+              versión {autoRecommendation === VERSION_SELECTION_CONFIG.VERSIONS.ADAPTED ? 'adaptada' : 'estricta'}
+            </span> durante <span className="text-purple-400 font-medium">{state.customWeeks} semanas</span>.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+
+  const ModeSelectionSection = () => (
+    <div>
+      <h3 className={`text-${VERSION_SELECTION_CONFIG.THEME.TEXT.PRIMARY} font-semibold text-lg mb-6`}>
+        Selecciona cómo quieres proceder:
+      </h3>
+      <RadioGroup value={state.selectionMode} onValueChange={handleModeChange}>
+        <div className="grid md:grid-cols-2 gap-6">
+          <div className="flex items-start space-x-4">
+            <RadioGroupItem value={VERSION_SELECTION_CONFIG.MODES.AUTOMATIC} id="automatic" className="mt-2" />
+            <Label htmlFor="automatic" className="flex-1">
+              <Card className={`p-6 bg-${VERSION_SELECTION_CONFIG.THEME.BACKGROUND.CARD} border-${VERSION_SELECTION_CONFIG.THEME.BORDER.DEFAULT} hover:border-${VERSION_SELECTION_CONFIG.THEME.BORDER.PRIMARY} transition-colors cursor-pointer h-full`}>
+                <div className="flex items-start gap-4">
+                  <div className={`p-3 bg-${VERSION_SELECTION_CONFIG.THEME.PRIMARY}/20 rounded-lg`}>
+                    <Lock className={`h-6 w-6 text-${VERSION_SELECTION_CONFIG.THEME.PRIMARY}`} />
+                  </div>
+                  <div className="flex-1">
+                    <h4 className={`text-${VERSION_SELECTION_CONFIG.THEME.TEXT.PRIMARY} font-semibold text-lg mb-3`}>
+                      🔒 Selección Automática (Recomendado)
+                    </h4>
+                    <p className={`text-base text-${VERSION_SELECTION_CONFIG.THEME.TEXT.SECONDARY} mb-4 leading-relaxed`}>
+                      La IA asigna automáticamente la versión más apropiada según tu nivel y experiencia.
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <CheckCircle className={`h-5 w-5 text-${VERSION_SELECTION_CONFIG.THEME.SUCCESS}`} />
+                      <span className={`text-base text-${VERSION_SELECTION_CONFIG.THEME.SUCCESS}`}>
+                        Recomendado para la mayoría de usuarios
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            </Label>
+          </div>
+
+          <div className="flex items-start space-x-4">
+            <RadioGroupItem value={VERSION_SELECTION_CONFIG.MODES.MANUAL} id="manual" className="mt-2" />
+            <Label htmlFor="manual" className="flex-1">
+              <Card className={`p-6 bg-${VERSION_SELECTION_CONFIG.THEME.BACKGROUND.CARD} border-${VERSION_SELECTION_CONFIG.THEME.BORDER.DEFAULT} hover:border-blue-500/50 transition-colors cursor-pointer h-full`}>
+                <div className="flex items-start gap-4">
+                  <div className={`p-3 bg-${VERSION_SELECTION_CONFIG.THEME.INFO}/20 rounded-lg`}>
+                    <Unlock className={`h-6 w-6 text-${VERSION_SELECTION_CONFIG.THEME.INFO}`} />
+                  </div>
+                  <div className="flex-1">
+                    <h4 className={`text-${VERSION_SELECTION_CONFIG.THEME.TEXT.PRIMARY} font-semibold text-lg mb-3`}>
+                      🔓 Selección Manual
+                    </h4>
+                    <p className={`text-base text-${VERSION_SELECTION_CONFIG.THEME.TEXT.SECONDARY} mb-4 leading-relaxed`}>
+                      Tú eliges manualmente entre versión adaptada o estricta.
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className={`h-5 w-5 text-${VERSION_SELECTION_CONFIG.THEME.WARNING}`} />
+                      <span className={`text-base text-${VERSION_SELECTION_CONFIG.THEME.WARNING}`}>
+                        Requiere experiencia en la metodología
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            </Label>
+          </div>
+        </div>
+      </RadioGroup>
+    </div>
+  );
+
+  const VersionSelectionSection = () => (
+    state.selectionMode === VERSION_SELECTION_CONFIG.MODES.MANUAL && (
+      <div>
+        <h3 className={`text-${VERSION_SELECTION_CONFIG.THEME.TEXT.PRIMARY} font-semibold text-lg mb-6`}>
+          Selecciona la versión:
+        </h3>
+        <RadioGroup value={state.selectedVersion} onValueChange={handleVersionChange}>
+          <div className="grid md:grid-cols-2 gap-6">
+            <div className="flex items-start space-x-4">
+              <RadioGroupItem value={VERSION_SELECTION_CONFIG.VERSIONS.ADAPTED} id="adapted" className="mt-2" />
+              <Label htmlFor="adapted" className="flex-1">
+                <Card className={`p-6 bg-${VERSION_SELECTION_CONFIG.THEME.BACKGROUND.CARD} border-${VERSION_SELECTION_CONFIG.THEME.BORDER.DEFAULT} hover:border-${VERSION_SELECTION_CONFIG.THEME.BORDER.SUCCESS} transition-colors cursor-pointer h-full`}>
+                  <div className="flex items-start gap-4">
+                    <div className={`p-3 bg-${VERSION_SELECTION_CONFIG.THEME.SUCCESS}/20 rounded-lg`}>
+                      <Shield className={`h-6 w-6 text-${VERSION_SELECTION_CONFIG.THEME.SUCCESS}`} />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className={`text-${VERSION_SELECTION_CONFIG.THEME.TEXT.PRIMARY} font-semibold text-lg mb-4`}>
+                        Versión Adaptada
+                      </h4>
+                      <div className={`space-y-3 text-base text-${VERSION_SELECTION_CONFIG.THEME.TEXT.SECONDARY}`}>
+                        <p>• Intensidad inicial moderada</p>
+                        <p>• Volumen bajo a medio</p>
+                        <p>• Descanso personalizado</p>
+                        <p>• Bajo riesgo de sobreentrenamiento</p>
+                        <p>• Adaptable y progresiva</p>
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+              </Label>
+            </div>
+
+            <div className="flex items-start space-x-4">
+              <RadioGroupItem value={VERSION_SELECTION_CONFIG.VERSIONS.STRICT} id="strict" className="mt-2" />
+              <Label htmlFor="strict" className="flex-1">
+                <Card className={`p-6 bg-${VERSION_SELECTION_CONFIG.THEME.BACKGROUND.CARD} border-${VERSION_SELECTION_CONFIG.THEME.BORDER.DEFAULT} hover:border-red-500/50 transition-colors cursor-pointer h-full`}>
+                  <div className="flex items-start gap-4">
+                    <div className={`p-3 bg-${VERSION_SELECTION_CONFIG.THEME.DANGER}/20 rounded-lg`}>
+                      <Zap className={`h-6 w-6 text-${VERSION_SELECTION_CONFIG.THEME.DANGER}`} />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className={`text-${VERSION_SELECTION_CONFIG.THEME.TEXT.PRIMARY} font-semibold text-lg mb-4`}>
+                        Versión Estricta
+                      </h4>
+                      <div className={`space-y-3 text-base text-${VERSION_SELECTION_CONFIG.THEME.TEXT.SECONDARY}`}>
+                        <p>• Intensidad inicial alta</p>
+                        <p>• Volumen medio a alto</p>
+                        <p>• Descanso estándar</p>
+                        <p>• Mayor frecuencia por grupo muscular</p>
+                        <p>• Riesgo alto si no se regula</p>
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+              </Label>
+            </div>
+          </div>
+        </RadioGroup>
+      </div>
+    )
+  );
+
+  const DurationSelectorSection = () => (
+    <div className={`bg-${VERSION_SELECTION_CONFIG.THEME.BACKGROUND.CARD} p-6 rounded-lg`}>
+      <div className="flex items-center gap-3 mb-4">
+        <Calendar className="h-6 w-6 text-purple-400" />
+        <h3 className={`text-${VERSION_SELECTION_CONFIG.THEME.TEXT.PRIMARY} font-semibold text-lg`}>
+          Duración del Plan
+        </h3>
+      </div>
+      <p className={`text-base text-${VERSION_SELECTION_CONFIG.THEME.TEXT.SECONDARY} mb-6 leading-relaxed`}>
+        La IA se encarga de prepararte el entrenamiento, pero si prefieres modificar las semanas, házlo aquí:
+      </p>
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+        <Label htmlFor="weeks" className={`text-${VERSION_SELECTION_CONFIG.THEME.TEXT.SECONDARY} text-base font-medium`}>
+          Número de semanas:
+        </Label>
+        <div className="flex items-center gap-3">
+          <Input
+            id="weeks"
+            type="number"
+            min={VERSION_SELECTION_CONFIG.LIMITS.MIN_WEEKS}
+            max={VERSION_SELECTION_CONFIG.LIMITS.MAX_WEEKS}
+            value={state.customWeeks}
+            onChange={(e) => handleWeeksChange(e.target.value)}
+            className={`w-24 h-12 bg-${VERSION_SELECTION_CONFIG.THEME.BACKGROUND.CARD} border-gray-600 text-${VERSION_SELECTION_CONFIG.THEME.TEXT.PRIMARY} text-center text-lg font-semibold`}
+          />
+          <span className={`text-${VERSION_SELECTION_CONFIG.THEME.TEXT.MUTED} text-base`}>
+            semanas ({VERSION_SELECTION_CONFIG.LIMITS.MIN_WEEKS}-{VERSION_SELECTION_CONFIG.LIMITS.MAX_WEEKS})
+          </span>
+        </div>
+      </div>
+      <div className={`mt-4 text-sm text-${VERSION_SELECTION_CONFIG.THEME.TEXT.MUTED} bg-${VERSION_SELECTION_CONFIG.THEME.BACKGROUND.INFO} p-3 rounded-lg`}>
+        💡 <strong>Recomendación:</strong> 4-5 semanas para principiantes, 5-6 para intermedios, 6-7 para avanzados
+      </div>
+    </div>
+  );
+
+  const WarningSection = () => (
+    state.showWarning && (
+      <Alert className={`border-${VERSION_SELECTION_CONFIG.THEME.BORDER.WARNING} bg-${VERSION_SELECTION_CONFIG.THEME.BACKGROUND.WARNING}`}>
+        <AlertTriangle className={`h-4 w-4 text-${VERSION_SELECTION_CONFIG.THEME.WARNING}`} />
+        <AlertDescription className={`text-${VERSION_SELECTION_CONFIG.THEME.TEXT.WARNING}`}>
+          <strong>Advertencia:</strong> Has seleccionado la versión estricta siendo principiante.
+          Esto puede resultar en sobreentrenamiento, lesiones o abandono del programa.
+          Se requiere doble confirmación para proceder.
+        </AlertDescription>
+      </Alert>
+    )
+  );
+
+  const ComparisonTableSection = () => (
+    <div className={`bg-${VERSION_SELECTION_CONFIG.THEME.BACKGROUND.CARD} p-6 rounded-lg`}>
+      <h4 className={`text-${VERSION_SELECTION_CONFIG.THEME.TEXT.PRIMARY} font-semibold text-lg mb-4`}>
+        Comparativa de Versiones
+      </h4>
+      <div className="overflow-x-auto">
+        <table className="w-full text-base">
+          <thead>
+            <tr className={`border-b-2 border-${VERSION_SELECTION_CONFIG.THEME.BORDER.DIVIDER}`}>
+              <th className={`text-left text-${VERSION_SELECTION_CONFIG.THEME.TEXT.SECONDARY} py-4 font-semibold`}>
+                Característica
+              </th>
+              <th className={`text-center text-${VERSION_SELECTION_CONFIG.THEME.SUCCESS} py-4 font-semibold`}>
+                Adaptada
+              </th>
+              <th className={`text-center text-${VERSION_SELECTION_CONFIG.THEME.DANGER} py-4 font-semibold`}>
+                Estricta
+              </th>
+            </tr>
+          </thead>
+          <tbody className={`text-${VERSION_SELECTION_CONFIG.THEME.TEXT.SECONDARY}`}>
+            {[
+              { feature: 'Intensidad inicial', adapted: 'Moderada', strict: 'Alta' },
+              { feature: 'Volumen semanal', adapted: 'Bajo a medio', strict: 'Medio a alto' },
+              { feature: 'Riesgo sobreentrenamiento', adapted: 'Bajo', strict: 'Alto' },
+              { feature: 'Nivel requerido', adapted: 'Principiante+', strict: 'Intermedio+' }
+            ].map((row, index) => (
+              <tr key={row.feature} className={`border-b border-gray-700/50 hover:bg-${VERSION_SELECTION_CONFIG.THEME.BACKGROUND.CARD_HOVER}`}>
+                <td className="py-4 font-medium">{row.feature}</td>
+                <td className={`text-center text-${VERSION_SELECTION_CONFIG.THEME.SUCCESS} py-4 font-medium`}>
+                  {row.adapted}
+                </td>
+                <td className={`text-center text-${VERSION_SELECTION_CONFIG.THEME.DANGER} py-4 font-medium`}>
+                  {row.strict}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
+  const ConfirmationSection = () => (
+    state.requiresConfirmation &&
+    state.selectionMode === VERSION_SELECTION_CONFIG.MODES.MANUAL &&
+    state.selectedVersion === VERSION_SELECTION_CONFIG.VERSIONS.STRICT && (
+      <div className={`mt-4 p-4 bg-${VERSION_SELECTION_CONFIG.THEME.BACKGROUND.WARNING} border border-${VERSION_SELECTION_CONFIG.THEME.BORDER.DANGER} rounded-lg`}>
+        <h4 className={`text-${VERSION_SELECTION_CONFIG.THEME.DANGER} font-medium mb-2`}>
+          Confirmación Requerida
+        </h4>
+        <p className={`text-sm text-${VERSION_SELECTION_CONFIG.THEME.TEXT.SECONDARY} mb-3`}>
+          Confirmo que entiendo los riesgos y quiero proceder con la versión estricta a pesar de mi nivel principiante.
+        </p>
+        <Button
+          onClick={handleConfirmRisk}
+          size="sm"
+          className={`bg-${VERSION_SELECTION_CONFIG.THEME.DANGER} hover:bg-red-700 text-${VERSION_SELECTION_CONFIG.THEME.TEXT.PRIMARY}`}
+        >
+          Confirmo y Asumo los Riesgos
+        </Button>
+      </div>
+    )
+  );
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-7xl w-[98vw] max-h-[90vh] overflow-y-auto bg-gray-900 border-gray-700">
+      <DialogContent className={`max-w-7xl w-[98vw] max-h-[90vh] overflow-y-auto bg-${VERSION_SELECTION_CONFIG.THEME.BACKGROUND.MODAL} border-${VERSION_SELECTION_CONFIG.THEME.BORDER.DEFAULT}`}>
         <DialogHeader>
-          <DialogTitle className="text-xl font-bold text-white flex items-center gap-2">
-            <Target className="h-6 w-6 text-yellow-400" />
+          <DialogTitle className={`text-xl font-bold text-${VERSION_SELECTION_CONFIG.THEME.TEXT.PRIMARY} flex items-center gap-2`}>
+            <Target className={`h-6 w-6 text-${VERSION_SELECTION_CONFIG.THEME.PRIMARY}`} />
             {isAutomatic ? 'Configurar Generación Automática' : 'Configurar Metodología'}
           </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-8 px-2">
-          {/* Información del usuario */}
-          <div className="bg-gray-800 p-4 rounded-lg">
-            <div className="flex items-center gap-2 mb-2">
-              <Brain className="h-5 w-5 text-blue-400" />
-              <span className="text-white font-medium">Tu Perfil de Entrenamiento</span>
-            </div>
-            <div className="text-sm text-gray-300 space-y-1">
-              <p><span className="text-gray-400">Nivel:</span> <span className="text-white capitalize">{userLevel}</span></p>
-              <p><span className="text-gray-400">Años entrenando:</span> <span className="text-white">{getTrainingYears()} años</span></p>
-              <p><span className="text-gray-400">Nivel declarado:</span> <span className="text-blue-400 capitalize">{(userProfile?.user || userProfile)?.nivel_entrenamiento || (userProfile?.user || userProfile)?.nivel_actual_entreno || 'No especificado'}</span></p>
-              {selectedMethodology && (
-                <p><span className="text-gray-400">Metodología:</span> <span className="text-yellow-400">{selectedMethodology}</span></p>
-              )}
-              <div className="mt-3 pt-2 border-t border-gray-700">
-                <p className="text-blue-300">
-                  Basándome en tu perfil ({userLevel}, {getTrainingYears()} años de experiencia), 
-                  recomiendo la <span className="text-white font-medium">
-                    versión {autoRecommendation === 'adapted' ? 'adaptada' : 'estricta'}
-                  </span> durante <span className="text-purple-400 font-medium">{customWeeks} semanas</span>.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Selector de modo */}
-          <div>
-            <h3 className="text-white font-semibold text-lg mb-6">Selecciona cómo quieres proceder:</h3>
-            <RadioGroup value={selectionMode} onValueChange={setSelectionMode}>
-              <div className="grid md:grid-cols-2 gap-6">
-                <div className="flex items-start space-x-4">
-                  <RadioGroupItem value="automatic" id="automatic" className="mt-2" />
-                  <Label htmlFor="automatic" className="flex-1">
-                    <Card className="p-6 bg-gray-800 border-gray-700 hover:border-yellow-500/50 transition-colors cursor-pointer h-full">
-                      <div className="flex items-start gap-4">
-                        <div className="p-3 bg-yellow-500/20 rounded-lg">
-                          <Lock className="h-6 w-6 text-yellow-400" />
-                        </div>
-                        <div className="flex-1">
-                          <h4 className="text-white font-semibold text-lg mb-3">🔒 Selección Automática (Recomendado)</h4>
-                          <p className="text-base text-gray-300 mb-4 leading-relaxed">
-                            La IA asigna automáticamente la versión más apropiada según tu nivel y experiencia.
-                          </p>
-                          <div className="flex items-center gap-2">
-                            <CheckCircle className="h-5 w-5 text-green-400" />
-                            <span className="text-base text-green-400">Recomendado para la mayoría de usuarios</span>
-                          </div>
-                        </div>
-                      </div>
-                    </Card>
-                  </Label>
-                </div>
-
-                <div className="flex items-start space-x-4">
-                  <RadioGroupItem value="manual" id="manual" className="mt-2" />
-                  <Label htmlFor="manual" className="flex-1">
-                    <Card className="p-6 bg-gray-800 border-gray-700 hover:border-blue-500/50 transition-colors cursor-pointer h-full">
-                      <div className="flex items-start gap-4">
-                        <div className="p-3 bg-blue-500/20 rounded-lg">
-                          <Unlock className="h-6 w-6 text-blue-400" />
-                        </div>
-                        <div className="flex-1">
-                          <h4 className="text-white font-semibold text-lg mb-3">🔓 Selección Manual</h4>
-                          <p className="text-base text-gray-300 mb-4 leading-relaxed">
-                            Tú eliges manualmente entre versión adaptada o estricta.
-                          </p>
-                          <div className="flex items-center gap-2">
-                            <AlertTriangle className="h-5 w-5 text-amber-400" />
-                            <span className="text-base text-amber-400">Requiere experiencia en la metodología</span>
-                          </div>
-                        </div>
-                      </div>
-                    </Card>
-                  </Label>
-                </div>
-              </div>
-            </RadioGroup>
-          </div>
-
-          {/* Selector de versión */}
-          {selectionMode === 'manual' && (
-            <div>
-              <h3 className="text-white font-semibold text-lg mb-6">Selecciona la versión:</h3>
-              <RadioGroup value={selectedVersion} onValueChange={setSelectedVersion}>
-                <div className="grid md:grid-cols-2 gap-6">
-                  <div className="flex items-start space-x-4">
-                    <RadioGroupItem value="adapted" id="adapted" className="mt-2" />
-                    <Label htmlFor="adapted" className="flex-1">
-                      <Card className="p-6 bg-gray-800 border-gray-700 hover:border-green-500/50 transition-colors cursor-pointer h-full">
-                        <div className="flex items-start gap-4">
-                          <div className="p-3 bg-green-500/20 rounded-lg">
-                            <Shield className="h-6 w-6 text-green-400" />
-                          </div>
-                          <div className="flex-1">
-                            <h4 className="text-white font-semibold text-lg mb-4">Versión Adaptada</h4>
-                            <div className="space-y-3 text-base text-gray-300">
-                              <p>• Intensidad inicial moderada</p>
-                              <p>• Volumen bajo a medio</p>
-                              <p>• Descanso personalizado</p>
-                              <p>• Bajo riesgo de sobreentrenamiento</p>
-                              <p>• Adaptable y progresiva</p>
-                            </div>
-                          </div>
-                        </div>
-                      </Card>
-                    </Label>
-                  </div>
-
-                  <div className="flex items-start space-x-4">
-                    <RadioGroupItem value="strict" id="strict" className="mt-2" />
-                    <Label htmlFor="strict" className="flex-1">
-                      <Card className="p-6 bg-gray-800 border-gray-700 hover:border-red-500/50 transition-colors cursor-pointer h-full">
-                        <div className="flex items-start gap-4">
-                          <div className="p-3 bg-red-500/20 rounded-lg">
-                            <Zap className="h-6 w-6 text-red-400" />
-                          </div>
-                          <div className="flex-1">
-                            <h4 className="text-white font-semibold text-lg mb-4">Versión Estricta</h4>
-                            <div className="space-y-3 text-base text-gray-300">
-                              <p>• Intensidad inicial alta</p>
-                              <p>• Volumen medio a alto</p>
-                              <p>• Descanso estándar</p>
-                              <p>• Mayor frecuencia por grupo muscular</p>
-                              <p>• Riesgo alto si no se regula</p>
-                            </div>
-                          </div>
-                        </div>
-                      </Card>
-                    </Label>
-                  </div>
-                </div>
-              </RadioGroup>
-            </div>
-          )}
-
-          {/* Selector de duración personalizada */}
-          <div className="bg-gray-800 p-6 rounded-lg">
-            <div className="flex items-center gap-3 mb-4">
-              <Calendar className="h-6 w-6 text-purple-400" />
-              <h3 className="text-white font-semibold text-lg">Duración del Plan</h3>
-            </div>
-            <p className="text-base text-gray-300 mb-6 leading-relaxed">
-              La IA se encarga de prepararte el entrenamiento, pero si prefieres modificar las semanas, házlo aquí:
-            </p>
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-              <Label htmlFor="weeks" className="text-gray-300 text-base font-medium">
-                Número de semanas:
-              </Label>
-              <div className="flex items-center gap-3">
-                <Input
-                  id="weeks"
-                  type="number"
-                  min="1"
-                  max="7"
-                  value={customWeeks}
-                  onChange={(e) => {
-                    const value = Math.max(1, Math.min(7, parseInt(e.target.value) || 4));
-                    setCustomWeeks(value);
-                  }}
-                  className="w-24 h-12 bg-gray-700 border-gray-600 text-white text-center text-lg font-semibold"
-                />
-                <span className="text-gray-400 text-base">semanas (1-7)</span>
-              </div>
-            </div>
-            <div className="mt-4 text-sm text-gray-400 bg-gray-700/50 p-3 rounded-lg">
-              💡 <strong>Recomendación:</strong> 4-5 semanas para principiantes, 5-6 para intermedios, 6-7 para avanzados
-            </div>
-          </div>
-
-
-          {/* Advertencia */}
-          {showWarning && (
-            <Alert className="border-amber-700 bg-amber-900/30">
-              <AlertTriangle className="h-4 w-4 text-amber-400" />
-              <AlertDescription className="text-amber-200">
-                <strong>Advertencia:</strong> Has seleccionado la versión estricta siendo principiante. 
-                Esto puede resultar en sobreentrenamiento, lesiones o abandono del programa. 
-                Se requiere doble confirmación para proceder.
-              </AlertDescription>
-            </Alert>
-          )}
-
-          {/* Comparativa */}
-          <div className="bg-gray-800 p-6 rounded-lg">
-            <h4 className="text-white font-semibold text-lg mb-4">Comparativa de Versiones</h4>
-            <div className="overflow-x-auto">
-              <table className="w-full text-base">
-                <thead>
-                  <tr className="border-b-2 border-gray-600">
-                    <th className="text-left text-gray-300 py-4 font-semibold">Característica</th>
-                    <th className="text-center text-green-400 py-4 font-semibold">Adaptada</th>
-                    <th className="text-center text-red-400 py-4 font-semibold">Estricta</th>
-                  </tr>
-                </thead>
-                <tbody className="text-gray-300">
-                  <tr className="border-b border-gray-700/50 hover:bg-gray-700/30">
-                    <td className="py-4 font-medium">Intensidad inicial</td>
-                    <td className="text-center text-green-400 py-4 font-medium">Moderada</td>
-                    <td className="text-center text-red-400 py-4 font-medium">Alta</td>
-                  </tr>
-                  <tr className="border-b border-gray-700/50 hover:bg-gray-700/30">
-                    <td className="py-4 font-medium">Volumen semanal</td>
-                    <td className="text-center text-green-400 py-4 font-medium">Bajo a medio</td>
-                    <td className="text-center text-red-400 py-4 font-medium">Medio a alto</td>
-                  </tr>
-                  <tr className="border-b border-gray-700/50 hover:bg-gray-700/30">
-                    <td className="py-4 font-medium">Riesgo sobreentrenamiento</td>
-                    <td className="text-center text-green-400 py-4 font-medium">Bajo</td>
-                    <td className="text-center text-red-400 py-4 font-medium">Alto</td>
-                  </tr>
-                  <tr className="hover:bg-gray-700/30">
-                    <td className="py-4 font-medium">Nivel requerido</td>
-                    <td className="text-center text-green-400 py-4 font-medium">Principiante+</td>
-                    <td className="text-center text-red-400 py-4 font-medium">Intermedio+</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <UserProfileSection />
+          <ModeSelectionSection />
+          <VersionSelectionSection />
+          <DurationSelectorSection />
+          <WarningSection />
+          <ComparisonTableSection />
         </div>
 
-        {/* Botones */}
         <div className="flex justify-between pt-6 px-2">
-          <Button 
-            variant="outline" 
-            onClick={onClose} 
-            className="border-gray-600 text-gray-300 hover:bg-gray-800 px-8 py-3 text-base font-medium"
+          <Button
+            variant="outline"
+            onClick={onClose}
+            className={`border-gray-600 text-${VERSION_SELECTION_CONFIG.THEME.TEXT.SECONDARY} hover:bg-${VERSION_SELECTION_CONFIG.THEME.BACKGROUND.CARD} px-8 py-3 text-base font-medium`}
           >
             Cancelar
           </Button>
-          <Button 
+          <Button
             onClick={handleConfirm}
-            className="bg-yellow-500 hover:bg-yellow-600 text-black font-semibold px-8 py-3 text-base"
-            disabled={requiresConfirmation && selectionMode === 'manual' && selectedVersion === 'strict'}
+            className={`bg-${VERSION_SELECTION_CONFIG.THEME.PRIMARY} hover:bg-yellow-600 text-black font-semibold px-8 py-3 text-base`}
+            disabled={state.requiresConfirmation && state.selectionMode === VERSION_SELECTION_CONFIG.MODES.MANUAL && state.selectedVersion === VERSION_SELECTION_CONFIG.VERSIONS.STRICT}
           >
-            {requiresConfirmation && selectionMode === 'manual' && selectedVersion === 'strict' 
-              ? 'Confirmar Advertencia Primero' 
+            {state.requiresConfirmation && state.selectionMode === VERSION_SELECTION_CONFIG.MODES.MANUAL && state.selectedVersion === VERSION_SELECTION_CONFIG.VERSIONS.STRICT
+              ? 'Confirmar Advertencia Primero'
               : 'Generar Entrenamiento'
             }
           </Button>
         </div>
 
-        {/* Confirmación doble para casos riesgosos */}
-        {requiresConfirmation && selectionMode === 'manual' && selectedVersion === 'strict' && (
-          <div className="mt-4 p-4 bg-red-900/30 border border-red-700 rounded-lg">
-            <h4 className="text-red-400 font-medium mb-2">Confirmación Requerida</h4>
-            <p className="text-sm text-gray-300 mb-3">
-              Confirmo que entiendo los riesgos y quiero proceder con la versión estricta a pesar de mi nivel principiante.
-            </p>
-            <Button 
-              onClick={() => setRequiresConfirmation(false)}
-              size="sm"
-              className="bg-red-600 hover:bg-red-700 text-white"
-            >
-              Confirmo y Asumo los Riesgos
-            </Button>
-          </div>
-        )}
+        <ConfirmationSection />
       </DialogContent>
     </Dialog>
   );
