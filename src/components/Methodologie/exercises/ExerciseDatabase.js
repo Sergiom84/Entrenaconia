@@ -1,15 +1,120 @@
 /**
  * Sistema de Base de Datos de Ejercicios para Calistenia
  * Integra con la tabla Ejercicios_Calistenia de PostgreSQL
- * 
+ *
  * @author Claude Code - Arquitectura Modular para Metodologías
- * @version 1.0.0
+ * @version 2.0.0 - Refactored with centralized config and improved error handling
  */
 
 import React from 'react';
 
-// Configuración de la API
-const API_BASE = '/api/exercises';
+// Configuración centralizada de API
+const API_CONFIG = {
+  BASE_URL: process.env.REACT_APP_API_URL || 'http://localhost:3002',
+  ENDPOINTS: {
+    EXERCISES: '/api/exercises',
+    CALISTENIA: '/api/exercises/calistenia'
+  },
+  TIMEOUT: 10000 // 10 segundos
+};
+
+// Sistema de logging centralizado
+const Logger = {
+  error: (message, error = null) => {
+    console.error(`[ExerciseDatabase] ${message}`, error);
+    // TODO: Integrar con sistema de monitoring (Sentry, etc.)
+  },
+  warn: (message, data = null) => {
+    console.warn(`[ExerciseDatabase] ${message}`, data);
+  },
+  info: (message, data = null) => {
+    if (process.env.NODE_ENV === 'development') {
+      console.info(`[ExerciseDatabase] ${message}`, data);
+    }
+  }
+};
+
+// Utilidades para manejo de API y autenticación
+const APIUtils = {
+  /**
+   * Obtener token de autenticación de forma centralizada
+   * @returns {string|null} Token JWT o null si no existe
+   */
+  getAuthToken() {
+    try {
+      return localStorage.getItem('authToken') || localStorage.getItem('token');
+    } catch (error) {
+      Logger.error('Error accessing localStorage for auth token', error);
+      return null;
+    }
+  },
+
+  /**
+   * Crear headers estándar para requests autenticados
+   * @returns {Object} Headers HTTP
+   */
+  getAuthHeaders() {
+    const token = this.getAuthToken();
+    const headers = {
+      'Content-Type': 'application/json'
+    };
+
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    return headers;
+  },
+
+  /**
+   * Realizar request HTTP con manejo de errores consistente
+   * @param {string} endpoint - Endpoint relativo
+   * @param {Object} options - Opciones del fetch
+   * @returns {Promise<Object>} Respuesta procesada
+   */
+  async makeRequest(endpoint, options = {}) {
+    const url = `${API_CONFIG.BASE_URL}${endpoint}`;
+
+    try {
+      Logger.info(`Making request to: ${endpoint}`);
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.TIMEOUT);
+
+      const response = await fetch(url, {
+        ...options,
+        headers: { ...this.getAuthHeaders(), ...options.headers },
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+
+        if (response.status === 401) {
+          Logger.warn('Authentication failed - token may be expired');
+          // TODO: Trigger token refresh or redirect to login
+        }
+
+        throw new Error(errorMessage);
+      }
+
+      const data = await response.json();
+      Logger.info(`Request successful: ${endpoint}`, { status: response.status });
+
+      return data;
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        Logger.error(`Request timeout: ${endpoint}`);
+        throw new Error('Request timeout - please check your connection');
+      }
+
+      Logger.error(`Request failed: ${endpoint}`, error);
+      throw error;
+    }
+  }
+};
 
 /**
  * Cliente para obtener ejercicios de calistenia desde la base de datos
@@ -22,22 +127,10 @@ export class CalisteniaExerciseDatabase {
    */
   static async getAllExercises() {
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`${API_BASE}/calistenia`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Error fetching exercises: ${response.status}`);
-      }
-      
-      const data = await response.json();
+      const data = await APIUtils.makeRequest(API_CONFIG.ENDPOINTS.CALISTENIA);
       return data.exercises || [];
     } catch (error) {
-      console.error('❌ Error cargando ejercicios de calistenia:', error);
+      Logger.error('Failed to load calistenia exercises', error);
       return [];
     }
   }
@@ -68,23 +161,16 @@ export class CalisteniaExerciseDatabase {
    * @returns {Promise<Object|null>} Ejercicio encontrado o null
    */
   static async getExerciseById(exerciseId) {
+    if (!exerciseId) {
+      Logger.warn('getExerciseById called with invalid exerciseId', { exerciseId });
+      return null;
+    }
+
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`${API_BASE}/calistenia/${exerciseId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (!response.ok) {
-        return null;
-      }
-      
-      const data = await response.json();
+      const data = await APIUtils.makeRequest(`${API_CONFIG.ENDPOINTS.CALISTENIA}/${exerciseId}`);
       return data.exercise || null;
     } catch (error) {
-      console.error(`❌ Error obteniendo ejercicio ${exerciseId}:`, error);
+      Logger.error(`Failed to get exercise by ID: ${exerciseId}`, error);
       return null;
     }
   }
@@ -275,37 +361,162 @@ export class CalisteniaExerciseUtils {
 }
 
 /**
- * Hook personalizado para usar la base de datos de ejercicios de calistenia
+ * Hook personalizado avanzado para usar la base de datos de ejercicios de calistenia
+ * @param {Object} options - Opciones de configuración
+ * @param {boolean} options.autoLoad - Cargar automáticamente al montar (default: true)
+ * @param {number} options.cacheTime - Tiempo de cache en ms (default: 5min)
+ * @returns {Object} Estado y métodos del hook
  */
-export function useCalisteniaExercises() {
-  const [exercises, setExercises] = React.useState([]);
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState(null);
-  
-  const loadExercises = React.useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    
+export function useCalisteniaExercises(options = {}) {
+  const { autoLoad = true, cacheTime = 5 * 60 * 1000 } = options;
+
+  const [state, setState] = React.useState({
+    exercises: [],
+    loading: false,
+    error: null,
+    lastUpdated: null,
+    isStale: false
+  });
+
+  // Cache simple en memoria
+  const cacheRef = React.useRef({
+    data: null,
+    timestamp: null
+  });
+
+  const loadExercises = React.useCallback(async (forceRefresh = false) => {
+    // Verificar cache si no es forzado
+    if (!forceRefresh && cacheRef.current.data && cacheRef.current.timestamp) {
+      const cacheAge = Date.now() - cacheRef.current.timestamp;
+      if (cacheAge < cacheTime) {
+        Logger.info('Using cached exercises data');
+        setState(prevState => ({
+          ...prevState,
+          exercises: cacheRef.current.data,
+          error: null,
+          isStale: false
+        }));
+        return;
+      }
+    }
+
+    setState(prevState => ({ ...prevState, loading: true, error: null }));
+
     try {
       const data = await CalisteniaExerciseDatabase.getAllExercises();
-      setExercises(data);
+
+      // Actualizar cache
+      cacheRef.current = {
+        data,
+        timestamp: Date.now()
+      };
+
+      setState(prevState => ({
+        ...prevState,
+        exercises: data,
+        loading: false,
+        error: null,
+        lastUpdated: new Date().toISOString(),
+        isStale: false
+      }));
+
+      Logger.info(`Loaded ${data.length} calistenia exercises`);
     } catch (err) {
-      setError(err.message);
-      console.error('Error loading calistenia exercises:', err);
-    } finally {
-      setLoading(false);
+      const errorMessage = err.message || 'Failed to load exercises';
+
+      setState(prevState => ({
+        ...prevState,
+        loading: false,
+        error: errorMessage,
+        isStale: true
+      }));
+
+      Logger.error('Error loading calistenia exercises in hook', err);
     }
-  }, []);
-  
+  }, [cacheTime]);
+
+  // Filtros avanzados
+  const filterByLevel = React.useCallback((level) => {
+    return state.exercises.filter(ex =>
+      ex.nivel?.toLowerCase() === level.toLowerCase()
+    );
+  }, [state.exercises]);
+
+  const filterByCategory = React.useCallback((category) => {
+    return state.exercises.filter(ex =>
+      ex.categoria?.toLowerCase().includes(category.toLowerCase())
+    );
+  }, [state.exercises]);
+
+  const searchExercises = React.useCallback((query) => {
+    if (!query) return state.exercises;
+
+    const searchTerm = query.toLowerCase();
+    return state.exercises.filter(ex =>
+      ex.nombre?.toLowerCase().includes(searchTerm) ||
+      ex.descripcion?.toLowerCase().includes(searchTerm) ||
+      ex.musculos_trabajados?.toLowerCase().includes(searchTerm)
+    );
+  }, [state.exercises]);
+
+  // Auto-load al montar
   React.useEffect(() => {
-    loadExercises();
-  }, [loadExercises]);
-  
+    if (autoLoad) {
+      loadExercises();
+    }
+  }, [autoLoad, loadExercises]);
+
+  // Detectar cuando el cache se vuelve obsoleto
+  React.useEffect(() => {
+    if (!state.lastUpdated) return;
+
+    const interval = setInterval(() => {
+      const timeSinceUpdate = Date.now() - new Date(state.lastUpdated).getTime();
+      if (timeSinceUpdate > cacheTime && !state.isStale) {
+        setState(prevState => ({ ...prevState, isStale: true }));
+      }
+    }, 30000); // Verificar cada 30 segundos
+
+    return () => clearInterval(interval);
+  }, [state.lastUpdated, cacheTime, state.isStale]);
+
   return {
-    exercises,
-    loading,
-    error,
-    reload: loadExercises
+    // Estado
+    exercises: state.exercises,
+    loading: state.loading,
+    error: state.error,
+    lastUpdated: state.lastUpdated,
+    isStale: state.isStale,
+    isEmpty: state.exercises.length === 0 && !state.loading,
+
+    // Métodos
+    reload: () => loadExercises(true),
+    refresh: () => loadExercises(false),
+
+    // Filtros
+    filterByLevel,
+    filterByCategory,
+    searchExercises,
+
+    // Utilidades
+    getExerciseById: React.useCallback((id) => {
+      return state.exercises.find(ex => ex.exercise_id === id) || null;
+    }, [state.exercises]),
+
+    // Estadísticas
+    stats: React.useMemo(() => ({
+      total: state.exercises.length,
+      byLevel: state.exercises.reduce((acc, ex) => {
+        const level = ex.nivel?.toLowerCase() || 'unknown';
+        acc[level] = (acc[level] || 0) + 1;
+        return acc;
+      }, {}),
+      byCategory: state.exercises.reduce((acc, ex) => {
+        const category = ex.categoria || 'unknown';
+        acc[category] = (acc[category] || 0) + 1;
+        return acc;
+      }, {})
+    }), [state.exercises])
   };
 }
 
