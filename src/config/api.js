@@ -4,7 +4,11 @@ export const API_ENDPOINTS = {
   AUTH: {
     LOGIN: `${API_BASE_URL}/api/auth/login`,
     REGISTER: `${API_BASE_URL}/api/auth/register`,
-    LOGOUT: `${API_BASE_URL}/api/auth/logout`
+    LOGOUT: `${API_BASE_URL}/api/auth/logout`,
+    SESSIONS: `${API_BASE_URL}/api/auth/sessions`,
+    SESSIONS_HISTORY: `${API_BASE_URL}/api/auth/sessions/history`,
+    SESSIONS_STATS: `${API_BASE_URL}/api/auth/sessions/stats`,
+    LOGOUT_ALL: `${API_BASE_URL}/api/auth/sessions/logout-all`
   },
   USER: {
     PROFILE: `${API_BASE_URL}/api/users/profile`,

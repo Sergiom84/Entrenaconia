@@ -1,153 +1,121 @@
-import React, { useState, useEffect } from 'react';
-import { Monitor, Smartphone, Globe, LogOut, Shield, Clock, MapPin } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Monitor, Smartphone, Globe, LogOut, Shield, Clock, AlertCircle, RefreshCw } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { useUserSessions } from '../../hooks/useUserSessions';
+import ErrorPopup from '../ui/ErrorPopup';
 
 const UserSessions = () => {
-  const [activeSessions, setActiveSessions] = useState([]);
-  const [sessionHistory, setSessionHistory] = useState([]);
-  const [sessionStats, setSessionStats] = useState(null);
   const [activeTab, setActiveTab] = useState('active');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [confirmLogout, setConfirmLogout] = useState(false);
+  const [errorPopup, setErrorPopup] = useState({ show: false, message: '', title: '' });
 
-  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3002/api';
+  const {
+    // Estado
+    activeSessions,
+    sessionHistory,
+    sessionStats,
+    loading,
+    error,
 
-  // Obtener token del localStorage
-  const getAuthToken = () => {
-    return localStorage.getItem('token');
-  };
+    // Acciones
+    loadActiveSessions,
+    loadSessionHistory,
+    loadSessionStats,
+    logoutAllSessions,
+    clearState,
 
-  // Headers para requests autenticadas
-  const getAuthHeaders = () => ({
-    'Authorization': `Bearer ${getAuthToken()}`,
-    'Content-Type': 'application/json'
-  });
+    // Utilidades
+    formatDuration,
+    getDeviceInfo,
+    getDeviceType,
+    getLogoutTypeLabel,
 
-  // Cargar datos de sesiones
+    // Estado derivado
+    hasActiveSessions,
+    hasMultipleSessions
+  } = useUserSessions();
+
+  // Cargar datos según pestaña activa
+  const loadSessionData = useCallback(async () => {
+    try {
+      if (activeTab === 'active') {
+        await loadActiveSessions();
+      } else if (activeTab === 'history') {
+        await loadSessionHistory();
+      } else if (activeTab === 'stats') {
+        await loadSessionStats();
+      }
+    } catch (error) {
+      setErrorPopup({
+        show: true,
+        title: 'Error cargando datos',
+        message: error.message || 'No se pudieron cargar los datos de sesiones.'
+      });
+    }
+  }, [activeTab, loadActiveSessions, loadSessionHistory, loadSessionStats]);
+
+  // Cargar datos cuando cambia la pestaña
   useEffect(() => {
     loadSessionData();
-  }, [activeTab]);
+  }, [loadSessionData]);
 
-  const loadSessionData = async () => {
-    try {
-      setLoading(true);
-      const headers = getAuthHeaders();
+  // Limpiar estado al desmontar
+  useEffect(() => {
+    return () => clearState();
+  }, [clearState]);
 
-      // Cargar datos según la pestaña activa
-      if (activeTab === 'active') {
-        const response = await fetch(`${API_BASE}/auth/sessions`, { headers });
-        if (response.ok) {
-          const data = await response.json();
-          setActiveSessions(data.activeSessions || []);
-        }
-      } else if (activeTab === 'history') {
-        const response = await fetch(`${API_BASE}/auth/sessions/history?limit=20`, { headers });
-        if (response.ok) {
-          const data = await response.json();
-          setSessionHistory(data.sessions || []);
-        }
-      } else if (activeTab === 'stats') {
-        const response = await fetch(`${API_BASE}/auth/sessions/stats`, { headers });
-        if (response.ok) {
-          const data = await response.json();
-          setSessionStats(data.stats);
-        }
-      }
-
-    } catch (err) {
-      setError('Error cargando datos de sesiones: ' + err.message);
-    } finally {
-      setLoading(false);
+  // Mostrar errores en popup
+  useEffect(() => {
+    if (error) {
+      setErrorPopup({
+        show: true,
+        title: 'Error',
+        message: error
+      });
     }
-  };
+  }, [error]);
 
-  // Cerrar todas las sesiones
-  const logoutAllSessions = async () => {
-    if (!confirm('¿Estás seguro de que quieres cerrar todas las sesiones activas? Esto te desconectará de todos los dispositivos.')) {
+  // Manejar logout de todas las sesiones con confirmación
+  const handleLogoutAll = async () => {
+    if (!confirmLogout) {
+      setConfirmLogout(true);
       return;
     }
 
     try {
-      const response = await fetch(`${API_BASE}/auth/sessions/logout-all`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ reason: 'user_requested' })
+      await logoutAllSessions();
+      setConfirmLogout(false);
+    } catch (error) {
+      setErrorPopup({
+        show: true,
+        title: 'Error cerrando sesiones',
+        message: error.message || 'No se pudieron cerrar las sesiones activas.'
       });
-
-      if (response.ok) {
-        const data = await response.json();
-        alert(`${data.closedSessions} sesiones cerradas. Serás redirigido al login.`);
-        
-        // Limpiar localStorage y redirigir
-        localStorage.removeItem('token');
-        window.location.href = '/login';
-      } else {
-        throw new Error('Error cerrando sesiones');
-      }
-    } catch (err) {
-      alert('Error: ' + err.message);
+      setConfirmLogout(false);
     }
   };
 
-  // Formatear duración
-  const formatDuration = (duration) => {
-    if (!duration) return 'Activa';
-    
-    const match = duration.match(/(\d+):(\d+):(\d+)/);
-    if (match) {
-      const hours = parseInt(match[1]);
-      const minutes = parseInt(match[2]);
-      if (hours > 0) return `${hours}h ${minutes}m`;
-      return `${minutes}m`;
-    }
-    return duration;
+  // Cancelar confirmación de logout
+  const cancelLogout = () => {
+    setConfirmLogout(false);
   };
 
-  // Obtener icono de dispositivo
+  // Obtener icono de dispositivo usando el hook
   const getDeviceIcon = (deviceInfo) => {
-    try {
-      const info = typeof deviceInfo === 'string' ? JSON.parse(deviceInfo) : deviceInfo;
-      const platform = info?.userAgent?.platform?.toLowerCase() || '';
-      const mobile = info?.userAgent?.mobile;
-
-      if (mobile || platform.includes('android') || platform.includes('ios')) {
-        return <Smartphone className="h-4 w-4" />;
-      }
-      return <Monitor className="h-4 w-4" />;
-    } catch {
-      return <Monitor className="h-4 w-4" />;
-    }
+    const deviceType = getDeviceType(deviceInfo);
+    return deviceType === 'mobile'
+      ? <Smartphone className="h-4 w-4" />
+      : <Monitor className="h-4 w-4" />;
   };
 
-  // Obtener información de dispositivo legible
-  const getDeviceInfo = (deviceInfo) => {
-    try {
-      const info = typeof deviceInfo === 'string' ? JSON.parse(deviceInfo) : deviceInfo;
-      const ua = info?.userAgent || {};
-      
-      const platform = ua.platform || 'Unknown';
-      const browser = ua.browser || 'Unknown';
-      const version = ua.version || '';
-
-      return `${platform} - ${browser}${version ? ` ${version}` : ''}`;
-    } catch {
-      return 'Información no disponible';
-    }
+  // Recargar datos manualmente
+  const handleRefresh = () => {
+    loadSessionData();
   };
 
-  // Obtener estado de logout
-  const getLogoutTypeLabel = (logoutType) => {
-    const types = {
-      'manual': 'Manual',
-      'timeout': 'Timeout',
-      'forced': 'Forzado',
-      'system': 'Sistema'
-    };
-    return types[logoutType] || 'Desconocido';
-  };
-
-  // Renderizar pestañas
+  // Renderizar pestañas con tema oscuro
   const renderTabs = () => (
-    <div className="flex space-x-1 bg-gray-100 rounded-lg p-1 mb-6">
+    <div className="flex space-x-1 bg-gray-800 rounded-lg p-1 mb-6">
       {[
         { key: 'active', label: 'Sesiones Activas', count: activeSessions.length },
         { key: 'history', label: 'Historial', count: sessionHistory.length },
@@ -158,13 +126,13 @@ const UserSessions = () => {
           onClick={() => setActiveTab(tab.key)}
           className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
             activeTab === tab.key
-              ? 'bg-white text-blue-600 shadow-sm'
-              : 'text-gray-600 hover:text-gray-900'
+              ? 'bg-yellow-400 text-gray-900 shadow-sm'
+              : 'text-gray-300 hover:text-yellow-300'
           }`}
         >
           {tab.label}
           {tab.count !== undefined && (
-            <span className="ml-2 bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full text-xs">
+            <span className="ml-2 bg-gray-700 text-gray-300 px-2 py-0.5 rounded-full text-xs">
               {tab.count}
             </span>
           )}
@@ -177,37 +145,67 @@ const UserSessions = () => {
   const renderActiveSessions = () => (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <h3 className="text-lg font-semibold text-gray-900">Sesiones Activas</h3>
-        {activeSessions.length > 1 && (
+        <h3 className="text-lg font-semibold text-gray-100">Sesiones Activas</h3>
+        <div className="flex gap-2">
           <button
-            onClick={logoutAllSessions}
-            className="flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+            onClick={handleRefresh}
+            disabled={loading}
+            className="flex items-center px-3 py-2 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 transition-colors disabled:opacity-50"
           >
-            <LogOut className="h-4 w-4 mr-2" />
-            Cerrar Todas
+            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+            Actualizar
           </button>
-        )}
+
+          {hasMultipleSessions && (
+            <button
+              onClick={handleLogoutAll}
+              className={`flex items-center px-4 py-2 rounded-lg transition-colors ${
+                confirmLogout
+                  ? 'bg-red-600 text-white hover:bg-red-700'
+                  : 'bg-red-600 text-white hover:bg-red-700'
+              }`}
+            >
+              <LogOut className="h-4 w-4 mr-2" />
+              {confirmLogout ? '¿Confirmar?' : 'Cerrar Todas'}
+            </button>
+          )}
+
+          {confirmLogout && (
+            <button
+              onClick={cancelLogout}
+              className="flex items-center px-3 py-2 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 transition-colors"
+            >
+              Cancelar
+            </button>
+          )}
+        </div>
       </div>
 
-      {activeSessions.length === 0 ? (
-        <div className="text-center py-8 text-gray-500">
+      {!hasActiveSessions ? (
+        <div className="text-center py-8 text-gray-400">
           <Monitor className="h-12 w-12 mx-auto mb-4 opacity-50" />
           <p>No hay sesiones activas</p>
         </div>
       ) : (
         <div className="grid gap-4">
           {activeSessions.map((session, index) => (
-            <div key={session.sessionId || index} className="bg-white border border-gray-200 rounded-lg p-4">
+            <motion.div
+              key={session.sessionId}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.1 }}
+              className="bg-gray-800 border border-gray-700 rounded-lg p-4"
+            >
               <div className="flex items-start justify-between">
                 <div className="flex items-start space-x-3">
-                  <div className="p-2 bg-blue-50 rounded-lg">
+                  <div className="p-2 bg-yellow-400/20 rounded-lg">
                     {getDeviceIcon(session.deviceInfo)}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900">
+                    <p className="text-sm font-medium text-gray-100">
                       {getDeviceInfo(session.deviceInfo)}
                     </p>
-                    <div className="flex items-center space-x-4 mt-2 text-xs text-gray-500">
+                    <div className="flex items-center space-x-4 mt-2 text-xs text-gray-400">
                       <div className="flex items-center">
                         <Globe className="h-3 w-3 mr-1" />
                         {session.ipAddress}
@@ -217,22 +215,22 @@ const UserSessions = () => {
                         Desde: {new Date(session.loginTime).toLocaleString()}
                       </div>
                     </div>
-                    <div className="mt-1 text-xs text-gray-500">
+                    <div className="mt-1 text-xs text-gray-400">
                       Última actividad: {new Date(session.lastActivity).toLocaleString()}
                     </div>
                   </div>
                 </div>
                 <div className="text-right">
-                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-400/20 text-green-400">
                     <div className="w-1.5 h-1.5 bg-green-400 rounded-full mr-1.5"></div>
                     Activa
                   </span>
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-gray-400 mt-1">
                     Duración: {formatDuration(session.sessionAge)}
                   </p>
                 </div>
               </div>
-            </div>
+            </motion.div>
           ))}
         </div>
       )}
@@ -242,55 +240,71 @@ const UserSessions = () => {
   // Renderizar historial
   const renderHistory = () => (
     <div className="space-y-4">
-      <h3 className="text-lg font-semibold text-gray-900">Historial de Sesiones</h3>
-      
+      <div className="flex justify-between items-center">
+        <h3 className="text-lg font-semibold text-gray-100">Historial de Sesiones</h3>
+        <button
+          onClick={handleRefresh}
+          disabled={loading}
+          className="flex items-center px-3 py-2 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 transition-colors disabled:opacity-50"
+        >
+          <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+          Actualizar
+        </button>
+      </div>
+
       {sessionHistory.length === 0 ? (
-        <div className="text-center py-8 text-gray-500">
+        <div className="text-center py-8 text-gray-400">
           <Shield className="h-12 w-12 mx-auto mb-4 opacity-50" />
           <p>No hay historial disponible</p>
         </div>
       ) : (
         <div className="space-y-3">
           {sessionHistory.map((session, index) => (
-            <div key={session.session_id || index} className="bg-white border border-gray-200 rounded-lg p-4">
+            <motion.div
+              key={session.sessionId}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.05 }}
+              className="bg-gray-800 border border-gray-700 rounded-lg p-4"
+            >
               <div className="flex items-start justify-between">
                 <div className="flex items-start space-x-3">
-                  <div className="p-2 bg-gray-50 rounded-lg">
-                    {getDeviceIcon(session.user_agent_info)}
+                  <div className="p-2 bg-gray-700 rounded-lg">
+                    {getDeviceIcon(session.deviceInfo)}
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center space-x-4 text-sm">
-                      <div className="flex items-center text-gray-600">
+                      <div className="flex items-center text-gray-300">
                         <Globe className="h-3 w-3 mr-1" />
-                        {session.ip_address}
+                        {session.ipAddress}
                       </div>
-                      <div className="flex items-center text-gray-600">
+                      <div className="flex items-center text-gray-300">
                         <Clock className="h-3 w-3 mr-1" />
-                        {new Date(session.login_time).toLocaleDateString()}
+                        {new Date(session.loginTime).toLocaleDateString()}
                       </div>
                     </div>
-                    <div className="text-xs text-gray-500 mt-1">
-                      {session.login_time && `Login: ${new Date(session.login_time).toLocaleTimeString()}`}
-                      {session.logout_time && ` - Logout: ${new Date(session.logout_time).toLocaleTimeString()}`}
+                    <div className="text-xs text-gray-400 mt-1">
+                      {session.loginTime && `Login: ${new Date(session.loginTime).toLocaleTimeString()}`}
+                      {session.logoutTime && ` - Logout: ${new Date(session.logoutTime).toLocaleTimeString()}`}
                     </div>
                   </div>
                 </div>
                 <div className="text-right">
                   <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                    session.is_active 
-                      ? 'bg-green-100 text-green-800' 
-                      : 'bg-gray-100 text-gray-800'
+                    session.isActive
+                      ? 'bg-green-400/20 text-green-400'
+                      : 'bg-gray-600/50 text-gray-300'
                   }`}>
-                    {session.is_active ? 'Activa' : getLogoutTypeLabel(session.logout_type)}
+                    {session.isActive ? 'Activa' : getLogoutTypeLabel(session.logoutType)}
                   </span>
-                  {session.duration_seconds && (
-                    <p className="text-xs text-gray-500 mt-1">
-                      {Math.round(session.duration_seconds / 60)} minutos
+                  {session.durationSeconds && (
+                    <p className="text-xs text-gray-400 mt-1">
+                      {formatDuration(session.durationSeconds)}
                     </p>
                   )}
                 </div>
               </div>
-            </div>
+            </motion.div>
           ))}
         </div>
       )}
@@ -300,96 +314,118 @@ const UserSessions = () => {
   // Renderizar estadísticas
   const renderStats = () => (
     <div className="space-y-6">
-      <h3 className="text-lg font-semibold text-gray-900">Estadísticas de Sesiones</h3>
-      
-      {!sessionStats ? (
-        <div className="text-center py-8 text-gray-500">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+      <div className="flex justify-between items-center">
+        <h3 className="text-lg font-semibold text-gray-100">Estadísticas de Sesiones</h3>
+        <button
+          onClick={handleRefresh}
+          disabled={loading}
+          className="flex items-center px-3 py-2 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 transition-colors disabled:opacity-50"
+        >
+          <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+          Actualizar
+        </button>
+      </div>
+
+      {loading && !sessionStats ? (
+        <div className="text-center py-8 text-gray-400">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-yellow-400 mx-auto mb-4"></div>
           <p>Cargando estadísticas...</p>
         </div>
-      ) : (
-        <div className="grid md:grid-cols-2 gap-6">
-          <div className="bg-white border border-gray-200 rounded-lg p-6">
-            <h4 className="text-sm font-medium text-gray-900 mb-4">Resumen General</h4>
+      ) : sessionStats ? (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="grid md:grid-cols-2 gap-6"
+        >
+          <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
+            <h4 className="text-sm font-medium text-gray-100 mb-4">Resumen General</h4>
             <div className="space-y-3">
               <div className="flex justify-between">
-                <span className="text-gray-600">Total de sesiones:</span>
-                <span className="font-medium">{sessionStats.total_sessions || 0}</span>
+                <span className="text-gray-400">Total de sesiones:</span>
+                <span className="font-medium text-yellow-400">{sessionStats.total_sessions || 0}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-600">Sesiones activas:</span>
-                <span className="font-medium text-green-600">{sessionStats.active_sessions || 0}</span>
+                <span className="text-gray-400">Sesiones activas:</span>
+                <span className="font-medium text-green-400">{sessionStats.active_sessions || 0}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-600">IPs únicas:</span>
-                <span className="font-medium">{sessionStats.unique_ips || 0}</span>
+                <span className="text-gray-400">IPs únicas:</span>
+                <span className="font-medium text-gray-100">{sessionStats.unique_ips || 0}</span>
               </div>
             </div>
           </div>
 
-          <div className="bg-white border border-gray-200 rounded-lg p-6">
-            <h4 className="text-sm font-medium text-gray-900 mb-4">Actividad</h4>
+          <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
+            <h4 className="text-sm font-medium text-gray-100 mb-4">Actividad</h4>
             <div className="space-y-3">
               <div className="flex justify-between">
-                <span className="text-gray-600">Último login:</span>
-                <span className="font-medium">
+                <span className="text-gray-400">Último login:</span>
+                <span className="font-medium text-gray-100 text-right max-w-[150px] truncate">
                   {sessionStats.last_login ? new Date(sessionStats.last_login).toLocaleString() : 'N/A'}
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-600">Duración promedio:</span>
-                <span className="font-medium">
+                <span className="text-gray-400">Duración promedio:</span>
+                <span className="font-medium text-gray-100">
                   {sessionStats.avg_session_duration ? formatDuration(sessionStats.avg_session_duration) : 'N/A'}
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-600">Dispositivo preferido:</span>
-                <span className="font-medium">{sessionStats.most_used_device || 'N/A'}</span>
+                <span className="text-gray-400">Dispositivo preferido:</span>
+                <span className="font-medium text-gray-100">{sessionStats.most_used_device || 'N/A'}</span>
               </div>
             </div>
           </div>
+        </motion.div>
+      ) : (
+        <div className="text-center py-8 text-gray-400">
+          <Shield className="h-12 w-12 mx-auto mb-4 opacity-50" />
+          <p>No hay estadísticas disponibles</p>
         </div>
       )}
     </div>
   );
 
-  if (error) {
-    return (
-      <div className="max-w-4xl mx-auto p-6">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <div className="flex">
-            <Shield className="h-5 w-5 text-red-400" />
-            <div className="ml-3">
-              <h3 className="text-sm font-medium text-red-800">Error</h3>
-              <p className="text-sm text-red-700 mt-1">{error}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="max-w-4xl mx-auto p-6">
-      <div className="mb-8">
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Gestión de Sesiones</h2>
-        <p className="text-gray-600">Administra tus sesiones activas y revisa tu historial de acceso</p>
+    <div className="min-h-screen bg-gray-900">
+      <div className="max-w-4xl mx-auto p-6">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-8"
+        >
+          <h2 className="text-2xl font-bold text-gray-100 mb-2">Gestión de Sesiones</h2>
+          <p className="text-gray-400">Administra tus sesiones activas y revisa tu historial de acceso</p>
+        </motion.div>
+
+        {renderTabs()}
+
+        {loading && !activeSessions.length && !sessionHistory.length && !sessionStats ? (
+          <div className="text-center py-12">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-400 mx-auto mb-4"></div>
+            <p className="text-gray-400">Cargando...</p>
+          </div>
+        ) : (
+          <motion.div
+            key={activeTab}
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.3 }}
+          >
+            {activeTab === 'active' && renderActiveSessions()}
+            {activeTab === 'history' && renderHistory()}
+            {activeTab === 'stats' && renderStats()}
+          </motion.div>
+        )}
+
+        {/* Error Popup */}
+        <ErrorPopup
+          show={errorPopup.show}
+          title={errorPopup.title}
+          message={errorPopup.message}
+          onClose={() => setErrorPopup({ show: false, message: '', title: '' })}
+        />
       </div>
-
-      {renderTabs()}
-
-      {loading ? (
-        <div className="text-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Cargando...</p>
-        </div>
-      ) : (
-        <div>
-          {activeTab === 'active' && renderActiveSessions()}
-          {activeTab === 'history' && renderHistory()}
-          {activeTab === 'stats' && renderStats()}
-        </div>
-      )}
     </div>
   );
 };
