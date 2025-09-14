@@ -1,10 +1,87 @@
 /**
- * Grupos Musculares y Patrones de Movimiento para Calistenia
+ * Grupos Musculares y Patrones de Movimiento para Calistenia - v2.0 Profesional
  * Clasificación científica basada en biomecánica y funcionalidad
- * 
- * @author Claude Code - Arquitectura Modular
- * @version 1.0.0
+ * Refactorizado con patrones arquitecturales consistentes y configuraciones centralizadas
+ *
+ * @author Claude Code - Arquitectura Modular Profesional
+ * @version 2.0.0 - Architectural Standards Alignment
  */
+
+// Configuraciones centralizadas
+const MUSCLE_GROUP_CONFIG = {
+  DURATIONS: {
+    basico: 45,
+    intermedio: 60,
+    avanzado: 75
+  },
+  SPLIT_TYPES: {
+    FULL_BODY: 'full_body',
+    SPLIT: 'split'
+  },
+  FOCUS_TYPES: {
+    STRENGTH: 'strength',
+    SKILL: 'skill',
+    ENDURANCE: 'endurance'
+  },
+  SESSION_THRESHOLD: 3,
+  MAX_SESSIONS: 6
+};
+
+// Sistema de tema consistente con CalisteniaLevels.js
+const MUSCLE_GROUP_THEMES = {
+  empuje: {
+    color: 'bg-blue-100 border-blue-300',
+    darkColor: 'bg-blue-900/20 border-blue-400/30',
+    icon: '💪',
+    themeColor: 'blue-400'
+  },
+  traccion: {
+    color: 'bg-green-100 border-green-300',
+    darkColor: 'bg-green-900/20 border-green-400/30',
+    icon: '🏋️',
+    themeColor: 'green-400'
+  },
+  piernas: {
+    color: 'bg-yellow-100 border-yellow-300',
+    darkColor: 'bg-yellow-900/20 border-yellow-400/30',
+    icon: '🦵',
+    themeColor: 'yellow-400'
+  },
+  core: {
+    color: 'bg-purple-100 border-purple-300',
+    darkColor: 'bg-purple-900/20 border-purple-400/30',
+    icon: '🌟',
+    themeColor: 'purple-400'
+  },
+  habilidades: {
+    color: 'bg-red-100 border-red-300',
+    darkColor: 'bg-red-900/20 border-red-400/30',
+    icon: '🎯',
+    themeColor: 'red-400'
+  }
+};
+
+// Utilidades de validación para grupos musculares
+const MuscleGroupValidationUtils = {
+  isValidLevel(level) {
+    return typeof level === 'string' && ['basico', 'intermedio', 'avanzado'].includes(level.toLowerCase());
+  },
+
+  sanitizeLevel(level) {
+    return typeof level === 'string' ? level.toLowerCase().trim() : 'basico';
+  },
+
+  validateSessionCount(sessions) {
+    const count = Number(sessions);
+    return !isNaN(count) && count >= 1 && count <= MUSCLE_GROUP_CONFIG.MAX_SESSIONS ? count : 3;
+  },
+
+  logWarning(message, data = null) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn(`[CalisteniaMuscleGroups] ${message}`, data);
+    }
+  }
+};
 
 export const CALISTENIA_MUSCLE_GROUPS = {
   empuje: {
@@ -41,8 +118,8 @@ export const CALISTENIA_MUSCLE_GROUPS = {
       'Agregar inestabilidad (anillas)',
       'Modificar tempo y pausas'
     ],
-    color: 'bg-blue-50 border-blue-200',
-    icon: '💪'
+    // Tema modernizado
+    ...MUSCLE_GROUP_THEMES.empuje
   },
   traccion: {
     id: 'traccion',
@@ -79,8 +156,7 @@ export const CALISTENIA_MUSCLE_GROUPS = {
       'Variar agarre y anchura',
       'Agregar peso o resistencia adicional'
     ],
-    color: 'bg-green-50 border-green-200', 
-    icon: '🏋️'
+    ...MUSCLE_GROUP_THEMES.traccion
   },
   piernas: {
     id: 'piernas',
@@ -117,8 +193,7 @@ export const CALISTENIA_MUSCLE_GROUPS = {
       'Agregar componente pliométrico',
       'Modificar base de sustentación'
     ],
-    color: 'bg-yellow-50 border-yellow-200',
-    icon: '🦵'
+    ...MUSCLE_GROUP_THEMES.piernas
   },
   core: {
     id: 'core',
@@ -158,8 +233,7 @@ export const CALISTENIA_MUSCLE_GROUPS = {
       'Agregar movimiento dinámico',
       'Incrementar palanca (distancia)'
     ],
-    color: 'bg-purple-50 border-purple-200',
-    icon: '🌟'
+    ...MUSCLE_GROUP_THEMES.core
   },
   habilidades: {
     id: 'habilidades',
@@ -185,7 +259,7 @@ export const CALISTENIA_MUSCLE_GROUPS = {
     commonExercises: [
       'Handstand',
       'Front lever',
-      'Back lever', 
+      'Back lever',
       'Planche',
       'Human flag',
       'Muscle-up',
@@ -197,18 +271,22 @@ export const CALISTENIA_MUSCLE_GROUPS = {
       'Trabajo de movilidad específica',
       'Paciencia y constancia en la práctica'
     ],
-    color: 'bg-red-50 border-red-200',
-    icon: '🎯'
+    ...MUSCLE_GROUP_THEMES.habilidades
   }
 };
 
 /**
- * Obtener información de un grupo muscular específico
+ * Obtener información de un grupo muscular específico - v2.0 Mejorada
  * @param {string} groupId - ID del grupo muscular
- * @returns {Object|null} Información del grupo muscular
+ * @returns {Object|null} Información del grupo muscular con validación
  */
 export function getMuscleGroupInfo(groupId) {
-  return CALISTENIA_MUSCLE_GROUPS[groupId?.toLowerCase()] || null;
+  if (!groupId || typeof groupId !== 'string') {
+    MuscleGroupValidationUtils.logWarning('getMuscleGroupInfo called with invalid groupId', { groupId });
+    return null;
+  }
+
+  return CALISTENIA_MUSCLE_GROUPS[groupId.toLowerCase().trim()] || null;
 }
 
 /**
@@ -228,97 +306,144 @@ export function getBasicMuscleGroups() {
 }
 
 /**
- * Obtener grupos musculares recomendados por nivel
+ * Obtener grupos musculares recomendados por nivel - v2.0 Con constantes
  * @param {string} level - Nivel del usuario
  * @returns {Array} Grupos musculares apropiados para el nivel
  */
 export function getRecommendedGroupsByLevel(level) {
+  const sanitizedLevel = MuscleGroupValidationUtils.sanitizeLevel(level);
   const allGroups = getAllMuscleGroups();
-  
-  switch (level?.toLowerCase()) {
-    case 'basico':
-      return allGroups.filter(group => 
-        ['empuje', 'traccion', 'piernas', 'core'].includes(group.id)
-      );
-    case 'intermedio':
-      return allGroups.filter(group =>
-        ['empuje', 'traccion', 'piernas', 'core', 'habilidades'].includes(group.id)
-      );
-    case 'avanzado':
-      return allGroups; // Todos los grupos
-    default:
-      return getBasicMuscleGroups();
-  }
+
+  // Configuración de grupos por nivel (centralizada)
+  const LEVEL_GROUP_MAPPING = {
+    basico: ['empuje', 'traccion', 'piernas', 'core'],
+    intermedio: ['empuje', 'traccion', 'piernas', 'core', 'habilidades'],
+    avanzado: Object.keys(CALISTENIA_MUSCLE_GROUPS) // Todos los grupos
+  };
+
+  const allowedGroups = LEVEL_GROUP_MAPPING[sanitizedLevel] || LEVEL_GROUP_MAPPING.basico;
+
+  return allGroups.filter(group => allowedGroups.includes(group.id));
 }
 
 /**
- * Generar plan de entrenamiento balanceado por grupos musculares
+ * Generar plan de entrenamiento balanceado por grupos musculares - v2.0 Profesional
  * @param {string} level - Nivel del usuario
  * @param {number} sessionsPerWeek - Sesiones por semana
- * @returns {Object} Distribución de grupos musculares por sesión
+ * @returns {Object} Distribución de grupos musculares por sesión con validación
  */
 export function generateBalancedSplit(level, sessionsPerWeek) {
-  const recommendedGroups = getRecommendedGroupsByLevel(level);
-  
-  if (sessionsPerWeek <= 3) {
+  const sanitizedLevel = MuscleGroupValidationUtils.sanitizeLevel(level);
+  const validatedSessions = MuscleGroupValidationUtils.validateSessionCount(sessionsPerWeek);
+  const recommendedGroups = getRecommendedGroupsByLevel(sanitizedLevel);
+
+  if (validatedSessions <= MUSCLE_GROUP_CONFIG.SESSION_THRESHOLD) {
     // Full body approach
     return {
-      type: 'full_body',
-      sessions: Array(sessionsPerWeek).fill().map((_, index) => ({
+      type: MUSCLE_GROUP_CONFIG.SPLIT_TYPES.FULL_BODY,
+      sessions: Array(validatedSessions).fill().map((_, index) => ({
         sessionNumber: index + 1,
         muscleGroups: recommendedGroups.map(group => group.id),
-        focus: index % 2 === 0 ? 'strength' : 'skill',
-        duration: level === 'basico' ? 45 : level === 'intermedio' ? 60 : 75
+        focus: index % 2 === 0 ? MUSCLE_GROUP_CONFIG.FOCUS_TYPES.STRENGTH : MUSCLE_GROUP_CONFIG.FOCUS_TYPES.SKILL,
+        duration: MUSCLE_GROUP_CONFIG.DURATIONS[sanitizedLevel] || MUSCLE_GROUP_CONFIG.DURATIONS.basico
       }))
     };
   } else {
-    // Split approach
-    const splits = {
+    // Split approach con configuración centralizada
+    const SPLIT_CONFIGURATIONS = {
       4: [
-        { day: 1, groups: ['empuje', 'core'], focus: 'strength' },
-        { day: 2, groups: ['traccion', 'piernas'], focus: 'strength' },  
-        { day: 3, groups: ['habilidades', 'core'], focus: 'skill' },
-        { day: 4, groups: ['empuje', 'traccion'], focus: 'endurance' }
+        { day: 1, groups: ['empuje', 'core'], focus: MUSCLE_GROUP_CONFIG.FOCUS_TYPES.STRENGTH },
+        { day: 2, groups: ['traccion', 'piernas'], focus: MUSCLE_GROUP_CONFIG.FOCUS_TYPES.STRENGTH },
+        { day: 3, groups: ['habilidades', 'core'], focus: MUSCLE_GROUP_CONFIG.FOCUS_TYPES.SKILL },
+        { day: 4, groups: ['empuje', 'traccion'], focus: MUSCLE_GROUP_CONFIG.FOCUS_TYPES.ENDURANCE }
       ],
       5: [
-        { day: 1, groups: ['empuje'], focus: 'strength' },
-        { day: 2, groups: ['traccion'], focus: 'strength' },
-        { day: 3, groups: ['piernas', 'core'], focus: 'strength' },
-        { day: 4, groups: ['habilidades'], focus: 'skill' },
-        { day: 5, groups: ['empuje', 'traccion'], focus: 'endurance' }
+        { day: 1, groups: ['empuje'], focus: MUSCLE_GROUP_CONFIG.FOCUS_TYPES.STRENGTH },
+        { day: 2, groups: ['traccion'], focus: MUSCLE_GROUP_CONFIG.FOCUS_TYPES.STRENGTH },
+        { day: 3, groups: ['piernas', 'core'], focus: MUSCLE_GROUP_CONFIG.FOCUS_TYPES.STRENGTH },
+        { day: 4, groups: ['habilidades'], focus: MUSCLE_GROUP_CONFIG.FOCUS_TYPES.SKILL },
+        { day: 5, groups: ['empuje', 'traccion'], focus: MUSCLE_GROUP_CONFIG.FOCUS_TYPES.ENDURANCE }
       ],
       6: [
-        { day: 1, groups: ['empuje'], focus: 'strength' },
-        { day: 2, groups: ['traccion'], focus: 'strength' },
-        { day: 3, groups: ['piernas'], focus: 'strength' },
-        { day: 4, groups: ['core', 'habilidades'], focus: 'skill' },
-        { day: 5, groups: ['empuje'], focus: 'endurance' },
-        { day: 6, groups: ['traccion'], focus: 'endurance' }
+        { day: 1, groups: ['empuje'], focus: MUSCLE_GROUP_CONFIG.FOCUS_TYPES.STRENGTH },
+        { day: 2, groups: ['traccion'], focus: MUSCLE_GROUP_CONFIG.FOCUS_TYPES.STRENGTH },
+        { day: 3, groups: ['piernas'], focus: MUSCLE_GROUP_CONFIG.FOCUS_TYPES.STRENGTH },
+        { day: 4, groups: ['core', 'habilidades'], focus: MUSCLE_GROUP_CONFIG.FOCUS_TYPES.SKILL },
+        { day: 5, groups: ['empuje'], focus: MUSCLE_GROUP_CONFIG.FOCUS_TYPES.ENDURANCE },
+        { day: 6, groups: ['traccion'], focus: MUSCLE_GROUP_CONFIG.FOCUS_TYPES.ENDURANCE }
       ]
     };
-    
+
+    const selectedSplit = SPLIT_CONFIGURATIONS[Math.min(validatedSessions, MUSCLE_GROUP_CONFIG.MAX_SESSIONS)] ||
+                         SPLIT_CONFIGURATIONS[4];
+
     return {
-      type: 'split',
-      sessions: splits[Math.min(sessionsPerWeek, 6)] || splits[4]
+      type: MUSCLE_GROUP_CONFIG.SPLIT_TYPES.SPLIT,
+      sessions: selectedSplit.map(session => ({
+        ...session,
+        duration: MUSCLE_GROUP_CONFIG.DURATIONS[sanitizedLevel] || MUSCLE_GROUP_CONFIG.DURATIONS.basico,
+        // Filtrar grupos que no están disponibles para el nivel
+        groups: session.groups.filter(groupId =>
+          recommendedGroups.some(group => group.id === groupId)
+        )
+      }))
     };
   }
 }
 
 /**
- * Obtener ejercicios complementarios entre grupos musculares
+ * Obtener ejercicios complementarios entre grupos musculares - v2.0 Mejorada
  * @param {string} primaryGroup - Grupo muscular principal
- * @returns {Array} Grupos musculares complementarios
+ * @returns {Array} Grupos musculares complementarios con validación
  */
 export function getComplementaryGroups(primaryGroup) {
-  const complementaryMap = {
+  if (!primaryGroup || typeof primaryGroup !== 'string') {
+    MuscleGroupValidationUtils.logWarning('getComplementaryGroups called with invalid primaryGroup', { primaryGroup });
+    return [];
+  }
+
+  // Configuración centralizada de grupos complementarios
+  const COMPLEMENTARY_GROUP_MAPPING = {
     empuje: ['core', 'traccion'],
-    traccion: ['core', 'empuje'], 
+    traccion: ['core', 'empuje'],
     piernas: ['core'],
     core: ['empuje', 'traccion'],
     habilidades: ['core']
   };
-  
-  return complementaryMap[primaryGroup?.toLowerCase()] || [];
+
+  const sanitizedGroup = primaryGroup.toLowerCase().trim();
+  return COMPLEMENTARY_GROUP_MAPPING[sanitizedGroup] || [];
+}
+
+/**
+ * Obtener información de tema para un grupo muscular
+ * @param {string} groupId - ID del grupo muscular
+ * @returns {Object|null} Información de tema del grupo
+ */
+export function getMuscleGroupTheme(groupId) {
+  if (!groupId || typeof groupId !== 'string') {
+    return null;
+  }
+
+  return MUSCLE_GROUP_THEMES[groupId.toLowerCase().trim()] || null;
+}
+
+/**
+ * Obtener estadísticas de grupos musculares
+ * @returns {Object} Información estadística completa
+ */
+export function getMuscleGroupStats() {
+  const allGroups = getAllMuscleGroups();
+  const basicGroups = getBasicMuscleGroups();
+
+  return {
+    totalGroups: allGroups.length,
+    basicGroups: basicGroups.length,
+    skillGroups: allGroups.length - basicGroups.length,
+    groupTypes: Object.keys(CALISTENIA_MUSCLE_GROUPS),
+    availableThemes: Object.keys(MUSCLE_GROUP_THEMES),
+    supportedLevels: Object.keys(MUSCLE_GROUP_CONFIG.DURATIONS)
+  };
 }
 
 export default CALISTENIA_MUSCLE_GROUPS;
