@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { User, ArrowLeft, ArrowRight, Check, AlertCircle } from 'lucide-react';
 import BasicInfoStep from './steps/BasicInfoStep';
-import PersonalDataStep from './steps/PersonalDataStep';
+import BodyMeasurementsStep from './steps/BodyMeasurementsStep';
 import HealthInfoStep from './steps/HealthInfoStep';
 import GoalsStep from './steps/GoalsStep';
 import SuccessPopup from '../ui/SuccessPopup';
@@ -62,7 +62,7 @@ const RegisterPage = () => {
 
   const steps = [
     { title: 'Básicos', component: BasicInfoStep },
-    { title: 'Composición', component: PersonalDataStep },
+    { title: 'Composición', component: BodyMeasurementsStep },
     { title: 'Salud', component: HealthInfoStep },
     { title: 'Objetivos', component: GoalsStep }
   ];
