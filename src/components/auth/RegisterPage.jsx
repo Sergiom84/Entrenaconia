@@ -1,66 +1,64 @@
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { User, ArrowLeft, ArrowRight, Check } from 'lucide-react';
+import { User, ArrowLeft, ArrowRight, Check, AlertCircle } from 'lucide-react';
 import BasicInfoStep from './steps/BasicInfoStep';
 import PersonalDataStep from './steps/PersonalDataStep';
 import HealthInfoStep from './steps/HealthInfoStep';
 import GoalsStep from './steps/GoalsStep';
 import SuccessPopup from '../ui/SuccessPopup';
 import ErrorPopup from '../ui/ErrorPopup';
-import { useAuth } from '../../contexts/AuthContext';
+import { useMultiStepForm } from '../../hooks/useMultiStepForm';
+import { useRegistration } from '../../hooks/useRegistration';
+
+const INITIAL_FORM_DATA = {
+  // Información básica
+  nombre: '',
+  apellido: '',
+  email: '',
+  password: '',
+
+  // Datos personales
+  edad: '',
+  sexo: '',
+  peso: '',
+  altura: '',
+
+  // Experiencia en entrenamiento
+  nivelEntrenamiento: '',
+  anosEntrenando: '',
+  frecuenciaSemanal: '',
+  metodologiaPreferida: '',
+  nivelActividad: '',
+
+  // Medidas corporales (opcional)
+  cintura: '',
+  pecho: '',
+  brazos: '',
+  muslos: '',
+  cuello: '',
+  antebrazos: '',
+
+  // Información de salud (opcional)
+  historialMedico: '',
+  limitacionesFisicas: '',
+  alergias: '',
+  medicamentos: '',
+
+  // Metas y objetivos
+  objetivoPrincipal: '',
+  metaPeso: '',
+  metaGrasaCorporal: '',
+  enfoqueEntrenamiento: '',
+  horarioPreferido: '',
+  comidasPorDia: '',
+  suplementacion: '',
+  alimentosExcluidos: ''
+};
 
 const RegisterPage = () => {
   const navigate = useNavigate();
-  const { login } = useAuth();
-  const [currentStep, setCurrentStep] = useState(0);
-  const [showSuccessPopup, setShowSuccessPopup] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [errorPopup, setErrorPopup] = useState({ show: false, message: '', title: '' });
-  const [formData, setFormData] = useState({
-    // Información básica (simplificada)
-    nombre: '',
-    apellido: '',
-    email: '',
-    password: '',
-    
-    // Datos personales
-    edad: '',
-    sexo: '',
-    peso: '',
-    altura: '',
-    
-    // Experiencia en entrenamiento
-    nivelEntrenamiento: '',
-    anosEntrenando: '',
-    frecuenciaSemanal: '',
-    metodologiaPreferida: '',
-    nivelActividad: '',
-    
-    // Medidas corporales (opcional)
-    cintura: '',
-    pecho: '',
-    brazos: '',
-    muslos: '',
-    cuello: '',
-    antebrazos: '',
-    
-    // Información de salud (opcional)
-    historialMedico: '',
-    limitacionesFisicas: '',
-    alergias: '',
-    medicamentos: '',
-    
-    // Metas y objetivos
-    objetivoPrincipal: '',
-    metaPeso: '',
-    metaGrasaCorporal: '',
-    enfoqueEntrenamiento: '',
-    horarioPreferido: '',
-    comidasPorDia: '',
-    suplementacion: '',
-    alimentosExcluidos: ''
-  });
+  const { register, isSubmitting } = useRegistration();
 
   const steps = [
     { title: 'Básicos', component: BasicInfoStep },
@@ -69,73 +67,58 @@ const RegisterPage = () => {
     { title: 'Objetivos', component: GoalsStep }
   ];
 
-  const handleInputChange = (name, value) => {
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
-  };
+  const {
+    currentStep,
+    formData,
+    stepErrors,
+    canGoNext,
+    canGoPrevious,
+    handleNext,
+    handlePrevious,
+    handleInputChange,
+    validateAllSteps,
+    clearFormData,
+    progress,
+    isLastStep
+  } = useMultiStepForm(INITIAL_FORM_DATA, steps);
 
-  const handleNext = () => {
-    if (currentStep < steps.length - 1) {
-      setCurrentStep(currentStep + 1);
-    }
-  };
+  const [showSuccessPopup, setShowSuccessPopup] = useState(false);
+  const [errorPopup, setErrorPopup] = useState({ show: false, message: '', title: '' });
 
-  const handlePrevious = () => {
-    if (currentStep > 0) {
-      setCurrentStep(currentStep - 1);
+  const handleStepNext = () => {
+    const success = handleNext();
+    if (!success) {
+      // El hook ya maneja la validación y muestra errores
+      console.log('Validation failed for step:', currentStep);
     }
   };
 
   const handleSubmit = async () => {
-    setIsSubmitting(true);
-    try {
-      const response = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(formData)
+    // Validar todos los pasos antes de enviar
+    const { isValid } = validateAllSteps();
+    if (!isValid) {
+      setErrorPopup({
+        show: true,
+        title: 'Formulario incompleto',
+        message: 'Por favor, completa todos los campos requeridos antes de continuar.'
       });
+      return;
+    }
 
-      const data = await response.json();
+    const result = await register(formData);
 
-      if (!response.ok) {
-        // Mostrar error específico del backend
-        setErrorPopup({
-          show: true,
-          title: 'Error en el registro',
-          message: data.error || 'Hubo un problema al registrar tu cuenta. Por favor, intenta nuevamente.'
-        });
-        return;
-      }
-
-      // Registro exitoso - hacer login automático
-      console.log('Usuario registrado:', data);
-      if (data.token && data.user) {
-        login(data.user, data.token);
-        navigate('/');
+    if (result.success) {
+      if (result.autoLogin) {
+        // Navegación manejada por useRegistration
       } else {
         setShowSuccessPopup(true);
       }
-
-    } catch (error) {
-      console.error('Error al registrar usuario:', error);
-
-      // Si el backend no está disponible, simular registro exitoso
-      console.log('Backend no disponible, simulando registro exitoso:', formData);
-      const testUser = {
-        id: 1,
-        nombre: formData.nombre,
-        apellido: formData.apellido,
-        email: formData.email
-      };
-      login(testUser, 'test-token');
-      navigate('/');
-
-    } finally {
-      setIsSubmitting(false);
+    } else {
+      setErrorPopup({
+        show: true,
+        title: 'Error en el registro',
+        message: result.error
+      });
     }
   };
 
@@ -177,7 +160,7 @@ const RegisterPage = () => {
 
         {/* Indicador de pasos */}
         <div className="mb-8">
-          <div className="flex justify-center space-x-4">
+          <div className="flex justify-center space-x-4 mb-4">
             {steps.map((step, index) => (
               <div
                 key={index}
@@ -193,6 +176,14 @@ const RegisterPage = () => {
               </div>
             ))}
           </div>
+
+          {/* Barra de progreso */}
+          <div className="w-full bg-gray-700 rounded-full h-2">
+            <div
+              className="bg-yellow-400 h-2 rounded-full transition-all duration-300"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
         </div>
 
         {/* Contenido del formulario */}
@@ -207,20 +198,21 @@ const RegisterPage = () => {
           <CurrentStepComponent
             formData={formData}
             onInputChange={handleInputChange}
+            errors={stepErrors}
           />
 
           {/* Botones de navegación */}
           <div className="flex justify-between mt-8">
             <button
               onClick={handlePrevious}
-              disabled={currentStep === 0}
+              disabled={!canGoPrevious}
               className="flex items-center gap-2 px-6 py-3 bg-[#0d1522] text-gray-100 rounded-lg hover:bg-yellow-400/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed border border-yellow-400/20 font-semibold"
             >
               <ArrowLeft size={18} />
               Anterior
             </button>
 
-            {currentStep === steps.length - 1 ? (
+            {isLastStep ? (
               <button
                 onClick={handleSubmit}
                 disabled={isSubmitting}
@@ -240,7 +232,7 @@ const RegisterPage = () => {
               </button>
             ) : (
               <button
-                onClick={handleNext}
+                onClick={handleStepNext}
                 className="flex items-center gap-2 px-6 py-3 bg-yellow-400 text-[#0b1220] rounded-lg hover:bg-yellow-300 transition-colors font-semibold"
               >
                 Siguiente
@@ -248,6 +240,16 @@ const RegisterPage = () => {
               </button>
             )}
           </div>
+
+          {/* Indicador de errores de validación */}
+          {Object.keys(stepErrors).length > 0 && (
+            <div className="mt-4 p-3 bg-red-900/20 border border-red-400/20 rounded-lg">
+              <div className="flex items-center gap-2 text-red-400 text-sm">
+                <AlertCircle size={16} />
+                <span>Por favor, corrige los errores antes de continuar</span>
+              </div>
+            </div>
+          )}
         </motion.div>
       </motion.div>
 
