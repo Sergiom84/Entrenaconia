@@ -7,7 +7,7 @@
  * @version 3.0.0 - Centralized Config & Component Composition
  */
 
-import React, { useState, useEffect, useMemo, useReducer } from 'react';
+import React, { useEffect, useMemo, useReducer } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Card } from '@/components/ui/card.jsx';
@@ -513,7 +513,7 @@ export default function MethodologyVersionSelectionModal({
               { feature: 'Volumen semanal', adapted: 'Bajo a medio', strict: 'Medio a alto' },
               { feature: 'Riesgo sobreentrenamiento', adapted: 'Bajo', strict: 'Alto' },
               { feature: 'Nivel requerido', adapted: 'Principiante+', strict: 'Intermedio+' }
-            ].map((row, index) => (
+            ].map((row) => (
               <tr key={row.feature} className={`border-b border-gray-700/50 hover:bg-${VERSION_SELECTION_CONFIG.THEME.BACKGROUND.CARD_HOVER}`}>
                 <td className="py-4 font-medium">{row.feature}</td>
                 <td className={`text-center text-${VERSION_SELECTION_CONFIG.THEME.SUCCESS} py-4 font-medium`}>
