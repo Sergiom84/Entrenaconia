@@ -1,10 +1,109 @@
 /**
  * Configuración de Niveles para Calistenia Manual
  * Basado en criterios científicos de progresión
- * 
+ *
  * @author Claude Code - Arquitectura Modular
- * @version 1.0.0
+ * @version 2.0.0 - Refactored with constants, theme system and improved logic
  */
+
+// Constantes de configuración
+const LEVEL_ORDER = ['basico', 'intermedio', 'avanzado'];
+
+const TRAINING_CONSTANTS = {
+  WARMUP_DURATION: {
+    basico: 10,
+    intermedio: 15,
+    avanzado: 20
+  },
+  COOLDOWN_DURATION: 10, // Igual para todos los niveles
+  SKILL_WORK_PERCENT: {
+    basico: 30,
+    intermedio: 50,
+    avanzado: 70
+  },
+  STRENGTH_WORK_PERCENT: {
+    basico: 70,
+    intermedio: 50,
+    avanzado: 30
+  },
+  DELOAD_WEEKS: {
+    basico: 6,
+    intermedio: 4,
+    avanzado: 3
+  },
+  MAX_TRAINING_DAYS: {
+    basico: 3,
+    intermedio: 5,
+    avanzado: 6
+  }
+};
+
+// Sistema de temas de colores
+const LEVEL_THEMES = {
+  basico: {
+    primary: 'green-500',
+    background: 'green-50',
+    border: 'green-200',
+    text: 'green-800',
+    tailwindClass: 'bg-green-100 border-green-300 text-green-800',
+    icon: '🟢'
+  },
+  intermedio: {
+    primary: 'yellow-500',
+    background: 'yellow-50',
+    border: 'yellow-200',
+    text: 'yellow-800',
+    tailwindClass: 'bg-yellow-100 border-yellow-300 text-yellow-800',
+    icon: '🟡'
+  },
+  avanzado: {
+    primary: 'red-500',
+    background: 'red-50',
+    border: 'red-200',
+    text: 'red-800',
+    tailwindClass: 'bg-red-100 border-red-300 text-red-800',
+    icon: '🔴'
+  }
+};
+
+// Utilidades de validación
+const ValidationUtils = {
+  isValidLevelId(levelId) {
+    return typeof levelId === 'string' && LEVEL_ORDER.includes(levelId.toLowerCase());
+  },
+
+  sanitizeLevelId(levelId) {
+    return typeof levelId === 'string' ? levelId.toLowerCase().trim() : null;
+  },
+
+  validateLevelData(levelData) {
+    if (!levelData || typeof levelData !== 'object') {
+      return { isValid: false, error: 'Invalid level data provided' };
+    }
+
+    const requiredFields = ['id', 'name', 'description', 'frequency', 'duration', 'hitos', 'focus'];
+    const missingFields = requiredFields.filter(field => !levelData[field]);
+
+    if (missingFields.length > 0) {
+      return {
+        isValid: false,
+        error: `Missing required fields: ${missingFields.join(', ')}`
+      };
+    }
+
+    return { isValid: true };
+  },
+
+  logWarning(message, data = null) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn(`[CalisteniaLevels] ${message}`, data);
+    }
+  },
+
+  logError(message, error = null) {
+    console.error(`[CalisteniaLevels] ${message}`, error);
+  }
+};
 
 export const CALISTENIA_LEVELS = {
   'basico': {
@@ -28,13 +127,15 @@ export const CALISTENIA_LEVELS = {
       'Mejora de movilidad y flexibilidad básica'
     ],
     equipment: ['Suelo', 'Pared', 'Barra (opcional)'],
-    color: 'bg-green-100 border-green-300 text-green-800',
-    icon: '🟢',
+    theme: LEVEL_THEMES.basico,
+    // Backward compatibility
+    color: LEVEL_THEMES.basico.tailwindClass,
+    icon: LEVEL_THEMES.basico.icon,
     recommendedProgression: 'Enfoque en movimientos básicos hasta dominar técnica perfecta'
   },
   'intermedio': {
     id: 'intermedio',
-    name: 'Intermedio', 
+    name: 'Intermedio',
     description: '6-24 meses de entrenamiento',
     frequency: '3-5 días/semana',
     restDays: 'Descanso activo recomendado',
@@ -53,14 +154,16 @@ export const CALISTENIA_LEVELS = {
       'Refinamiento técnico en ejercicios complejos'
     ],
     equipment: ['Barra', 'Paralelas', 'Anillas (opcional)'],
-    color: 'bg-yellow-100 border-yellow-300 text-yellow-800',
-    icon: '🟡',
+    theme: LEVEL_THEMES.intermedio,
+    // Backward compatibility
+    color: LEVEL_THEMES.intermedio.tailwindClass,
+    icon: LEVEL_THEMES.intermedio.icon,
     recommendedProgression: 'Combinación de progresiones específicas y trabajo de volumen'
   },
   'avanzado': {
     id: 'avanzado',
     name: 'Avanzado',
-    description: '24+ meses (18+ si alta adherencia)', 
+    description: '24+ meses (18+ si alta adherencia)',
     frequency: '4-6 días/semana',
     restDays: 'Periodización con fases de descarga',
     duration: '60-90 minutos por sesión',
@@ -78,8 +181,10 @@ export const CALISTENIA_LEVELS = {
       'Trabajo artístico y de expresión corporal'
     ],
     equipment: ['Barra', 'Paralelas', 'Anillas', 'Barra sueca'],
-    color: 'bg-red-100 border-red-300 text-red-800',
-    icon: '🔴',
+    theme: LEVEL_THEMES.avanzado,
+    // Backward compatibility
+    color: LEVEL_THEMES.avanzado.tailwindClass,
+    icon: LEVEL_THEMES.avanzado.icon,
     recommendedProgression: 'Especialización en habilidades específicas con alto volumen técnico'
   }
 };
@@ -90,15 +195,22 @@ export const CALISTENIA_LEVELS = {
  * @returns {Object|null} Configuración del nivel
  */
 export function getLevelConfig(levelId) {
-  return CALISTENIA_LEVELS[levelId?.toLowerCase()] || null;
+  const sanitizedId = ValidationUtils.sanitizeLevelId(levelId);
+
+  if (!sanitizedId) {
+    ValidationUtils.logWarning('getLevelConfig called with invalid levelId', { levelId });
+    return null;
+  }
+
+  return CALISTENIA_LEVELS[sanitizedId] || null;
 }
 
 /**
- * Obtener todos los niveles disponibles
+ * Obtener todos los niveles disponibles ordenados por progresión
  * @returns {Array} Array de configuraciones de nivel
  */
 export function getAllLevels() {
-  return Object.values(CALISTENIA_LEVELS);
+  return LEVEL_ORDER.map(levelId => CALISTENIA_LEVELS[levelId]);
 }
 
 /**
@@ -107,14 +219,20 @@ export function getAllLevels() {
  * @returns {Object|null} Configuración del siguiente nivel
  */
 export function getNextLevel(currentLevel) {
-  const levels = ['basico', 'intermedio', 'avanzado'];
-  const currentIndex = levels.indexOf(currentLevel?.toLowerCase());
-  
-  if (currentIndex === -1 || currentIndex === levels.length - 1) {
+  const sanitizedLevel = ValidationUtils.sanitizeLevelId(currentLevel);
+
+  if (!ValidationUtils.isValidLevelId(sanitizedLevel)) {
+    ValidationUtils.logWarning('getNextLevel called with invalid level', { currentLevel });
     return null;
   }
-  
-  return CALISTENIA_LEVELS[levels[currentIndex + 1]];
+
+  const currentIndex = LEVEL_ORDER.indexOf(sanitizedLevel);
+
+  if (currentIndex === -1 || currentIndex === LEVEL_ORDER.length - 1) {
+    return null;
+  }
+
+  return CALISTENIA_LEVELS[LEVEL_ORDER[currentIndex + 1]];
 }
 
 /**
@@ -123,14 +241,20 @@ export function getNextLevel(currentLevel) {
  * @returns {Object|null} Configuración del nivel anterior
  */
 export function getPreviousLevel(currentLevel) {
-  const levels = ['basico', 'intermedio', 'avanzado'];
-  const currentIndex = levels.indexOf(currentLevel?.toLowerCase());
-  
+  const sanitizedLevel = ValidationUtils.sanitizeLevelId(currentLevel);
+
+  if (!ValidationUtils.isValidLevelId(sanitizedLevel)) {
+    ValidationUtils.logWarning('getPreviousLevel called with invalid level', { currentLevel });
+    return null;
+  }
+
+  const currentIndex = LEVEL_ORDER.indexOf(sanitizedLevel);
+
   if (currentIndex <= 0) {
     return null;
   }
-  
-  return CALISTENIA_LEVELS[levels[currentIndex - 1]];
+
+  return CALISTENIA_LEVELS[LEVEL_ORDER[currentIndex - 1]];
 }
 
 /**
@@ -139,25 +263,142 @@ export function getPreviousLevel(currentLevel) {
  * @returns {boolean} True si es válido
  */
 export function isValidLevel(level) {
-  return level && Object.prototype.hasOwnProperty.call(CALISTENIA_LEVELS, level.toLowerCase());
+  return ValidationUtils.isValidLevelId(level);
 }
 
 /**
  * Obtener recomendaciones generales por nivel
  * @param {string} level - Nivel del usuario
- * @returns {Object} Recomendaciones específicas
+ * @returns {Object|null} Recomendaciones específicas
  */
 export function getLevelRecommendations(level) {
   const config = getLevelConfig(level);
-  if (!config) return null;
-  
+
+  if (!config) {
+    ValidationUtils.logWarning('getLevelRecommendations called with invalid level', { level });
+    return null;
+  }
+
+  const levelId = config.id;
+
   return {
-    warmupDuration: config.id === 'basico' ? 10 : config.id === 'intermedio' ? 15 : 20,
-    cooldownDuration: 10,
-    skillWorkPercent: config.id === 'basico' ? 30 : config.id === 'intermedio' ? 50 : 70,
-    strengthWorkPercent: config.id === 'basico' ? 70 : config.id === 'intermedio' ? 50 : 30,
-    recommendedDeloadWeeks: config.id === 'basico' ? 6 : config.id === 'intermedio' ? 4 : 3,
-    maxTrainingDaysPerWeek: config.id === 'basico' ? 3 : config.id === 'intermedio' ? 5 : 6
+    warmupDuration: TRAINING_CONSTANTS.WARMUP_DURATION[levelId],
+    cooldownDuration: TRAINING_CONSTANTS.COOLDOWN_DURATION,
+    skillWorkPercent: TRAINING_CONSTANTS.SKILL_WORK_PERCENT[levelId],
+    strengthWorkPercent: TRAINING_CONSTANTS.STRENGTH_WORK_PERCENT[levelId],
+    recommendedDeloadWeeks: TRAINING_CONSTANTS.DELOAD_WEEKS[levelId],
+    maxTrainingDaysPerWeek: TRAINING_CONSTANTS.MAX_TRAINING_DAYS[levelId],
+    // Recomendaciones adicionales calculadas
+    totalWorkoutTime: TRAINING_CONSTANTS.WARMUP_DURATION[levelId] + TRAINING_CONSTANTS.COOLDOWN_DURATION,
+    skillWorkMinutes: Math.round((TRAINING_CONSTANTS.SKILL_WORK_PERCENT[levelId] / 100) * 45),
+    strengthWorkMinutes: Math.round((TRAINING_CONSTANTS.STRENGTH_WORK_PERCENT[levelId] / 100) * 45)
+  };
+}
+
+/**
+ * Obtener información de tema/colores para un nivel
+ * @param {string} level - Nivel del usuario
+ * @returns {Object|null} Información de tema
+ */
+export function getLevelTheme(level) {
+  const config = getLevelConfig(level);
+
+  if (!config) {
+    ValidationUtils.logWarning('getLevelTheme called with invalid level', { level });
+    return null;
+  }
+
+  return config.theme;
+}
+
+/**
+ * Obtener orden/índice de un nivel en la progresión
+ * @param {string} level - Nivel del usuario
+ * @returns {number} Índice del nivel (0-2) o -1 si es inválido
+ */
+export function getLevelIndex(level) {
+  const sanitizedLevel = ValidationUtils.sanitizeLevelId(level);
+
+  if (!ValidationUtils.isValidLevelId(sanitizedLevel)) {
+    return -1;
+  }
+
+  return LEVEL_ORDER.indexOf(sanitizedLevel);
+}
+
+/**
+ * Obtener estadísticas de progresión entre niveles
+ * @returns {Object} Información de progresión completa
+ */
+export function getProgressionStats() {
+  return {
+    totalLevels: LEVEL_ORDER.length,
+    levelOrder: [...LEVEL_ORDER],
+    progressionPath: LEVEL_ORDER.map(levelId => ({
+      id: levelId,
+      name: CALISTENIA_LEVELS[levelId].name,
+      description: CALISTENIA_LEVELS[levelId].description,
+      theme: CALISTENIA_LEVELS[levelId].theme
+    })),
+    trainingConstants: { ...TRAINING_CONSTANTS }
+  };
+}
+
+/**
+ * Comparar dos niveles en la progresión
+ * @param {string} levelA - Primer nivel
+ * @param {string} levelB - Segundo nivel
+ * @returns {number} -1 si levelA es anterior, 0 si son iguales, 1 si levelA es posterior
+ */
+export function compareLevels(levelA, levelB) {
+  const indexA = getLevelIndex(levelA);
+  const indexB = getLevelIndex(levelB);
+
+  if (indexA === -1 || indexB === -1) {
+    ValidationUtils.logWarning('compareLevels called with invalid levels', { levelA, levelB });
+    return 0;
+  }
+
+  if (indexA < indexB) return -1;
+  if (indexA > indexB) return 1;
+  return 0;
+}
+
+/**
+ * Verificar si un usuario puede progresar al siguiente nivel
+ * @param {string} currentLevel - Nivel actual
+ * @param {Array} completedHitos - Hitos completados por el usuario
+ * @returns {Object} Información sobre elegibilidad para progresión
+ */
+export function canProgressToNextLevel(currentLevel, completedHitos = []) {
+  const config = getLevelConfig(currentLevel);
+  const nextLevel = getNextLevel(currentLevel);
+
+  if (!config) {
+    return { canProgress: false, reason: 'Nivel actual inválido' };
+  }
+
+  if (!nextLevel) {
+    return { canProgress: false, reason: 'Ya estás en el nivel máximo' };
+  }
+
+  const totalHitos = config.hitos.length;
+  const completedCount = completedHitos.length;
+  const completionRate = totalHitos > 0 ? (completedCount / totalHitos) * 100 : 0;
+
+  const canProgress = completionRate >= 80; // Requerimos 80% de hitos completados
+
+  return {
+    canProgress,
+    currentLevel: config.name,
+    nextLevel: nextLevel.name,
+    completionRate: Math.round(completionRate),
+    completedHitos: completedCount,
+    totalHitos,
+    requiredRate: 80,
+    reason: canProgress
+      ? 'Cumples los requisitos para avanzar'
+      : `Necesitas completar al menos ${Math.ceil(totalHitos * 0.8)} hitos (${Math.ceil(totalHitos * 0.8) - completedCount} más)`
   };
 }
 
