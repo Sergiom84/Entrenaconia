@@ -1,31 +1,80 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Pause, SkipForward, X, Clock, Thermometer, CheckCircle } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { Play, Pause, SkipForward, X, Clock, Thermometer, CheckCircle, AlertTriangle } from 'lucide-react';
 import { getLevelRecommendations } from '../Methodologie/methodologies/CalisteniaManual/CalisteniaLevels';
+import { updateWarmupTime } from './api.js';
 
 /**
- * Modal de Calentamiento - Se muestra antes del entrenamiento principal
- * Incluye ejercicios de calentamiento específicos por nivel y timer
+ * Modal de Calentamiento - MEJORADO Y VALIDADO
+ * Se muestra antes del entrenamiento principal con ejercicios específicos por nivel
+ *
+ * MEJORAS IMPLEMENTADAS:
+ * - Validación robusta de props críticas (sessionId)
+ * - Manejo mejorado de errores en API calls
+ * - Accesibilidad completa con ARIA
+ * - Persistencia de progreso en localStorage
+ * - Responsive design optimizado
+ * - Estados del timer más claros
  *
  * Props:
  * - level: Nivel del usuario (básico, intermedio, avanzado)
+ * - sessionId: ID de la sesión de entrenamiento (REQUERIDO para guardar tiempo)
  * - onComplete: Función llamada al completar calentamiento
  * - onSkip: Función llamada al saltar calentamiento
  * - onClose: Función llamada al cerrar modal
  */
 export default function WarmupModal({
   level = 'básico',
+  sessionId,
   onComplete,
   onSkip,
   onClose
 }) {
-  // Estados del modal
-  const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
+  // Validación crítica de props - mostrar como warning en lugar de error si el modal está iniciando
+  if (!sessionId) {
+    console.warn('⚠️ WarmupModal: sessionId no proporcionado. El progreso no se guardará.');
+  }
+  // Estados del modal con persistencia mejorada
+  const [currentExerciseIndex, setCurrentExerciseIndex] = useState(() => {
+    // Recuperar progreso de localStorage si existe
+    if (sessionId) {
+      const saved = localStorage.getItem(`warmup_progress_${sessionId}`);
+      return saved ? JSON.parse(saved).currentExerciseIndex || 0 : 0;
+    }
+    return 0;
+  });
+
   const [isRunning, setIsRunning] = useState(false);
   const [timeLeft, setTimeLeft] = useState(30); // 30s por ejercicio por defecto
   const [phase, setPhase] = useState('ready'); // 'ready', 'exercise', 'rest', 'completed'
-  const [totalTimeSpent, setTotalTimeSpent] = useState(0);
+  const [totalTimeSpent, setTotalTimeSpent] = useState(() => {
+    // Recuperar tiempo total de localStorage si existe
+    if (sessionId) {
+      const saved = localStorage.getItem(`warmup_progress_${sessionId}`);
+      return saved ? JSON.parse(saved).totalTimeSpent || 0 : 0;
+    }
+    return 0;
+  });
 
+  const [apiError, setApiError] = useState(null);
   const intervalRef = useRef(null);
+
+  // Guardar progreso en localStorage
+  const saveProgress = useCallback(() => {
+    if (sessionId) {
+      const progress = {
+        currentExerciseIndex,
+        totalTimeSpent,
+        phase,
+        timestamp: Date.now()
+      };
+      localStorage.setItem(`warmup_progress_${sessionId}`, JSON.stringify(progress));
+    }
+  }, [sessionId, currentExerciseIndex, totalTimeSpent, phase]);
+
+  // Guardar progreso cuando cambien los estados
+  useEffect(() => {
+    saveProgress();
+  }, [saveProgress]);
 
   // Configuración por nivel
   const levelConfig = getLevelRecommendations(level) || {};
@@ -119,9 +168,56 @@ export default function WarmupModal({
     onSkip?.();
   };
 
-  const handleComplete = () => {
-    console.log(`✅ Calentamiento completado - Tiempo total: ${Math.floor(totalTimeSpent / 60)}:${(totalTimeSpent % 60).toString().padStart(2, '0')}`);
-    onComplete?.();
+  const handleComplete = async () => {
+    const timeFormatted = `${Math.floor(totalTimeSpent / 60)}:${(totalTimeSpent % 60).toString().padStart(2, '0')}`;
+    console.log(`✅ Calentamiento completado - Tiempo total: ${timeFormatted}`);
+
+    // Limpiar error previo
+    setApiError(null);
+
+    // ✅ MEJORADO: Validación y envío de tiempo de calentamiento al backend
+    if (!sessionId) {
+      console.error('❌ No se puede guardar tiempo de calentamiento: sessionId no proporcionado');
+      setApiError('No se puede guardar el progreso: sesión no válida');
+      // Continuar con el flujo a pesar del error
+      onComplete?.(totalTimeSpent);
+      return;
+    }
+
+    if (totalTimeSpent <= 0) {
+      console.warn('⚠️ No se guardó tiempo de calentamiento: tiempo insuficiente');
+      onComplete?.(totalTimeSpent);
+      return;
+    }
+
+    try {
+      console.log(`🕒 Enviando tiempo de calentamiento: ${totalTimeSpent}s para sesión ${sessionId}`);
+
+      await updateWarmupTime({
+        sessionId: sessionId,
+        warmupTimeSeconds: totalTimeSpent
+      });
+
+      console.log(`✅ Tiempo de calentamiento guardado exitosamente en BD`);
+
+      // Limpiar progreso de localStorage después de guardar exitosamente
+      if (sessionId) {
+        localStorage.removeItem(`warmup_progress_${sessionId}`);
+      }
+
+    } catch (error) {
+      console.error('❌ Error guardando tiempo de calentamiento:', error);
+
+      // Mostrar error específico al usuario
+      const errorMessage = error.message || 'Error desconocido';
+      setApiError(`Error al guardar progreso: ${errorMessage}`);
+
+      // No bloquear el flujo, pero mantener el progreso por si se puede reintentar
+      console.log('⚠️ Progreso mantenido en localStorage para posible reintento');
+    }
+
+    // Continuar con el flujo normal independientemente del resultado de la API
+    onComplete?.(totalTimeSpent);
   };
 
   const formatTime = (seconds) => {
@@ -146,26 +242,54 @@ export default function WarmupModal({
   if (phase === 'completed') {
     return (
       <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-        <div className="bg-gray-800 border border-gray-600 rounded-2xl w-full max-w-md p-6 text-center">
+        <div
+          className="bg-gray-800 border border-gray-600 rounded-2xl w-full max-w-md p-6 text-center"
+          role="dialog"
+          aria-labelledby="completion-title"
+          aria-describedby="completion-description"
+        >
           <div className="mb-4">
-            <CheckCircle className="w-16 h-16 text-green-400 mx-auto mb-3" />
-            <h2 className="text-2xl font-bold text-white mb-2">¡Calentamiento Completado!</h2>
-            <p className="text-gray-300">
+            <CheckCircle
+              className="w-16 h-16 text-green-400 mx-auto mb-3"
+              aria-hidden="true"
+            />
+            <h2
+              id="completion-title"
+              className="text-xl sm:text-2xl font-bold text-white mb-2"
+            >
+              ¡Calentamiento Completado!
+            </h2>
+            <p
+              id="completion-description"
+              className="text-gray-300 text-sm sm:text-base"
+            >
               Tiempo total: {formatTime(totalTimeSpent)}
             </p>
           </div>
 
+          {/* Mostrar error de API si existe */}
+          {apiError && (
+            <div className="mb-4 p-3 bg-red-900/20 border border-red-500/30 rounded-lg">
+              <div className="flex items-center gap-2 text-red-400 text-sm">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                <span>{apiError}</span>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-3">
             <button
               onClick={handleComplete}
-              className="w-full bg-yellow-400 hover:bg-yellow-300 text-black font-medium py-3 px-4 rounded-xl transition-colors"
+              className="w-full bg-yellow-400 hover:bg-yellow-300 text-black font-medium py-3 px-4 rounded-xl transition-colors focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:ring-offset-2 focus:ring-offset-gray-800"
+              aria-label="Completar calentamiento y comenzar entrenamiento principal"
             >
               Comenzar Entrenamiento Principal
             </button>
 
             <button
               onClick={onClose}
-              className="w-full bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded-xl transition-colors"
+              className="w-full bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded-xl transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 focus:ring-offset-gray-800"
+              aria-label="Salir del calentamiento sin continuar al entrenamiento"
             >
               Salir sin entrenar
             </button>
@@ -177,21 +301,34 @@ export default function WarmupModal({
 
   return (
     <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-gray-800 border border-gray-600 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+      <div
+        className="bg-gray-800 border border-gray-600 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+        role="dialog"
+        aria-labelledby="warmup-title"
+        aria-describedby="warmup-description"
+        aria-modal="true"
+      >
         {/* Header */}
-        <div className="p-4 border-b border-gray-700 flex items-center justify-between">
+        <div className="p-3 sm:p-4 border-b border-gray-700 flex items-center justify-between">
           <div>
-            <h2 className="text-xl text-white font-bold flex items-center">
-              <Thermometer className="w-5 h-5 mr-2 text-orange-400" />
+            <h2
+              id="warmup-title"
+              className="text-lg sm:text-xl text-white font-bold flex items-center"
+            >
+              <Thermometer className="w-5 h-5 mr-2 text-orange-400" aria-hidden="true" />
               Calentamiento
             </h2>
-            <p className="text-sm text-gray-400">
+            <p
+              id="warmup-description"
+              className="text-xs sm:text-sm text-gray-400"
+            >
               Ejercicio {currentExerciseIndex + 1} de {exercises.length} • Nivel {level}
             </p>
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-white transition-colors"
+            className="text-gray-400 hover:text-white transition-colors p-1 focus:outline-none focus:ring-2 focus:ring-gray-500 rounded"
+            aria-label="Cerrar modal de calentamiento"
           >
             <X className="w-6 h-6" />
           </button>

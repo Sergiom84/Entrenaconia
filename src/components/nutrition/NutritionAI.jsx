@@ -286,7 +286,7 @@ El plan debe ser práctico, realista y adaptado específicamente a los objetivos
       </Card>
 
       {/* Prompt generado (para desarrollo/debug) */}
-      {process.env.NODE_ENV === 'development' && (
+      {import.meta.env.DEV && (
         <Card className="bg-gray-800/70 border-gray-600">
           <CardHeader>
             <CardTitle className="text-white text-sm">Prompt Generado (Debug)</CardTitle>

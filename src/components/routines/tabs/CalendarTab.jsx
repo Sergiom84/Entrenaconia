@@ -30,13 +30,12 @@ import {
   Target,
   Dumbbell,
   CheckCircle,
-  AlertTriangle,
-  Heart,
-  Frown,
-  AlertOctagon
+  AlertTriangle
 } from 'lucide-react';
 import { getTodaySessionStatus, getSessionProgress } from '../api';
 import { mapSessionsToWeekDays } from '../../../utils/calendarMapping';
+import { getSentimentIcon } from '../../../utils/exerciseUtils';
+import { CalendarExerciseCard } from './components/CalendarExerciseCard';
 
 export default function CalendarTab({ plan, planStartDate, methodologyPlanId, ensureMethodologyPlan, refreshTrigger }) {
   // Calcular qué semana mostrar inicialmente basándose en la fecha actual
@@ -65,18 +64,6 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
   const [selectedDay, setSelectedDay] = useState(null);
   const [showDayModal, setShowDayModal] = useState(false);
 
-  // Logs de depuración para sincronización de fechas
-  useEffect(() => {
-    console.log('📅 Plan Start Date:', planStartDate);
-    console.log('📅 Today:', new Date().toISOString());
-    console.log('📅 Initial Week:', getInitialWeek());
-
-    // Log adicional para verificar el mapeo de sesiones
-    if (plan?.semanas?.[0]?.sesiones) {
-      console.log('📅 Primera semana - sesiones:', plan.semanas[0].sesiones.map(s => s.dia));
-      console.log('📅 Mapeo esperado: Las sesiones se distribuirán uniformemente desde', new Date(planStartDate).toLocaleDateString('es-ES'));
-    }
-  }, [planStartDate, plan, getInitialWeek]);
   const [weekStatuses, setWeekStatuses] = useState({});
   const [apiCache, setApiCache] = useState({});
   const apiCacheRef = useRef({});
@@ -168,19 +155,6 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
   const getDayKey = (weekNumber, day) =>
     `${weekNumber}-${(day.dayNameShort || day.dayName).toLowerCase()}`;
 
-  // Igual que en TodayTrainingTab: mapea sentimiento a icono/colores
-  const getSentimentIcon = (sentiment) => {
-    switch (sentiment) {
-      case 'like':
-        return { Icon: Heart, color: 'text-pink-400', bg: 'bg-pink-900/30', border: 'border-pink-500/30', label: 'Me gusta' };
-      case 'hard':
-        return { Icon: AlertOctagon, color: 'text-red-400', bg: 'bg-red-900/30', border: 'border-red-500/30', label: 'Es difícil' };
-      case 'dislike':
-        return { Icon: Frown, color: 'text-red-400', bg: 'bg-red-900/30', border: 'border-red-500/30', label: 'No me gusta' };
-      default:
-        return null;
-    }
-  };
 
   // Función de carga con cache memoizada
   const loadWeekStatuses = useCallback(async () => {
@@ -191,7 +165,6 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
       
       // Verificar cache existente - cache más agresivo para evitar spam
       if (apiCacheRef.current[cacheKey] && (now - apiCacheRef.current[cacheKey].timestamp) < 300000) { // 5 minutos
-        console.log('📦 Usando cache para semana', currentWeekData.weekNumber);
         return;
       }
 
@@ -219,7 +192,6 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
           }
         });
 
-        console.log(`🔄 Cargando ${daysToLoad.length}/${currentWeekData.days.length} días para semana ${currentWeekData.weekNumber}`);
         
         if (daysToLoad.length === 0) return;
 
@@ -238,8 +210,7 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
                 try {
                   const progress = await getSessionProgress(data.session.id);
                   return [key, progress];
-                } catch (e) {
-                  console.warn('Fallo al cargar progreso por sessionId, uso today-status:', e);
+                } catch {
                   return [key, data];
                 }
               }
@@ -448,71 +419,22 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
               {/* Lista de ejercicios ocupando todo el espacio disponible */}
               {day.session ? (
                 <div className="space-y-2 flex-1 py-2">
-{(() => {
-  const key = getDayKey(day.weekNumber || currentWeekData.weekNumber, day);
-  const progressList = weekStatuses[key]?.exercises || [];
-  const statusByOrder = new Map(progressList.map(ex => [ex.exercise_order, ex.status]));
-  const progressByOrder = new Map(progressList.map(ex => [ex.exercise_order, ex])); // para comment/sentiment/series
+                  {(() => {
+                    const key = getDayKey(day.weekNumber || currentWeekData.weekNumber, day);
+                    const progressList = weekStatuses[key]?.exercises || [];
+                    const statusByOrder = new Map(progressList.map(ex => [ex.exercise_order, ex.status]));
+                    const progressByOrder = new Map(progressList.map(ex => [ex.exercise_order, ex]));
 
-  return day.session.ejercicios?.map((ejercicio, exIndex) => {
-    const status = statusByOrder.get(exIndex);
-    const progress = progressByOrder.get(exIndex);
-    const sentimentData = getSentimentIcon(progress?.sentiment);
-    const hasComment = !!(progress?.comment && progress.comment.trim());
-    const seriesCompleted = progress?.series_completed ?? 0;
-
-    // Colores suaves por estado (se mantienen)
-    const rowClass =
-      status === 'completed' ? 'bg-green-900/20 border-green-500/30' :
-      status === 'skipped'   ? 'bg-gray-800/50 border-gray-600/40 opacity-90' :
-      status === 'cancelled' ? 'bg-red-900/20 border-red-500/30' :
-                               'border-gray-600/30';
-
-    const nameClass =
-      status === 'completed' ? 'text-green-300' :
-      status === 'skipped'   ? 'text-gray-300' :
-      status === 'cancelled' ? 'text-red-300'  :
-                               'text-white';
-
-    return (
-      <div
-        key={exIndex}
-        className={`text-xs pb-2 last:border-b-0 border rounded-md px-2 py-2 ${rowClass}`}
-      >
-        {/* fila superior: nombre + descanso (SIN badge de estado) */}
-        <div className="flex items-start justify-between">
-          <div className={`font-medium ${nameClass}`}>
-            {ejercicio.nombre}
-          </div>
-          {ejercicio.descanso_seg && (
-            <span className="text-gray-400">{Math.round(ejercicio.descanso_seg / 60)}'</span>
-          )}
-        </div>
-
-        {/* fila media: series x repeticiones + progreso de series */}
-        <div className="flex items-center justify-between text-xs text-gray-400 mt-0.5">
-          <span>{ejercicio.series} × {ejercicio.repeticiones}</span>
-          {status && <span className="text-[11px]">{seriesCompleted}/{ejercicio.series} series</span>}
-        </div>
-
-        {/* fila inferior: chip de sentimiento + comentario (se mantiene) */}
-        {(sentimentData || hasComment) && (
-          <div className="flex items-center gap-2 mt-1">
-            {sentimentData && (
-              <span className={`inline-flex items-center px-1.5 py-0.5 rounded-md border ${sentimentData.bg} ${sentimentData.border}`}>
-                <sentimentData.Icon className={`w-3 h-3 mr-1 ${sentimentData.color}`} />
-                <span className={`text-[10px] ${sentimentData.color}`}>{sentimentData.label}</span>
-              </span>
-            )}
-            {hasComment && (
-              <span className="text-[11px] text-gray-400 italic truncate">"{progress.comment}"</span>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  });
-})()}
+                    return day.session.ejercicios?.map((ejercicio, exIndex) => (
+                      <CalendarExerciseCard
+                        key={exIndex}
+                        ejercicio={ejercicio}
+                        exIndex={exIndex}
+                        status={statusByOrder.get(exIndex)}
+                        progress={progressByOrder.get(exIndex)}
+                      />
+                    ));
+                  })()}
                 </div>
               ) : (
                 <div className="flex-1 flex items-center justify-center">

@@ -24,7 +24,7 @@ import { ExerciseList, SessionProgressSummary } from '../components/ExerciseList
 import HomeTrainingRejectionModal from '../../HomeTraining/HomeTrainingRejectionModal.jsx';
 import { useTodaySession } from '../../../hooks/useTodaySession';
 import { formatExerciseName } from '../../../utils/exerciseUtils';
-import { startSession, updateExercise, finishSession, cancelRoutine } from '../api';
+import { startSession, updateExercise, finishSession, cancelRoutine, getPlanExercises } from '../api';
 import SafeComponent from '../../ui/SafeComponent';
 import logger from '../../../utils/logger';
 
@@ -51,6 +51,10 @@ export default function TodayTrainingTab({
   const [showRejectionModal, setShowRejectionModal] = useState(false);
   const [pendingSessionData, setPendingSessionData] = useState(null);
 
+  // Estado para ejercicios del plan (datos reales de BD)
+  const [planExercises, setPlanExercises] = useState([]);
+  const [loadingExercises, setLoadingExercises] = useState(false);
+
   // Hook de navegación
   const navigate = useNavigate();
 
@@ -72,35 +76,84 @@ export default function TodayTrainingTab({
     }
   }, [lastSessionId, methodologyPlanId]);
 
-  // Limpiar lastSessionId si la sesión ya no está completada
+  // Sincronizar lastSessionId con estado real de BD
   useEffect(() => {
-    if (todaySessionStatus?.session?.status === 'finished') {
+    const syncSessionState = async () => {
+      if (!todaySessionStatus || !methodologyPlanId) return;
+
+      const currentSessionId = todaySessionStatus.session?.id;
+      const sessionStatus = todaySessionStatus.session?.status;
+
       // Si hay una sesión completada, actualizar lastSessionId
-      const sessionId = todaySessionStatus.session.id;
-      if (sessionId && sessionId !== lastSessionId) {
-        setLastSessionId(sessionId);
+      if (sessionStatus === 'finished' || sessionStatus === 'completed') {
+        if (currentSessionId && currentSessionId !== lastSessionId) {
+          setLastSessionId(currentSessionId);
+          logger.debug('LastSessionId actualizado con sesión completada', { sessionId: currentSessionId }, 'Routines');
+        }
       }
-    } else if (todaySessionStatus?.session?.status === 'active') {
-      // Si la sesión está activa (no completada), limpiar lastSessionId
-      setLastSessionId(null);
-      if (methodologyPlanId) {
-        localStorage.removeItem(`lastSessionId_${methodologyPlanId}`);
+      // Si la sesión está activa/en progreso, limpiar lastSessionId obsoleto
+      else if (sessionStatus === 'active' || sessionStatus === 'in_progress') {
+        if (lastSessionId) {
+          // Verificar si lastSessionId sigue siendo válido
+          const storedSessionId = localStorage.getItem(`lastSessionId_${methodologyPlanId}`);
+          if (storedSessionId && storedSessionId !== currentSessionId) {
+            logger.debug('Limpiando lastSessionId obsoleto durante sesión activa', {
+              stored: storedSessionId, current: currentSessionId
+            }, 'Routines');
+            setLastSessionId(null);
+            localStorage.removeItem(`lastSessionId_${methodologyPlanId}`);
+          }
+        }
       }
-    }
+      // Si no hay sesión del día, validar que lastSessionId sea de hoy
+      else if (!sessionStatus && lastSessionId) {
+        try {
+          // Validar que la sesión guardada existe y es válida
+          const { getSessionById } = await import('../api');
+          const sessionData = await getSessionById(lastSessionId);
+          if (!sessionData || !sessionData.session) {
+            logger.warn('LastSessionId inválido detectado, limpiando', { sessionId: lastSessionId }, 'Routines');
+            setLastSessionId(null);
+            localStorage.removeItem(`lastSessionId_${methodologyPlanId}`);
+          }
+        } catch (error) {
+          logger.warn('Error validando lastSessionId, limpiando por seguridad', error, 'Routines');
+          setLastSessionId(null);
+          localStorage.removeItem(`lastSessionId_${methodologyPlanId}`);
+        }
+      }
+    };
+
+    syncSessionState();
   }, [todaySessionStatus, lastSessionId, methodologyPlanId]);
 
   /**
    * Iniciar nueva sesión de entrenamiento
    */
   const handleStartSession = async (exerciseIndex = 0) => {
+    // Validaciones iniciales
     if (!todaySession) {
       logger.warn('No hay sesión definida para hoy', null, 'Routines');
+      return;
+    }
+
+    if (!todaySession.ejercicios || todaySession.ejercicios.length === 0) {
+      logger.error('La sesión de hoy no tiene ejercicios definidos', { todaySession }, 'Routines');
+      return;
+    }
+
+    if (!methodologyPlanId && typeof ensureMethodologyPlan !== 'function') {
+      logger.error('No se puede iniciar sesión: falta methodologyPlanId y ensureMethodologyPlan', null, 'Routines');
       return;
     }
 
     try {
       setIsLoading(true);
       const mId = methodologyPlanId || await ensureMethodologyPlan();
+
+      if (!mId) {
+        throw new Error('No se pudo obtener o crear methodology_plan_id');
+      }
 
       const sessionData = await startSession({
         methodology_plan_id: mId,
@@ -109,27 +162,47 @@ export default function TodayTrainingTab({
         exercises: todaySession.ejercicios
       });
 
-      if (sessionData?.session?.id) {
-        setRoutineSessionId(sessionData.session.id);
-        setLastSessionId(sessionData.session.id);
-        setSelectedSession({
-          ...todaySession,
-          sessionId: sessionData.session.id,
-          currentExerciseIndex: exerciseIndex
-        });
-        // Guardar datos de sesión para después del calentamiento
-        setPendingSessionData({
-          session: selectedSession,
-          sessionId: sessionData.session.id
-        });
-
-        // Mostrar modal de calentamiento PRIMERO
-        setShowWarmupModal(true);
-
-        logger.info('Sesión iniciada exitosamente, iniciando calentamiento', { sessionId: sessionData.session.id }, 'Routines');
+      if (!sessionData?.session?.id) {
+        throw new Error('La respuesta del servidor no contiene un ID de sesión válido');
       }
+
+      const newSessionId = sessionData.session.id;
+      setRoutineSessionId(newSessionId);
+      setLastSessionId(newSessionId);
+
+      const enrichedSession = {
+        ...todaySession,
+        sessionId: newSessionId,
+        currentExerciseIndex: Math.max(0, Math.min(exerciseIndex, todaySession.ejercicios.length - 1))
+      };
+
+      setSelectedSession(enrichedSession);
+
+      // Guardar datos de sesión para después del calentamiento
+      setPendingSessionData({
+        session: enrichedSession,
+        sessionId: newSessionId
+      });
+
+      // Mostrar modal de calentamiento DESPUÉS de configurar pendingSessionData
+      setTimeout(() => setShowWarmupModal(true), 0);
+
+      logger.info('Sesión iniciada exitosamente, iniciando calentamiento', {
+        sessionId: newSessionId,
+        totalExercises: todaySession.ejercicios.length,
+        startingAt: exerciseIndex
+      }, 'Routines');
+
     } catch (error) {
-      logger.error('Error iniciando sesión', error, 'Routines');
+      logger.error('Error iniciando sesión', {
+        error: error.message,
+        todaySession: todaySession?.dia,
+        methodologyPlanId,
+        exerciseCount: todaySession?.ejercicios?.length
+      }, 'Routines');
+
+      // Mostrar error al usuario si es necesario
+      setError && setError(`Error al iniciar la sesión: ${error.message}`);
     } finally {
       setIsLoading(false);
     }
@@ -139,7 +212,7 @@ export default function TodayTrainingTab({
    * Manejar finalización del calentamiento
    */
   const handleWarmupComplete = () => {
-    console.log('✅ Calentamiento completado, iniciando entrenamiento principal');
+    logger.info('Calentamiento completado, iniciando entrenamiento principal', null, 'Routines');
     setShowWarmupModal(false);
 
     if (pendingSessionData) {
@@ -154,7 +227,7 @@ export default function TodayTrainingTab({
    * Manejar saltar calentamiento
    */
   const handleSkipWarmup = () => {
-    console.log('⏭️ Calentamiento saltado, yendo directo al entrenamiento');
+    logger.info('Calentamiento saltado, yendo directo al entrenamiento', null, 'Routines');
     setShowWarmupModal(false);
 
     if (pendingSessionData) {
@@ -168,37 +241,72 @@ export default function TodayTrainingTab({
   /**
    * Cerrar modal de calentamiento (cancela entrenamiento)
    */
-  const handleCloseWarmup = () => {
-    console.log('❌ Calentamiento cancelado');
+  const handleCloseWarmup = async () => {
+    logger.info('Calentamiento cancelado', null, 'Routines');
     setShowWarmupModal(false);
+
+    // Limpiar estados relacionados
+    setSelectedSession(null);
+    setRoutineSessionId(null);
     setPendingSessionData(null);
-    // TODO: Cancelar la sesión creada si es necesario
+
+    // TODO: Considerar cancelar la sesión creada en el backend si es necesario
+    logger.debug('Estados de modal de calentamiento limpiados', null, 'Routines');
   };
 
   /**
    * Finalizar ejercicio actual
    */
   const handleFinishExercise = async (exerciseIndex, seriesCompleted, timeSpent) => {
-    if (!routineSessionId) return;
+    // Validaciones
+    if (!routineSessionId) {
+      logger.error('No se puede finalizar ejercicio: falta routineSessionId', { exerciseIndex }, 'Routines');
+      return;
+    }
+
+    if (typeof exerciseIndex !== 'number' || exerciseIndex < 0) {
+      logger.error('exerciseIndex inválido', { exerciseIndex }, 'Routines');
+      return;
+    }
 
     try {
-      await updateExercise({
+      const updateData = {
         sessionId: routineSessionId,
         exerciseOrder: exerciseIndex,
         status: 'completed',
-        series_completed: seriesCompleted,
-        time_spent_seconds: timeSpent
-      });
+        series_completed: Math.max(0, parseInt(seriesCompleted) || 0),
+        time_spent_seconds: Math.max(0, parseInt(timeSpent) || 0)
+      };
 
+      await updateExercise(updateData);
       await refreshSessionStatus();
 
-      if (onProgressUpdate) {
+      if (typeof onProgressUpdate === 'function') {
         onProgressUpdate();
       }
 
-      logger.info('Ejercicio completado', { exerciseIndex, seriesCompleted }, 'Routines');
+      logger.info('Ejercicio completado exitosamente', {
+        exerciseIndex,
+        seriesCompleted: updateData.series_completed,
+        timeSpent: updateData.time_spent_seconds,
+        sessionId: routineSessionId
+      }, 'Routines');
+
     } catch (error) {
-      logger.error('Error finalizando ejercicio', error, 'Routines');
+      logger.error('Error finalizando ejercicio', {
+        error: error.message,
+        exerciseIndex,
+        sessionId: routineSessionId,
+        seriesCompleted,
+        timeSpent
+      }, 'Routines');
+
+      // En caso de error, intentar refrescar el estado de todos modos
+      try {
+        await refreshSessionStatus();
+      } catch (refreshError) {
+        logger.error('Error en fallback de refreshSessionStatus tras fallo de finishExercise', refreshError, 'Routines');
+      }
     }
   };
 
@@ -256,38 +364,62 @@ export default function TodayTrainingTab({
    * Finalizar sesión completa
    */
   const handleEndSession = async () => {
-    if (!routineSessionId) return;
+    if (!routineSessionId) {
+      logger.error('No se puede finalizar sesión: falta routineSessionId', null, 'Routines');
+      return;
+    }
 
     try {
+      setIsLoading(true);
+
       await finishSession(routineSessionId);
+
+      // Limpiar estado del modal
       setShowSessionModal(false);
       setSelectedSession(null);
+      setRoutineSessionId(null);
+      setPendingSessionData(null);
 
       // Mantener el sessionId para que se muestre el resumen
-      setLastSessionId(routineSessionId);
+      const completedSessionId = routineSessionId;
+      setLastSessionId(completedSessionId);
 
       // Actualizar el estado de la sesión para reflejar que está completada
       await refreshSessionStatus();
 
-      if (onProgressUpdate) {
+      if (typeof onProgressUpdate === 'function') {
         onProgressUpdate();
       }
 
-      logger.info('Sesión finalizada exitosamente', { sessionId: routineSessionId }, 'Routines');
+      logger.info('Sesión finalizada exitosamente', {
+        sessionId: completedSessionId,
+        timestamp: new Date().toISOString()
+      }, 'Routines');
 
       // Navegar a la página de rutinas después de cerrar el modal
-      // La navegación se hace después de actualizar todo el estado
       setTimeout(() => {
-        navigate('/routines');
-      }, 100);
+        if (navigate && typeof navigate === 'function') {
+          navigate('/routines');
+        }
+      }, 150);
+
     } catch (error) {
-      logger.error('Error finalizando sesión', error, 'Routines');
+      logger.error('Error finalizando sesión', {
+        error: error.message,
+        sessionId: routineSessionId
+      }, 'Routines');
+
       // En caso de error, intentar actualizar el estado de todos modos
       try {
         await refreshSessionStatus();
       } catch (fallbackError) {
-        logger.error('Error en fallback de refreshSessionStatus', fallbackError, 'Routines');
+        logger.error('Error en fallback de refreshSessionStatus tras fallo de endSession', {
+          originalError: error.message,
+          fallbackError: fallbackError.message
+        }, 'Routines');
       }
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -355,6 +487,44 @@ export default function TodayTrainingTab({
     }
   };
 
+  // Cargar ejercicios reales del plan desde BD
+  useEffect(() => {
+    const loadPlanExercises = async () => {
+      if (!methodologyPlanId) return;
+
+      setLoadingExercises(true);
+      try {
+        const exercises = await getPlanExercises({ methodologyPlanId });
+        setPlanExercises(exercises || []);
+        logger.debug('Ejercicios del plan cargados desde BD', { count: exercises?.length || 0 }, 'Routines');
+      } catch (error) {
+        logger.error('Error cargando ejercicios del plan', error, 'Routines');
+        // Fallback a plan.semanas solo si falla la BD
+        const fallbackExercises = (plan?.semanas || []).flatMap(sem => sem?.sesiones || [])
+          .flatMap(ses => ses?.ejercicios || [])
+          .reduce((acc, ej) => {
+            const nombre = ej?.nombre || ej?.name || '';
+            if (!nombre) return acc;
+            if (!acc.find(x => x.nombre?.toLowerCase() === nombre.toLowerCase())) {
+              acc.push({
+                nombre,
+                series: ej.series ?? ej.series_total ?? 3,
+                repeticiones: ej.repeticiones ?? ej.reps ?? null,
+                duracion_seg: ej.duracion_seg ?? ej.duration_sec ?? null,
+              });
+            }
+            return acc;
+          }, []);
+        setPlanExercises(fallbackExercises);
+        logger.warn('Usando ejercicios fallback desde plan.semanas', { count: fallbackExercises.length }, 'Routines');
+      } finally {
+        setLoadingExercises(false);
+      }
+    };
+
+    loadPlanExercises();
+  }, [methodologyPlanId, plan]);
+
   // Estados de carga y error
   if (loadingStatus) {
     return (
@@ -392,24 +562,6 @@ export default function TodayTrainingTab({
   const hasActiveSession = todaySessionStatus?.session?.status === 'in_progress';
   const hasCompletedSession = todaySessionStatus?.session?.status === 'finished';
   const isRestDay = !todaySession;
-
-  // Todos los ejercicios del plan actual (deduplicados por nombre)
-  const exercisesForModal = (plan?.semanas || []).flatMap(sem => sem?.sesiones || [])
-    .flatMap(ses => ses?.ejercicios || [])
-    .reduce((acc, ej) => {
-      const nombre = ej?.nombre || ej?.name || '';
-      if (!nombre) return acc;
-      if (!acc.find(x => x.nombre?.toLowerCase() === nombre.toLowerCase())) {
-        acc.push({
-          nombre,
-          series: ej.series ?? ej.series_total ?? 3,
-          repeticiones: ej.repeticiones ?? ej.reps ?? null,
-          duracion_seg: ej.duracion_seg ?? ej.duration_sec ?? null,
-        });
-      }
-      return acc;
-    }, []);
-
 
   return (
     <SafeComponent context="TodayTrainingTab">
@@ -501,9 +653,10 @@ export default function TodayTrainingTab({
         )}
 
         {/* Modal de Calentamiento */}
-        {showWarmupModal && (
+        {showWarmupModal && pendingSessionData?.sessionId && (
           <WarmupModal
             level={plan?.level || 'básico'} // Nivel del plan actual
+            sessionId={pendingSessionData.sessionId} // ✅ NUEVO: ID de sesión para guardar tiempo
             onComplete={handleWarmupComplete}
             onSkip={handleSkipWarmup}
             onClose={handleCloseWarmup}
@@ -539,12 +692,13 @@ export default function TodayTrainingTab({
         {/* Modales adicionales */}
         {showRejectionModal && (
           <HomeTrainingRejectionModal
-            exercises={exercisesForModal}
+            exercises={planExercises} // Usar ejercicios reales de BD
             equipmentType={plan?.equipamiento || plan?.equipment || 'rutina'}
             trainingType={plan?.selected_style || plan?.metodologia || 'rutina'}
             onReject={handleRoutineRejections}
             onSkip={handleSkipCancel}
             onClose={() => setShowRejectionModal(false)}
+            loading={loadingExercises}
           />
         )}
 

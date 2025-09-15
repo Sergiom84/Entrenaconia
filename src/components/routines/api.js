@@ -176,9 +176,17 @@ export async function cancelRoutine({ methodology_plan_id, routine_plan_id }) {
   return data;
 }
 
-export async function getHistoricalData() {
+export async function getHistoricalData({ methodologyPlanId = null } = {}) {
   const token = getToken();
-  const resp = await fetch('/api/routines/historical-data', {
+  const queryParams = new URLSearchParams();
+
+  if (methodologyPlanId) {
+    queryParams.set('methodology_plan_id', methodologyPlanId);
+  }
+
+  const url = `/api/routines/historical-data${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
+
+  const resp = await fetch(url, {
     headers: { 'Authorization': `Bearer ${token}` }
   });
   const data = await resp.json().catch(() => ({}));
@@ -191,7 +199,7 @@ export async function getHistoricalData() {
 // Nueva función: obtener datos de una sesión específica completada
 export async function getSessionById(sessionId) {
   const token = getToken();
-  
+
   const resp = await fetch(`/api/routines/sessions/${sessionId}/details`, {
     headers: { 'Authorization': `Bearer ${token}` }
   });
@@ -201,4 +209,31 @@ export async function getSessionById(sessionId) {
     throw new Error(data.error || 'No se pudo obtener la sesión');
   }
   return data; // { session, exercises, summary }
+}
+
+// Nueva función: obtener ejercicios únicos del plan para modales de cancelación
+export async function getPlanExercises({ methodologyPlanId }) {
+  const token = getToken();
+  const resp = await fetch(`/api/routines/plan-exercises?methodology_plan_id=${encodeURIComponent(methodologyPlanId)}`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok || !data.success) {
+    if (resp.status === 404) return [];
+    throw new Error(data.error || 'No se pudieron cargar los ejercicios del plan');
+  }
+  return data.exercises; // Array de ejercicios únicos del plan
+}
+
+// Nueva función: actualizar tiempo de calentamiento
+export async function updateWarmupTime({ sessionId, warmupTimeSeconds }) {
+  const token = getToken();
+  const resp = await fetch(`/api/routines/sessions/${sessionId}/warmup-time`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+    body: JSON.stringify({ warmup_time_seconds: warmupTimeSeconds })
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok || !data.success) throw new Error(data.error || 'No se pudo actualizar el tiempo de calentamiento');
+  return data;
 }

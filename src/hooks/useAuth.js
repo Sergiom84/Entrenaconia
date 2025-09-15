@@ -47,7 +47,7 @@ export const useAuth = () => {
       console.error('Error en login:', error);
 
       // Fallback for development - only if backend is unavailable
-      if (process.env.NODE_ENV === 'development' &&
+      if (import.meta.env.DEV &&
           credentials.email === TEST_CREDENTIALS.email &&
           credentials.password === TEST_CREDENTIALS.password) {
 

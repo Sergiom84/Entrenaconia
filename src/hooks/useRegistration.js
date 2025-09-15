@@ -45,7 +45,7 @@ export const useRegistration = () => {
       console.error('Error al registrar usuario:', error);
 
       // Solo en desarrollo y con datos de prueba específicos
-      if (process.env.NODE_ENV === 'development' &&
+      if (import.meta.env.DEV &&
           userData.email === 'test@test.com') {
 
         const testUser = {

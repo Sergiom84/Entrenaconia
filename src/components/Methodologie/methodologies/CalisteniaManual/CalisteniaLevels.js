@@ -95,7 +95,7 @@ const ValidationUtils = {
   },
 
   logWarning(message, data = null) {
-    if (process.env.NODE_ENV === 'development') {
+    if (import.meta.env.DEV) {
       console.warn(`[CalisteniaLevels] ${message}`, data);
     }
   },

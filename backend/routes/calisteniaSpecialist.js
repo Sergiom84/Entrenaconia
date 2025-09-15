@@ -433,7 +433,19 @@ FORMATO DE RESPUESTA (JSON puro):
 router.post('/generate-plan', authenticateToken, async (req, res) => {
   try {
     const userId = req.user?.userId || req.user?.id;
-    const { userProfile, selectedLevel, goals, exercisePreferences } = req.body;
+    const {
+      userProfile,
+      selectedLevel,
+      goals,
+      exercisePreferences,
+      // NUEVO: Campos de feedback para regeneración
+      previousPlan,
+      regenerationReason,
+      additionalInstructions
+    } = req.body;
+
+    // Detectar si es una regeneración con feedback
+    const isRegenerationWithFeedback = !!(previousPlan || regenerationReason || additionalInstructions);
 
     console.log('🤸‍♀️ Generando plan especializado de calistenia...');
     console.log('📅 Request body recibido:', {
@@ -441,8 +453,19 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
       userProfileKeys: userProfile ? Object.keys(userProfile) : [],
       selectedLevel,
       goals: goals?.substring(0, 50) + '...',
-      exercisePreferencesCount: exercisePreferences?.length || 0
+      exercisePreferencesCount: exercisePreferences?.length || 0,
+      // NUEVO: Información de feedback
+      isRegenerationWithFeedback,
+      hasPreviousPlan: !!previousPlan,
+      regenerationReasons: regenerationReason?.length || 0,
+      hasAdditionalInstructions: !!additionalInstructions
     });
+
+    if (isRegenerationWithFeedback) {
+      console.log('🔄 Regenerando plan con feedback del usuario:');
+      console.log('   - Motivos:', regenerationReason);
+      console.log('   - Instrucciones adicionales:', additionalInstructions || 'Ninguna');
+    }
 
     if (!userProfile || !selectedLevel) {
       return res.status(400).json({
@@ -556,6 +579,20 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
       throw new Error(`No se encontraron ejercicios de calistenia para nivel ${dbLevel} en la base de datos`);
     }
     console.log(`📋 ${availableExercises.length} ejercicios disponibles para nivel ${dbLevel}`);
+
+    // 🔍 DEBUG: Verificar ejercicios disponibles
+    console.log('🏋️ ========== EJERCICIOS PARA IA ==========');
+    console.log('📊 Total de ejercicios:', availableExercises.length);
+    if (availableExercises.length > 0) {
+      const categorias = [...new Set(availableExercises.map(e => e.categoria))];
+      console.log('📋 Categorías disponibles:', categorias.join(', '));
+      console.log('🎯 Muestra de ejercicios:');
+      categorias.forEach(cat => {
+        const ejerciciosCat = availableExercises.filter(e => e.categoria === cat);
+        console.log(`  - ${cat}: ${ejerciciosCat.slice(0, 2).map(e => e.nombre).join(', ')} (${ejerciciosCat.length} total)`);
+      });
+    }
+    console.log('===========================================');
     
     // Obtener historial reciente
     const recentExercisesResult = await pool.query(`
@@ -567,7 +604,36 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
     `, [userId]);
     
     const recentExercises = recentExercisesResult.rows.map(row => row.exercise_name);
-    
+
+    // NUEVO: Obtener contexto de feedback del usuario para personalización avanzada
+    let userFeedbackContext = null;
+    let avoidedExercises = [];
+
+    try {
+      // Obtener contexto de IA del usuario (preferencias, feedback histórico)
+      const contextResult = await pool.query(`
+        SELECT app.get_user_ai_context($1, $2) as context
+      `, [userId, 'calistenia']);
+
+      if (contextResult.rows.length > 0 && contextResult.rows[0].context) {
+        userFeedbackContext = contextResult.rows[0].context;
+        console.log('📊 Contexto de feedback del usuario obtenido');
+      }
+
+      // Obtener ejercicios a evitar basados en feedback negativo
+      const avoidedResult = await pool.query(`
+        SELECT app.get_avoided_exercises_for_ai($1, $2, $3) as avoided
+      `, [userId, 'calistenia', 30]); // Últimos 30 días
+
+      if (avoidedResult.rows.length > 0 && avoidedResult.rows[0].avoided) {
+        avoidedExercises = avoidedResult.rows[0].avoided || [];
+        console.log(`🚫 ${avoidedExercises.length} ejercicios en lista de evitados`);
+      }
+    } catch (contextError) {
+      console.warn('⚠️ Error obteniendo contexto de feedback (continuando sin él):', contextError.message);
+      // Continuar sin contexto de feedback si hay error
+    }
+
     // Obtener el día actual en español para que la IA comience desde hoy
     const today = new Date();
     const daysOfWeek = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
@@ -575,13 +641,16 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
     
     // Preparar payload para generación de plan
     const planPayload = {
-      task: 'generate_calistenia_plan',
+      task: isRegenerationWithFeedback ? 'regenerate_calistenia_plan_with_feedback' : 'generate_calistenia_plan',
       user_profile: fullUserProfile, // Usar el perfil completo obtenido
       selected_level: selectedLevel,
       goals: goals || '',
       exercise_preferences: exercisePreferences || [],
       available_exercises: availableExercises,
       recent_exercises: recentExercises,
+      // NUEVO: Contexto de feedback para personalización avanzada
+      user_feedback_context: userFeedbackContext,
+      avoided_exercises: avoidedExercises,
       plan_requirements: {
         duration_weeks: 4,
         sessions_per_week: getSessionsPerWeek(dbLevel),
@@ -589,8 +658,25 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
         progression_type: 'gradual',
         focus_areas: getFocusAreas(dbLevel),
         start_day: currentDay,
-        start_date: today.toISOString().split('T')[0] // Formato YYYY-MM-DD
-      }
+        start_date: today.toISOString().split('T')[0], // Formato YYYY-MM-DD
+        // NUEVO: Restricciones basadas en feedback
+        avoid_exercises: avoidedExercises,
+        personalization_priority: userFeedbackContext ? 'high' : 'standard'
+      },
+      // NUEVO: Información de feedback para regeneración
+      ...(isRegenerationWithFeedback && {
+        previous_plan: previousPlan,
+        user_feedback: {
+          reasons: regenerationReason || [],
+          additional_instructions: additionalInstructions || null,
+          feedback_timestamp: new Date().toISOString()
+        },
+        regeneration_requirements: {
+          avoid_previous_issues: true,
+          improve_based_on_feedback: true,
+          maintain_progression_logic: true
+        }
+      })
     };
     
     console.log(`📅 Plan comenzará desde: ${currentDay} (${today.toISOString().split('T')[0]})`);
@@ -604,9 +690,18 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
     if (!systemPrompt) {
       throw new Error('Prompt no disponible para Calistenia Specialist');
     }
-    
+
     console.log('📋 Usando prompt desde registry para generar plan de calistenia');
     console.log(`📝 Prompt preview (100 chars): ${systemPrompt.substring(0, 100)}...`);
+
+    // 🔍 DEBUG: Verificar que el prompt es el correcto
+    console.log('🔍 ========== VERIFICACIÓN DE PROMPT ==========');
+    console.log('✅ Contiene "Generación de Planes"?:', systemPrompt.includes('Generación de Planes') ? 'SÍ' : 'NO');
+    console.log('✅ Contiene estructura "semanas"?:', systemPrompt.includes('"semanas"') ? 'SÍ' : 'NO');
+    console.log('✅ Contiene "4 semanas"?:', systemPrompt.includes('4 semanas') ? 'SÍ' : 'NO');
+    console.log('✅ Es prompt de evaluación?:', systemPrompt.includes('Evaluación') ? 'SÍ (ERROR!)' : 'NO (CORRECTO)');
+    console.log('📏 Longitud total del prompt:', systemPrompt.length, 'caracteres');
+    console.log('===============================================');
     
     // Llamada a IA
     const client = getCalisteniaSpecialistClient();
@@ -632,9 +727,17 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
     });
     
     const aiResponse = completion.choices[0].message.content;
+
+    // 🔍 DEBUG: Log completo de la respuesta de OpenAI
+    console.log('🤖 ========== RESPUESTA COMPLETA DE OPENAI ==========');
+    console.log('📊 Longitud de respuesta:', aiResponse?.length || 0);
+    console.log('🔤 Primeros 500 caracteres:', aiResponse?.substring(0, 500) || '[RESPUESTA VACÍA]');
+    console.log('🔤 Últimos 200 caracteres:', aiResponse?.substring(aiResponse.length - 200) || '[RESPUESTA VACÍA]');
+    console.log('====================================================');
+
     logAIResponse(aiResponse);
     logTokens(completion.usage);
-    
+
     // Parsear y validar plan (limpiar markdown si existe)
     let cleanPlanResponse = aiResponse.trim();
     
@@ -666,10 +769,24 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
       .replace(/^[`\s]*/, '')  // Quitar backticks y espacios al inicio
       .replace(/[`\s]*$/, '')  // Quitar backticks y espacios al final
       .trim();
-    
+
+    // 🔍 DEBUG: Verificar respuesta limpia antes del parseo
+    console.log('🧹 ========== RESPUESTA LIMPIA PARA PARSEAR ==========');
+    console.log('📊 Longitud después de limpieza:', cleanPlanResponse?.length || 0);
+    console.log('🔤 Primeros 300 caracteres limpiados:', cleanPlanResponse?.substring(0, 300) || '[VACÍO]');
+    console.log('✅ Contiene "semanas"?:', cleanPlanResponse?.includes('"semanas"') ? 'SÍ' : 'NO');
+    console.log('✅ Parece ser JSON válido?:', cleanPlanResponse?.startsWith('{') && cleanPlanResponse?.endsWith('}') ? 'SÍ' : 'NO');
+    console.log('====================================================');
+
     let generatedPlan;
     try {
       generatedPlan = JSON.parse(cleanPlanResponse);
+      console.log('✅ JSON parseado exitosamente');
+      console.log('🔍 Estructura del plan parseado:');
+      console.log('  - Tiene campo "semanas"?:', Object.prototype.hasOwnProperty.call(generatedPlan, 'semanas') ? 'SÍ' : 'NO');
+      console.log('  - Es array "semanas"?:', Array.isArray(generatedPlan.semanas) ? 'SÍ' : 'NO');
+      console.log('  - Cantidad de semanas:', generatedPlan.semanas?.length || 0);
+      console.log('  - Campos en el objeto principal:', Object.keys(generatedPlan).join(', '));
     } catch (parseError) {
       console.error('❌ Error parseando plan generado:', parseError.message);
       console.error('📄 Respuesta raw:', aiResponse.substring(0, 200) + '...');
@@ -679,6 +796,24 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
     
     // Validar estructura básica del plan
     if (!generatedPlan.semanas || !Array.isArray(generatedPlan.semanas)) {
+      // 🔍 DEBUG: Analizar qué devolvió realmente OpenAI
+      console.error('❌ ========== ERROR: ESTRUCTURA INCORRECTA ==========');
+      console.error('📋 OpenAI devolvió un objeto con estas claves:', Object.keys(generatedPlan));
+      console.error('🔍 Contenido completo del objeto (primeros 500 chars):');
+      console.error(JSON.stringify(generatedPlan).substring(0, 500));
+
+      // Intentar detectar si es un problema de formato conocido
+      if (generatedPlan.plan && generatedPlan.plan.semanas) {
+        console.error('⚠️ DETECTADO: El plan está anidado en generatedPlan.plan.semanas');
+        console.error('🔧 Intentando usar la estructura anidada...');
+        generatedPlan = generatedPlan.plan;
+      } else if (generatedPlan.weeks) {
+        console.error('⚠️ DETECTADO: OpenAI usó "weeks" en lugar de "semanas"');
+      } else if (generatedPlan.training_plan) {
+        console.error('⚠️ DETECTADO: OpenAI usó "training_plan" como contenedor');
+      }
+      console.error('====================================================');
+
       throw new Error('Plan debe contener array de semanas');
     }
     
@@ -686,7 +821,7 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
     const dbClient = await pool.connect();
     try {
       await dbClient.query('BEGIN');
-      
+
       // Insertar en methodology_plans
       const methodologyResult = await dbClient.query(`
         INSERT INTO app.methodology_plans (
@@ -694,24 +829,108 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
         ) VALUES ($1, $2, $3, $4, $5, NOW())
         RETURNING id
       `, [userId, 'Calistenia', JSON.stringify(generatedPlan), 'automatic', 'draft']);
-      
+
       const methodologyPlanId = methodologyResult.rows[0].id;
-      
+
+      // NUEVO: Guardar feedback del usuario si es una regeneración
+      if (isRegenerationWithFeedback && regenerationReason && regenerationReason.length > 0) {
+        console.log('💾 Guardando feedback del usuario en Supabase...');
+
+        // Obtener ejercicios del plan anterior para asociar feedback específico
+        const previousExercises = [];
+        if (previousPlan?.plan?.semanas) {
+          previousPlan.plan.semanas.forEach(semana => {
+            semana.sesiones?.forEach(sesion => {
+              sesion.ejercicios?.forEach(ejercicio => {
+                if (ejercicio.nombre) {
+                  previousExercises.push(ejercicio.nombre);
+                }
+              });
+            });
+          });
+        }
+
+        // Guardar feedback para cada razón seleccionada
+        for (const reason of regenerationReason) {
+          try {
+            // Mapear razones del frontend a tipos de feedback de BD
+            const feedbackTypeMapping = {
+              'too_difficult': 'too_difficult',
+              'too_easy': 'too_easy',
+              'dont_like': 'dont_like',
+              'change_focus': 'change_focus'
+            };
+
+            const feedbackType = feedbackTypeMapping[reason] || reason;
+
+            // Si hay ejercicios específicos, guardar feedback para cada uno
+            if (previousExercises.length > 0) {
+              for (const exerciseName of previousExercises.slice(0, 5)) { // Limitar a 5 ejercicios principales
+                await dbClient.query(`
+                  INSERT INTO app.user_exercise_feedback (
+                    user_id, exercise_name, methodology_type, feedback_type,
+                    comment, plan_id, created_at
+                  ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
+                `, [
+                  userId,
+                  exerciseName,
+                  'calistenia',
+                  feedbackType,
+                  additionalInstructions || `Feedback: ${reason}`,
+                  methodologyPlanId
+                ]);
+              }
+            } else {
+              // Feedback general si no hay ejercicios específicos
+              await dbClient.query(`
+                INSERT INTO app.user_exercise_feedback (
+                  user_id, exercise_name, methodology_type, feedback_type,
+                  comment, plan_id, created_at
+                ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
+              `, [
+                userId,
+                'general_plan_feedback',
+                'calistenia',
+                feedbackType,
+                additionalInstructions || `Feedback general: ${reason}`,
+                methodologyPlanId
+              ]);
+            }
+
+            console.log(`✅ Feedback guardado: ${feedbackType} para ${previousExercises.length || 'general'} ejercicio(s)`);
+          } catch (feedbackError) {
+            console.error(`⚠️ Error guardando feedback para ${reason}:`, feedbackError);
+            // Continuar con otros feedbacks aunque uno falle
+          }
+        }
+      }
+
       await dbClient.query('COMMIT');
 
       console.log(`✅ Plan de calistenia guardado - Methodology ID: ${methodologyPlanId}`);
-      
+
       res.json({
         success: true,
         plan: generatedPlan,
-        planId: methodologyPlanId,
+        methodologyPlanId: methodologyPlanId, // NUEVO: Consistente con el frontend
+        planId: methodologyPlanId, // Mantener compatibilidad
+        justification: isRegenerationWithFeedback
+          ? `Plan mejorado basado en tu feedback. He ajustado los ejercicios considerando que ${regenerationReason?.join(', ') || 'tus preferencias'}.`
+          : generatedPlan.justification || 'Plan personalizado generado según tu perfil',
         metadata: {
           model_used: config.model,
           prompt_id: config.promptId,
           generation_timestamp: new Date().toISOString(),
           exercises_available: availableExercises.length,
           level_used: selectedLevel,
-          ai_tokens_used: completion.usage
+          ai_tokens_used: completion.usage,
+          // NUEVO: Información de regeneración
+          is_regeneration: isRegenerationWithFeedback,
+          feedback_processed: isRegenerationWithFeedback ? {
+            reasons: regenerationReason,
+            instructions: additionalInstructions,
+            timestamp: new Date().toISOString()
+          } : null
         }
       });
       

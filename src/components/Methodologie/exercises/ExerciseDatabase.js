@@ -10,7 +10,7 @@ import React from 'react';
 
 // Configuración centralizada de API
 const API_CONFIG = {
-  BASE_URL: process.env.REACT_APP_API_URL || 'http://localhost:3002',
+  BASE_URL: import.meta.env.VITE_API_URL || 'http://localhost:3002',
   ENDPOINTS: {
     EXERCISES: '/api/exercises',
     CALISTENIA: '/api/exercises/calistenia'
@@ -28,7 +28,7 @@ const Logger = {
     console.warn(`[ExerciseDatabase] ${message}`, data);
   },
   info: (message, data = null) => {
-    if (process.env.NODE_ENV === 'development') {
+    if (import.meta.env.DEV) {
       console.info(`[ExerciseDatabase] ${message}`, data);
     }
   }

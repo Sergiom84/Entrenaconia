@@ -71,7 +71,7 @@ const DialogUtils = {
       warnings.push('onSelect should be a function');
     }
 
-    if (warnings.length > 0 && process.env.NODE_ENV === 'development') {
+    if (warnings.length > 0 && import.meta.env.DEV) {
       console.warn('[MethodologyDetailsDialog] Validation warnings:', warnings);
     }
 

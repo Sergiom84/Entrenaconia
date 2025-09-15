@@ -54,24 +54,36 @@ export const useTodaySession = ({ plan, todayName, methodologyPlanId }) => {
       setLoadingStatus(false);
       return;
     }
-    
+
     setLoadingStatus(true);
     setError(null);
-    
+
     try {
       // Solo cargar la sesión del día actual si existe
       if (todaySession) {
+        const currentDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
         const params = {
           methodology_plan_id: methodologyPlanId,
           week_number: todaySession.weekNumber || 1,
-          day_name: todayName
+          day_name: todayName,
+          session_date: currentDate // Agregar fecha actual para mayor precisión
         };
-        
+
         logger.debug('Cargando estado de sesión del día', params, 'Routines');
-        
+
         const data = await getTodaySessionStatus(params);
         if (data) {
-          setTodaySessionStatus(computeSessionSummary(data));
+          // Validar que la sesión corresponde efectivamente al día actual
+          const sessionDate = new Date(data.session?.session_date || data.session?.created_at);
+          const today = new Date();
+          const isToday = sessionDate.toDateString() === today.toDateString();
+
+          if (isToday) {
+            setTodaySessionStatus(computeSessionSummary(data));
+          } else {
+            logger.warn('Sesión encontrada no corresponde al día actual', { sessionDate: sessionDate.toISOString(), today: today.toISOString() }, 'Routines');
+            setTodaySessionStatus(null);
+          }
         } else {
           setTodaySessionStatus(null);
         }
@@ -79,7 +91,7 @@ export const useTodaySession = ({ plan, todayName, methodologyPlanId }) => {
         // Si no hay sesión para hoy, establecer como null
         setTodaySessionStatus(null);
       }
-      
+
     } catch (error) {
       logger.error('Error cargando estado de sesión', error, 'Routines');
       setError(error.message);

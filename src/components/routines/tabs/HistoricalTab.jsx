@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
 import { Progress } from '@/components/ui/progress.jsx';
-import { 
-  BarChart3, 
-  TrendingUp, 
+import {
+  BarChart3,
+  TrendingUp,
   Calendar,
   Clock,
   Target,
@@ -12,25 +12,31 @@ import {
   Activity,
   CheckCircle,
   Database,
-  History
+  History,
+  AlertTriangle
 } from 'lucide-react';
 import { getHistoricalData } from '../api';
 
 export default function HistoricalTab({ methodologyPlanId }) {
   const [historicalData, setHistoricalData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     const loadHistoricalData = async () => {
       setLoading(true);
+      setError(null);
       try {
-        console.log('🔄 Cargando datos históricos...');
-        const data = await getHistoricalData();
-        console.log('✅ Datos históricos cargados:', data);
-        setHistoricalData(data);
+        const data = await getHistoricalData({
+          methodologyPlanId: methodologyPlanId || null
+        });
+
+        // Validar estructura de datos
+        const validatedData = validateHistoricalData(data);
+        setHistoricalData(validatedData);
       } catch (err) {
-        console.error('❌ Error cargando datos históricos:', err);
-        // En caso de error, usar datos vacíos
+        setError(err.message);
+        // En caso de error, usar datos vacíos validados
         setHistoricalData({
           totalRoutinesCompleted: 0,
           totalSessionsEver: 0,
@@ -50,8 +56,27 @@ export default function HistoricalTab({ methodologyPlanId }) {
     loadHistoricalData();
   }, [methodologyPlanId]);
 
+  // Función de validación de datos
+  const validateHistoricalData = (data) => {
+    if (!data || typeof data !== 'object') {
+      throw new Error('Datos históricos inválidos');
+    }
+
+    return {
+      totalRoutinesCompleted: Math.max(0, parseInt(data.totalRoutinesCompleted) || 0),
+      totalSessionsEver: Math.max(0, parseInt(data.totalSessionsEver) || 0),
+      totalExercisesEver: Math.max(0, parseInt(data.totalExercisesEver) || 0),
+      totalSeriesEver: Math.max(0, parseInt(data.totalSeriesEver) || 0),
+      totalTimeSpentEver: Math.max(0, parseInt(data.totalTimeSpentEver) || 0),
+      firstWorkoutDate: data.firstWorkoutDate,
+      lastWorkoutDate: data.lastWorkoutDate,
+      routineHistory: Array.isArray(data.routineHistory) ? data.routineHistory : [],
+      monthlyStats: Array.isArray(data.monthlyStats) ? data.monthlyStats : []
+    };
+  };
+
   const formatTime = (seconds) => {
-    if (!seconds) return '0h 0min';
+    if (!seconds || seconds < 0) return '0h 0min';
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     return `${hours}h ${minutes}min`;
@@ -65,7 +90,20 @@ export default function HistoricalTab({ methodologyPlanId }) {
     });
   };
 
-  if (loading || !historicalData) {
+  // Componente de Error
+  const ErrorDisplay = ({ error }) => (
+    <Card className="bg-red-900/20 border-red-600/30 p-6">
+      <div className="flex items-center space-x-3 text-red-400">
+        <AlertTriangle className="w-5 h-5" />
+        <div>
+          <h3 className="font-semibold">Error cargando datos históricos</h3>
+          <p className="text-sm text-red-300 mt-1">{error}</p>
+        </div>
+      </div>
+    </Card>
+  );
+
+  if (loading) {
     return (
       <div className="space-y-6">
         {[1, 2, 3].map((i) => (
@@ -80,8 +118,24 @@ export default function HistoricalTab({ methodologyPlanId }) {
     );
   }
 
+  if (error && !historicalData) {
+    return <ErrorDisplay error={error} />;
+  }
+
+  // Verificar si hay datos históricos
+  const hasData = historicalData && (
+    historicalData.totalRoutinesCompleted > 0 ||
+    historicalData.totalSessionsEver > 0 ||
+    historicalData.routineHistory.length > 0
+  );
+
   return (
     <div className="space-y-6">
+      {/* Mostrar error si existe pero hay datos de fallback */}
+      {error && historicalData && (
+        <ErrorDisplay error={error} />
+      )}
+
       {/* Resumen histórico total */}
       <Card className="bg-gradient-to-r from-purple-900/30 to-indigo-900/30 border-purple-600/30 p-6">
         <div className="flex justify-between items-start mb-6">
