@@ -39,6 +39,7 @@ import calisteniaManualRoutes from './routes/calisteniaManual.js';
 import calisteniaExercisesRoutes from './routes/calisteniaExercises.js';
 import calisteniaSpecialistRoutes from './routes/calisteniaSpecialist.js';
 import analyticsRoutes from './routes/analytics.js';
+import methodologyUnified from './routes/methodologyUnified.js';
 
 // Solo cargar dotenv en desarrollo
 if (process.env.NODE_ENV !== 'production') {
@@ -154,6 +155,15 @@ app.use('/api/routines', routinesRoutes);
 app.use('/api/calistenia-manual', calisteniaManualRoutes);
 app.use('/api/calistenia-specialist', calisteniaSpecialistRoutes);
 app.use('/api/analytics', analyticsRoutes);
+
+// Sistema Unificado de Metodologías (Feature Flag)
+if (process.env.USE_NEW_METHODOLOGY_SYSTEM === 'true') {
+  console.log('🆕 Using unified methodology system');
+  app.use('/api/methodology', methodologyUnified);
+} else {
+  console.log('🔄 Using legacy methodology system');
+  // Mantener rutas legacy si existen
+}
 
 // Endpoint simple de salud
 app.get('/api/health', (req, res) => {

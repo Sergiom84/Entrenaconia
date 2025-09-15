@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useReducer, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUserContext } from '@/contexts/UserContext';
@@ -11,91 +11,391 @@ import { Settings, Brain, User as UserIcon, CheckCircle, AlertCircle, Zap } from
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog.jsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.jsx';
 import { METHODOLOGIES, sanitizeProfile } from './methodologiesData.js';
-import MethodologyCard from './MethodologyCard.jsx';
 import MethodologyDetailsDialog from './shared/MethodologyDetailsDialog.jsx';
-import TrainingPlanConfirmationModal from './TrainingPlanConfirmationModal.jsx';
+import TrainingPlanConfirmationModal from '../routines/TrainingPlanConfirmationModal.jsx';
 import RoutineSessionModal from '../routines/RoutineSessionModal.jsx';
 import WarmupModal from '../routines/WarmupModal.jsx';
 import { startSession, updateExercise } from '../routines/api.js';
 import { useRoutineCache, CACHE_KEYS } from '../../hooks/useRoutineCache.js';
 import MethodologyVersionSelectionModal from './shared/MethodologyVersionSelectionModal.jsx';
 import CalisteniaManualCard from './methodologies/CalisteniaManual/CalisteniaManualCard.jsx';
+import useMethodologyAPI from '../../hooks/useMethodologyAPI.js';
+
+// ===============================================
+// MODERNIZACIÓN: Estado Centralizado con useReducer
+// ===============================================
+
+const METHODOLOGY_STATE_INITIAL = {
+  // Estado de UI general
+  ui: {
+    isLoading: false,
+    error: null,
+    selectionMode: 'automatico'
+  },
+
+  // Estado de modales
+  modals: {
+    showDetails: false,
+    showPersonalizedMessage: false,
+    showVersionSelection: false,
+    showActiveTrainingWarning: false,
+    showCalisteniaManual: false,
+    showConfirmationModal: false,
+    showWarmupModal: false,
+    showRoutineSessionModal: false
+  },
+
+  // Estado del plan generado
+  plan: {
+    generated: null,
+    methodologyPlanId: null,
+    methodology: '',
+    personalizedMessage: '',
+    versionSelectionData: null
+  },
+
+  // Estado de sesión de entrenamiento
+  session: {
+    current: null,
+    sessionId: null,
+    pendingWarmupData: null
+  },
+
+  // Estado de datos temporales
+  temp: {
+    pendingMethodology: null,
+    detailsMethod: null,
+    activeTrainingInfo: null
+  }
+};
+
+const methodologyReducer = (state, action) => {
+  switch (action.type) {
+    // Acciones de UI
+    case 'SET_LOADING':
+      return { ...state, ui: { ...state.ui, isLoading: action.payload }};
+
+    case 'SET_ERROR':
+      return { ...state, ui: { ...state.ui, error: action.payload }};
+
+    case 'SET_SELECTION_MODE':
+      return { ...state, ui: { ...state.ui, selectionMode: action.payload }};
+
+    // Acciones de modales
+    case 'OPEN_MODAL':
+      return {
+        ...state,
+        modals: { ...state.modals, [action.modal]: true }
+      };
+
+    case 'CLOSE_MODAL':
+      return {
+        ...state,
+        modals: { ...state.modals, [action.modal]: false }
+      };
+
+    case 'CLOSE_ALL_MODALS':
+      return {
+        ...state,
+        modals: Object.keys(state.modals).reduce((acc, key) => ({ ...acc, [key]: false }), {})
+      };
+
+    // Acciones del plan
+    case 'SET_GENERATED_PLAN': {
+      // Persistir automáticamente en localStorage
+      const planData = {
+        plan: action.payload.plan,
+        methodologyPlanId: action.payload.methodologyPlanId,
+        methodology: action.payload.methodology,
+        personalizedMessage: action.payload.personalizedMessage || action.payload.justification,
+        timestamp: Date.now()
+      };
+
+      localStorage.setItem('methodology_generated_plan', JSON.stringify(planData));
+
+      return {
+        ...state,
+        plan: {
+          generated: action.payload.plan,
+          methodologyPlanId: action.payload.methodologyPlanId,
+          methodology: action.payload.methodology,
+          personalizedMessage: action.payload.personalizedMessage || action.payload.justification,
+          versionSelectionData: state.plan.versionSelectionData
+        }
+      };
+    }
+
+    case 'SET_VERSION_SELECTION_DATA':
+      return {
+        ...state,
+        plan: { ...state.plan, versionSelectionData: action.payload }
+      };
+
+    // Acciones de sesión
+    case 'SET_CURRENT_SESSION':
+      return {
+        ...state,
+        session: {
+          ...state.session,
+          current: action.payload.session,
+          sessionId: action.payload.sessionId
+        }
+      };
+
+    case 'SET_PENDING_WARMUP':
+      return {
+        ...state,
+        session: { ...state.session, pendingWarmupData: action.payload }
+      };
+
+    // Acciones de datos temporales
+    case 'SET_TEMP_DATA':
+      return {
+        ...state,
+        temp: { ...state.temp, [action.key]: action.payload }
+      };
+
+    // Restaurar estado desde localStorage
+    case 'RESTORE_STATE':
+      return { ...state, ...action.payload };
+
+    // Reset completo
+    case 'RESET_STATE':
+      localStorage.removeItem('methodology_generated_plan');
+      localStorage.removeItem('methodology_session_state');
+      return { ...METHODOLOGY_STATE_INITIAL };
+
+    default:
+      console.warn(`Acción no reconocida: ${action.type}`);
+      return state;
+  }
+};
 
 export default function MethodologiesScreen() {
   const navigate = useNavigate();
   const { invalidateCache } = useRoutineCache();
-  const { currentUser, user } = useAuth();
+  const { user } = useAuth();
   const { userData } = useUserContext();
-  const [selectionMode, setSelectionMode] = useState('automatico');
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [pendingMethodology, setPendingMethodology] = useState(null); // Necesario para MethodologyVersionSelectionModal
-  const [showDetails, setShowDetails] = useState(false);
-  const [detailsMethod, setDetailsMethod] = useState(null);
-  const [showPersonalizedMessage, setShowPersonalizedMessage] = useState(false);
-  const [personalizedMessage, setPersonalizedMessage] = useState('');
-  const [generatedRoutinePlan, setGeneratedRoutinePlan] = useState(null);
-  const [showVersionSelection, setShowVersionSelection] = useState(false);
-  const [versionSelectionData, setVersionSelectionData] = useState(null);
-  const [showActiveTrainingWarning, setShowActiveTrainingWarning] = useState(false);
-  const [activeTrainingInfo, setActiveTrainingInfo] = useState(null);
-  const [showCalisteniaManual, setShowCalisteniaManual] = useState(false);
 
-  // Estados para el nuevo flujo unificado
-  const [showConfirmationModal, setShowConfirmationModal] = useState(false);
-  const [showRoutineSessionModal, setShowRoutineSessionModal] = useState(false);
-  const [showWarmupModal, setShowWarmupModal] = useState(false);
-  const [currentSession, setCurrentSession] = useState(null);
-  const [currentSessionId, setCurrentSessionId] = useState(null);
-  const [currentMethodologyPlanId, setCurrentMethodologyPlanId] = useState(null);
-  const [selectedMethodology, setSelectedMethodology] = useState('');
-  const [pendingWarmupData, setPendingWarmupData] = useState(null);
+  // ===============================================
+  // MODERNIZACIÓN: useReducer reemplaza 22 useState
+  // ===============================================
+
+  const [state, dispatch] = useReducer(methodologyReducer, METHODOLOGY_STATE_INITIAL);
+
+  // Variables de conveniencia para acceder al estado
+  const { ui, modals, plan, session, temp } = state;
+
+  // ===============================================
+  // MODERNIZACIÓN: Recuperación automática de sesión
+  // ===============================================
+
+  useEffect(() => {
+    const recoverSession = () => {
+      try {
+        // Recuperar plan generado
+        const savedPlan = localStorage.getItem('methodology_generated_plan');
+        if (savedPlan) {
+          const planData = JSON.parse(savedPlan);
+          const age = Date.now() - planData.timestamp;
+
+          // Si el plan tiene menos de 30 minutos, recuperarlo
+          if (age < 30 * 60 * 1000) {
+            console.log('🔄 Recuperando plan generado desde localStorage');
+            dispatch({
+              type: 'SET_GENERATED_PLAN',
+              payload: planData
+            });
+          } else {
+            // Limpiar plan expirado
+            localStorage.removeItem('methodology_generated_plan');
+          }
+        }
+
+        // Recuperar sesión activa
+        const savedSession = localStorage.getItem('methodology_session_state');
+        if (savedSession) {
+          const sessionData = JSON.parse(savedSession);
+          const age = Date.now() - sessionData.timestamp;
+
+          // Si la sesión tiene menos de 2 horas
+          if (age < 2 * 60 * 60 * 1000) {
+            console.log('🔄 Recuperando sesión activa desde localStorage');
+            dispatch({
+              type: 'SET_CURRENT_SESSION',
+              payload: sessionData
+            });
+          } else {
+            localStorage.removeItem('methodology_session_state');
+          }
+        }
+      } catch (error) {
+        console.error('❌ Error recuperando sesión:', error);
+        // Limpiar datos corruptos
+        localStorage.removeItem('methodology_generated_plan');
+        localStorage.removeItem('methodology_session_state');
+      }
+    };
+
+    recoverSession();
+  }, []);
+
+  // ===============================================
+  // MODERNIZACIÓN: Funciones helper para dispatch
+  // ===============================================
+
+  const setLoading = useCallback((isLoading) => {
+    dispatch({ type: 'SET_LOADING', payload: isLoading });
+  }, []);
+
+  const setError = useCallback((error) => {
+    dispatch({ type: 'SET_ERROR', payload: error });
+  }, []);
+
+  const openModal = useCallback((modalName) => {
+    dispatch({ type: 'OPEN_MODAL', modal: modalName });
+  }, []);
+
+  const closeModal = useCallback((modalName) => {
+    dispatch({ type: 'CLOSE_MODAL', modal: modalName });
+  }, []);
+
+  const setGeneratedPlan = useCallback((planData) => {
+    dispatch({ type: 'SET_GENERATED_PLAN', payload: planData });
+  }, []);
+
+  const setCurrentSession = useCallback((sessionData) => {
+    dispatch({ type: 'SET_CURRENT_SESSION', payload: sessionData });
+
+    // Persistir también en localStorage
+    const sessionState = {
+      ...sessionData,
+      timestamp: Date.now()
+    };
+    localStorage.setItem('methodology_session_state', JSON.stringify(sessionState));
+  }, []);
+
+  const setTempData = useCallback((key, value) => {
+    dispatch({ type: 'SET_TEMP_DATA', key, payload: value });
+  }, []);
+
+  // ===============================================
+  // COMPONENTE INLINE: MethodologyCard (eliminado archivo separado)
+  // ===============================================
+
+  const MethodologyCard = ({ methodology, manualActive, onDetails, onSelect }) => (
+    <Card
+      className={`bg-black/80 border-gray-700 transition-all duration-300 ${
+        manualActive ? 'cursor-pointer hover:border-yellow-400/60 hover:scale-[1.01]' : 'hover:border-gray-600'
+      }`}
+      onClick={() => manualActive && onSelect(methodology)}
+      role="button"
+      tabIndex={manualActive ? 0 : -1}
+      aria-label={`Tarjeta de metodología ${methodology.name}`}
+    >
+      <div className="p-4 pb-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {methodology.icon && <methodology.icon className="w-7 h-7 text-yellow-400" />}
+            <h3 className="text-white text-xl font-semibold">{methodology.name}</h3>
+          </div>
+          <span className="text-xs px-2 py-1 border border-gray-600 text-gray-300 rounded">
+            {methodology.level}
+          </span>
+        </div>
+        <p className="text-gray-400 mt-2 text-sm">{methodology.description}</p>
+      </div>
+      <div className="px-4 pb-4 space-y-3">
+        <div className="space-y-2">
+          {[
+            { label: 'Frecuencia', value: methodology.frequency },
+            { label: 'Volumen', value: methodology.volume },
+            { label: 'Intensidad', value: methodology.intensity }
+          ].map(({ label, value }) => (
+            <div key={label} className="flex justify-between text-sm">
+              <span className="text-gray-500">{label}:</span>
+              <span className="text-white">{value}</span>
+            </div>
+          ))}
+        </div>
+        <div className="flex gap-2 pt-2">
+          <Button
+            variant="outline"
+            className="flex-1 border-gray-600 text-gray-300 hover:bg-gray-800 hover:text-white"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDetails(methodology);
+            }}
+            aria-label={`Ver detalles de ${methodology.name}`}
+          >
+            Ver Detalles
+          </Button>
+          <Button
+            disabled={!manualActive}
+            className={`flex-1 ${manualActive
+              ? 'bg-yellow-400 text-black hover:bg-yellow-300'
+              : 'bg-gray-700 text-gray-400 cursor-not-allowed'
+            }`}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (manualActive) onSelect(methodology);
+            }}
+            aria-label={`Seleccionar metodología ${methodology.name}`}
+          >
+            Seleccionar
+          </Button>
+        </div>
+      </div>
+    </Card>
+  );
+
+  // ===============================================
+  // MODERNIZACIÓN: Integración de Service Layer
+  // ===============================================
+
+  const methodologyAPI = useMethodologyAPI();
 
   // Función para verificar si hay entrenamiento activo
   const checkActiveTraining = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      const response = await fetch('/api/routines/active-plan', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        return data.hasActivePlan ? data : null;
-      }
-      return null;
-    } catch (error) {
-      console.error('Error checking active training:', error);
+    const result = await methodologyAPI.checkActiveTraining();
+
+    if (result.success) {
+      return result.data;
+    } else {
+      console.error('Error verificando entrenamiento activo:', result.error || result.message || 'Error desconocido');
       return null;
     }
   };
 
   const handleActivateIA = async (forcedMethodology = null) => {
-    if (!currentUser && !user) return;
+    if (!user) return;
     
     // Verificar si hay entrenamiento activo
     const activeTraining = await checkActiveTraining();
     if (activeTraining) {
-      setActiveTrainingInfo(activeTraining);
-      setShowActiveTrainingWarning(true);
+      setTempData('activeTrainingInfo', activeTraining);
+      openModal('showActiveTrainingWarning');
       return;
     }
-    
+
     // Mostrar modal de selección de versión
-    setVersionSelectionData({
-      isAutomatic: true,
-      forcedMethodology
+    dispatch({
+      type: 'SET_VERSION_SELECTION_DATA',
+      payload: {
+        isAutomatic: true,
+        forcedMethodology
+      }
     });
-    setShowVersionSelection(true);
+    openModal('showVersionSelection');
   };
 
   const handleVersionSelectionConfirm = async (versionConfig) => {
-    setShowVersionSelection(false);
-    setIsLoading(true);
+    closeModal('showVersionSelection');
+    setLoading(true);
     setError(null);
 
     // Construir perfil completo con mapeo mejorado
-    const rawProfile = { ...userData, ...user, ...currentUser };
+    const rawProfile = { ...userData, ...user };
     const fullProfile = sanitizeProfile({
       ...rawProfile,
       // Asegurar campos críticos con nombres correctos
@@ -108,50 +408,73 @@ export default function MethodologiesScreen() {
     
     try {
       console.log('🤖 Activando IA para generar plan metodológico...');
-      
+
+      // Usar endpoint unificado para modo automático
       const token = localStorage.getItem('token');
-      const response = await fetch('/api/methodologie/generate-plan', {
+      const response = await fetch('/api/methodology/generate', {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          perfil: fullProfile,
-          metodologia_forzada: versionSelectionData?.forcedMethodology,
-          versionConfig: versionConfig
+          mode: 'automatic',
+          versionConfig: versionConfig || { version: 'adapted', customWeeks: 4 }
         })
       });
-      
+
       const result = await response.json();
-      
+
       if (!response.ok || !result.success) {
-        throw new Error(result.message || result.error || 'No se pudo generar el plan de entrenamiento.');
+        throw new Error(result.message || 'No se pudo generar el plan de entrenamiento.');
       }
+
+      // Convertir respuesta del sistema unificado al formato esperado
+      const convertedResult = {
+        success: true,
+        data: {
+          plan: result.plan,
+          methodologyPlanId: result.planId,
+          routinePlanId: result.planId, // Usar mismo ID para compatibilidad
+          metadata: result.metadata,
+          justification: result.metadata?.userProfile ?
+            `Plan automático generado para ${result.methodology}` :
+            'Plan automático personalizado'
+        }
+      };
+
+      // Usar resultado convertido en lugar de result original
+      const finalResult = convertedResult;
       
-      console.log('✅ Plan generado exitosamente:', result.plan);
-      
+      console.log('✅ Plan generado exitosamente:', finalResult.data.plan);
+
       // Guardar plan y mostrar mensaje personalizado (como en HomeTraining)
       const newGeneratedPlan = {
-        plan: result.plan,
+        plan: finalResult.data.plan,
         planSource: 'automatic',
-        planId: result.planId, // ID original de methodology_plans
-        routinePlanId: result.routinePlanId, // ID para routine_plans
-        metadata: result.metadata,
-        metodologia: result.plan.selected_style
+        planId: finalResult.data.methodologyPlanId, // ID original de methodology_plans
+        routinePlanId: finalResult.data.routinePlanId, // ID para routine_plans
+        metadata: finalResult.data.metadata,
+        metodologia: result.methodology || 'Automático'
       };
-      setGeneratedRoutinePlan(newGeneratedPlan);
+
+      setGeneratedPlan({
+        plan: newGeneratedPlan.plan,
+        methodologyPlanId: newGeneratedPlan.planId,
+        methodology: newGeneratedPlan.metodologia || 'Automático',
+        personalizedMessage: finalResult.data.justification
+      });
 
       console.log('🛤️ Plan automático generado:', {
-        methodologyPlanId: result.planId,
-        routinePlanId: result.routinePlanId,
-        migrationInfo: result.metadata?.migrationInfo
+        methodologyPlanId: finalResult.data.methodologyPlanId,
+        routinePlanId: finalResult.data.routinePlanId,
+        migrationInfo: finalResult.data.metadata?.migrationInfo
       });
       
       // Construir mensaje personalizado para mostrar directamente en el modal del plan
-      const baseMessage = result.plan.rationale ||
-                          `La IA ha seleccionado ${result.plan.selected_style} como la metodología ideal para ti. ` +
-                          `Plan de ${result.plan.duracion_total_semanas} semanas con ${result.plan.frecuencia_por_semana} entrenamientos por semana.`;
+      const baseMessage = result.data.plan.rationale ||
+                          `La IA ha seleccionado ${result.data.plan.selected_style} como la metodología ideal para ti. ` +
+                          `Plan de ${result.data.plan.duracion_total_semanas} semanas con ${result.data.plan.frecuencia_por_semana} entrenamientos por semana.`;
       
       // Obtener objetivo principal para personalizar los tips
       const objetivo = fullProfile?.objetivo_principal || userData?.objetivo_principal || 'general';
@@ -170,75 +493,76 @@ export default function MethodologiesScreen() {
       }
       
       const enhancedMessage = `${baseMessage}\n\n💡 ${tip}`;
-      setPersonalizedMessage(enhancedMessage);
-      
-      // NUEVO FLUJO AUTOMÁTICO: Mostrar modal de confirmación
+      setGeneratedPlan({
+        plan: newGeneratedPlan.plan,
+        methodologyPlanId: newGeneratedPlan.planId,
+        methodology: newGeneratedPlan.metodologia || 'Automático',
+        personalizedMessage: enhancedMessage
+      });
       console.log('🚀 Plan generado automáticamente, mostrando modal de confirmación...');
-      
-      // Guardar datos para el modal de confirmación
-      setGeneratedRoutinePlan(newGeneratedPlan.plan);
-      setCurrentMethodologyPlanId(newGeneratedPlan.planId);
-      setSelectedMethodology(newGeneratedPlan.metodologia || 'Automático');
-      setPersonalizedMessage(newGeneratedPlan.justification || 'Plan generado automáticamente basado en tu perfil.');
-      
+
       setTimeout(() => {
-        setShowConfirmationModal(true);
+        openModal('showConfirmationModal');
       }, 1500);
 
     } catch (err) {
       console.error('❌ Error generando plan:', err);
       setError(err.message);
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
   const handleManualCardClick = (methodology) => {
-    if (selectionMode === 'manual') {
+    if (ui.selectionMode === 'manual') {
       // Si es Calistenia, mostrar el modal específico
       if (methodology.name === 'Calistenia') {
-        setShowCalisteniaManual(true);
+        openModal('showCalisteniaManual');
         return;
       }
       
-      setPendingMethodology(methodology);
+      setTempData('pendingMethodology', methodology);
       // Mostrar modal de selección de versión para manual también
-      setVersionSelectionData({
-        isAutomatic: false,
-        selectedMethodology: methodology.name
+      dispatch({
+        type: 'SET_VERSION_SELECTION_DATA',
+        payload: {
+          isAutomatic: false,
+          selectedMethodology: methodology.name
+        }
       });
-      setShowVersionSelection(true);
+      openModal('showVersionSelection');
     }
   };
 
   const confirmManualSelection = async (versionConfig) => {
-    if (!pendingMethodology) return;
+    if (!temp.pendingMethodology) return;
     
     // Verificar si hay entrenamiento activo
     const activeTraining = await checkActiveTraining();
     if (activeTraining) {
-      setActiveTrainingInfo(activeTraining);
-      setShowActiveTrainingWarning(true);
+      setTempData('activeTrainingInfo', activeTraining);
+      openModal('showActiveTrainingWarning');
       return;
     }
     
-    setShowVersionSelection(false);
-    setIsLoading(true);
+    closeModal('showVersionSelection');
+    setLoading(true);
     setError(null);
     
     try {
-      console.log(`🎯 Generando plan manual para metodología: ${pendingMethodology.name}`);
+      console.log(`🎯 Generando plan manual para metodología: ${temp.pendingMethodology.name}`);
       
       const token = localStorage.getItem('token');
-      const response = await fetch('/api/methodology-manual/generate-manual', {
+      const response = await fetch('/api/methodology/generate', {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          metodologia_solicitada: pendingMethodology.name,
-          versionConfig: versionConfig
+          mode: 'manual',
+          methodology: temp.pendingMethodology.name,
+          versionConfig: versionConfig || { version: 'adapted', customWeeks: 4 }
         })
       });
       
@@ -251,12 +575,12 @@ export default function MethodologiesScreen() {
       console.log('✅ Plan de metodología manual generado exitosamente');
       
       // Guardar plan y mostrar mensaje personalizado (como en HomeTraining)
-      setGeneratedRoutinePlan({
+      setGeneratedPlan({
         plan: result.plan,
         planSource: 'manual_methodology', 
         planId: result.planId, // ID original de methodology_plans
         routinePlanId: result.routinePlanId, // ID para routine_plans
-        metodologia: pendingMethodology.name
+        metodologia: temp.pendingMethodology.name
       });
       
       console.log('🛤️ Plan manual generado:', {
@@ -267,12 +591,12 @@ export default function MethodologiesScreen() {
       
       // Mostrar mensaje personalizado con tips incluidos
       const baseMessage = result.plan.consideraciones || 
-                          `Tu rutina de ${pendingMethodology.name} ha sido generada exitosamente. ` +
+                          `Tu rutina de ${temp.pendingMethodology.name} ha sido generada exitosamente. ` +
                           `Plan de ${result.plan.duracion_total_semanas} semanas con ` + 
                           `${result.plan.frecuencia_por_semana} entrenamientos por semana.`;
       
       // Obtener objetivo principal para personalizar los tips
-      const rawProfile = { ...userData, ...user, ...currentUser };
+      const rawProfile = { ...userData, ...user };
       const fullProfile = sanitizeProfile({
         ...rawProfile,
         peso_kg: rawProfile.peso || rawProfile.peso_kg,
@@ -297,21 +621,22 @@ export default function MethodologiesScreen() {
       }
       
       const enhancedMessage = `${baseMessage}\n\n💡 ${tip}`;
-      setPersonalizedMessage(enhancedMessage);
+      setGeneratedPlan({ ...plan, personalizedMessage: enhancedMessage });
+      openModal('showPersonalizedMessage');
 
     } catch (error) {
       console.error('❌ Error generando plan manual:', error);
       setError(error.message || 'Error al generar el plan de entrenamiento');
     } finally {
-      setIsLoading(false);
+      setLoading(false);
       // Limpiar estado de metodología pendiente
-      setPendingMethodology(null);
+      setTempData('pendingMethodology', null);
     }
   };
 
   const handleOpenDetails = (m) => {
-    setDetailsMethod(m);
-    setShowDetails(true);
+    setTempData('detailsMethod', m);
+    openModal('showDetails');
   };
 
   // Función para manejar generación de calistenia manual Y especialista IA
@@ -319,13 +644,13 @@ export default function MethodologiesScreen() {
     // Verificar si hay entrenamiento activo
     const activeTraining = await checkActiveTraining();
     if (activeTraining) {
-      setActiveTrainingInfo(activeTraining);
-      setShowActiveTrainingWarning(true);
+      setTempData('activeTrainingInfo', activeTraining);
+      openModal('showActiveTrainingWarning');
       return;
     }
 
     // NO cerrar el modal hasta estar seguros de que todo salió bien
-    setIsLoading(true);
+    setLoading(true);
     setError(null);
 
     try {
@@ -333,7 +658,8 @@ export default function MethodologiesScreen() {
       const isAISpecialist = calisteniaData.source === 'ai_evaluation';
       const endpoint = isAISpecialist ? '/api/calistenia-specialist/generate-plan' : '/api/calistenia-manual/generate';
 
-      console.log(`🤸‍♀️ Generando plan de calistenia (${isAISpecialist ? 'IA Specialist' : 'Manual'})...`, calisteniaData);
+      console.log(`🤸‍♀️ Generando plan de calistenia (${isAISpecialist ? 'IA Specialist' : 'Manual'})...`);
+      console.log('📥 Datos de entrada:', calisteniaData);
 
       // Preparar payload según el tipo de generación
       let requestBody;
@@ -349,6 +675,9 @@ export default function MethodologiesScreen() {
         // Payload para selección manual (mantener formato original)
         requestBody = calisteniaData;
       }
+
+      console.log('📤 Enviando request a:', endpoint);
+      console.log('📤 Payload:', requestBody);
 
       const token = localStorage.getItem('token');
       const response = await fetch(endpoint, {
@@ -369,12 +698,15 @@ export default function MethodologiesScreen() {
         throw new Error(`Error del servidor: respuesta no válida (${response.status})`);
       }
 
-      console.log('📥 Respuesta del servidor:', {
+      console.log('🔥 Respuesta del servidor:', {
         ok: response.ok,
         status: response.status,
         success: result?.success,
         hasplan: !!result?.plan,
-        planId: result?.planId
+        planId: result?.planId,
+        error: result?.error,
+        message: result?.message,
+        planStructure: result?.plan ? Object.keys(result.plan) : 'no plan'
       });
 
       if (!response.ok || !result.success) {
@@ -382,13 +714,32 @@ export default function MethodologiesScreen() {
         const errorMessage = result.message || result.error ||
                            `Error ${response.status}: ${response.statusText || 'Error al generar el plan de calistenia'}`;
         console.error('❌ Error del servidor:', errorMessage);
+        console.error('📊 Respuesta completa del servidor:', result);
         throw new Error(errorMessage);
+      }
+
+      // ✅ NUEVA VALIDACIÓN: Verificar estructura del plan
+      console.log('📊 Respuesta del servidor:', result);
+      console.log('📋 Estructura del plan:', result.plan);
+
+      if (!result.plan) {
+        throw new Error('El servidor no devolvió un plan válido');
+      }
+
+      if (!result.plan.semanas || !Array.isArray(result.plan.semanas)) {
+        console.error('❌ Plan inválido - falta array de semanas:', result.plan);
+        throw new Error('El plan generado no tiene la estructura correcta (falta array de semanas)');
+      }
+
+      if (result.plan.semanas.length === 0) {
+        console.error('❌ Plan inválido - array de semanas vacío');
+        throw new Error('El plan generado no contiene semanas');
       }
       
       console.log(`✅ Plan de calistenia ${isAISpecialist ? 'IA Specialist' : 'Manual'} generado exitosamente`);
 
       // AHORA SÍ cerrar el modal ya que todo salió bien
-      setShowCalisteniaManual(false);
+      closeModal('showCalisteniaManual');
 
       // Preparar plan source según el tipo
       const planSource = isAISpecialist ? 'calistenia_specialist' : 'calistenia_manual';
@@ -428,7 +779,8 @@ export default function MethodologiesScreen() {
       }
       
       const enhancedMessage = `${baseMessage}\n\n💡 ${tip}`;
-      setPersonalizedMessage(enhancedMessage);
+      setGeneratedPlan({ ...plan, personalizedMessage: enhancedMessage });
+      openModal('showPersonalizedMessage');
       
       // NUEVO FLUJO: Mostrar modal de confirmación en lugar de navegar
       console.log('🚀 Plan de calistenia generado, mostrando modal de confirmación...');
@@ -439,9 +791,12 @@ export default function MethodologiesScreen() {
       }
 
       // Guardar datos para el modal de confirmación
-      setGeneratedRoutinePlan(result.plan);
-      setCurrentMethodologyPlanId(result.planId);
-      setSelectedMethodology(metodologia);
+      setGeneratedPlan({
+        plan: result.plan,
+        methodologyPlanId: result.planId,
+        methodology: metodologia,
+        personalizedMessage: enhancedMessage
+      });
 
       // Log para depuración
       console.log('📦 Datos guardados para confirmación:', {
@@ -454,7 +809,7 @@ export default function MethodologiesScreen() {
       // Mostrar modal de confirmación (NO navegamos)
       setTimeout(() => {
         console.log('⏰ Abriendo modal de confirmación...');
-        setShowConfirmationModal(true);
+        openModal('showConfirmationModal');
       }, 1500);
       
     } catch (error) {
@@ -472,53 +827,119 @@ export default function MethodologiesScreen() {
       // Opcionalmente, podemos mostrar una notificación toast o alert
       console.warn('⚠️ Modal de calistenia permanece abierto debido al error');
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
-
   // NUEVA FUNCIÓN: Proceder al modal de confirmación
   const proceedToRoutinePlan = () => {
-    setShowPersonalizedMessage(false);
+    closeModal('showPersonalizedMessage');
     // Mostrar modal de confirmación en lugar de navegar
     console.log('🚀 Mostrando modal de confirmación con plan generado');
     setTimeout(() => {
-      setShowConfirmationModal(true);
+      openModal('showConfirmationModal');
     }, 1000);
   };
 
-  // NUEVA FUNCIÓN: Iniciar sesión de entrenamiento directamente
-  const handleStartTraining = async () => {
+  // NUEVA FUNCIÓN: Generar otro plan con feedback
+  const handleGenerateAnother = async (feedbackData) => {
     try {
-      setIsLoading(true);
-      console.log('🚀 Iniciando sesión de entrenamiento directamente...');
+      console.log('🔍 Generando nuevo plan con feedback:', feedbackData);
+      setLoading(true);
+      setError(null);
 
-      if (!generatedRoutinePlan || !currentMethodologyPlanId) {
-        throw new Error('No hay plan generado para iniciar');
-      }
-
-      // PASO 1: ACTIVAR EL PLAN ANTES DE INICIAR LA SESIÓN
-      console.log('🔄 Activando plan de entrenamiento...');
+      // Preparar el payload con el feedback del usuario
       const token = localStorage.getItem('token');
-      const activationResponse = await fetch('/api/routines/confirm-and-activate', {
+      const endpoint = '/api/calistenia-specialist/generate-plan';
+
+      // Obtener el plan actual para contexto
+      const currentPlan = plan.generated?.plan;
+
+      // Preparar payload mejorado con feedback
+      const requestBody = {
+        userProfile: plan.versionSelectionData?.userProfile || userData,
+        selectedLevel: currentPlan?.level || 'intermedio',
+        goals: plan.versionSelectionData?.goals || ['fuerza', 'resistencia'],
+        exercisePreferences: plan.versionSelectionData?.selectedMuscleGroups || [],
+        // NUEVO: Información de feedback
+        previousPlan: {
+          plan: currentPlan,
+          feedback: feedbackData
+        },
+        regenerationReason: feedbackData.reasons,
+        additionalInstructions: feedbackData.comments
+      };
+
+      console.log('🔄 Enviando request con feedback:', requestBody);
+
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({
-          methodology_plan_id: currentMethodologyPlanId,
-          plan_data: generatedRoutinePlan
-        })
+        body: JSON.stringify(requestBody)
       });
 
-      if (!activationResponse.ok) {
-        const errorData = await activationResponse.json();
-        throw new Error(errorData.error || 'Error al activar el plan');
+      let result;
+      try {
+        result = await response.json();
+      } catch (jsonError) {
+        console.error('❌ Error parseando respuesta JSON:', jsonError);
+        throw new Error('Respuesta inválida del servidor');
       }
 
-      const activationResult = await activationResponse.json();
-      console.log('✅ Plan activado exitosamente:', activationResult);
+      if (!response.ok) {
+        console.error('❌ Error en la respuesta:', result);
+        throw new Error(result.message || `Error del servidor: ${response.status}`);
+      }
+
+      console.log('✅ Nuevo plan generado con feedback:', result);
+
+      // Actualizar el estado con el nuevo plan
+      if (result.plan) {
+        setGeneratedPlan({
+          plan: result.plan,
+          methodologyPlanId: result.methodologyPlanId,
+          methodology: plan.methodology,
+          personalizedMessage: result.justification || 'Plan mejorado basado en tu feedback'
+        });
+        openModal('showPersonalizedMessage');
+
+        console.log('🎯 Nuevo plan aplicado exitosamente');
+      } else {
+        throw new Error('Plan no encontrado en la respuesta');
+      }
+
+    } catch (error) {
+      console.error('❌ Error al generar nuevo plan:', error);
+      setError(error.message || 'Error al generar nuevo plan');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // NUEVA FUNCIÓN: Iniciar sesión de entrenamiento directamente
+  const handleStartTraining = async () => {
+    try {
+      console.log('🚀 handleStartTraining called - Iniciando sesión de entrenamiento directamente...');
+      setLoading(true);
+      setError(null); // Limpiar errores previos
+
+      if (!plan.generated?.plan || !plan.methodologyPlanId) {
+        throw new Error('No hay plan generado para iniciar');
+      }
+
+      // PASO 1: ACTIVAR EL PLAN ANTES DE INICIAR LA SESIÓN
+      console.log('🔄 Activando plan de entrenamiento...');
+
+      const activationResult = await methodologyAPI.activatePlan(plan.methodologyPlanId, plan.generated.plan);
+
+      if (!activationResult.success) {
+        throw new Error(activationResult.message || 'Error al activar el plan');
+      }
+
+      console.log('✅ Plan activado exitosamente:', activationResult.data);
 
       // PASO 2: AHORA SÍ INICIAR LA SESIÓN DE ENTRENAMIENTO
       // Obtener día actual para empezar HOY, no el primer día del plan
@@ -527,7 +948,7 @@ export default function MethodologiesScreen() {
       const todayName = diasSemana[today.getDay()];
 
       // Buscar la sesión del día actual en la primera semana
-      const firstWeek = generatedRoutinePlan.semanas?.[0];
+      const firstWeek = plan.generated.plan.semanas?.[0];
       let todaySession = null;
 
       if (firstWeek?.sesiones) {
@@ -545,65 +966,68 @@ export default function MethodologiesScreen() {
 
       // Crear sesión en backend usando el día actual
       const sessionResult = await startSession({
-        methodology_plan_id: currentMethodologyPlanId,
+        methodology_plan_id: plan.methodologyPlanId,
         week_number: 1,
         day_name: todayName // Usar día actual, no firstSession.dia
       });
 
       // Preparar datos para RoutineSessionModal usando la sesión encontrada
-      setCurrentSession(sessionToUse);
-      setCurrentSessionId(sessionResult.session_id);
-      
-      // Cerrar modal de confirmación y mostrar calentamiento PRIMERO
-      setShowConfirmationModal(false);
-
-      // Guardar datos para después del calentamiento
-      setPendingWarmupData({
+      setCurrentSession({
         session: sessionToUse,
         sessionId: sessionResult.session_id
       });
+      
+      // Cerrar modal de confirmación y mostrar calentamiento PRIMERO
+      closeModal('showConfirmationModal');
+
+      // Guardar datos para después del calentamiento
+      dispatch({ type: 'SET_PENDING_WARMUP', payload: { session: sessionToUse, sessionId: sessionResult.session_id } });
 
       // Mostrar modal de calentamiento
-      setShowWarmupModal(true);
+      openModal('showWarmupModal');
       console.log('🔥 Iniciando calentamiento antes del entrenamiento...');
       
     } catch (error) {
       console.error('❌ Error iniciando entrenamiento:', error);
       setError(error.message || 'Error al iniciar el entrenamiento');
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
   // FUNCIONES PARA MANEJAR WARMUP MODAL
   const handleWarmupComplete = () => {
     console.log('✅ Calentamiento completado, iniciando entrenamiento principal');
-    setShowWarmupModal(false);
+    closeModal('showWarmupModal');
 
-    if (pendingWarmupData) {
-      setCurrentSession(pendingWarmupData.session);
-      setCurrentSessionId(pendingWarmupData.sessionId);
-      setShowRoutineSessionModal(true);
-      setPendingWarmupData(null);
+    if (session.pendingWarmupData) {
+      setCurrentSession({
+        session: session.pendingWarmupData.session,
+        sessionId: session.pendingWarmupData.sessionId
+      });
+      openModal('showRoutineSessionModal');
+      dispatch({ type: 'SET_PENDING_WARMUP', payload: null });
     }
   };
 
   const handleSkipWarmup = () => {
-    console.log('⏭️ Calentamiento saltado, yendo directo al entrenamiento');
-    setShowWarmupModal(false);
+    console.log('⭕ Calentamiento saltado, yendo directo al entrenamiento');
+    closeModal('showWarmupModal');
 
-    if (pendingWarmupData) {
-      setCurrentSession(pendingWarmupData.session);
-      setCurrentSessionId(pendingWarmupData.sessionId);
-      setShowRoutineSessionModal(true);
-      setPendingWarmupData(null);
+    if (session.pendingWarmupData) {
+      setCurrentSession({
+        session: session.pendingWarmupData.session,
+        sessionId: session.pendingWarmupData.sessionId
+      });
+      openModal('showRoutineSessionModal');
+      dispatch({ type: 'SET_PENDING_WARMUP', payload: null });
     }
   };
 
   const handleCloseWarmup = () => {
     console.log('❌ Calentamiento cancelado');
-    setShowWarmupModal(false);
-    setPendingWarmupData(null);
+    closeModal('showWarmupModal');
+    dispatch({ type: 'SET_PENDING_WARMUP', payload: null });
     // TODO: Cancelar la sesión creada si es necesario
   };
 
@@ -611,18 +1035,18 @@ export default function MethodologiesScreen() {
   const handleEndSession = async () => {
     console.log('🏁 Sesión terminada, navegando a TodayTrainingTab');
     console.log('📋 Estado actual:', {
-      currentMethodologyPlanId,
-      sessionId: routineSessionData?.sessionId,
+      methodologyPlanId: plan.methodologyPlanId,
+      sessionId: session?.sessionId,
       localStorage: {
         methodology_plan_id: localStorage.getItem('currentMethodologyPlanId'),
         planStartDate: localStorage.getItem('currentRoutinePlanStartDate')
       }
     });
 
-    setShowRoutineSessionModal(false);
+    closeModal('showRoutineSessionModal');
 
     // IMPORTANTE: Guardar estado en localStorage para persistencia
-    localStorage.setItem('currentMethodologyPlanId', String(currentMethodologyPlanId));
+    localStorage.setItem('currentMethodologyPlanId', String(plan.methodologyPlanId));
     localStorage.setItem('currentRoutinePlanStartDate', new Date().toISOString().split('T')[0]);
 
     // Invalidar el caché del plan activo para forzar una nueva consulta
@@ -631,18 +1055,15 @@ export default function MethodologiesScreen() {
 
     try {
       // Primero, obtener el plan activo actual para navegación correcta
-      const token = localStorage.getItem('token');
       console.log('🔍 Buscando plan activo después de sesión...');
-      const response = await fetch('/api/routines/active-plan', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
 
-      const activeData = await response.json();
+      const activeResult = await methodologyAPI.checkActiveTraining();
+      const activeData = activeResult.success ? activeResult.data : null;
       console.log('📦 Respuesta de active-plan:', activeData);
 
       // SIEMPRE navegar con el plan actual, independientemente de la respuesta de active-plan
       // Esto es necesario porque el plan sigue activo después de completar una sesión
-      if (activeData.success && activeData.hasActivePlan) {
+      if (activeData && activeData.hasActivePlan) {
         console.log('✅ Plan activo encontrado, navegando con datos completos:', {
           hasActivePlan: activeData.hasActivePlan,
           methodology_plan_id: activeData.methodology_plan_id,
@@ -653,7 +1074,7 @@ export default function MethodologiesScreen() {
         navigate('/routines', {
           state: {
             plan: activeData.routinePlan,
-            methodology_plan_id: activeData.methodology_plan_id || currentMethodologyPlanId,
+            methodology_plan_id: activeData.methodology_plan_id || plan.methodologyPlanId,
             planStartDate: activeData.planStartDate || new Date().toISOString().split('T')[0],
             activeTab: 'today',
             showProgress: true,
@@ -665,14 +1086,14 @@ export default function MethodologiesScreen() {
         // IMPORTANTE: Si no encuentra plan activo pero tenemos methodology_plan_id,
         // es probable que sea un problema de timing. Navegar de todos modos.
         console.log('⚠️ No se encontró plan activo en API, pero navegando con datos conocidos');
-        console.log('📋 Usando metodología actual:', currentMethodologyPlanId);
-        console.log('📦 Plan de rutina actual:', currentRoutinePlan ? 'Disponible' : 'No disponible');
+        console.log('📋 Usando metodología actual:', plan.methodologyPlanId);
+        console.log('📦 Plan de rutina actual:', plan.generated?.plan ? 'Disponible' : 'No disponible');
 
         // Si tenemos el plan de rutina actual, usarlo
         navigate('/routines', {
           state: {
-            plan: currentRoutinePlan || null,
-            methodology_plan_id: currentMethodologyPlanId,
+            plan: plan.generated?.plan || null,
+            methodology_plan_id: plan.methodologyPlanId,
             planStartDate: new Date().toISOString().split('T')[0],
             activeTab: 'today',
             showProgress: true,
@@ -686,7 +1107,7 @@ export default function MethodologiesScreen() {
       // En caso de error, navegar con datos básicos
       navigate('/routines', {
         state: {
-          methodology_plan_id: currentMethodologyPlanId,
+          methodology_plan_id: plan.methodologyPlanId,
           planStartDate: new Date().toISOString().split('T')[0],
           activeTab: 'today',
           showProgress: true,
@@ -698,39 +1119,26 @@ export default function MethodologiesScreen() {
 
   // FUNCIÓN MEJORADA: Confirmar y activar plan de forma unificada
   const navigateToRoutines = async (overridePlan = null) => {
-    const planContainer = overridePlan || generatedRoutinePlan;
+    const planContainer = overridePlan || plan.generated;
 
     if (!planContainer || !planContainer.plan) {
-      console.error('❌ No hay plan de rutina disponible para navegar', { overridePlan, generatedRoutinePlan });
+      console.error('❌ No hay plan de rutina disponible para navegar', { overridePlan, generatedPlan: plan.generated });
       setError('No se pudo preparar la rutina. Vuelve a intentar generar el plan.');
       return;
     }
 
     // NUEVO FLUJO UNIFICADO: Confirmar y activar plan de una vez
     try {
-      setIsLoading(true);
+      setLoading(true);
       console.log('🚀 FLUJO MEJORADO: Confirmando y activando plan...');
       
-      const token = localStorage.getItem('token');
-      const response = await fetch('/api/routines/confirm-and-activate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          methodology_plan_id: planContainer?.planId,
-          plan_data: planContainer.plan
-        })
-      });
+      const result = await methodologyAPI.activatePlan(planContainer?.planId, planContainer.plan);
 
-      const result = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(result.error || 'Error confirmando el plan');
+      if (!result.success) {
+        throw new Error(result.message || 'Error confirmando el plan');
       }
 
-      console.log('✅ Plan confirmado y activado exitosamente:', result);
+      console.log('✅ Plan confirmado y activado exitosamente:', result.data);
 
       // Navegar directamente - el plan ya está listo
       navigate('/routines', {
@@ -743,14 +1151,14 @@ export default function MethodologiesScreen() {
       });
 
       // Limpiar estado
-      setGeneratedRoutinePlan(null);
-      setShowPersonalizedMessage(false);
+      setGeneratedPlan(null);
+      closeModal('showPersonalizedMessage');
       
     } catch (error) {
       console.error('❌ Error en flujo unificado:', error);
       setError(`Error activando tu rutina: ${error.message}`);
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
@@ -760,10 +1168,10 @@ export default function MethodologiesScreen() {
       <p className="text-gray-400 mb-6">
         Automático (IA) o Manual (IA pero eligiendo que metodología realizar)
       </p>
-      {error && (
+      {ui.error && (
         <Alert className="mb-6 bg-red-900/30 border-red-400/40">
           <AlertCircle className="w-4 h-4 text-red-400" />
-          <AlertDescription className="text-red-200">{error}</AlertDescription>
+          <AlertDescription className="text-red-200">{ui.error}</AlertDescription>
         </Alert>
       )}
       <Card className="bg-black/90 border-yellow-400/20 mb-8">
@@ -777,14 +1185,14 @@ export default function MethodologiesScreen() {
           </div>
           <div className="grid md:grid-cols-2 gap-4 mt-4">
             <div
-              onClick={() => setSelectionMode('automatico')}
+              onClick={() => dispatch({ type: 'SET_SELECTION_MODE', payload: 'automatico' })}
               className={`p-4 rounded-lg transition-all bg-black/80 cursor-pointer
-                ${selectionMode === 'automatico'
+                ${ui.selectionMode === 'automatico'
                   ? 'border border-yellow-400 ring-2 ring-yellow-400/30'
                   : 'border border-yellow-400/20 hover:border-yellow-400/40'}`}
             >
               <div className="flex items-start gap-3">
-                <RadioGroup value={selectionMode} onValueChange={setSelectionMode}>
+                <RadioGroup value={ui.selectionMode} onValueChange={(mode) => dispatch({ type: 'SET_SELECTION_MODE', payload: mode })}>
                   <div className="flex items-center gap-2">
                     <RadioGroupItem value="automatico" id="automatico" />
                     <Label htmlFor="automatico" className="text-white font-semibold flex items-center gap-2">
@@ -795,29 +1203,29 @@ export default function MethodologiesScreen() {
                 </RadioGroup>
               </div>
               <p className="text-gray-400 text-sm mt-2">La IA elige la mejor metodología para tu perfil.</p>
-              {selectionMode === 'automatico' && (
+              {ui.selectionMode === 'automatico' && (
                 <div className="mt-4">
                   <Button
                     onClick={() => handleActivateIA(null)}
-                    disabled={isLoading}
+                    disabled={ui.isLoading}
                     className="bg-yellow-400 text-black hover:bg-yellow-300"
                   >
-                    <Zap className={`w-4 h-4 mr-2 ${isLoading ? 'animate-pulse' : ''}`} />
-                    {isLoading ? 'Procesando…' : 'Activar IA'}
+                    <Zap className={`w-4 h-4 mr-2 ${ui.isLoading ? 'animate-pulse' : ''}`} />
+                    {ui.isLoading ? 'Procesando…' : 'Activar IA'}
                   </Button>
                 </div>
               )}
             </div>
             <div
-              onClick={() => setSelectionMode('manual')}
+              onClick={() => dispatch({ type: 'SET_SELECTION_MODE', payload: 'manual' })}
               className={`p-4 rounded-lg transition-all cursor-pointer bg-black/80
-                ${selectionMode === 'manual'
+                ${ui.selectionMode === 'manual'
                   ? 'border border-yellow-400 ring-2 ring-yellow-400/30'
                   : 'border border-yellow-400/20 hover:border-yellow-400/40'}`}
               title="Pulsa para activar el modo manual y luego elige una metodología"
             >
               <div className="flex items-start gap-3">
-                <RadioGroup value={selectionMode} onValueChange={setSelectionMode}>
+                <RadioGroup value={ui.selectionMode} onValueChange={(mode) => dispatch({ type: 'SET_SELECTION_MODE', payload: mode })}>
                   <div className="flex items-center gap-2">
                     <RadioGroupItem value="manual" id="manual" />
                     <Label htmlFor="manual" className="text-white font-semibold flex items-center gap-2">
@@ -839,13 +1247,13 @@ export default function MethodologiesScreen() {
           <MethodologyCard
             key={m.name}
             methodology={m}
-            manualActive={selectionMode === 'manual'}
+            manualActive={ui.selectionMode === 'manual'}
             onDetails={handleOpenDetails}
             onSelect={handleManualCardClick}
           />
         ))}
       </div>
-      {isLoading && (
+      {ui.isLoading && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
           <div className="bg-black/90 border border-yellow-400/30 rounded-lg p-8 text-center shadow-xl">
             <svg className="w-12 h-12 text-yellow-400 animate-spin mx-auto mb-4" fill="none" viewBox="0 0 24 24">
@@ -861,31 +1269,30 @@ export default function MethodologiesScreen() {
       {/* Modal de confirmación eliminado - reemplazado por TrainingPlanConfirmationModal */}
       
       <MethodologyDetailsDialog
-        open={showDetails}
-        onOpenChange={setShowDetails}
-        detailsMethod={detailsMethod}
-        selectionMode={selectionMode}
-        onClose={() => setShowDetails(false)}
+        open={modals.showDetails}
+        onOpenChange={(show) => { if (show) { openModal('showDetails'); } else { closeModal('showDetails'); } }}
+        detailsMethod={temp.detailsMethod}
+        selectionMode={ui.selectionMode}
+        onClose={() => closeModal('showDetails')}
         onSelect={handleManualCardClick}
       />
 
       {/* Modal de selección de versión */}
       <MethodologyVersionSelectionModal
-        isOpen={showVersionSelection}
+        isOpen={modals.showVersionSelection}
         onClose={() => {
-          setShowVersionSelection(false);
-          setVersionSelectionData(null);
+          closeModal('showVersionSelection');
+          dispatch({ type: 'SET_VERSION_SELECTION_DATA', payload: null });
         }}
-        onConfirm={versionSelectionData?.isAutomatic ? handleVersionSelectionConfirm : confirmManualSelection}
-        userProfile={{...userData, ...user, ...currentUser}}
-        isAutomatic={versionSelectionData?.isAutomatic}
-        selectedMethodology={versionSelectionData?.selectedMethodology}
+        onConfirm={plan.versionSelectionData?.isAutomatic ? handleVersionSelectionConfirm : confirmManualSelection}
+        userProfile={{...userData, ...user}}
+        isAutomatic={plan.versionSelectionData?.isAutomatic}
+        selectedMethodology={plan.versionSelectionData?.selectedMethodology}
       />
 
-
       {/* Modal de advertencia de entrenamiento activo */}
-      {showActiveTrainingWarning && (
-        <Dialog open={showActiveTrainingWarning} onOpenChange={setShowActiveTrainingWarning}>
+      {modals.showActiveTrainingWarning && (
+        <Dialog open={modals.showActiveTrainingWarning} onOpenChange={() => closeModal('showActiveTrainingWarning')}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <div className="flex items-center gap-2">
@@ -893,20 +1300,20 @@ export default function MethodologiesScreen() {
                 <DialogTitle>Entrenamiento en Marcha</DialogTitle>
               </div>
               <DialogDescription>
-                Tienes un entrenamiento activo de <strong>{activeTrainingInfo?.routinePlan?.selected_style}</strong>.
+                Tienes un entrenamiento activo de <strong>{temp.activeTrainingInfo?.routinePlan?.selected_style}</strong>.
                 Si generas un nuevo entrenamiento, perderás el progreso actual.
               </DialogDescription>
             </DialogHeader>
-            
+
             <div className="bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800 rounded-lg p-4 mt-4">
               <div className="flex items-start gap-2">
                 <Zap className="w-4 h-4 text-orange-500 mt-0.5" />
                 <div className="text-sm">
                   <p className="font-medium text-orange-800 dark:text-orange-200">
-                    Plan Activo: {activeTrainingInfo?.routinePlan?.selected_style}
+                    Plan Activo: {temp.activeTrainingInfo?.routinePlan?.selected_style}
                   </p>
                   <p className="text-orange-600 dark:text-orange-300 mt-1">
-                    Fuente: {activeTrainingInfo?.planSource?.label || 'Automático'}
+                    Fuente: {temp.activeTrainingInfo?.planSource?.label || 'Automático'}
                   </p>
                 </div>
               </div>
@@ -916,7 +1323,7 @@ export default function MethodologiesScreen() {
               <Button
                 variant="outline"
                 onClick={() => {
-                  setShowActiveTrainingWarning(false);
+                  closeModal('showActiveTrainingWarning');
                   navigate('/routines');
                 }}
               >
@@ -925,13 +1332,8 @@ export default function MethodologiesScreen() {
               <Button
                 variant="destructive"
                 onClick={() => {
-                  setShowActiveTrainingWarning(false);
-                  // Continuar con la generación original
-                  if (versionSelectionData?.isAutomatic) {
-                    setShowVersionSelection(true);
-                  } else {
-                    setShowVersionSelection(true);
-                  }
+                  closeModal('showActiveTrainingWarning');
+                  openModal('showVersionSelection');
                 }}
               >
                 Crear Nuevo Entrenamiento
@@ -942,95 +1344,52 @@ export default function MethodologiesScreen() {
       )}
 
       {/* Modal de Calistenia Manual */}
-      {showCalisteniaManual && (
-        <Dialog open={showCalisteniaManual} onOpenChange={setShowCalisteniaManual}>
+      {modals.showCalisteniaManual && (
+        <Dialog open={modals.showCalisteniaManual} onOpenChange={() => closeModal('showCalisteniaManual')}>
           <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader className="sr-only">
               <DialogTitle>Calistenia Manual</DialogTitle>
             </DialogHeader>
             <CalisteniaManualCard
               onGenerate={handleCalisteniaManualGenerate}
-              isLoading={isLoading}
-              error={error}
+              isLoading={ui.isLoading}
+              error={ui.error}
             />
           </DialogContent>
         </Dialog>
       )}
 
-      {/* NUEVO: Modal de Confirmación Unificado */}
+      {/* TrainingPlanConfirmationModal */}
       <TrainingPlanConfirmationModal
-        isOpen={showConfirmationModal}
-        onClose={() => setShowConfirmationModal(false)}
-        onStartTraining={handleStartTraining}
-        plan={generatedRoutinePlan}
-        methodology={selectedMethodology}
-        aiJustification={personalizedMessage}
-        isLoading={isLoading}
+        isOpen={modals.showConfirmationModal}
+        onClose={() => closeModal('showConfirmationModal')}
+        onStartTraining={handleStartTraining} // ✅ CORRECCIÓN: Cambiado de onStartNow a onStartTraining
+        onGenerateAnother={handleGenerateAnother}
+        plan={plan.generated?.plan || plan.generated} // ✅ MEJORADO: Acceso más seguro al plan
+        methodology={plan.methodology}
+        isLoading={ui.isLoading}
+        error={ui.error} // ✅ NUEVO: Pasar errores al modal
+        isConfirming={ui.isLoading} // ✅ NUEVO: Estado de confirmación
       />
 
-      {/* NUEVO: Modal de Calentamiento */}
-      {showWarmupModal && (
+      {/* WarmupModal */}
+      {modals.showWarmupModal && session.pendingWarmupData?.sessionId && (
         <WarmupModal
-          level={generatedRoutinePlan?.level || 'básico'}
+          sessionId={session.pendingWarmupData.sessionId} // ✅ CORRECCIÓN: Pasar sessionId
+          level={generatedPlan?.plan?.level || 'básico'}
           onComplete={handleWarmupComplete}
           onSkip={handleSkipWarmup}
           onClose={handleCloseWarmup}
         />
       )}
 
-      {/* NUEVO: Modal de Sesión de Entrenamiento */}
-      {showRoutineSessionModal && currentSession && (
-        <RoutineSessionModal
-          session={currentSession}
-          sessionId={currentSessionId}
-          onClose={() => setShowRoutineSessionModal(false)}
-          onFinishExercise={async (exerciseIndex, seriesCompleted, timeSpent) => {
-            console.log('✅ Ejercicio completado:', { exerciseIndex, seriesCompleted, timeSpent });
-            try {
-              // Actualizar progreso en backend
-              await updateExercise({
-                sessionId: currentSessionId,
-                exerciseOrder: exerciseIndex + 1, // API usa 1-based indexing
-                series_completed: seriesCompleted,
-                status: 'completado',
-                time_spent_seconds: timeSpent
-              });
-            } catch (error) {
-              console.error('❌ Error actualizando ejercicio:', error);
-            }
-          }}
-          onSkipExercise={async (exerciseIndex) => {
-            console.log('⏭️ Ejercicio saltado:', exerciseIndex);
-            try {
-              await updateExercise({
-                sessionId: currentSessionId,
-                exerciseOrder: exerciseIndex + 1,
-                series_completed: 0,
-                status: 'saltado',
-                time_spent_seconds: 0
-              });
-            } catch (error) {
-              console.error('❌ Error actualizando ejercicio saltado:', error);
-            }
-          }}
-          onCancelExercise={async (exerciseIndex) => {
-            console.log('❌ Ejercicio cancelado:', exerciseIndex);
-            try {
-              await updateExercise({
-                sessionId: currentSessionId,
-                exerciseOrder: exerciseIndex + 1,
-                series_completed: 0,
-                status: 'cancelado',
-                time_spent_seconds: 0
-              });
-            } catch (error) {
-              console.error('❌ Error actualizando ejercicio cancelado:', error);
-            }
-          }}
-          onEndSession={handleEndSession}
-          navigateToRoutines={() => navigate('/routines')}
-        />
-      )}
+      {/* RoutineSessionModal */}
+      <RoutineSessionModal
+        isOpen={modals.showRoutineSessionModal}
+        onClose={handleEndSession}
+        sessionData={session.current}
+        onUpdateExercise={updateExercise}
+      />
     </div>
   );
 }
