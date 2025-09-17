@@ -165,14 +165,29 @@ export async function cancelRoutine({ methodology_plan_id, routine_plan_id }) {
   const token = getToken();
   const resp = await fetch('/api/routines/cancel-routine', {
     method: 'POST',
-    headers: { 
-      'Content-Type': 'application/json', 
-      'Authorization': `Bearer ${token}` 
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
     },
     body: JSON.stringify({ methodology_plan_id, routine_plan_id })
   });
+
   const data = await resp.json().catch(() => ({}));
-  if (!resp.ok || !data.success) throw new Error(data.error || 'No se pudo cancelar la rutina');
+
+  // Manejar casos especiales
+  if (resp.ok && data.already_cancelled) {
+    console.log('⚠️ La rutina ya había sido cancelada anteriormente');
+    return data; // No es un error, la operación es idempotente
+  }
+
+  if (!resp.ok || !data.success) {
+    // Para errores 404, dar un mensaje más claro
+    if (resp.status === 404) {
+      throw new Error('No se encontró la rutina a cancelar. Es posible que ya haya sido eliminada.');
+    }
+    throw new Error(data.error || 'No se pudo cancelar la rutina');
+  }
+
   return data;
 }
 

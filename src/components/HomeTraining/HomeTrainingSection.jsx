@@ -8,10 +8,12 @@ import HomeTrainingRejectionModal from './HomeTrainingRejectionModal';
 import HomeTrainingPreferencesHistory from './HomeTrainingPreferencesHistory';
 import UserEquipmentSummaryCard from './UserEquipmentSummaryCard';
 import logger from '../../utils/logger';
+import { useTrace } from '../../contexts/TraceContext';
 
 
 const HomeTrainingSection = () => {
   const navigate = useNavigate();
+  const { track } = useTrace();
   const [selectedEquipment, setSelectedEquipment] = useState(null);
   const [selectedTrainingType, setSelectedTrainingType] = useState(null);
 
@@ -43,6 +45,27 @@ const HomeTrainingSection = () => {
   const [showProgress, setShowProgress] = useState(false);
   // Flags para evitar PUT duplicados
   const [sending, setSending] = useState(false);
+  // Trace apertura/cierre de modales clave
+  useEffect(() => {
+    try {
+      if (showExerciseModal) {
+        track('MODAL_OPEN', { name: 'HomeTrainingExerciseModal', index: currentExerciseIndex }, { component: 'HomeTrainingSection' });
+      } else {
+        track('MODAL_CLOSE', { name: 'HomeTrainingExerciseModal' }, { component: 'HomeTrainingSection' });
+      }
+    } catch {}
+  }, [showExerciseModal, currentExerciseIndex]);
+
+  useEffect(() => {
+    try {
+      if (showPersonalizedMessage) {
+        track('MODAL_OPEN', { name: 'HomeTrainingPersonalizedMessage' }, { component: 'HomeTrainingSection' });
+      } else {
+        track('MODAL_CLOSE', { name: 'HomeTrainingPersonalizedMessage' }, { component: 'HomeTrainingSection' });
+      }
+    } catch {}
+  }, [showPersonalizedMessage]);
+
   const [sendingProgress, setSendingProgress] = useState(false);
   // Modal de rechazo de ejercicios
   const [showRejectionModal, setShowRejectionModal] = useState(false);
@@ -116,7 +139,7 @@ const HomeTrainingSection = () => {
       // Solo si hay una sesión activa y progreso sin guardar
       if (currentSession && (showExerciseModal || (exercisesProgress && exercisesProgress.length > 0))) {
         logger.info('Usuario abandonando sesión, guardando progreso', null, 'HomeTraining');
-        
+
         // Usar sendBeacon para envío asíncrono confiable
         const token = localStorage.getItem('token');
         const abandonData = {
@@ -140,13 +163,13 @@ const HomeTrainingSection = () => {
 
     const handleVisibilityChange = async () => {
       if (!currentSession) return;
-      
+
       const token = localStorage.getItem('token');
-      
+
       if (document.hidden) {
         // Usuario cambió de tab/minimizó - marcar como abandonado temporalmente
         logger.debug('Usuario cambió de tab, marcando sesión como pausada', null, 'HomeTraining');
-        
+
         if (exercisesProgress && exercisesProgress.length > 0) {
           try {
             await fetch(`/api/home-training/sessions/${currentSession.id}/handle-abandon`, {
@@ -262,32 +285,32 @@ const HomeTrainingSection = () => {
         });
 
         setSessionProgress(data.progress);
-        
+
         // Si la sesión está completada al 100%, marcar como completada pero mantener el objeto
         if (data.progress.percentage >= 100 && data.session && currentSession) {
           setCurrentSession({ ...data.session, status: 'completed' });
         }
-        
+
         // Validar que el currentExercise esté dentro del rango válido
         const currentExerciseFromServer = data.progress.currentExercise || 0;
         if (generatedPlan && generatedPlan.plan_entrenamiento && generatedPlan.plan_entrenamiento.ejercicios) {
           const maxIndex = generatedPlan.plan_entrenamiento.ejercicios.length - 1;
           const validIndex = Math.max(0, Math.min(currentExerciseFromServer, maxIndex));
           setCurrentExerciseIndex(validIndex);
-          
+
           if (validIndex !== currentExerciseFromServer) {
             logger.warn('Ajustado índice de ejercicio', { from: currentExerciseFromServer, to: validIndex }, 'HomeTraining');
           }
         } else {
           setCurrentExerciseIndex(currentExerciseFromServer);
         }
-        
+
         logger.debug('Actualizando exercisesProgress', { count: data.exercises?.length }, 'HomeTraining');
         setExercisesProgress(data.exercises || []);
-        
+
         // Log estado después de actualizar
         setTimeout(() => {
-          console.log('📊 Estado UI actualizado - exercisesProgress:', 
+          console.log('📊 Estado UI actualizado - exercisesProgress:',
             data.exercises?.map((ex, idx) => `${idx}: ${ex.exercise_name} (${ex.status})`)
           );
         }, 100);
@@ -522,7 +545,7 @@ const HomeTrainingSection = () => {
     }
 
     setPendingRegenerateAfterRejection(false);
-    
+
     try {
       const token = localStorage.getItem('token');
       if (!token) {
@@ -531,7 +554,7 @@ const HomeTrainingSection = () => {
       }
 
       // ⚠️ NO llamar closeActiveSessions() aquí porque ya se hizo antes
-      
+
       // Mostrar loader ANTES de llamar a la IA
       setIsGenerating(true);
       setShowPersonalizedMessage(false);
@@ -574,9 +597,9 @@ const HomeTrainingSection = () => {
 
       // Persistir en BD
       await savePlanToDatabase(data.plan, selectedEquipment, selectedTrainingType);
-      
+
       console.log('✅ Nuevo plan generado exitosamente');
-      
+
     } catch (error) {
       console.error('❌ Error generando nuevo plan:', error);
       setIsGenerating(false);
@@ -652,10 +675,10 @@ const HomeTrainingSection = () => {
       // Validar que existen los datos necesarios
       if (!generatedPlan || !generatedPlan.plan_entrenamiento || !generatedPlan.plan_entrenamiento.ejercicios) {
         console.error('No hay plan de entrenamiento cargado');
-        
+
         // Intentar recargar el plan actual
         await loadCurrentPlan();
-        
+
         // Verificar nuevamente después de la recarga
         if (!generatedPlan || !generatedPlan.plan_entrenamiento || !generatedPlan.plan_entrenamiento.ejercicios) {
           alert('Error: No se encontró el plan de entrenamiento. Por favor, genera uno nuevo.');
@@ -667,11 +690,11 @@ const HomeTrainingSection = () => {
       const exercises = generatedPlan.plan_entrenamiento.ejercicios;
       if (currentExerciseIndex < 0 || currentExerciseIndex >= exercises.length) {
         console.error('Índice de ejercicio inválido:', currentExerciseIndex, 'Total ejercicios:', exercises.length);
-        
+
         // Intentar corregir el índice
         const correctedIndex = Math.max(0, Math.min(currentExerciseIndex, exercises.length - 1));
         setCurrentExerciseIndex(correctedIndex);
-        
+
         if (correctedIndex !== currentExerciseIndex) {
           console.log(`Índice corregido de ${currentExerciseIndex} a ${correctedIndex}`);
         }
@@ -714,12 +737,12 @@ const HomeTrainingSection = () => {
 
       // ⚠️ IMPORTANTE: Solo actualizar duration si el ejercicio ya está completado
       // Si no está completado, usar handleUpdateProgress primero
-      
+
       console.log(`🏁 Finalizando ejercicio ${currentExerciseIndex + 1}: ${exercise.nombre}`);
-      
+
       // Recargar progreso actual para tener datos frescos
       await loadSessionProgress(currentSession.id);
-      
+
       // Verificar estado actual desde la base de datos
       const freshProgressResponse = await fetch(`/api/home-training/sessions/${currentSession.id}/progress`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -727,17 +750,17 @@ const HomeTrainingSection = () => {
       const freshProgressData = await freshProgressResponse.json();
       const currentExerciseProgress = freshProgressData.exercises?.[currentExerciseIndex];
       const isAlreadyCompleted = currentExerciseProgress?.status === 'completed';
-      
+
       console.log(`📊 Estado actual del ejercicio ${currentExerciseIndex + 1}:`, {
         status: currentExerciseProgress?.status,
         series: `${currentExerciseProgress?.series_completed}/${currentExerciseProgress?.total_series}`,
         isCompleted: isAlreadyCompleted
       });
-      
+
       // Validar que el índice esté en rango válido
       const exerciseOrder = currentExerciseIndex;
       const totalExercises = generatedPlan?.plan_entrenamiento?.ejercicios?.length || 0;
-      
+
       if (exerciseOrder >= totalExercises) {
         console.error(`❌ Error: Intentando actualizar ejercicio ${exerciseOrder} pero solo hay ${totalExercises} ejercicios`);
         console.log(`ℹ️ Ejercicio ya completado, no se requiere actualización adicional`);
@@ -758,9 +781,9 @@ const HomeTrainingSection = () => {
         await fetch(`/api/home-training/sessions/${currentSession.id}/exercise/${exerciseOrder}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body: JSON.stringify({ 
-            series_completed: exercise.series, 
-            status: 'completed', 
+          body: JSON.stringify({
+            series_completed: exercise.series,
+            status: 'completed',
             ...(durationSeconds && { duration_seconds: durationSeconds })
           })
         });
@@ -996,7 +1019,7 @@ const HomeTrainingSection = () => {
             <ArrowLeft size={24} className="mr-2" />
             Volver al inicio
           </button>
-          
+
           {/* Botón de historial de preferencias */}
           <button
             onClick={() => setShowPreferencesHistory(true)}
@@ -1023,7 +1046,15 @@ const HomeTrainingSection = () => {
           {equipmentTypes.map((equipment) => (
             <div
               key={equipment.id}
-              onClick={() => setSelectedEquipment(equipment.id)}
+              data-trace="equipment-card"
+              data-trace-id={equipment.id}
+              data-trace-label={equipment.title}
+              onClick={() => {
+                setSelectedEquipment(equipment.id);
+                try {
+                  track('CARD_CLICK', { id: equipment.id, title: equipment.title, group: 'equipment' }, { component: 'HomeTrainingSection' });
+                } catch {}
+              }}
               className={`bg-gray-800/50 backdrop-blur-sm border-2 rounded-2xl p-6 cursor-pointer transition-all duration-200 hover:bg-gray-800/70 ${
                 selectedEquipment === equipment.id
                   ? `${equipment.borderColor} bg-gray-800/80`
@@ -1060,7 +1091,15 @@ const HomeTrainingSection = () => {
             </div>
           ))}
           <div
-              onClick={() => setSelectedEquipment('personalizado')}
+              data-trace="equipment-card"
+              data-trace-id="personalizado"
+              data-trace-label="Usar mi equipamiento"
+              onClick={() => {
+                setSelectedEquipment('personalizado');
+                try {
+                  track('CARD_CLICK', { id: 'personalizado', title: 'Usar mi equipamiento', group: 'equipment' }, { component: 'HomeTrainingSection' });
+                } catch {}
+              }}
               className={`bg-gray-800/50 backdrop-blur-sm border-2 rounded-2xl p-6 cursor-pointer transition-all duration-200 hover:bg-gray-800/70 ${
                 selectedEquipment === 'personalizado'
                   ? `border-yellow-500 bg-gray-800/80`
@@ -1085,7 +1124,15 @@ const HomeTrainingSection = () => {
           {trainingTypes.map((type) => (
             <button
               key={type.id}
-              onClick={() => setSelectedTrainingType(type.id)}
+              data-trace="training-type"
+              data-trace-id={type.id}
+              data-trace-label={type.title}
+              onClick={() => {
+                setSelectedTrainingType(type.id);
+                try {
+                  track('TAB_CLICK', { id: type.id, title: type.title, group: 'training-type' }, { component: 'HomeTrainingSection' });
+                } catch {}
+              }}
               className={`py-3 px-6 rounded-lg font-semibold transition-all duration-200 ${
                 selectedTrainingType === type.id
                   ? 'bg-blue-600 text-white'
@@ -1226,9 +1273,9 @@ const HomeTrainingSection = () => {
         )}
 
         {/* Modal de ejercicio individual */}
-        {showExerciseModal && 
-         generatedPlan && 
-         generatedPlan.plan_entrenamiento.ejercicios && 
+        {showExerciseModal &&
+         generatedPlan &&
+         generatedPlan.plan_entrenamiento.ejercicios &&
          generatedPlan.plan_entrenamiento.ejercicios[currentExerciseIndex] && (
           <HomeTrainingExerciseModal
             exercise={generatedPlan.plan_entrenamiento.ejercicios[currentExerciseIndex]}

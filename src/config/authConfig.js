@@ -24,7 +24,7 @@ const ENVIRONMENTS = {
     MAX_LOGIN_ATTEMPTS: 10 // Más relajado en desarrollo
   },
   production: {
-    API_BASE: process.env.REACT_APP_API_URL || 'https://api.entrenaconai.com',
+    API_BASE: import.meta.env.VITE_API_URL || 'https://api.entrenaconai.com',
     TOKEN_REFRESH_THRESHOLD: 10 * 60 * 1000, // 10 minutos
     SESSION_TIMEOUT: 8 * 60 * 60 * 1000, // 8 horas
     INACTIVITY_TIMEOUT: 30 * 60 * 1000, // 30 minutos
@@ -34,7 +34,7 @@ const ENVIRONMENTS = {
   }
 };
 
-const ENV = process.env.NODE_ENV || 'development';
+const ENV = import.meta.env.MODE || 'development';
 const CONFIG = ENVIRONMENTS[ENV];
 
 // =============================================================================

@@ -16,8 +16,16 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { getHistoricalData } from '../api';
+import { useTrace } from '@/contexts/TraceContext.jsx';
+
 
 export default function HistoricalTab({ methodologyPlanId }) {
+  const { track } = useTrace();
+
+  useEffect(() => {
+    track('VIEW', { name: 'HistoricalTab' }, { component: 'HistoricalTab' });
+  }, []);
+
   const [historicalData, setHistoricalData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -34,8 +42,10 @@ export default function HistoricalTab({ methodologyPlanId }) {
         // Validar estructura de datos
         const validatedData = validateHistoricalData(data);
         setHistoricalData(validatedData);
+        track('DATA_LOAD', { ok: true, routines: validatedData.totalRoutinesCompleted, sessions: validatedData.totalSessionsEver }, { component: 'HistoricalTab' });
       } catch (err) {
         setError(err.message);
+        track('DATA_LOAD', { ok: false, error: err.message }, { component: 'HistoricalTab' });
         // En caso de error, usar datos vacíos validados
         setHistoricalData({
           totalRoutinesCompleted: 0,
@@ -52,6 +62,7 @@ export default function HistoricalTab({ methodologyPlanId }) {
         setLoading(false);
       }
     };
+
 
     loadHistoricalData();
   }, [methodologyPlanId]);
@@ -238,7 +249,7 @@ export default function HistoricalTab({ methodologyPlanId }) {
             <Calendar className="w-5 h-5 mr-2 text-yellow-400" />
             Progreso Mensual
           </h3>
-          
+
           <div className="space-y-4">
             {historicalData.monthlyStats.length > 0 ? historicalData.monthlyStats.map((month, index) => (
               <div key={index} className="border-b border-gray-700 pb-3 last:border-b-0">
@@ -265,7 +276,7 @@ export default function HistoricalTab({ methodologyPlanId }) {
             <Award className="w-5 h-5 mr-2 text-yellow-400" />
             Logros Históricos
           </h3>
-          
+
           <div className="space-y-3">
             <div className={`flex items-center space-x-3 p-2 bg-black/40 rounded-lg ${historicalData.totalRoutinesCompleted > 0 ? '' : 'opacity-50'}`}>
               <div className={`w-8 h-8 rounded-full flex items-center justify-center ${historicalData.totalRoutinesCompleted > 0 ? 'bg-purple-600' : 'bg-gray-600'}`}>
@@ -278,7 +289,7 @@ export default function HistoricalTab({ methodologyPlanId }) {
                 <p className="text-xs text-gray-500">Completa tu primera rutina completa</p>
               </div>
             </div>
-            
+
             <div className={`flex items-center space-x-3 p-2 bg-black/40 rounded-lg ${historicalData.totalSessionsEver >= 10 ? '' : 'opacity-50'}`}>
               <div className={`w-8 h-8 rounded-full flex items-center justify-center ${historicalData.totalSessionsEver >= 10 ? 'bg-purple-600' : 'bg-gray-600'}`}>
                 <Activity className={`w-4 h-4 ${historicalData.totalSessionsEver >= 10 ? 'text-white' : 'text-gray-400'}`} />
@@ -290,7 +301,7 @@ export default function HistoricalTab({ methodologyPlanId }) {
                 <p className="text-xs text-gray-500">Completa 10 sesiones de entrenamiento</p>
               </div>
             </div>
-            
+
             <div className={`flex items-center space-x-3 p-2 bg-black/40 rounded-lg ${historicalData.totalRoutinesCompleted >= 3 ? '' : 'opacity-50'}`}>
               <div className={`w-8 h-8 rounded-full flex items-center justify-center ${historicalData.totalRoutinesCompleted >= 3 ? 'bg-purple-600' : 'bg-gray-600'}`}>
                 <TrendingUp className={`w-4 h-4 ${historicalData.totalRoutinesCompleted >= 3 ? 'text-white' : 'text-gray-400'}`} />

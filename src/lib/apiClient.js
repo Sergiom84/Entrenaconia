@@ -16,6 +16,8 @@ import tokenManager from '../utils/tokenManager';
 import connectionManager from '../utils/connectionManager';
 import sessionManager from '../utils/sessionManager';
 
+import { track as traceTrack } from '../utils/trace';
+
 class ApiClient {
   constructor(baseURL = '', options = {}) {
     this.baseURL = baseURL;
@@ -141,7 +143,7 @@ class ApiClient {
    */
   async executeRequestInterceptors(url, options) {
     let processedOptions = { ...options };
-    
+
     for (const interceptor of this.requestInterceptors) {
       try {
         const result = await interceptor(url, processedOptions);
@@ -161,7 +163,7 @@ class ApiClient {
    */
   async executeResponseInterceptors(response, requestUrl) {
     let processedResponse = response;
-    
+
     for (const interceptor of this.responseInterceptors) {
       try {
         const result = await interceptor(processedResponse, requestUrl);
@@ -190,7 +192,7 @@ class ApiClient {
         logger.error('Error en error interceptor', interceptorError, 'ApiClient');
       }
     }
-    
+
     throw error; // Re-lanzar si ningún interceptor manejó el error
   }
 
@@ -508,18 +510,28 @@ apiClient.addRequestInterceptor((url, options) => {
     sessionManager.handleActivity();
   }
 
+  // Trace de request
+  try {
+    traceTrack('API_REQUEST', { url, method: (options?.method || 'GET').toUpperCase() }, { component: 'ApiClient' });
+  } catch {}
+
   return options; // No modificar options
 });
 
 // Interceptor de response para logging automático
 apiClient.addResponseInterceptor((response, url) => {
+  // Trace de response
+  try {
+    traceTrack('API_RESPONSE', { url, status: response.status, ok: response.ok }, { component: 'ApiClient' });
+  } catch {}
+
   if (!response.ok) {
     logger.api.error(response.status >= 500 ? 'Server Error' : 'Client Error', url, {
       status: response.status,
       statusText: response.statusText
     });
   }
-  
+
   return response; // No modificar la response
 });
 

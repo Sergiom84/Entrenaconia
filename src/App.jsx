@@ -1,6 +1,6 @@
 /**
  * 🚀 App.jsx - Versión Optimizada con Lazy Loading
- * 
+ *
  * OPTIMIZACIONES APLICADAS:
  * - Lazy loading de rutas principales (code splitting)
  * - Suspense boundaries con loading states
@@ -14,6 +14,8 @@
 // =============================================================================
 import { Routes, Route, useLocation } from 'react-router-dom';
 import { Suspense, lazy, useState, useEffect, useMemo } from 'react';
+import { TraceProvider, useTrace } from './contexts/TraceContext';
+import TraceConsole from './components/dev/TraceConsole';
 
 // =============================================================================
 // 🏗️ CORE COMPONENTS & PROVIDERS
@@ -107,7 +109,7 @@ const LazyRouteErrorBoundary = ({ children, routeName }) => (
 );
 
 /**
- * 🚀 ProtectedLazyRoute - Componente reutilizable para eliminar boilerplate
+ * 🚀 createProtectedLazyElement - Función helper para crear elementos de ruta
  *
  * BENEFICIOS:
  * - Elimina ~150 líneas de código repetitivo
@@ -115,15 +117,13 @@ const LazyRouteErrorBoundary = ({ children, routeName }) => (
  * - Facilita añadir nuevas rutas
  * - Consistencia garantizada
  */
-const ProtectedLazyRoute = ({
+const createProtectedLazyElement = ({
   component: Component,
   protected: isProtected,
   name,
   module,
   context,
-  loadingMessage,
-  isIndex = false,
-  path
+  loadingMessage
 }) => {
   // Determinar mensaje de loading
   const loaderMessage = loadingMessage || `Cargando ${module || name}...`;
@@ -147,18 +147,11 @@ const ProtectedLazyRoute = ({
   );
 
   // Envolver con ProtectedRoute si es necesario
-  const finalElement = isProtected ? (
+  return isProtected ? (
     <ProtectedRoute>
       {withErrorBoundary}
     </ProtectedRoute>
   ) : withErrorBoundary;
-
-  // Retornar Route configurada
-  return isIndex ? (
-    <Route index element={finalElement} />
-  ) : (
-    <Route path={path} element={finalElement} />
-  );
 };
 
 // =============================================================================
@@ -278,7 +271,7 @@ const useRoutePreloading = (user) => {
       // Preload rutas más usadas para usuarios logueados
       import('./components/routines/RoutineScreen');
       import('./components/HomeTraining/HomeTrainingSection');
-      
+
       // Preload rutas secundarias con delay mayor
       setTimeout(() => {
         import('./components/Methodologie/MethodologiesScreen');
@@ -295,6 +288,7 @@ const useRoutePreloading = (user) => {
 // =============================================================================
 
 function AppContent() {
+  const { track } = useTrace();
   const { user, isAuthenticated } = useAuth();
   const location = useLocation();
   const [currentExercise, setCurrentExercise] = useState(null);
@@ -302,6 +296,12 @@ function AppContent() {
 
   // Preloading inteligente
   useRoutePreloading(user);
+
+  // Trace de navegación
+  useEffect(() => {
+    track('NAVIGATE', { path: location.pathname, search: location.search }, { component: 'Router' });
+  }, [location.pathname, location.search]);
+
 
   // Rutas donde NO mostrar AudioBubble (optimizado con useMemo)
   const shouldHideAudioBubble = useMemo(() => {
@@ -323,16 +323,25 @@ function AppContent() {
     <>
       {/* Gestores globales */}
       <SessionManager />
-      
+
       <Routes>
         <Route path="/" element={<Layout />}>
           {/* 🚀 Rutas automáticas generadas desde ROUTE_CONFIG */}
-          {ROUTE_CONFIG.map((routeConfig) => (
-            <ProtectedLazyRoute
-              key={routeConfig.path || 'index'}
-              {...routeConfig}
-            />
-          ))}
+          {ROUTE_CONFIG.map((routeConfig) =>
+            routeConfig.isIndex ? (
+              <Route
+                key="index"
+                index
+                element={createProtectedLazyElement(routeConfig)}
+              />
+            ) : (
+              <Route
+                key={routeConfig.path}
+                path={routeConfig.path}
+                element={createProtectedLazyElement(routeConfig)}
+              />
+            )
+          )}
         </Route>
       </Routes>
 
@@ -358,7 +367,10 @@ function App() {
       <AuthProvider>
         <UserProvider>
           <WorkoutProvider>
-            <AppContent />
+            <TraceProvider>
+              <AppContent />
+              {import.meta.env.DEV && <TraceConsole />}
+            </TraceProvider>
           </WorkoutProvider>
         </UserProvider>
       </AuthProvider>

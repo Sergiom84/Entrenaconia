@@ -17,6 +17,8 @@ import { Alert, AlertDescription } from '@/components/ui/alert.jsx';
 import { Input } from '@/components/ui/input.jsx';
 import { Lock, Unlock, AlertTriangle, CheckCircle, Brain, Target, Shield, Zap, Calendar } from 'lucide-react';
 
+import { useTrace } from '@/contexts/TraceContext.jsx';
+
 // Configuraciones centralizadas
 const VERSION_SELECTION_CONFIG = {
   THEME: {
@@ -189,6 +191,15 @@ export default function MethodologyVersionSelectionModal({
     customWeeks: VERSION_SELECTION_CONFIG.LIMITS.DEFAULT_WEEKS
   });
 
+  const { track } = useTrace();
+  const prevOpenRef = React.useRef(isOpen);
+  React.useEffect(() => {
+    if (prevOpenRef.current !== isOpen) {
+      track(isOpen ? 'MODAL_OPEN' : 'MODAL_CLOSE', { name: 'MethodologyVersionSelectionModal' }, { component: 'MethodologyVersionSelectionModal' });
+      prevOpenRef.current = isOpen;
+    }
+  }, [isOpen]);
+
   // Validar props de entrada
   if (!VersionSelectionUtils.validateUserProfile(userProfile)) {
     console.warn('[MethodologyVersionSelectionModal] Invalid user profile provided');
@@ -237,22 +248,34 @@ export default function MethodologyVersionSelectionModal({
 
   // Handlers para acciones del usuario
   const handleModeChange = (mode) => {
+    track('MODE_SELECT', { mode }, { component: 'MethodologyVersionSelectionModal' });
     dispatch({ type: 'SET_MODE', payload: mode });
   };
 
   const handleVersionChange = (version) => {
+    track('VERSION_SELECT', { version }, { component: 'MethodologyVersionSelectionModal' });
     dispatch({ type: 'SET_VERSION', payload: version });
   };
 
   const handleWeeksChange = (weeks) => {
-    dispatch({ type: 'SET_WEEKS', payload: weeks });
+    const sanitized = VersionSelectionUtils.sanitizeWeeksValue(weeks);
+    track('INPUT_CHANGE', { id: 'weeks', value: sanitized }, { component: 'MethodologyVersionSelectionModal' });
+    dispatch({ type: 'SET_WEEKS', payload: sanitized });
   };
 
   const handleConfirmRisk = () => {
+    track('BUTTON_CLICK', { id: 'confirm_risk' }, { component: 'MethodologyVersionSelectionModal' });
     dispatch({ type: 'CLEAR_CONFIRMATION' });
   };
 
   const handleConfirm = () => {
+    track('BUTTON_CLICK', {
+      id: 'generate',
+      selectionMode: state.selectionMode,
+      version: state.selectedVersion,
+      customWeeks: state.customWeeks,
+      isRecommended: state.selectedVersion === autoRecommendation
+    }, { component: 'MethodologyVersionSelectionModal' });
     onConfirm({
       selectionMode: state.selectionMode,
       version: state.selectedVersion,
@@ -261,6 +284,7 @@ export default function MethodologyVersionSelectionModal({
       customWeeks: state.customWeeks
     });
   };
+
 
   // Componentes modulares internos
   const UserProfileSection = () => (
@@ -574,7 +598,7 @@ export default function MethodologyVersionSelectionModal({
         <div className="flex justify-between pt-6 px-2">
           <Button
             variant="outline"
-            onClick={onClose}
+            onClick={() => { track('BUTTON_CLICK', { id: 'cancel' }, { component: 'MethodologyVersionSelectionModal' }); onClose(); }}
             className={`border-gray-600 text-${VERSION_SELECTION_CONFIG.THEME.TEXT.SECONDARY} hover:bg-${VERSION_SELECTION_CONFIG.THEME.BACKGROUND.CARD} px-8 py-3 text-base font-medium`}
           >
             Cancelar

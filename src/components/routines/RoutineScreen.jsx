@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
+import { useTrace } from '@/contexts/TraceContext';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.jsx';
 import { Calendar, Dumbbell, BarChart3, History } from 'lucide-react';
 import { useWorkout } from '@/contexts/WorkoutContext';
@@ -46,6 +47,8 @@ const RoutineScreen = () => {
     hasActiveSession
   } = useWorkout();
 
+  const { track } = useTrace();
+
   // ===============================================
   // 🎛️ ESTADO LOCAL MÍNIMO
   // ===============================================
@@ -63,6 +66,17 @@ const RoutineScreen = () => {
   const updateLocalState = useCallback((updates) => {
     setLocalState(prev => ({ ...prev, ...updates }));
   }, []);
+
+  // Trace: apertura/cierre del modal de confirmación de plan
+  useEffect(() => {
+    try {
+      if (localState.showConfirmationModal) {
+        track('MODAL_OPEN', { name: 'TrainingPlanConfirmationModal' }, { component: 'RoutineScreen' });
+      } else {
+        track('MODAL_CLOSE', { name: 'TrainingPlanConfirmationModal' }, { component: 'RoutineScreen' });
+      }
+    } catch {}
+  }, [localState.showConfirmationModal]);
 
   // ===============================================
   // 📅 UTILIDADES DE FECHA
@@ -120,7 +134,7 @@ const RoutineScreen = () => {
     };
 
     initializeRoutineScreen();
-  }, [incomingState, hasActivePlan, loadActivePlan, setError]);
+  }, [incomingState, hasActivePlan, loadActivePlan, ui.setError]);
 
   // ===============================================
   // 🎭 GESTIÓN DE MODALES
@@ -140,6 +154,7 @@ const RoutineScreen = () => {
 
   const handleConfirmPlan = async () => {
     try {
+      try { track('BUTTON_CLICK', { id: 'confirm_plan' }, { component: 'RoutineScreen' }); } catch {}
       console.log('✅ Confirmando plan de entrenamiento...');
 
       if (!effectivePlan || !effectiveMethodologyPlanId) {
@@ -165,6 +180,7 @@ const RoutineScreen = () => {
 
   const handleStartTraining = async () => {
     try {
+      try { track('BUTTON_CLICK', { id: 'start_training' }, { component: 'RoutineScreen' }); } catch {}
       console.log('🚀 Iniciando entrenamiento del día...');
 
       if (!effectivePlan || !effectiveMethodologyPlanId) {
@@ -179,6 +195,7 @@ const RoutineScreen = () => {
 
       if (result.success) {
         console.log('✅ Sesión de entrenamiento iniciada');
+        try { track('SESSION_START', { planId: effectiveMethodologyPlanId, dayName: todayName }, { component: 'RoutineScreen' }); } catch {}
         updateLocalState({ activeTab: 'today' });
       } else {
         throw new Error(result.error || 'Error iniciando el entrenamiento');
@@ -191,6 +208,7 @@ const RoutineScreen = () => {
   };
 
   const handleGenerateAnother = async () => {
+    try { track('BUTTON_CLICK', { id: 'generate_another' }, { component: 'RoutineScreen' }); } catch {}
     console.log('🔄 Redirigiendo para generar otro plan...');
     updateLocalState({ showConfirmationModal: false });
     goToMethodologies();
@@ -198,6 +216,7 @@ const RoutineScreen = () => {
 
   const handleTabChange = useCallback((newTab) => {
     console.log(`🏷️ Cambiando a pestaña: ${newTab}`);
+    try { track('TAB_CLICK', { id: newTab, group: 'routine-tabs' }, { component: 'RoutineScreen' }); } catch {}
     updateLocalState({ activeTab: newTab });
   }, []);
 

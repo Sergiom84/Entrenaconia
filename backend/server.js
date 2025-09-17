@@ -56,7 +56,7 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 const app = express();
-const PORT = process.env.PORT || 3002;
+const PORT = process.env.PORT || 3003;
 
 // --- utilidades de path para servir el frontend ---
 const __filename = fileURLToPath(import.meta.url);

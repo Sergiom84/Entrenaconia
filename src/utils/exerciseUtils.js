@@ -119,6 +119,15 @@ export const computeSessionSummary = (status) => {
  * Obtener estado de ejercicio con icono y color
  */
 export const getExerciseStatus = (exercise) => {
+  if (!exercise) {
+    return {
+      icon: '❓',
+      color: 'text-gray-400',
+      bg: 'bg-gray-900/20',
+      label: 'Sin datos'
+    };
+  }
+
   const status = (exercise.status || '').toLowerCase();
   
   switch (status) {

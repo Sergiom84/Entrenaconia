@@ -575,13 +575,23 @@ router.put('/sessions/:sessionId/warmup-time', authenticateToken, async (req, re
 // Obtiene el estado de la sesión del día actual (si existe)
 router.get('/sessions/today-status', authenticateToken, async (req, res) => {
   try {
-    const userId = req.user?.userId || req.user?.id;
-    const { methodology_plan_id, week_number, day_name } = req.query;
+    const userIdRaw = req.user?.userId || req.user?.id;
+    const userId = parseInt(userIdRaw, 10);
+    const { methodology_plan_id: planIdParam, week_number, day_name } = req.query;
 
-    if (!methodology_plan_id || !week_number || !day_name) {
+    if (!planIdParam || !week_number || !day_name) {
       return res.status(400).json({ 
         success: false, 
-        error: 'Parámetros requeridos: methodology_plan_id, week_number, day_name' 
+        error: 'Parámetros requeridos: methodology_plan_id, week_number, day_name'
+      });
+    }
+
+    // Convertir methodology_plan_id a integer
+    const methodology_plan_id = parseInt(planIdParam, 10);
+    if (isNaN(methodology_plan_id)) {
+      return res.status(400).json({
+        success: false,
+        error: 'methodology_plan_id debe ser un número válido'
       });
     }
 
@@ -804,13 +814,23 @@ router.post('/confirm-plan', authenticateToken, async (req, res) => {
 // Obtiene datos de progreso histórico para el ProgressTab
 router.get('/progress-data', authenticateToken, async (req, res) => {
   try {
-    const userId = req.user?.userId || req.user?.id;
-    const { methodology_plan_id } = req.query;
+    const userIdRaw = req.user?.userId || req.user?.id;
+    const userId = parseInt(userIdRaw, 10);
+    const { methodology_plan_id: planIdParam } = req.query;
 
-    if (!methodology_plan_id) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'methodology_plan_id es requerido' 
+    if (!planIdParam) {
+      return res.status(400).json({
+        success: false,
+        error: 'methodology_plan_id es requerido'
+      });
+    }
+
+    // Convertir methodology_plan_id a integer
+    const methodology_plan_id = parseInt(planIdParam, 10);
+    if (isNaN(methodology_plan_id)) {
+      return res.status(400).json({
+        success: false,
+        error: 'methodology_plan_id debe ser un número válido'
       });
     }
 
@@ -1130,7 +1150,7 @@ router.get('/sessions/:sessionId/feedback', authenticateToken, async (req, res) 
   }
 });
 
-// GET /api/routines/active-plan  
+// GET /api/routines/active-plan
 // Obtiene la rutina activa del usuario para restaurar después del login
 // Busca plan de metodología activo del usuario
 router.get('/active-plan', authenticateToken, async (req, res) => {
@@ -1138,7 +1158,56 @@ router.get('/active-plan', authenticateToken, async (req, res) => {
     const userId = req.user?.userId || req.user?.id;
     console.log(`🔍 [/active-plan] Buscando plan activo para user ${userId}`);
 
-    // Buscar plan de metodología activo
+    // 🆕 PRIMERO: Buscar si hay entrenamientos programados en la nueva estructura
+    const todayWorkoutQuery = await pool.query(
+      `SELECT
+        ws.methodology_plan_id,
+        ws.week_number,
+        ws.session_order,
+        ws.session_title,
+        ws.day_name,
+        ws.scheduled_date,
+        ws.exercises,
+        ws.status,
+        mp.plan_data,
+        mp.methodology_type,
+        mp.confirmed_at,
+        mp.created_at
+       FROM app.workout_schedule ws
+       JOIN app.methodology_plans mp ON ws.methodology_plan_id = mp.id
+       WHERE ws.user_id = $1
+         AND ws.scheduled_date = CURRENT_DATE
+         AND ws.status = 'scheduled'
+       LIMIT 1`,
+      [userId]
+    );
+
+    if (todayWorkoutQuery.rowCount > 0) {
+      console.log(`✅ [/active-plan] Encontrado entrenamiento de hoy en nueva estructura`);
+      const todayWorkout = todayWorkoutQuery.rows[0];
+
+      return res.json({
+        success: true,
+        hasActivePlan: true,
+        source: 'workout_schedule', // 🆕 Nuevo source
+        methodology_plan_id: todayWorkout.methodology_plan_id,
+        planId: todayWorkout.methodology_plan_id,
+        routinePlan: todayWorkout.plan_data,
+        confirmedAt: todayWorkout.confirmed_at,
+        createdAt: todayWorkout.created_at,
+        todaySession: {
+          week_number: todayWorkout.week_number,
+          session_order: todayWorkout.session_order,
+          session_title: todayWorkout.session_title,
+          day_name: todayWorkout.day_name,
+          scheduled_date: todayWorkout.scheduled_date,
+          exercises: todayWorkout.exercises,
+          status: todayWorkout.status
+        }
+      });
+    }
+
+    // Buscar plan de metodología activo (fallback al método anterior)
     const activeMethodologyQuery = await pool.query(
       `SELECT id as methodology_plan_id, methodology_type, plan_data,
               confirmed_at, created_at, 'methodology' as source, status
@@ -1288,6 +1357,117 @@ router.post('/confirm-and-activate', authenticateToken, async (req, res) => {
   }
 });
 
+// POST /api/routines/process-feedback
+// Procesa el feedback de ejercicios rechazados antes de cancelar una rutina
+router.post('/process-feedback', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { rejections } = req.body || {};
+    const userId = req.user?.userId || req.user?.id;
+
+    if (!Array.isArray(rejections) || rejections.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Se requiere un array de ejercicios rechazados'
+      });
+    }
+
+    console.log('🔄 USANDO SISTEMA UNIFICADO DE FEEDBACK');
+    console.log(`📊 Procesando ${rejections.length} rechazo(s) de ejercicios`);
+
+    await client.query('BEGIN');
+
+    // Mapeo de categorías del modal a feedback_type
+    const REJECTION_CATEGORY_MAPPING = {
+      'too_hard': 'too_difficult',
+      'dont_like': 'dont_like',
+      'injury': 'physical_limitation',
+      'equipment': 'no_equipment',
+      'other': 'change_focus'
+    };
+
+    const insertedFeedback = [];
+
+    for (const raw of rejections) {
+      // Normalizar datos del modal
+      const exercise_name = String(raw?.exercise_name || '').trim().slice(0, 255) || 'Ejercicio';
+      const rejection_category = raw?.rejection_category || 'other';
+      const rejection_reason = raw?.rejection_reason ? String(raw.rejection_reason).slice(0, 1000) : null;
+      const expires_in_days = Number(raw?.expires_in_days) || null;
+
+      // Mapear categoría del modal a feedback_type del sistema unificado
+      const feedback_type = REJECTION_CATEGORY_MAPPING[rejection_category] || 'dont_like';
+
+      // Calcular fecha de expiración
+      let expires_at = null;
+      if (expires_in_days && expires_in_days > 0) {
+        expires_at = new Date();
+        expires_at.setDate(expires_at.getDate() + expires_in_days);
+      }
+
+      console.log(`📝 Guardando feedback: ${exercise_name} - ${feedback_type} (rutina)`);
+
+      // Verificar si ya existe feedback para este ejercicio
+      const existingResult = await client.query(
+        `SELECT id FROM app.user_exercise_feedback
+         WHERE user_id = $1 AND exercise_name = $2 AND methodology_type = 'routine'
+         LIMIT 1`,
+        [userId, exercise_name]
+      );
+
+      if (existingResult.rowCount > 0) {
+        // Actualizar feedback existente
+        await client.query(
+          `UPDATE app.user_exercise_feedback
+           SET feedback_type = $3,
+               comment = COALESCE($4, comment),
+               expires_at = $5,
+               updated_at = NOW()
+           WHERE id = $1`,
+          [existingResult.rows[0].id, userId, feedback_type, rejection_reason, expires_at]
+        );
+        console.log(`✏️  Feedback actualizado para: ${exercise_name}`);
+      } else {
+        // Insertar nuevo feedback
+        await client.query(
+          `INSERT INTO app.user_exercise_feedback
+           (user_id, exercise_name, methodology_type, feedback_type, comment, expires_at)
+           VALUES ($1, $2, 'routine', $3, $4, $5)`,
+          [userId, exercise_name, feedback_type, rejection_reason, expires_at]
+        );
+        console.log(`✅ Nuevo feedback guardado para: ${exercise_name}`);
+      }
+
+      insertedFeedback.push({
+        exercise_name,
+        feedback_type,
+        expires_at
+      });
+    }
+
+    await client.query('COMMIT');
+
+    console.log(`🎉 Procesamiento completo: ${insertedFeedback.length} registros`);
+
+    res.json({
+      success: true,
+      message: 'Feedback procesado correctamente',
+      processed: insertedFeedback.length
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('❌ Error procesando feedback:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error procesando feedback de ejercicios',
+      details: error.message
+    });
+  } finally {
+    client.release();
+  }
+});
+
 // POST /api/routines/cancel-routine
 // Cancela una rutina activa cambiando su estado de 'active' a 'cancelled'
 router.post('/cancel-routine', authenticateToken, async (req, res) => {
@@ -1308,11 +1488,11 @@ router.post('/cancel-routine', authenticateToken, async (req, res) => {
 
     console.log('🚫 Cancelando rutina:', { methodology_plan_id, routine_plan_id, userId });
 
-    // Verificar que el plan pertenece al usuario y puede ser cancelado
+    // Verificar que el plan pertenece al usuario
     const planCheck = await client.query(
       `SELECT id, status, methodology_type
        FROM app.methodology_plans
-       WHERE id = $1 AND user_id = $2 AND status IN ('active', 'draft')`,
+       WHERE id = $1 AND user_id = $2`,
       [methodology_plan_id, userId]
     );
 
@@ -1320,7 +1500,29 @@ router.post('/cancel-routine', authenticateToken, async (req, res) => {
       await client.query('ROLLBACK');
       return res.status(404).json({
         success: false,
-        error: 'Plan no encontrado o ya está cancelado'
+        error: 'Plan no encontrado'
+      });
+    }
+
+    const currentStatus = planCheck.rows[0].status;
+
+    // Verificar si el plan ya está cancelado
+    if (currentStatus === 'cancelled') {
+      await client.query('ROLLBACK');
+      console.log(`⚠️ Plan ${methodology_plan_id} ya está cancelado`);
+      return res.status(200).json({
+        success: true,
+        message: 'La rutina ya había sido cancelada anteriormente',
+        already_cancelled: true
+      });
+    }
+
+    // Verificar si el plan puede ser cancelado
+    if (!['active', 'draft', 'confirmed'].includes(currentStatus)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        error: `No se puede cancelar un plan en estado: ${currentStatus}`
       });
     }
 
@@ -1556,87 +1758,325 @@ router.get('/sessions/:sessionId/details', authenticateToken, async (req, res) =
 // Obtiene ejercicios únicos del plan para modales de cancelación
 router.get('/plan-exercises', authenticateToken, async (req, res) => {
   try {
-    const userId = req.user?.userId || req.user?.id;
-    const { methodology_plan_id } = req.query;
+    const userIdRaw = req.user?.userId || req.user?.id;
+    const userId = parseInt(userIdRaw, 10);
+    const { methodology_plan_id: planIdParam } = req.query;
 
-    if (!methodology_plan_id) {
+    // PASO 1: Validación exhaustiva de parámetros
+    console.log('🔍 [STEP 1] Validando parámetros:', {
+      userIdRaw,
+      userId,
+      planIdParam,
+      userIdType: typeof userIdRaw,
+      planIdType: typeof planIdParam
+    });
+
+    if (!planIdParam) {
       return res.status(400).json({
         success: false,
         error: 'Parámetro requerido: methodology_plan_id'
       });
     }
 
-    // Verificar que el plan pertenece al usuario
+    // Validación extra de tipos
+    const methodology_plan_id = parseInt(planIdParam, 10);
+    if (isNaN(methodology_plan_id) || isNaN(userId)) {
+      console.error('❌ [STEP 1] Error de tipos:', {
+        methodology_plan_id,
+        userId,
+        planIdIsNaN: isNaN(methodology_plan_id),
+        userIdIsNaN: isNaN(userId)
+      });
+      return res.status(400).json({
+        success: false,
+        error: 'Los IDs deben ser números válidos'
+      });
+    }
+
+    console.log('✅ [STEP 1] Parámetros validados:', { methodology_plan_id, userId });
+
+    // PASO 2: Consulta simple para verificar existencia del plan
+    console.log('🔍 [STEP 2] Verificando existencia del plan...');
     const planQuery = await pool.query(
       'SELECT plan_data FROM app.methodology_plans WHERE id = $1 AND user_id = $2',
       [methodology_plan_id, userId]
     );
 
     if (planQuery.rowCount === 0) {
+      console.log('❌ [STEP 2] Plan no encontrado');
       return res.status(404).json({
         success: false,
         error: 'Plan no encontrado'
       });
     }
+    console.log('✅ [STEP 2] Plan encontrado');
 
-    // Obtener ejercicios únicos desde la base de datos (progreso real)
-    const exercisesQuery = await pool.query(
-      `SELECT DISTINCT
-         exercise_name as nombre,
-         MAX(series_total) as series,
-         MAX(repeticiones) as repeticiones,
-         MAX(CASE WHEN repeticiones IS NULL OR repeticiones = 0 THEN
-           EXTRACT(EPOCH FROM duracion_minutos * INTERVAL '1 minute')::INTEGER
-         ELSE NULL END) as duracion_seg
-       FROM app.methodology_exercise_progress mep
-       JOIN app.methodology_exercise_sessions mes ON mep.methodology_session_id = mes.id
-       WHERE mes.methodology_plan_id = $1 AND mes.user_id = $2
-         AND exercise_name IS NOT NULL AND TRIM(exercise_name) != ''
-       GROUP BY exercise_name
-       ORDER BY exercise_name ASC`,
-      [methodology_plan_id, userId]
-    );
+    // PASO 3: Consulta simplificada SIN conversiones complejas
+    console.log('🔍 [STEP 3] Ejecutando consulta simplificada...');
+    let exercisesQuery;
 
-    let exercises = exercisesQuery.rows;
+    try {
+      // PRIMERA CONSULTA: Solo campos básicos sin conversiones
+      exercisesQuery = await pool.query(
+        `SELECT DISTINCT
+           exercise_name,
+           series_total,
+           repeticiones
+         FROM app.methodology_exercise_progress mep
+         JOIN app.methodology_exercise_sessions mes ON mep.methodology_session_id = mes.id
+         WHERE mes.methodology_plan_id = $1::integer AND mes.user_id = $2::integer
+           AND exercise_name IS NOT NULL AND TRIM(exercise_name) != ''
+         ORDER BY exercise_name ASC`,
+        [methodology_plan_id, userId]
+      );
+      console.log('✅ [STEP 3] Consulta básica exitosa, filas encontradas:', exercisesQuery.rows.length);
 
-    // Si no hay ejercicios en progreso, obtener del plan JSON como fallback
-    if (exercises.length === 0) {
-      const planData = planQuery.rows[0]?.plan_data;
-      if (planData?.semanas) {
-        const fallbackExercises = planData.semanas
-          .flatMap(sem => sem?.sesiones || [])
-          .flatMap(ses => ses?.ejercicios || [])
-          .reduce((acc, ej) => {
-            const nombre = ej?.nombre || ej?.name || '';
-            if (!nombre) return acc;
-            if (!acc.find(x => x.nombre?.toLowerCase() === nombre.toLowerCase())) {
-              acc.push({
-                nombre,
-                series: ej.series ?? ej.series_total ?? 3,
-                repeticiones: ej.repeticiones ?? ej.reps ?? null,
-                duracion_seg: ej.duracion_seg ?? ej.duration_sec ?? null,
-              });
-            }
-            return acc;
-          }, []);
-        exercises = fallbackExercises;
-        console.log(`⚠️ Usando ejercicios fallback del plan JSON: ${exercises.length} ejercicios`);
+      if (exercisesQuery.rows.length > 0) {
+        console.log('📊 [STEP 3] Muestra de datos:', exercisesQuery.rows[0]);
       }
+
+    } catch (queryError) {
+      console.error('❌ [STEP 3] Error en consulta básica:', {
+        message: queryError.message,
+        code: queryError.code,
+        detail: queryError.detail,
+        hint: queryError.hint,
+        where: queryError.where,
+        file: queryError.file,
+        line: queryError.line,
+        routine: queryError.routine
+      });
+
+      // FALLBACK INMEDIATO al plan JSON si falla la consulta
+      console.log('🔄 [STEP 3] Usando fallback al plan JSON debido a error en BD');
+      const planData = planQuery.rows[0]?.plan_data;
+      const exercises = extractExercisesFromPlanData(planData);
+
+      return res.json({
+        success: true,
+        exercises,
+        source: 'fallback_due_to_db_error',
+        error_details: queryError.message
+      });
     }
 
-    console.log(`✅ Ejercicios del plan ${methodology_plan_id} obtenidos: ${exercises.length} ejercicios`);
+    // PASO 4: Procesar resultados básicos
+    console.log('🔍 [STEP 4] Procesando resultados...');
+    let exercises = exercisesQuery.rows.map(row => ({
+      nombre: row.exercise_name || '',
+      series: parseInt(row.series_total) || 3,
+      repeticiones: row.repeticiones || null,
+      duracion_seg: null // Eliminamos cálculos complejos por ahora
+    }));
+
+    // PASO 5: Fallback al plan JSON si no hay datos en BD
+    if (exercises.length === 0) {
+      console.log('🔄 [STEP 5] No hay ejercicios en BD, usando plan JSON...');
+      const planData = planQuery.rows[0]?.plan_data;
+      exercises = extractExercisesFromPlanData(planData);
+      console.log(`✅ [STEP 5] Ejercicios desde plan JSON: ${exercises.length}`);
+    }
+
+    console.log(`✅ [FINAL] Ejercicios obtenidos: ${exercises.length} ejercicios`);
 
     res.json({
       success: true,
-      exercises
+      exercises,
+      source: exercises.length > 0 ? 'database' : 'plan_json'
     });
 
   } catch (error) {
-    console.error('❌ Error obteniendo ejercicios del plan:', error);
+    console.error('❌ [ERROR GENERAL] Error obteniendo ejercicios del plan:', {
+      message: error.message,
+      stack: error.stack
+    });
     res.status(500).json({
       success: false,
-      error: 'Error interno del servidor'
+      error: 'Error interno del servidor',
+      details: error.message
     });
+  }
+});
+
+// Función auxiliar para extraer ejercicios del plan JSON
+function extractExercisesFromPlanData(planData) {
+  if (!planData?.semanas) return [];
+
+  const fallbackExercises = planData.semanas
+    .flatMap(sem => sem?.sesiones || [])
+    .flatMap(ses => ses?.ejercicios || [])
+    .reduce((acc, ej) => {
+      const nombre = ej?.nombre || ej?.name || '';
+      if (!nombre) return acc;
+      if (!acc.find(x => x.nombre?.toLowerCase() === nombre.toLowerCase())) {
+        acc.push({
+          nombre,
+          series: ej.series ?? ej.series_total ?? 3,
+          repeticiones: ej.repeticiones ?? ej.reps ?? null,
+          duracion_seg: ej.duracion_seg ?? ej.duration_sec ?? null,
+        });
+      }
+      return acc;
+    }, []);
+
+  return fallbackExercises;
+}
+
+// 🆕 POST /api/routines/generate-schedule
+// Genera la programación de entrenamientos para un plan específico
+router.post('/generate-schedule', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    const { methodology_plan_id, start_date } = req.body;
+
+    console.log(`📅 [/generate-schedule] Generando programación para plan ${methodology_plan_id}, usuario ${userId}`);
+
+    if (!methodology_plan_id) {
+      return res.status(400).json({ error: 'methodology_plan_id es requerido' });
+    }
+
+    // Obtener datos del plan
+    const planResult = await pool.query(
+      `SELECT plan_data FROM app.methodology_plans
+       WHERE id = $1 AND user_id = $2`,
+      [methodology_plan_id, userId]
+    );
+
+    if (planResult.rowCount === 0) {
+      return res.status(404).json({ error: 'Plan no encontrado' });
+    }
+
+    const planData = planResult.rows[0].plan_data;
+
+    // Limpiar programación existente
+    await pool.query(
+      `DELETE FROM app.workout_schedule WHERE methodology_plan_id = $1`,
+      [methodology_plan_id]
+    );
+
+    // Generar nueva programación
+    let currentDate = new Date(start_date || new Date());
+    let sessionOrder = 1;
+    const insertedSessions = [];
+
+    // Procesar cada semana
+    for (let weekIndex = 0; weekIndex < planData.semanas.length; weekIndex++) {
+      const semana = planData.semanas[weekIndex];
+      let weekSessionOrder = 1;
+
+      // Procesar cada sesión de la semana
+      for (let sessionIndex = 0; sessionIndex < semana.sesiones.length; sessionIndex++) {
+        const sesion = semana.sesiones[sessionIndex];
+
+        // Generar título de sesión
+        let sessionTitle;
+        switch (sessionOrder) {
+          case 1: sessionTitle = 'Primera sesión'; break;
+          case 2: sessionTitle = 'Segunda sesión'; break;
+          case 3: sessionTitle = 'Tercera sesión'; break;
+          case 4: sessionTitle = 'Cuarta sesión'; break;
+          case 5: sessionTitle = 'Quinta sesión'; break;
+          default: sessionTitle = `Sesión ${sessionOrder}`; break;
+        }
+
+        // Obtener nombre del día
+        const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+        const dayAbbrevs = ['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab'];
+        const dayOfWeek = currentDate.getDay();
+        const dayName = dayNames[dayOfWeek];
+        const dayAbbrev = dayAbbrevs[dayOfWeek];
+
+        // Insertar en la base de datos
+        const insertResult = await pool.query(`
+          INSERT INTO app.workout_schedule (
+            methodology_plan_id,
+            user_id,
+            week_number,
+            session_order,
+            week_session_order,
+            scheduled_date,
+            day_name,
+            day_abbrev,
+            session_title,
+            exercises,
+            status
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          RETURNING id, scheduled_date, day_name, session_title
+        `, [
+          methodology_plan_id,
+          userId,
+          weekIndex + 1,
+          sessionOrder,
+          weekSessionOrder,
+          currentDate.toISOString().split('T')[0],
+          dayName,
+          dayAbbrev,
+          sessionTitle,
+          JSON.stringify(sesion.ejercicios || []),
+          'scheduled'
+        ]);
+
+        insertedSessions.push(insertResult.rows[0]);
+
+        // Avanzar contadores
+        sessionOrder++;
+        weekSessionOrder++;
+
+        // Avanzar al siguiente día (saltar fines de semana)
+        do {
+          currentDate.setDate(currentDate.getDate() + 1);
+        } while (currentDate.getDay() === 0 || currentDate.getDay() === 6);
+      }
+    }
+
+    console.log(`✅ [/generate-schedule] Programación generada: ${insertedSessions.length} sesiones`);
+
+    res.json({
+      success: true,
+      message: 'Programación generada correctamente',
+      sessions_count: insertedSessions.length,
+      sessions: insertedSessions
+    });
+
+  } catch (error) {
+    console.error('❌ [/generate-schedule] Error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 🆕 GET /api/routines/schedule/:methodology_plan_id
+// Obtiene la programación completa de un plan
+router.get('/schedule/:methodology_plan_id', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    const { methodology_plan_id } = req.params;
+
+    const schedule = await pool.query(`
+      SELECT
+        id,
+        week_number,
+        session_order,
+        week_session_order,
+        scheduled_date,
+        day_name,
+        day_abbrev,
+        session_title,
+        exercises,
+        status,
+        completed_at
+      FROM app.workout_schedule
+      WHERE methodology_plan_id = $1 AND user_id = $2
+      ORDER BY session_order
+    `, [methodology_plan_id, userId]);
+
+    res.json({
+      success: true,
+      schedule: schedule.rows
+    });
+
+  } catch (error) {
+    console.error('❌ [/schedule] Error:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 

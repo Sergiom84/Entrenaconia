@@ -1,5 +1,7 @@
 import React from 'react';
 
+import { useTrace } from '@/contexts/TraceContext.jsx';
+
 /**
  * Modal de resumen final de sesión
  *
@@ -16,6 +18,10 @@ export const SessionSummaryModal = ({
   onEndSession,
   navigateToRoutines
 }) => {
+  const { track } = useTrace();
+  React.useEffect(() => {
+    track(show ? 'MODAL_OPEN' : 'MODAL_CLOSE', { name: 'SessionSummaryModal' }, { component: 'SessionSummaryModal' });
+  }, [show]);
   if (!show) return null;
 
   const { exerciseStates, total } = progressState;
@@ -26,6 +32,7 @@ export const SessionSummaryModal = ({
   const cancelled = Object.values(exerciseStates).filter(state => state === 'cancelled').length;
 
   const handleViewProgress = async () => {
+    track('BUTTON_CLICK', { id: 'view_progress' }, { component: 'SessionSummaryModal' });
     console.log('🎯 Terminando sesión y navegando a rutinas');
 
     // Llamar a onEndSession primero para guardar los datos
@@ -53,6 +60,7 @@ export const SessionSummaryModal = ({
       <div
         className="absolute inset-0 bg-black/60"
         onClick={() => {
+          track('MODAL_DISMISS', { via: 'backdrop' }, { component: 'SessionSummaryModal' });
           onClose?.();
           onEndSession?.();
         }}
@@ -174,6 +182,7 @@ export const SessionSummaryModal = ({
 
           <button
             onClick={() => {
+              track('BUTTON_CLICK', { id: 'close' }, { component: 'SessionSummaryModal' });
               onClose?.();
               onEndSession?.();
             }}

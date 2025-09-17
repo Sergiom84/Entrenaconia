@@ -37,7 +37,11 @@ import { mapSessionsToWeekDays } from '../../../utils/calendarMapping';
 import { getSentimentIcon } from '../../../utils/exerciseUtils';
 import { CalendarExerciseCard } from './components/CalendarExerciseCard';
 
+import { useTrace } from '@/contexts/TraceContext.jsx';
+
 export default function CalendarTab({ plan, planStartDate, methodologyPlanId, ensureMethodologyPlan, refreshTrigger }) {
+  const { track } = useTrace();
+
   // Calcular qué semana mostrar inicialmente basándose en la fecha actual
   const getInitialWeek = useCallback(() => {
     if (!planStartDate) return 0;
@@ -45,20 +49,21 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
     startDate.setHours(0, 0, 0, 0);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
+
     // Calcular diferencia en días desde el inicio
     const daysSinceStart = Math.floor((today - startDate) / (1000 * 60 * 60 * 24));
-    
+
     // Si es negativo (fecha futura), mostrar semana 0
     if (daysSinceStart < 0) return 0;
-    
+
     // Calcular en qué semana estamos (0-indexed)
     const currentWeek = Math.floor(daysSinceStart / 7);
-    
+
     // Asegurar que no excedemos el total de semanas
     const totalWeeks = plan?.duracion_total_semanas || 4;
     return Math.min(currentWeek, totalWeeks - 1);
   }, [planStartDate, plan]);
+
 
   const [currentWeek, setCurrentWeek] = useState(getInitialWeek);
   const [selectedDay, setSelectedDay] = useState(null);
@@ -67,11 +72,19 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
   const [weekStatuses, setWeekStatuses] = useState({});
   const [apiCache, setApiCache] = useState({});
   const apiCacheRef = useRef({});
-  
+
   // Mantener la ref sincronizada con el estado
   useEffect(() => {
     apiCacheRef.current = apiCache;
   }, [apiCache]);
+
+  React.useEffect(() => {
+    if (showDayModal) {
+      track('MODAL_OPEN', { name: 'CalendarDayModal' }, { component: 'CalendarTab' });
+    } else if (selectedDay) {
+      track('MODAL_CLOSE', { name: 'CalendarDayModal' }, { component: 'CalendarTab' });
+    }
+  }, [showDayModal]);
 
   // Días de la semana (empezando por lunes) - used for display reference
   // const weekDays = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
@@ -159,10 +172,10 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
   // Función de carga con cache memoizada
   const loadWeekStatuses = useCallback(async () => {
       if (!currentWeekData) return;
-      
+
       const cacheKey = `week-${currentWeekData.weekNumber}-${methodologyPlanId}`;
       const now = Date.now();
-      
+
       // Verificar cache existente - cache más agresivo para evitar spam
       if (apiCacheRef.current[cacheKey] && (now - apiCacheRef.current[cacheKey].timestamp) < 300000) { // 5 minutos
         return;
@@ -170,18 +183,18 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
 
       try {
         const mId = await (ensureMethodologyPlan ? ensureMethodologyPlan() : methodologyPlanId);
-        
+
         // Determinar qué días necesitan actualización según su estado temporal
         const daysToLoad = currentWeekData.days.filter(day => {
           if (!day.session) return false;
-          
+
           const dayKey = getDayKey(currentWeekData.weekNumber || 1, day);
           const dayCache = apiCacheRef.current[`${cacheKey}-${dayKey}`];
-          
+
           if (!dayCache) return true; // No hay cache, cargar
-          
+
           const cacheAge = now - dayCache.timestamp;
-          
+
           // Cache más agresivo para reducir spam de API
           if (day.isPast) {
             return cacheAge > 600000; // 10 minutos para días pasados (no cambian)
@@ -192,7 +205,7 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
           }
         });
 
-        
+
         if (daysToLoad.length === 0) return;
 
         const entries = await Promise.all(
@@ -203,7 +216,7 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
                 methodology_plan_id: mId,
                 week_number: currentWeekData.weekNumber || 1,
                 day_name: day.dayNameShort || day.dayName,
-                // No enviamos session_date ya que no existe en la BD, 
+                // No enviamos session_date ya que no existe en la BD,
                 // dejamos que busque por week_number y day_name
               });
               if (data?.session?.id) {
@@ -257,21 +270,26 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
     // **REMOVER AUTO-REFRESCO AUTOMÁTICO** - solo refresh manual o por refreshTrigger
     // El auto-refresco causa bucles innecesarios
 
-    return () => { 
-      cancelled = true; 
+    return () => {
+      cancelled = true;
     };
   }, [loadWeekStatuses, refreshTrigger]);
 
   const handlePrevWeek = () => {
-    setCurrentWeek(Math.max(0, currentWeek - 1));
+    const next = Math.max(0, currentWeek - 1);
+    track('WEEK_NAV', { dir: 'prev', from: currentWeek, to: next }, { component: 'CalendarTab' });
+    setCurrentWeek(next);
   };
 
   const handleNextWeek = () => {
-    setCurrentWeek(Math.min(calendarData.length - 1, currentWeek + 1));
+    const next = Math.min(calendarData.length - 1, currentWeek + 1);
+    track('WEEK_NAV', { dir: 'next', from: currentWeek, to: next }, { component: 'CalendarTab' });
+    setCurrentWeek(next);
   };
 
   const handleDayClick = (day) => {
     if (!day.session) return;
+    track('DAY_CLICK', { date: day.date?.toISOString?.() || String(day.date), dayName: day.dayName, hasSession: !!day.session, weekNumber: day.weekNumber }, { component: 'CalendarTab' });
     setSelectedDay(day);
     setShowDayModal(true);
   };
@@ -341,7 +359,7 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
               {plan.selected_style}
             </Badge>
           </div>
-          
+
           <div className="flex items-center space-x-4">
             <span className="text-gray-300 font-medium">
               Semana {currentWeekData?.weekNumber || 1} de {calendarData.length}
@@ -397,12 +415,12 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
                 const progressList = weekStatuses[key]?.exercises || [];
                 const totalExercises = day.session.ejercicios?.length || 0;
                 const completedExercises = progressList.filter(ex => ex.status === 'completed').length;
-                
+
                 // Solo verde si TODOS los ejercicios están completados
                 const allCompleted = totalExercises > 0 && completedExercises === totalExercises;
                 // Triángulo amarillo si hay algunos completados pero no todos
                 const hasIncompleteExercises = completedExercises > 0 && completedExercises < totalExercises;
-                
+
                 return (
                   <div className="absolute top-2 right-2">
                     {allCompleted ? (
@@ -481,7 +499,7 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
               {selectedDay && formatFullDate(selectedDay.date)}
             </DialogTitle>
           </DialogHeader>
-          
+
           {selectedDay?.session && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">

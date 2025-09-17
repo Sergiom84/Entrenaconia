@@ -1,6 +1,6 @@
 /**
  * 🎯 Modal Unificado de Confirmación de Plan de Entrenamiento
- * 
+ *
  * FUNCIONALIDAD:
  * - Modal único para confirmar cualquier plan generado (automático o manual)
  * - Muestra resumen del plan con ejercicios y justificación
@@ -25,6 +25,8 @@ import {
   Calendar,
   Brain
 } from 'lucide-react';
+import { useTrace } from '@/contexts/TraceContext.jsx';
+
 
 export default function TrainingPlanConfirmationModal({
   isOpen,
@@ -40,12 +42,26 @@ export default function TrainingPlanConfirmationModal({
   error = null // NUEVO: Error del modal
 }) {
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const { track } = useTrace();
+  const prevOpenRef = React.useRef(isOpen);
+  React.useEffect(() => {
+    if (prevOpenRef.current !== isOpen) {
+      track(isOpen ? 'MODAL_OPEN' : 'MODAL_CLOSE', { name: 'TrainingPlanConfirmationModal' }, { component: 'TrainingPlanConfirmationModal' });
+      prevOpenRef.current = isOpen;
+    }
+  }, [isOpen]);
+
+  React.useEffect(() => {
+    track(showFeedbackModal ? 'MODAL_OPEN' : 'MODAL_CLOSE', { name: 'ExerciseFeedbackModal' }, { component: 'TrainingPlanConfirmationModal' });
+  }, [showFeedbackModal]);
+
   const [isGeneratingAnother, setIsGeneratingAnother] = useState(false);
 
   if (!isOpen || !plan) return null;
 
   // Manejar click en "Generar otro"
   const handleGenerateAnotherClick = () => {
+    track('BUTTON_CLICK', { id: 'generate_another' }, { component: 'TrainingPlanConfirmationModal' });
     if (onGenerateAnother) {
       setShowFeedbackModal(true);
     }
@@ -55,7 +71,7 @@ export default function TrainingPlanConfirmationModal({
   const handleFeedbackSubmit = async (feedbackData) => {
     try {
       setIsGeneratingAnother(true);
-      console.log('📝 Feedback recibido:', feedbackData);
+      track('FEEDBACK_SUBMIT', { source: 'generate_another', reasons: feedbackData?.reasons?.length || 0 }, { component: 'TrainingPlanConfirmationModal' });
 
       // Llamar la función de generar otro con el feedback
       if (onGenerateAnother) {
@@ -65,7 +81,7 @@ export default function TrainingPlanConfirmationModal({
       // Cerrar modal de feedback
       setShowFeedbackModal(false);
     } catch (error) {
-      console.error('❌ Error al procesar feedback:', error);
+      track('ERROR', { where: 'handleFeedbackSubmit', message: error?.message }, { component: 'TrainingPlanConfirmationModal' });
     } finally {
       setIsGeneratingAnother(false);
     }
@@ -76,7 +92,7 @@ export default function TrainingPlanConfirmationModal({
   const firstSession = firstWeek?.sesiones?.[0];
   const totalWeeks = plan.semanas?.length || 0;
   const totalSessions = plan.semanas?.reduce((acc, week) => acc + (week.sesiones?.length || 0), 0) || 0;
-  
+
   // Contar ejercicios únicos
   const uniqueExercises = new Set();
   plan.semanas?.forEach(week => {
@@ -108,7 +124,7 @@ export default function TrainingPlanConfirmationModal({
             <Button
               variant="ghost"
               size="icon"
-              onClick={onClose}
+              onClick={() => { track('BUTTON_CLICK', { id: 'close_icon' }, { component: 'TrainingPlanConfirmationModal' }); onClose(); }}
               className="text-gray-400 hover:text-white"
             >
               <X className="w-5 h-5" />
@@ -229,7 +245,7 @@ export default function TrainingPlanConfirmationModal({
 
             <div className="flex gap-3 sm:ml-auto">
               <Button
-                onClick={onClose}
+                onClick={() => { track('BUTTON_CLICK', { id: 'cancel' }, { component: 'TrainingPlanConfirmationModal' }); onClose(); }}
                 variant="outline"
                 className="border-gray-600 text-gray-300 hover:bg-gray-700"
                 disabled={isLoading || isConfirming}
@@ -237,7 +253,7 @@ export default function TrainingPlanConfirmationModal({
                 {error ? 'Cerrar' : 'Cancelar'}
               </Button>
               <Button
-                onClick={onStartTraining}
+                onClick={() => { track('BUTTON_CLICK', { id: 'start_training' }, { component: 'TrainingPlanConfirmationModal' }); onStartTraining(); }}
                 className="bg-yellow-500 hover:bg-yellow-600 text-black font-semibold shadow-lg hover:shadow-xl"
                 disabled={isLoading || isConfirming}
               >

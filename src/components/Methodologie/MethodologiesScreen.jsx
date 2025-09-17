@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUserContext } from '@/contexts/UserContext';
 import { useWorkout } from '@/contexts/WorkoutContext';
@@ -16,6 +16,7 @@ import RoutineSessionModal from '../routines/RoutineSessionModal.jsx';
 import WarmupModal from '../routines/WarmupModal.jsx';
 import MethodologyVersionSelectionModal from './shared/MethodologyVersionSelectionModal.jsx';
 import CalisteniaManualCard from './methodologies/CalisteniaManual/CalisteniaManualCard.jsx';
+import { useTrace } from '@/contexts/TraceContext';
 
 // ===============================================
 // 🎯 ESTADO LOCAL MÍNIMO PARA ESTA PANTALLA
@@ -57,6 +58,8 @@ export default function MethodologiesScreen() {
     // Utilidades
     hasActivePlan
   } = useWorkout();
+  const { track } = useTrace();
+
 
   // Estado local mínimo para datos específicos de esta pantalla
   const [localState, setLocalState] = useState(LOCAL_STATE_INITIAL);
@@ -64,6 +67,28 @@ export default function MethodologiesScreen() {
   const updateLocalState = useCallback((updates) => {
     setLocalState(prev => ({ ...prev, ...updates }));
   }, []);
+  // Trace: cambios de estado de modales relevantes
+  const modalPrevRef = useRef({});
+  useEffect(() => {
+    try {
+      const current = {
+        methodologyDetails: ui.showMethodologyDetails,
+        versionSelection: ui.showVersionSelection,
+        activeTrainingWarning: ui.showActiveTrainingWarning,
+        planConfirmation: ui.showPlanConfirmation,
+        warmup: ui.showWarmup,
+        routineSession: ui.showRoutineSession,
+      };
+      const prev = modalPrevRef.current || {};
+      Object.entries(current).forEach(([key, val]) => {
+        if (prev[key] !== val) {
+          track(val ? 'MODAL_OPEN' : 'MODAL_CLOSE', { name: key }, { component: 'MethodologiesScreen' });
+        }
+      });
+      modalPrevRef.current = current;
+    } catch {}
+  }, [ui.showMethodologyDetails, ui.showVersionSelection, ui.showActiveTrainingWarning, ui.showPlanConfirmation, ui.showWarmup, ui.showRoutineSession]);
+
 
   // ===============================================
   // 🎨 COMPONENTE INLINE: MethodologyCard
@@ -140,6 +165,7 @@ export default function MethodologiesScreen() {
   // ===============================================
 
   const handleActivateIA = async (forcedMethodology = null) => {
+    try { track('BUTTON_CLICK', { id: 'activar_ia' }, { component: 'MethodologiesScreen' }); } catch {}
     if (!user) return;
 
     // Verificar si hay entrenamiento activo usando WorkoutContext
@@ -160,6 +186,7 @@ export default function MethodologiesScreen() {
   };
 
   const handleVersionSelectionConfirm = async (versionConfig) => {
+    try { track('ACTION', { id: 'version_confirm', mode: 'automatic', version: versionConfig?.version }, { component: 'MethodologiesScreen' }); } catch {}
     ui.hideModal('versionSelection');
 
     // Construir perfil completo
@@ -197,6 +224,7 @@ export default function MethodologiesScreen() {
   };
 
   const handleManualCardClick = (methodology) => {
+    try { track('CARD_CLICK', { id: methodology?.name, group: 'methodology', mode: 'manual' }, { component: 'MethodologiesScreen' }); } catch {}
     if (localState.selectionMode === 'manual') {
       // Si es Calistenia, mostrar el modal específico
       if (methodology.name === 'Calistenia') {
@@ -216,6 +244,7 @@ export default function MethodologiesScreen() {
   };
 
   const confirmManualSelection = async (versionConfig) => {
+    try { track('ACTION', { id: 'manual_version_confirm', methodology: localState.pendingMethodology?.name, version: versionConfig?.version }, { component: 'MethodologiesScreen' }); } catch {}
     if (!localState.pendingMethodology) return;
 
     // Verificar si hay entrenamiento activo
@@ -253,11 +282,13 @@ export default function MethodologiesScreen() {
   };
 
   const handleOpenDetails = (methodology) => {
+    try { track('BUTTON_CLICK', { id: 'ver_detalles', methodology: methodology?.name }, { component: 'MethodologiesScreen' }); } catch {}
     updateLocalState({ detailsMethod: methodology });
     ui.showModal('methodologyDetails');
   };
 
   const handleCalisteniaManualGenerate = async (calisteniaData) => {
+    try { track('ACTION', { id: 'generate_calistenia' }, { component: 'MethodologiesScreen' }); } catch {}
     // Verificar si hay entrenamiento activo
     if (hasActivePlan) {
       updateLocalState({ activeTrainingInfo: plan.currentPlan });
@@ -290,6 +321,7 @@ export default function MethodologiesScreen() {
 
   const handleStartTraining = async () => {
     try {
+      try { track('BUTTON_CLICK', { id: 'start_training' }, { component: 'MethodologiesScreen' }); } catch {}
       console.log('🚀 Iniciando sesión de entrenamiento...');
 
       if (!plan.currentPlan || !plan.planId) {
@@ -317,29 +349,34 @@ export default function MethodologiesScreen() {
   };
 
   const handleWarmupComplete = () => {
+    try { track('BUTTON_CLICK', { id: 'warmup_complete' }, { component: 'MethodologiesScreen' }); } catch {}
     console.log('✅ Calentamiento completado');
     ui.hideModal('warmup');
     ui.showModal('routineSession');
   };
 
   const handleSkipWarmup = () => {
+    try { track('BUTTON_CLICK', { id: 'warmup_skip' }, { component: 'MethodologiesScreen' }); } catch {}
     console.log('⭕ Calentamiento saltado');
     ui.hideModal('warmup');
     ui.showModal('routineSession');
   };
 
   const handleCloseWarmup = () => {
+    try { track('BUTTON_CLICK', { id: 'warmup_close' }, { component: 'MethodologiesScreen' }); } catch {}
     console.log('❌ Calentamiento cancelado');
     ui.hideModal('warmup');
   };
 
   const handleEndSession = () => {
+    try { track('BUTTON_CLICK', { id: 'end_session' }, { component: 'MethodologiesScreen' }); } catch {}
     console.log('🏁 Sesión terminada, navegando con WorkoutContext');
     ui.hideModal('routineSession');
     goToTraining();
   };
 
   const handleGenerateAnother = async (feedbackData) => {
+    try { track('BUTTON_CLICK', { id: 'generate_another' }, { component: 'MethodologiesScreen' }); } catch {}
     try {
       console.log('🔄 Generando nuevo plan con feedback:', feedbackData);
 
@@ -393,7 +430,7 @@ export default function MethodologiesScreen() {
 
           <div className="grid md:grid-cols-2 gap-4 mt-4">
             <div
-              onClick={() => updateLocalState({ selectionMode: 'automatico' })}
+              onClick={() => { updateLocalState({ selectionMode: 'automatico' }); try { track('CARD_CLICK', { id: 'selection-mode', value: 'automatico' }, { component: 'MethodologiesScreen' }); } catch {} }}
               className={`p-4 rounded-lg transition-all bg-black/80 cursor-pointer
                 ${localState.selectionMode === 'automatico'
                   ? 'border border-yellow-400 ring-2 ring-yellow-400/30'
@@ -429,7 +466,7 @@ export default function MethodologiesScreen() {
             </div>
 
             <div
-              onClick={() => updateLocalState({ selectionMode: 'manual' })}
+              onClick={() => { updateLocalState({ selectionMode: 'manual' }); try { track('CARD_CLICK', { id: 'selection-mode', value: 'manual' }, { component: 'MethodologiesScreen' }); } catch {} }}
               className={`p-4 rounded-lg transition-all cursor-pointer bg-black/80
                 ${localState.selectionMode === 'manual'
                   ? 'border border-yellow-400 ring-2 ring-yellow-400/30'

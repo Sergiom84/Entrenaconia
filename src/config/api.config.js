@@ -3,7 +3,7 @@
  * Centralized configuration for all API-related settings
  */
 
-const ENV = process.env.NODE_ENV || 'development';
+const ENV = import.meta.env.MODE || 'development';
 
 const config = {
   development: {

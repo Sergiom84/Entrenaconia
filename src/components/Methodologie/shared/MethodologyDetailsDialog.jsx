@@ -13,6 +13,8 @@ import { Button } from '@/components/ui/button.jsx';
 import { Play } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.jsx';
 
+import { useTrace } from '@/contexts/TraceContext.jsx';
+
 // Configuraciones centralizadas
 const DIALOG_CONFIG = {
   DIMENSIONS: {
@@ -125,6 +127,15 @@ export default function MethodologyDetailsDialog(props) {
   const { open, onOpenChange, detailsMethod, selectionMode, onClose, onSelect } = DialogUtils.sanitizeProps(props);
 
   DialogUtils.validateProps({ detailsMethod, selectionMode, onClose, onSelect });
+
+  const { track } = useTrace();
+  const prevOpenRef = React.useRef(open);
+  React.useEffect(() => {
+    if (prevOpenRef.current !== open) {
+      track(open ? 'MODAL_OPEN' : 'MODAL_CLOSE', { name: 'MethodologyDetailsDialog', method: detailsMethod?.name }, { component: 'MethodologyDetailsDialog' });
+      prevOpenRef.current = open;
+    }
+  }, [open, detailsMethod?.name]);
 
   const { renderList } = useListRenderer();
 
@@ -242,7 +253,7 @@ export default function MethodologyDetailsDialog(props) {
         </span>
       </div>
       <div className="flex space-x-2">
-        <Button variant="outline" onClick={onClose}>
+        <Button variant="outline" onClick={() => { track('BUTTON_CLICK', { id: 'close' }, { component: 'MethodologyDetailsDialog' }); onClose(); }}>
           Cerrar
         </Button>
         <Button
@@ -250,6 +261,7 @@ export default function MethodologyDetailsDialog(props) {
           disabled={selectionMode !== 'manual'}
           onClick={() => {
             if (selectionMode === 'manual' && detailsMethod) {
+              track('BUTTON_CLICK', { id: 'select_methodology', name: detailsMethod?.name, mode: selectionMode }, { component: 'MethodologyDetailsDialog' });
               onClose();
               onSelect(detailsMethod);
             }

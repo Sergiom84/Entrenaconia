@@ -23,6 +23,8 @@ import {
   AlertTriangle
 } from 'lucide-react';
 
+import { useTrace } from '@/contexts/TraceContext.jsx';
+
 const FEEDBACK_OPTIONS = [
   {
     id: 'too_difficult',
@@ -64,15 +66,21 @@ export default function ExerciseFeedbackModal({
   onSubmitFeedback,
   isSubmitting = false
 }) {
+  const { track } = useTrace();
+  React.useEffect(() => {
+    track(isOpen ? 'MODAL_OPEN' : 'MODAL_CLOSE', { name: 'ExerciseFeedbackModal' }, { component: 'ExerciseFeedbackModal' });
+  }, [isOpen]);
   const [selectedFeedback, setSelectedFeedback] = useState([]);
   const [additionalComments, setAdditionalComments] = useState('');
 
   const handleFeedbackToggle = (feedbackId) => {
-    setSelectedFeedback(prev =>
-      prev.includes(feedbackId)
+    setSelectedFeedback(prev => {
+      const next = prev.includes(feedbackId)
         ? prev.filter(id => id !== feedbackId)
-        : [...prev, feedbackId]
-    );
+        : [...prev, feedbackId];
+      track('FEEDBACK_TOGGLE', { id: feedbackId, selected: !prev.includes(feedbackId) }, { component: 'ExerciseFeedbackModal' });
+      return next;
+    });
   };
 
   const handleSubmit = () => {
@@ -86,6 +94,7 @@ export default function ExerciseFeedbackModal({
       timestamp: new Date().toISOString()
     };
 
+    track('BUTTON_CLICK', { id: 'submit_feedback', reasons: selectedFeedback.length }, { component: 'ExerciseFeedbackModal' });
     onSubmitFeedback(feedbackData);
   };
 
@@ -93,6 +102,7 @@ export default function ExerciseFeedbackModal({
     // Reset state when closing
     setSelectedFeedback([]);
     setAdditionalComments('');
+    track('BUTTON_CLICK', { id: 'cancel' }, { component: 'ExerciseFeedbackModal' });
     onClose();
   };
 

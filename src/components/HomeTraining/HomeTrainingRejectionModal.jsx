@@ -123,9 +123,17 @@ const HomeTrainingRejectionModal = ({
       });
 
       await onReject(rejections);
+
+      // Si llegamos aquí, el proceso fue exitoso
+      console.log('✅ Preferencias guardadas y rutina cancelada exitosamente');
+
     } catch (error) {
       console.error('Error submitting rejections:', error);
-      alert('Error al guardar las preferencias. Por favor, inténtalo de nuevo.');
+
+      // Mostrar un mensaje de error más específico
+      const errorMessage = error.message || 'Error al procesar tu solicitud';
+      const userMessage = `Error: ${errorMessage}\n\nPor favor, inténtalo de nuevo o contacta soporte si el problema persiste.`;
+      alert(userMessage);
     } finally {
       setIsSubmitting(false);
     }

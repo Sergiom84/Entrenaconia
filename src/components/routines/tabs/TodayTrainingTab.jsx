@@ -25,6 +25,8 @@ import { formatExerciseName } from '../../../utils/exerciseUtils';
 import SafeComponent from '../../ui/SafeComponent';
 import logger from '../../../utils/logger';
 
+import { useTrace } from '@/contexts/TraceContext.jsx';
+
 export default function TodayTrainingTab({
   routinePlan,
   routinePlanId,
@@ -54,11 +56,18 @@ export default function TodayTrainingTab({
     // Navegación
     goToMethodologies,
 
+    // Funciones de UI
+    setLoading,
+    setError,
+    showSuccess,
+
     // Utilidades
     isTraining,
     hasActivePlan,
     hasActiveSession
   } = useWorkout();
+
+  const { track } = useTrace();
 
   // ===============================================
   // 🎛️ ESTADO LOCAL MÍNIMO
@@ -84,9 +93,61 @@ export default function TodayTrainingTab({
   // 📅 UTILIDADES DE FECHA Y SESIÓN
   // ===============================================
 
-  // Obtener la sesión del día actual del plan efectivo
+  // 🆕 NUEVA LÓGICA: Usar todaySession del WorkoutContext si viene de workout_schedule
+  const [todaySessionFromAPI, setTodaySessionFromAPI] = useState(null);
+
+  // Eventos de apertura/cierre de modales clave
+  useEffect(() => {
+    track(localState.showWarmupModal ? 'MODAL_OPEN' : 'MODAL_CLOSE', { name: 'WarmupModal' }, { component: 'TodayTrainingTab' });
+  }, [localState.showWarmupModal]);
+  useEffect(() => {
+    track(localState.showSessionModal ? 'MODAL_OPEN' : 'MODAL_CLOSE', { name: 'RoutineSessionModal' }, { component: 'TodayTrainingTab' });
+  }, [localState.showSessionModal]);
+  useEffect(() => {
+    track(localState.showRejectionModal ? 'MODAL_OPEN' : 'MODAL_CLOSE', { name: 'HomeTrainingRejectionModal' }, { component: 'TodayTrainingTab' });
+  }, [localState.showRejectionModal]);
+
+  // 🆕 Obtener sesión de hoy desde la nueva API
+  useEffect(() => {
+    const fetchTodaySession = async () => {
+      try {
+        const response = await fetch('/api/routines/active-plan', {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+          }
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.source === 'workout_schedule' && data.todaySession) {
+            console.log('🆕 Usando sesión de hoy desde workout_schedule:', data.todaySession);
+            setTodaySessionFromAPI({
+              ...data.todaySession,
+              ejercicios: data.todaySession.exercises, // Mapear exercises a ejercicios
+              dia: data.todaySession.day_name,
+              weekNumber: data.todaySession.week_number
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Error obteniendo sesión de hoy:', error);
+      }
+    };
+
+    if (methodologyPlanId) {
+      fetchTodaySession();
+    }
+  }, [methodologyPlanId]);
+
   const todaySession = useMemo(() => {
+    // 🆕 PRIORIDAD: Si hay sesión desde workout_schedule, usarla
+    if (todaySessionFromAPI) {
+      return todaySessionFromAPI;
+    }
+
+    // Fallback al método anterior
     const effectivePlan = routinePlan || plan.currentPlan;
+
     if (!effectivePlan?.semanas?.length) return null;
 
     const totalWeeks = effectivePlan.duracion_total_semanas || effectivePlan.semanas.length;
@@ -113,7 +174,7 @@ export default function TodayTrainingTab({
       }
     }
     return null;
-  }, [routinePlan, plan.currentPlan, todayName]);
+  }, [todaySessionFromAPI, routinePlan, plan.currentPlan, todayName]);
 
   // ===============================================
   // 🎯 HANDLERS DE ACCIONES
@@ -123,27 +184,28 @@ export default function TodayTrainingTab({
    * Iniciar nueva sesión de entrenamiento
    */
   const handleStartSession = async (exerciseIndex = 0) => {
+    track('BUTTON_CLICK', { id: 'start_session', exerciseIndex }, { component: 'TodayTrainingTab' });
     // Validaciones iniciales
     if (!todaySession) {
       logger.warn('No hay sesión definida para hoy', null, 'Routines');
-      ui.setError('No hay sesión definida para hoy');
+      setError('No hay sesión definida para hoy');
       return;
     }
 
     if (!todaySession.ejercicios || todaySession.ejercicios.length === 0) {
       logger.error('La sesión de hoy no tiene ejercicios definidos', { todaySession }, 'Routines');
-      ui.setError('La sesión de hoy no tiene ejercicios definidos');
+      setError('La sesión de hoy no tiene ejercicios definidos');
       return;
     }
 
     if (!methodologyPlanId) {
       logger.error('No se puede iniciar sesión: falta methodologyPlanId', null, 'Routines');
-      ui.setError('No se puede iniciar sesión: falta información del plan');
+      setError('No se puede iniciar sesión: falta información del plan');
       return;
     }
 
     try {
-      ui.setLoading(true);
+      setLoading(true);
 
       // Usar la función startSession del WorkoutContext
       const result = await startSession({
@@ -154,7 +216,7 @@ export default function TodayTrainingTab({
         exerciseIndex
       });
 
-      if (result.success) {
+      if (result.success) { track('SESSION_START', { sessionId: result.sessionId, totalExercises: todaySession.ejercicios.length, startingAt: exerciseIndex }, { component: 'TodayTrainingTab' });
         logger.info('Sesión iniciada exitosamente desde WorkoutContext', {
           sessionId: result.sessionId,
           totalExercises: todaySession.ejercicios.length,
@@ -194,9 +256,9 @@ export default function TodayTrainingTab({
         exerciseCount: todaySession?.ejercicios?.length
       }, 'Routines');
 
-      ui.setError(`Error al iniciar la sesión: ${error.message}`);
+      setError(`Error al iniciar la sesión: ${error.message}`);
     } finally {
-      ui.setLoading(false);
+      setLoading(false);
     }
   };
 
@@ -204,13 +266,14 @@ export default function TodayTrainingTab({
    * Manejar finalización del calentamiento
    */
   const handleWarmupComplete = () => {
+    track('BUTTON_CLICK', { id: 'warmup_complete' }, { component: 'TodayTrainingTab' });
     logger.info('Calentamiento completado, iniciando entrenamiento principal', null, 'Routines');
 
     if (localState.pendingSessionData) {
       updateLocalState({
         showWarmupModal: false,
-        showSessionModal: true,
-        pendingSessionData: null
+        showSessionModal: true
+        // 🔧 MANTENER pendingSessionData para que el modal se pueda abrir
       });
     }
   };
@@ -219,13 +282,14 @@ export default function TodayTrainingTab({
    * Manejar saltar calentamiento
    */
   const handleSkipWarmup = () => {
+    track('BUTTON_CLICK', { id: 'warmup_skip' }, { component: 'TodayTrainingTab' });
     logger.info('Calentamiento saltado, yendo directo al entrenamiento', null, 'Routines');
 
     if (localState.pendingSessionData) {
       updateLocalState({
         showWarmupModal: false,
-        showSessionModal: true,
-        pendingSessionData: null
+        showSessionModal: true
+        // 🔧 MANTENER pendingSessionData para que el modal se pueda abrir
       });
     }
   };
@@ -234,6 +298,7 @@ export default function TodayTrainingTab({
    * Cerrar modal de calentamiento (cancela entrenamiento)
    */
   const handleCloseWarmup = async () => {
+    track('BUTTON_CLICK', { id: 'warmup_close' }, { component: 'TodayTrainingTab' });
     logger.info('Calentamiento cancelado', null, 'Routines');
 
     updateLocalState({
@@ -252,13 +317,13 @@ export default function TodayTrainingTab({
     // Validaciones
     if (!session.sessionId) {
       logger.error('No se puede finalizar ejercicio: falta sessionId', { exerciseIndex }, 'Routines');
-      ui.setError('No se puede finalizar ejercicio: sesión no encontrada');
+      setError('No se puede finalizar ejercicio: sesión no encontrada');
       return;
     }
 
     if (typeof exerciseIndex !== 'number' || exerciseIndex < 0) {
       logger.error('exerciseIndex inválido', { exerciseIndex }, 'Routines');
-      ui.setError('Índice de ejercicio inválido');
+      setError('Índice de ejercicio inválido');
       return;
     }
 
@@ -270,7 +335,7 @@ export default function TodayTrainingTab({
         time_spent_seconds: Math.max(0, parseInt(timeSpent) || 0)
       });
 
-      if (result.success) {
+      if (result.success) { track('EXERCISE_COMPLETE', { exerciseIndex, seriesCompleted: Math.max(0, parseInt(seriesCompleted) || 0), timeSpent: Math.max(0, parseInt(timeSpent) || 0), sessionId: session.sessionId }, { component: 'TodayTrainingTab' });
         logger.info('Ejercicio completado exitosamente desde WorkoutContext', {
           exerciseIndex,
           seriesCompleted: Math.max(0, parseInt(seriesCompleted) || 0),
@@ -295,7 +360,7 @@ export default function TodayTrainingTab({
         timeSpent
       }, 'Routines');
 
-      ui.setError(`Error completando ejercicio: ${error.message}`);
+      setError(`Error completando ejercicio: ${error.message}`);
     }
   };
 
@@ -310,7 +375,7 @@ export default function TodayTrainingTab({
         status: 'skipped'
       });
 
-      if (result.success) {
+      if (result.success) { track('EXERCISE_SKIP', { exerciseIndex, sessionId: session.sessionId }, { component: 'TodayTrainingTab' });
         logger.info('Ejercicio saltado desde WorkoutContext', { exerciseIndex }, 'Routines');
 
         if (onProgressUpdate) {
@@ -321,7 +386,7 @@ export default function TodayTrainingTab({
       }
     } catch (error) {
       logger.error('Error saltando ejercicio', error, 'Routines');
-      ui.setError(`Error saltando ejercicio: ${error.message}`);
+      setError(`Error saltando ejercicio: ${error.message}`);
     }
   };
 
@@ -336,7 +401,7 @@ export default function TodayTrainingTab({
         status: 'cancelled'
       });
 
-      if (result.success) {
+      if (result.success) { track('EXERCISE_CANCEL', { exerciseIndex, sessionId: session.sessionId }, { component: 'TodayTrainingTab' });
         logger.info('Ejercicio cancelado desde WorkoutContext', { exerciseIndex }, 'Routines');
 
         if (onProgressUpdate) {
@@ -347,7 +412,7 @@ export default function TodayTrainingTab({
       }
     } catch (error) {
       logger.error('Error cancelando ejercicio', error, 'Routines');
-      ui.setError(`Error cancelando ejercicio: ${error.message}`);
+      setError(`Error cancelando ejercicio: ${error.message}`);
     }
   };
 
@@ -355,19 +420,20 @@ export default function TodayTrainingTab({
    * Finalizar sesión completa
    */
   const handleEndSession = async () => {
+    track('BUTTON_CLICK', { id: 'end_session' }, { component: 'TodayTrainingTab' });
     if (!session.sessionId) {
       logger.error('No se puede finalizar sesión: falta sessionId', null, 'Routines');
-      ui.setError('No se puede finalizar sesión: sesión no encontrada');
+      setError('No se puede finalizar sesión: sesión no encontrada');
       return;
     }
 
     try {
-      ui.setLoading(true);
+      setLoading(true);
 
       // Usar la función completeSession del WorkoutContext
       const result = await completeSession();
 
-      if (result.success) {
+      if (result.success) { track('SESSION_COMPLETE', { sessionId: session.sessionId }, { component: 'TodayTrainingTab' });
         logger.info('Sesión finalizada exitosamente desde WorkoutContext', {
           sessionId: session.sessionId,
           timestamp: new Date().toISOString()
@@ -384,7 +450,7 @@ export default function TodayTrainingTab({
           onProgressUpdate();
         }
 
-        ui.showSuccess('¡Entrenamiento completado exitosamente!');
+        showSuccess('¡Entrenamiento completado exitosamente!');
 
         // Navegar a la página de rutinas después de cerrar el modal
         setTimeout(() => {
@@ -403,9 +469,9 @@ export default function TodayTrainingTab({
         sessionId: session.sessionId
       }, 'Routines');
 
-      ui.setError(`Error finalizando sesión: ${error.message}`);
+      setError(`Error finalizando sesión: ${error.message}`);
     } finally {
-      ui.setLoading(false);
+      setLoading(false);
     }
   };
 
@@ -413,6 +479,7 @@ export default function TodayTrainingTab({
    * Confirmar cancelación de rutina
    */
   const handleConfirmCancel = async () => {
+    track('BUTTON_CLICK', { id: 'confirm_cancel_routine' }, { component: 'TodayTrainingTab' });
     try {
       if (!methodologyPlanId) {
         throw new Error('No se pudo determinar methodology_plan_id para cancelar');
@@ -437,7 +504,8 @@ export default function TodayTrainingTab({
 
     } catch (error) {
       logger.error('Error cancelando rutina', error, 'Routines');
-      ui.setError(`Error cancelando rutina: ${error.message}`);
+      // Usar setError directamente
+      setError(`Error cancelando rutina: ${error.message}`);
     }
   };
 
@@ -445,29 +513,55 @@ export default function TodayTrainingTab({
   const handleRoutineRejections = async (rejections) => {
     try {
       const token = localStorage.getItem('token');
-      const resp = await fetch('/api/home-training/rejections', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ rejections }),
-      });
-      if (!resp.ok) {
-        const errBody = await resp.json().catch(() => ({}));
-        logger.error('Error guardando ejercicios rechazados', { status: resp.status, ...errBody }, 'Routines');
-      } else {
-        logger.info('Rechazos guardados (rutina)', { count: rejections?.length || 0 }, 'Routines');
+
+      // Primero, procesar el feedback de ejercicios rechazados
+      if (rejections && rejections.length > 0) {
+        const feedbackResp = await fetch('/api/routines/process-feedback', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ rejections }),
+        });
+
+        if (!feedbackResp.ok) {
+          const errBody = await feedbackResp.json().catch(() => ({}));
+          logger.error('Error guardando ejercicios rechazados', {
+            status: feedbackResp.status,
+            ...errBody
+          }, 'Routines');
+
+          // Si falla el feedback, mostrar error pero continuar con la cancelación
+          const errorMsg = errBody.error || 'Error guardando preferencias de ejercicios';
+          setError(errorMsg);
+        } else {
+          const feedbackData = await feedbackResp.json();
+          logger.info('Rechazos guardados exitosamente', {
+            count: rejections.length,
+            processed: feedbackData.processed
+          }, 'Routines');
+        }
       }
-    } catch (e) {
-      logger.error('Error guardando ejercicios rechazados', e, 'Routines');
-    } finally {
+
+      // Luego, proceder con la cancelación de la rutina
       await handleConfirmCancel();
+
+    } catch (e) {
+      logger.error('Error en proceso de rechazo y cancelación', e, 'Routines');
+
+      // Intentar cancelar de todos modos
+      try {
+        await handleConfirmCancel();
+      } catch (cancelError) {
+        logger.error('Error crítico cancelando rutina', cancelError, 'Routines');
+      }
     }
   };
 
   // Cancelar sin marcar ejercicios
   const handleSkipCancel = async () => {
+    track('BUTTON_CLICK', { id: 'skip_cancel_routine' }, { component: 'TodayTrainingTab' });
     try {
       await handleConfirmCancel();
     } finally {
@@ -673,7 +767,10 @@ export default function TodayTrainingTab({
           <RoutineSessionModal
             session={localState.pendingSessionData.session}
             sessionId={session.sessionId}
-            onClose={() => updateLocalState({ showSessionModal: false })}
+            onClose={() => updateLocalState({
+              showSessionModal: false,
+              pendingSessionData: null
+            })}
             onFinishExercise={handleFinishExercise}
             onSkipExercise={handleSkipExercise}
             onCancelExercise={handleCancelExercise}
