@@ -628,8 +628,6 @@ router.post('/complete/methodology/:sessionId', authenticateToken, async (req, r
       return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
     }
 
-    const session = ses.rows[0];
-
     // Actualizar estado de la sesión
     await client.query(
       `UPDATE app.methodology_exercise_sessions

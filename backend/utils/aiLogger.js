@@ -148,7 +148,7 @@ const logAIPayload = (methodology, userData) => {
   }
 };
 
-const logAIResponse = (response, methodology) => {
+const logAIResponse = (response) => {
   logSubSection('RESPUESTA DE LA IA', 'green');
   
   try {
@@ -162,11 +162,11 @@ const logAIResponse = (response, methodology) => {
     if (planData.semanas && planData.semanas.length > 0) {
       console.log(colors.green + `\n📊 RESUMEN DEL PLAN GENERADO:` + colors.reset);
       
-      planData.semanas.forEach((semana, semanaIdx) => {
+      planData.semanas.forEach((semana) => {
         console.log(colors.cyan + `\n🗓️  SEMANA ${semana.semana}:` + colors.reset);
         
         if (semana.sesiones && semana.sesiones.length > 0) {
-          semana.sesiones.forEach((sesion, sesionIdx) => {
+          semana.sesiones.forEach((sesion) => {
             console.log(colors.yellow + `  📍 ${sesion.dia} (${sesion.duracion_sesion_min}min, ${sesion.intensidad_guia})` + colors.reset);
             console.log(colors.yellow + `     🎯 ${sesion.objetivo_de_la_sesion}` + colors.reset);
             

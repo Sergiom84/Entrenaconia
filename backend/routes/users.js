@@ -123,8 +123,6 @@ router.put('/:id', authenticateToken, async (req, res) => {
     ];
 
     // Si se actualiza metodologia_preferida, también actualizarla en users para consistencia
-    const shouldUpdateUsers = usersFields.some(field => req.body[field] !== undefined) || req.body.metodologia_preferida !== undefined;
-
     // Actualizar tabla users
     const usersUpdateFields = [];
     const usersValues = [];

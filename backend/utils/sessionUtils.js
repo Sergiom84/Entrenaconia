@@ -71,7 +71,7 @@ export function parseUserAgent(userAgent) {
 /**
  * Extrae información de la IP
  */
-export function parseIPInfo(ip, req = null) {
+export function parseIPInfo(ip) {
     const result = {
         ip: ip || 'unknown',
         type: 'unknown',

@@ -116,7 +116,7 @@ const LazyRouteErrorBoundary = ({ children, routeName }) => (
  * - Consistencia garantizada
  */
 const ProtectedLazyRoute = ({
-  component: _Component,
+  component: Component,
   protected: isProtected,
   name,
   module,

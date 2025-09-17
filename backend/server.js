@@ -1,5 +1,4 @@
 import express from 'express';
-import pg from 'pg';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
@@ -299,7 +298,7 @@ app.get('/api/test-ai-modules', async (req, res) => {
     for (const feature of features) {
       try {
         // 1. Verificar cliente OpenAI
-        const client = getOpenAIClient(feature);
+        getOpenAIClient(feature);
 
         // 2. Verificar prompt
         const prompt = await getPrompt(feature);

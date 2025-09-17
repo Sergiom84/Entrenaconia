@@ -423,8 +423,6 @@ router.post('/sessions/:sessionId/finish', authenticateToken, async (req, res) =
       return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
     }
 
-    const session = ses.rows[0];
-
     // Actualizar estado de la sesión
     await client.query(
       `UPDATE app.methodology_exercise_sessions
@@ -1327,9 +1325,9 @@ router.post('/cancel-routine', authenticateToken, async (req, res) => {
     }
 
     // Actualizar estado del plan de metodología a 'cancelled'
-    const methodologyUpdate = await client.query(
-      `UPDATE app.methodology_plans 
-       SET status = 'cancelled', updated_at = NOW() 
+    await client.query(
+      `UPDATE app.methodology_plans
+       SET status = 'cancelled', updated_at = NOW()
        WHERE id = $1 AND user_id = $2
        RETURNING methodology_type`,
       [methodology_plan_id, userId]

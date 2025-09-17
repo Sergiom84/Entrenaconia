@@ -5,10 +5,9 @@ import { pool } from '../db.js';
 import { 
   logUserLogin, 
   logUserLogout, 
-  getUserActiveSessions, 
+  getUserActiveSessions,
   getUserSessionStats,
-  forceLogoutAllSessions,
-  sessionActivityMiddleware 
+  forceLogoutAllSessions 
 } from '../utils/sessionUtils.js';
 import { authenticateToken } from '../middleware/auth.js';
 
@@ -379,7 +378,6 @@ router.post('/logout', authenticateToken, async (req, res) => {
 // Heartbeat endpoint para mantener la sesión activa
 router.post('/heartbeat', authenticateToken, async (req, res) => {
   try {
-    const { timestamp, lastActivity } = req.body;
     const userId = req.user.id;
 
     // Actualizar la actividad de la sesión en la base de datos si es necesario

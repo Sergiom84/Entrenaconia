@@ -312,7 +312,6 @@ router.post('/specialist/calistenia/generate', authenticateToken, async (req, re
       userProfile,
       selectedLevel,
       goals,
-      exercisePreferences,
       previousPlan,
       regenerationReason,
       additionalInstructions
@@ -794,7 +793,7 @@ router.post('/manual/methodology', authenticateToken, async (req, res) => {
  */
 router.post('/manual/calistenia', authenticateToken, async (req, res) => {
   const userId = req.user?.userId || req.user?.id;
-  const { level, goals, levelInfo } = req.body;
+  const { level, goals } = req.body;
 
   const client = await pool.connect();
 

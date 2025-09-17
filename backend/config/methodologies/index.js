@@ -236,9 +236,9 @@ export function getMethodologyConfig(methodologyName) {
 }
 
 export function getCompatibleMethodologies(userProfile) {
-  const { nivel_actual_entreno, objetivo_principal, equipamiento_disponible } = userProfile;
+  const { nivel_actual_entreno, equipamiento_disponible } = userProfile;
 
-  return Object.entries(METHODOLOGY_CONFIGS).filter(([name, config]) => {
+  return Object.entries(METHODOLOGY_CONFIGS).filter(([_name, config]) => {
     // Filtrar por nivel
     if (nivel_actual_entreno === 'principiante' && config.contraindications.includes('principiante_absoluto')) {
       return false;
@@ -255,7 +255,7 @@ export function getCompatibleMethodologies(userProfile) {
 
 export function getRecommendedMethodology(userProfile) {
   const compatible = getCompatibleMethodologies(userProfile);
-  const { objetivo_principal, nivel_actual_entreno, tiempo_disponible } = userProfile;
+  const { objetivo_principal } = userProfile;
 
   // Lógica de recomendación basada en objetivos y perfil
   const recommendations = {

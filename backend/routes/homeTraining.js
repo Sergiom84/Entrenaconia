@@ -552,7 +552,6 @@ router.post('/rejections', authenticateToken, async (req, res) => {
         // Normalizar datos del modal
         const exercise_name = String(raw?.exercise_name || '').trim().slice(0, 255) || 'Ejercicio';
         const exercise_key = (raw?.exercise_key && String(raw.exercise_key).trim()) || toExerciseKey(exercise_name);
-        const equipment_type = normalizeEquipmentType(raw?.equipment_type);
         const training_type = normalizeTrainingType(raw?.training_type);
         const rejection_category = raw?.rejection_category || 'other';
         const rejection_reason = raw?.rejection_reason ? String(raw.rejection_reason).slice(0, 1000) : null;
