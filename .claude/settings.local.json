@@ -122,7 +122,19 @@
       "Bash(VITE_API_PORT=3004 VITE_API_URL=http://localhost:3004 VITE_PORT=5178 npm run dev)",
       "Bash(./check-and-restart.sh:*)",
       "Bash(PORT=3005 cd backend)",
-      "Bash(VITE_PORT=5180 npm run dev)"
+      "Bash(VITE_PORT=5180 npm run dev)",
+      "Bash(npm run lint:*)",
+      "Bash(dos2unix:*)",
+      "Bash(VITE_PORT=5174 npm run dev)",
+      "Bash(cat:*)",
+      "Bash(VITE_PORT=5175 npm run dev)",
+      "Bash(xxd:*)",
+      "Bash(move:*)",
+      "Bash(PORT=5174 npm run dev)",
+      "Bash(npx vite build:*)",
+      "Bash(npm run:*)",
+      "Bash(PORT=3002 npm run dev)",
+      "Bash(xargs basename:*)"
     ]
   }
 }

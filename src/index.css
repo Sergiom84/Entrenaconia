@@ -1,10 +1,72 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+/* =================================================================== */
+/* ⚡ OPTIMIZED FONT LOADING - Performance First */
+/* =================================================================== */
+
+/* Preload critical font weights for faster rendering */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap&text=EntrenconIA');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
+  /* =================================================================== */
+  /* 🎨 DESIGN SYSTEM - Entrena con IA Theme Variables */
+  /* =================================================================== */
+
+  /* Colores principales */
+  --color-primary: #facc15;        /* yellow-400 */
+  --color-primary-hover: #fde047;  /* yellow-300 */
+  --color-primary-alpha: rgba(250, 204, 21, 0.2); /* yellow-400/20 */
+
+  /* Colores de fondo */
+  --color-bg-primary: #111827;     /* gray-900 */
+  --color-bg-secondary: #1f2937;   /* gray-800 */
+  --color-bg-tertiary: rgba(55, 65, 81, 0.6); /* gray-700/60 */
+
+  /* Colores de texto */
+  --color-text-primary: #ffffff;   /* white */
+  --color-text-secondary: #d1d5db; /* gray-300 */
+  --color-text-muted: #9ca3af;     /* gray-400 */
+
+  /* Colores de borde */
+  --color-border-primary: rgba(250, 204, 21, 0.2); /* yellow-400/20 */
+  --color-border-secondary: rgba(156, 163, 175, 0.2); /* gray-400/20 */
+
+  /* Espaciado y medidas */
+  --spacing-xs: 0.25rem;   /* 1 */
+  --spacing-sm: 0.5rem;    /* 2 */
+  --spacing-md: 0.75rem;   /* 3 */
+  --spacing-lg: 1rem;      /* 4 */
+  --spacing-xl: 1.5rem;    /* 6 */
+  --spacing-2xl: 2rem;     /* 8 */
+
+  /* Border radius */
+  --radius-sm: 0.375rem;   /* rounded-md */
+  --radius-md: 0.5rem;     /* rounded-lg */
+  --radius-lg: 0.75rem;    /* rounded-xl */
+
+  /* Sombras */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1);
+  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1);
+
+  /* Transiciones */
+  --transition-fast: 0.15s ease-in-out;
+  --transition-normal: 0.2s ease-in-out;
+  --transition-slow: 0.3s ease-in-out;
+
+  /* Z-index scale */
+  --z-dropdown: 10;
+  --z-sticky: 20;
+  --z-overlay: 30;
+  --z-modal: 50;
+  --z-tooltip: 60;
+
+  /* =================================================================== */
+  /* 📝 TYPOGRAPHY & RENDERING */
+  /* =================================================================== */
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
@@ -19,7 +81,17 @@ body {
   min-height: 100vh;
 }
 
-/* Estilos personalizados para formularios - Estilo del proyecto */
+/* =================================================================== */
+/* 📋 COMPONENTES DEL SISTEMA DE DISEÑO */
+/* =================================================================== */
+
+/**
+ * 📝 FORMS - Componentes de formulario
+ *
+ * Paleta: Dark theme con acentos yellow-400
+ * Estado: focus con ring yellow-400/20
+ * Consistencia: Todos los inputs siguen el mismo patrón
+ */
 .form-input {
   @apply w-full bg-gray-700/60 border border-yellow-400/20 rounded-lg px-4 py-3 text-gray-100 placeholder-gray-300 focus:outline-none focus:border-yellow-400 transition-colors;
 }
@@ -53,7 +125,13 @@ select option {
   @apply text-xl font-semibold text-yellow-300 mb-6;
 }
 
-/* Estilos para botones - Estilo del proyecto */
+/**
+ * 🔘 BUTTONS - Sistema de botones
+ *
+ * Primary: Yellow-400 background, black text (alta visibilidad)
+ * Secondary: Gray-700 background con border yellow accent
+ * Estados: hover con transiciones suaves
+ */
 .btn-primary {
   @apply bg-yellow-400 hover:bg-yellow-300 text-black font-semibold py-3 px-6 rounded-lg transition-colors;
 }
@@ -62,7 +140,13 @@ select option {
   @apply bg-gray-700 hover:bg-gray-600 text-gray-100 font-semibold py-3 px-6 rounded-lg transition-colors border border-yellow-400/20;
 }
 
-/* Cards y modales - Estilo del proyecto */
+/**
+ * 🃏 CARDS & MODALS - Componentes de contenedor
+ *
+ * Cards: Gray-800 background con border yellow accent sutil
+ * Modals: Overlay black/60 con contenido gray-800
+ * Z-index: Sistema organizado para superposición correcta
+ */
 .card {
   @apply bg-gray-800 rounded-xl border border-yellow-400/20;
 }
@@ -75,7 +159,13 @@ select option {
   @apply bg-gray-800 rounded-xl border border-yellow-400/20 shadow-2xl;
 }
 
-/* Responsive para móviles */
+/**
+ * 📱 RESPONSIVE DESIGN - Mobile optimizations
+ *
+ * Breakpoint: 640px (sm)
+ * Enfoque: Mantener usabilidad en móviles
+ * Patrones: Padding reducido, texto más pequeño, grids en una columna
+ */
 @media (max-width: 640px) {
   .mobile-padding {
     @apply px-4 py-6;
@@ -89,3 +179,26 @@ select option {
     @apply grid-cols-1;
   }
 }
+
+/* =================================================================== */
+/* 📚 DESIGN SYSTEM USAGE GUIDE */
+/* =================================================================== */
+
+/**
+ * 🎨 USO DE VARIABLES CSS (Futuro):
+ *
+ * En lugar de:     background-color: #facc15;
+ * Usar:           background-color: var(--color-primary);
+ *
+ * En lugar de:     transition: 0.2s ease-in-out;
+ * Usar:           transition: var(--transition-normal);
+ *
+ * En lugar de:     z-index: 50;
+ * Usar:           z-index: var(--z-modal);
+ *
+ * BENEFICIOS:
+ * - Consistencia automática en toda la app
+ * - Cambios de tema centralizados
+ * - Mantenimiento más fácil
+ * - Soporte para dark/light mode futuro
+ */

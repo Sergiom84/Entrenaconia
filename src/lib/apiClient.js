@@ -1,23 +1,31 @@
 /**
- * 🌐 API Client - Cliente centralizado para todas las peticiones API
- * 
- * RAZONAMIENTO:
- * - Centraliza 94 fetch calls duplicados en la aplicación
- * - Manejo consistente de autenticación, errores y logging
- * - Interceptors para requests/responses
- * - Retry automático y timeout configurable
- * - Integración con sistema de logging
+ * 🌐 API Client Refactorizado - Integración Completa del Ecosistema
+ *
+ * MEJORAS IMPLEMENTADAS:
+ * - Integración con tokenManager (refresh automático)
+ * - Integración con connectionManager (offline/online)
+ * - Integración con sessionManager (heartbeat)
+ * - Cache inteligente de respuestas GET
+ * - Exponential backoff para retries
+ * - Request deduplication
+ * - Manejo avanzado de errores 401
  */
 
 import logger from '../utils/logger';
+import tokenManager from '../utils/tokenManager';
+import connectionManager from '../utils/connectionManager';
+import sessionManager from '../utils/sessionManager';
 
 class ApiClient {
   constructor(baseURL = '', options = {}) {
     this.baseURL = baseURL;
     this.defaultOptions = {
       timeout: 10000,
-      retries: 2,
+      retries: 3,
       retryDelay: 1000,
+      exponentialBackoff: true,
+      cache: false,
+      deduplicate: true,
       ...options
     };
 
@@ -25,17 +33,40 @@ class ApiClient {
     this.requestInterceptors = [];
     this.responseInterceptors = [];
     this.errorInterceptors = [];
+
+    // Cache y deduplicación
+    this.responseCache = new Map();
+    this.pendingRequests = new Map();
+
+    // Inicializar integraciones
+    this.initializeIntegrations();
   }
 
   /**
-   * Obtener token de autenticación
+   * Inicializa integraciones con el ecosistema refactorizado
+   */
+  initializeIntegrations() {
+    // Integración con connectionManager para estado online/offline
+    if (typeof window !== 'undefined') {
+      window.addEventListener('connectionOnline', () => {
+        logger.info('Conexión restaurada, procesando requests pendientes', null, 'ApiClient');
+      });
+
+      window.addEventListener('connectionOffline', () => {
+        logger.warn('Conexión perdida, requests serán encolados', null, 'ApiClient');
+      });
+    }
+  }
+
+  /**
+   * Obtener token de autenticación (integrado con tokenManager)
    */
   getAuthToken() {
-    return localStorage.getItem('authToken') || localStorage.getItem('token');
+    return tokenManager.getToken();
   }
 
   /**
-   * Obtener headers por defecto
+   * Obtener headers por defecto (con token actualizado)
    */
   getDefaultHeaders() {
     const headers = {
@@ -47,7 +78,62 @@ class ApiClient {
       headers['Authorization'] = `Bearer ${token}`;
     }
 
+    // Header para indicar actividad de sesión
+    if (sessionManager) {
+      headers['X-Session-Activity'] = Date.now().toString();
+    }
+
     return headers;
+  }
+
+  /**
+   * Genera clave de cache para requests GET
+   */
+  getCacheKey(url, options = {}) {
+    const cacheOptions = {
+      method: options.method || 'GET',
+      headers: options.headers,
+      body: options.body
+    };
+    return `${url}:${JSON.stringify(cacheOptions)}`;
+  }
+
+  /**
+   * Verifica si una respuesta está en cache y es válida
+   */
+  getCachedResponse(cacheKey, ttl = 300000) { // 5 minutos por defecto
+    const cached = this.responseCache.get(cacheKey);
+    if (cached && (Date.now() - cached.timestamp) < ttl) {
+      return cached.data;
+    }
+    return null;
+  }
+
+  /**
+   * Guarda respuesta en cache
+   */
+  setCachedResponse(cacheKey, data) {
+    // Limitar tamaño del cache
+    if (this.responseCache.size > 50) {
+      const firstKey = this.responseCache.keys().next().value;
+      this.responseCache.delete(firstKey);
+    }
+
+    this.responseCache.set(cacheKey, {
+      data,
+      timestamp: Date.now()
+    });
+  }
+
+  /**
+   * Calcula delay para retry con exponential backoff
+   */
+  calculateRetryDelay(attempt, baseDelay = 1000, exponential = true) {
+    if (!exponential) return baseDelay;
+
+    const delay = baseDelay * Math.pow(2, attempt);
+    const jitter = delay * 0.1 * Math.random(); // 10% jitter
+    return Math.min(delay + jitter, 30000); // Max 30 segundos
   }
 
   /**
@@ -109,7 +195,7 @@ class ApiClient {
   }
 
   /**
-   * Petición básica con retry y timeout
+   * Petición avanzada con todas las mejoras integradas
    */
   async request(url, options = {}) {
     const fullUrl = url.startsWith('http') ? url : `${this.baseURL}${url}`;
@@ -122,30 +208,158 @@ class ApiClient {
       }
     };
 
+    // 1. VERIFICAR CACHE PARA REQUESTS GET
+    const method = (requestOptions.method || 'GET').toUpperCase();
+    if (method === 'GET' && requestOptions.cache !== false) {
+      const cacheKey = this.getCacheKey(fullUrl, requestOptions);
+      const cached = this.getCachedResponse(cacheKey, requestOptions.cacheTTL);
+      if (cached) {
+        logger.debug('Respuesta servida desde cache', { url: fullUrl }, 'ApiClient');
+        return cached;
+      }
+    }
+
+    // 2. DEDUPLICACIÓN DE REQUESTS
+    if (requestOptions.deduplicate !== false) {
+      const requestKey = this.getCacheKey(fullUrl, requestOptions);
+      if (this.pendingRequests.has(requestKey)) {
+        logger.debug('Request duplicado, esperando respuesta existente', { url: fullUrl }, 'ApiClient');
+        return await this.pendingRequests.get(requestKey);
+      }
+
+      // Crear promise para deduplicación
+      const requestPromise = this.executeRequest(fullUrl, requestOptions);
+      this.pendingRequests.set(requestKey, requestPromise);
+
+      try {
+        const result = await requestPromise;
+        this.pendingRequests.delete(requestKey);
+        return result;
+      } catch (error) {
+        this.pendingRequests.delete(requestKey);
+        throw error;
+      }
+    }
+
+    return await this.executeRequest(fullUrl, requestOptions);
+  }
+
+  /**
+   * Ejecuta la petición real con todas las mejoras
+   */
+  async executeRequest(fullUrl, requestOptions) {
     // Aplicar interceptors de request
     const processedOptions = await this.executeRequestInterceptors(fullUrl, requestOptions);
 
     logger.api.request(processedOptions.method || 'GET', fullUrl, processedOptions.body);
 
+    // 3. USAR CONNECTIONMANAGER PARA MANEJO OFFLINE/ONLINE
+    try {
+      const response = await connectionManager.executeRequest(fullUrl, {
+        method: processedOptions.method || 'GET',
+        headers: processedOptions.headers,
+        body: processedOptions.body
+      }, {
+        expectedStatus: 200,
+        cacheKey: `api-${fullUrl}`,
+        timeout: processedOptions.timeout
+      });
+
+      if (response && response.ok) {
+        // Aplicar interceptors de response
+        const processedResponse = await this.executeResponseInterceptors(response, fullUrl);
+
+        logger.api.response(
+          processedOptions.method || 'GET',
+          fullUrl,
+          processedResponse.status
+        );
+
+        // Parsear y cachear respuesta
+        const result = await this.parseResponse(processedResponse);
+
+        // Cachear respuestas GET exitosas
+        const method = (processedOptions.method || 'GET').toUpperCase();
+        if (method === 'GET' && processedOptions.cache !== false) {
+          const cacheKey = this.getCacheKey(fullUrl, processedOptions);
+          this.setCachedResponse(cacheKey, result);
+        }
+
+        return result;
+      } else {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+    } catch (error) {
+      // 4. MANEJO AVANZADO DE ERRORES 401 CON TOKEN REFRESH
+      if (error.status === 401) {
+        logger.warn('Token inválido, intentando refresh automático', { url: fullUrl }, 'ApiClient');
+
+        try {
+          const refreshResult = await tokenManager.refreshTokenSilently();
+          if (refreshResult && refreshResult.success) {
+            logger.info('Token refreshed exitosamente, reintentando request', { url: fullUrl }, 'ApiClient');
+
+            // Actualizar headers con nuevo token
+            const updatedOptions = {
+              ...processedOptions,
+              headers: {
+                ...processedOptions.headers,
+                'Authorization': `Bearer ${tokenManager.getToken()}`
+              }
+            };
+
+            // Reintentar con nuevo token
+            return await this.executeRequestWithRetry(fullUrl, updatedOptions);
+          }
+        } catch (refreshError) {
+          logger.error('Falló el refresh automático de token', refreshError, 'ApiClient');
+        }
+      }
+
+      // Aplicar interceptors de error
+      return await this.executeErrorInterceptors(error, fullUrl);
+    }
+  }
+
+  /**
+   * Ejecuta request con retry y exponential backoff
+   */
+  async executeRequestWithRetry(fullUrl, processedOptions) {
     let lastError = null;
     const maxRetries = processedOptions.retries || 0;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        // Configurar timeout
+        // Usar fetch directo para retry (connectionManager ya se intentó)
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), processedOptions.timeout);
 
         const fetchOptions = {
-          ...processedOptions,
+          method: processedOptions.method,
+          headers: processedOptions.headers,
+          body: processedOptions.body,
           signal: controller.signal
         };
-        delete fetchOptions.timeout;
-        delete fetchOptions.retries;
-        delete fetchOptions.retryDelay;
 
         const response = await fetch(fullUrl, fetchOptions);
         clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          let errorData;
+
+          try {
+            errorData = JSON.parse(errorText);
+          } catch {
+            errorData = { message: errorText };
+          }
+
+          const error = new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`);
+          error.status = response.status;
+          error.data = errorData;
+
+          throw error;
+        }
 
         // Aplicar interceptors de response
         const processedResponse = await this.executeResponseInterceptors(response, fullUrl);
@@ -156,31 +370,7 @@ class ApiClient {
           processedResponse.status
         );
 
-        // Manejar errores HTTP
-        if (!processedResponse.ok) {
-          const errorText = await processedResponse.text();
-          let errorData;
-          
-          try {
-            errorData = JSON.parse(errorText);
-          } catch {
-            errorData = { message: errorText };
-          }
-
-          const error = new Error(errorData.message || `HTTP ${processedResponse.status}: ${processedResponse.statusText}`);
-          error.status = processedResponse.status;
-          error.data = errorData;
-          
-          throw error;
-        }
-
-        // Parsear respuesta
-        const contentType = processedResponse.headers.get('content-type');
-        if (contentType && contentType.includes('application/json')) {
-          return await processedResponse.json();
-        }
-        
-        return processedResponse;
+        return await this.parseResponse(processedResponse);
 
       } catch (error) {
         lastError = error;
@@ -192,14 +382,25 @@ class ApiClient {
 
         // Si no es el último intento, esperar antes del retry
         if (attempt < maxRetries) {
-          logger.warn(`Reintentando petición (${attempt + 1}/${maxRetries + 1})`, { url: fullUrl }, 'ApiClient');
-          await new Promise(resolve => setTimeout(resolve, processedOptions.retryDelay * (attempt + 1)));
+          const delay = this.calculateRetryDelay(attempt, processedOptions.retryDelay, processedOptions.exponentialBackoff);
+          logger.warn(`Reintentando petición (${attempt + 1}/${maxRetries + 1}) en ${delay}ms`, { url: fullUrl }, 'ApiClient');
+          await new Promise(resolve => setTimeout(resolve, delay));
         }
       }
     }
 
-    // Aplicar interceptors de error
-    return await this.executeErrorInterceptors(lastError, fullUrl);
+    throw lastError;
+  }
+
+  /**
+   * Parsea respuesta según content-type
+   */
+  async parseResponse(response) {
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      return await response.json();
+    }
+    return response;
   }
 
   // Métodos HTTP principales
@@ -271,23 +472,43 @@ class ApiClient {
 }
 
 // Instancia principal del cliente API
-const apiClient = new ApiClient('/api');
+const apiClient = new ApiClient('http://localhost:3003/api');
 
-// Interceptor de error para manejo de autenticación
-apiClient.addErrorInterceptor((error, url) => {
+// Interceptor de error mejorado con integración tokenManager
+apiClient.addErrorInterceptor(async (error, url) => {
   if (error.status === 401) {
-    // Token expirado o inválido
-    localStorage.removeItem('authToken');
-    localStorage.removeItem('token');
-    
+    logger.warn('Error 401 - Token inválido detectado', { url }, 'ApiClient');
+
+    // Usar tokenManager para limpiar tokens correctamente
+    tokenManager.removeTokens();
+
     // Solo redirigir si no estamos ya en login
-    if (!window.location.pathname.includes('/login')) {
-      logger.warn('Token expirado, redirigiendo a login', null, 'ApiClient');
-      window.location.href = '/login';
+    if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+      logger.warn('Redirigiendo a login por token expirado', null, 'ApiClient');
+
+      // Emitir evento para que otros componentes sepan
+      window.dispatchEvent(new CustomEvent('authTokenExpired', {
+        detail: { url, timestamp: Date.now() }
+      }));
+
+      // Usar setTimeout para evitar conflictos con navegación React
+      setTimeout(() => {
+        window.location.href = '/login';
+      }, 100);
     }
   }
-  
+
   return null; // No manejar el error, dejarlo pasar
+});
+
+// Interceptor de request para actividad de sesión
+apiClient.addRequestInterceptor((url, options) => {
+  // Registrar actividad en sessionManager si existe
+  if (sessionManager && typeof sessionManager.handleActivity === 'function') {
+    sessionManager.handleActivity();
+  }
+
+  return options; // No modificar options
 });
 
 // Interceptor de response para logging automático

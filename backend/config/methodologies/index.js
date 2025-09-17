@@ -1,5 +1,19 @@
+/**
+ * 🔧 BACKEND METHODOLOGY CONFIGS - Technical Data for AI & Logic
+ *
+ * RESPONSABILIDAD: Configuración técnica para:
+ * - Sistema de IA (generación de planes)
+ * - Lógica de negocio del backend
+ * - Algoritmos de recomendación
+ * - Validaciones y constraints técnicos
+ *
+ * ⚠️ IMPORTANTE: Para datos de UI/UX usar src/config/methodologyMapping.js
+ *
+ * @version 2.0.0 - Role-Separated Architecture
+ */
+
 export const METHODOLOGY_CONFIGS = {
-  'Heavy Duty': {
+  'HEAVY_DUTY': {
     key: 'HEAVY_DUTY',
     name: 'Heavy Duty',
     category: 'fuerza',
@@ -21,7 +35,7 @@ export const METHODOLOGY_CONFIGS = {
     progression_style: 'intensidad'
   },
 
-  'Powerlifting': {
+  'POWERLIFTING': {
     key: 'POWERLIFTING',
     name: 'Powerlifting',
     category: 'fuerza',
@@ -43,7 +57,7 @@ export const METHODOLOGY_CONFIGS = {
     progression_style: 'carga'
   },
 
-  'Hipertrofia': {
+  'HIPERTROFIA': {
     key: 'HIPERTROFIA',
     name: 'Hipertrofia',
     category: 'volumen',
@@ -65,7 +79,7 @@ export const METHODOLOGY_CONFIGS = {
     progression_style: 'volumen'
   },
 
-  'Funcional': {
+  'FUNCIONAL': {
     key: 'FUNCIONAL',
     name: 'Funcional',
     category: 'movimiento',
@@ -87,7 +101,7 @@ export const METHODOLOGY_CONFIGS = {
     progression_style: 'complejidad'
   },
 
-  'Oposiciones': {
+  'OPOSICIONES': {
     key: 'OPOSICIONES',
     name: 'Oposiciones',
     category: 'rendimiento',
@@ -109,7 +123,7 @@ export const METHODOLOGY_CONFIGS = {
     progression_style: 'especificidad'
   },
 
-  'Crossfit': {
+  'CROSSFIT': {
     key: 'CROSSFIT',
     name: 'Crossfit',
     category: 'mixto',
@@ -131,7 +145,7 @@ export const METHODOLOGY_CONFIGS = {
     progression_style: 'mixto'
   },
 
-  'Calistenia': {
+  'CALISTENIA': {
     key: 'CALISTENIA',
     name: 'Calistenia',
     category: 'peso_corporal',
@@ -153,7 +167,7 @@ export const METHODOLOGY_CONFIGS = {
     progression_style: 'progresiones'
   },
 
-  'Entrenamiento en casa': {
+  'HOME_TRAINING': {
     key: 'HOME_TRAINING',
     name: 'Entrenamiento en casa',
     category: 'adaptado',
@@ -177,13 +191,13 @@ export const METHODOLOGY_CONFIGS = {
 };
 
 export const METHODOLOGY_CATEGORIES = {
-  fuerza: ['Heavy Duty', 'Powerlifting'],
-  volumen: ['Hipertrofia'],
-  movimiento: ['Funcional'],
-  rendimiento: ['Oposiciones'],
-  mixto: ['Crossfit'],
-  peso_corporal: ['Calistenia'],
-  adaptado: ['Entrenamiento en casa']
+  fuerza: ['HEAVY_DUTY', 'POWERLIFTING'],
+  volumen: ['HIPERTROFIA'],
+  movimiento: ['FUNCIONAL'],
+  rendimiento: ['OPOSICIONES'],
+  mixto: ['CROSSFIT'],
+  peso_corporal: ['CALISTENIA'],
+  adaptado: ['HOME_TRAINING']
 };
 
 export const EQUIPMENT_CATALOG = {
@@ -245,23 +259,23 @@ export function getRecommendedMethodology(userProfile) {
 
   // Lógica de recomendación basada en objetivos y perfil
   const recommendations = {
-    'ganar_fuerza': ['Powerlifting', 'Heavy Duty'],
-    'ganar_masa': ['Hipertrofia'],
-    'perder_grasa': ['Crossfit', 'Funcional'],
-    'mejorar_condicion': ['Crossfit', 'Funcional'],
-    'aprender_habilidades': ['Calistenia'],
-    'conveniencia': ['Entrenamiento en casa'],
-    'preparar_oposiciones': ['Oposiciones']
+    'ganar_fuerza': ['POWERLIFTING', 'HEAVY_DUTY'],
+    'ganar_masa': ['HIPERTROFIA'],
+    'perder_grasa': ['CROSSFIT', 'FUNCIONAL'],
+    'mejorar_condicion': ['CROSSFIT', 'FUNCIONAL'],
+    'aprender_habilidades': ['CALISTENIA'],
+    'conveniencia': ['HOME_TRAINING'],
+    'preparar_oposiciones': ['OPOSICIONES']
   };
 
-  const preferred = recommendations[objetivo_principal] || ['Funcional'];
+  const preferred = recommendations[objetivo_principal] || ['FUNCIONAL'];
 
   // Encontrar la primera metodología compatible de las recomendadas
-  for (const methodName of preferred) {
-    const found = compatible.find(m => m.name === methodName);
+  for (const methodKey of preferred) {
+    const found = compatible.find(m => m.key === methodKey);
     if (found) return found;
   }
 
   // Fallback a la primera compatible
-  return compatible[0] || getMethodologyConfig('Funcional');
+  return compatible[0] || getMethodologyConfig('FUNCIONAL');
 }

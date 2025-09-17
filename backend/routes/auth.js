@@ -376,6 +376,31 @@ router.post('/logout', authenticateToken, async (req, res) => {
   }
 });
 
+// Heartbeat endpoint para mantener la sesión activa
+router.post('/heartbeat', authenticateToken, async (req, res) => {
+  try {
+    const { timestamp, lastActivity } = req.body;
+    const userId = req.user.id;
+
+    // Actualizar la actividad de la sesión en la base de datos si es necesario
+    // Esto es opcional - el sessionManager lo maneja localmente
+
+    res.json({
+      success: true,
+      timestamp: Date.now(),
+      userId: userId,
+      status: 'active'
+    });
+
+  } catch (error) {
+    console.error('Error en heartbeat:', error);
+    res.status(500).json({
+      error: 'Error interno del servidor',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
 // Verificar token
 router.get('/verify', async (req, res) => {
   try {

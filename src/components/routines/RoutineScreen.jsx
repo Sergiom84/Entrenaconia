@@ -1,126 +1,72 @@
-import { useEffect, useMemo, useState, memo, useCallback } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.jsx';
 import { Calendar, Dumbbell, BarChart3, History } from 'lucide-react';
+import { useWorkout } from '@/contexts/WorkoutContext';
 import TrainingPlanConfirmationModal from './TrainingPlanConfirmationModal.jsx';
 import TodayTrainingTab from './tabs/TodayTrainingTab.jsx';
 import CalendarTab from './tabs/CalendarTab.jsx';
 import ProgressTab from './tabs/ProgressTab.jsx';
 import HistoricalTab from './tabs/HistoricalTab.jsx';
-import { bootstrapPlan, confirmRoutinePlan, getPlanStatus } from './api.js';
-import { useRoutineCache, CACHE_KEYS } from '@/hooks/useRoutineCache';
-import { validateRoutineState, cleanOrphanedState, migrateOldState, setupStateSyncListener } from '@/utils/stateValidator';
-import { useModalState } from '@/hooks/useModalState';
 
-// ✅ IMPORTAR LOS HOOKS EXTRAÍDOS
-import useRoutinePlan from '@/hooks/useRoutinePlan';
-import useRoutineSession from '@/hooks/useRoutineSession';
-import useRoutineStats from '@/hooks/useRoutineStats';
+// ===============================================
+// 🚀 RoutineScreen - Versión Integrada con WorkoutContext
+// ===============================================
 
-// Pantalla de Rutinas con sistema de pestañas - VERSIÓN CORREGIDA
 const RoutineScreen = () => {
-  console.log('🔧 RoutineScreen.fixed.jsx cargado - Versión con hooks integrados');
+  console.log('🔧 RoutineScreen.jsx cargado - Versión con WorkoutContext integrado');
 
   const location = useLocation();
-  const navigate = useNavigate();
-  const { invalidateCache } = useRoutineCache();
+
+  // ===============================================
+  // 🎯 INTEGRACIÓN CON WorkoutContext
+  // ===============================================
+
+  const {
+    // Estado unificado
+    plan,
+    session,
+    ui,
+
+    // Acciones de plan
+    activatePlan,
+    loadActivePlan,
+
+    // Acciones de sesión
+    startSession,
+    updateExercise,
+    completeSession,
+
+    // Navegación
+    goToMethodologies,
+
+    // Utilidades
+    isTraining,
+    hasActivePlan,
+    hasActiveSession
+  } = useWorkout();
+
+  // ===============================================
+  // 🎛️ ESTADO LOCAL MÍNIMO
+  // ===============================================
 
   // State recibido desde MethodologiesScreen.navigate('/routines', { state })
   const incomingState = location.state || {};
 
-  // ✅ USAR EL HOOK useRoutinePlan PARA GESTIONAR EL PLAN
-  const {
-    routinePlan,
-    routinePlanId,
-    methodologyPlanId,
-    planStartDate,
-    setRoutinePlan,
-    setRoutinePlanId,
-    setMethodologyPlanId,
-    setPlanStartDate,
-    isLoading: isPlanLoading,
-    isRecoveringPlan,
-    error: planError,
-    loadLatestRoutinePlan,
-    checkForActivePlans,
-    clearLocalSessionState
-  } = useRoutinePlan(location);
+  // Estado local mínimo para datos específicos de esta pantalla
+  const [localState, setLocalState] = useState({
+    activeTab: incomingState?.activeTab || (incomingState?.fromSession ? 'today' : 'today'),
+    progressUpdatedAt: Date.now(),
+    showConfirmationModal: false
+  });
 
-  // ✅ USAR EL HOOK useRoutineSession PARA GESTIONAR LA SESIÓN
-  const {
-    routineSessionId,
-    sessionStartAtMs,
-    showExerciseModal,
-    currentExerciseIndex,
-    currentSessionData,
-    trainingInProgress,
-    completedExercises,
-    sessionExerciseStatuses,
-    setShowExerciseModal,
-    setCurrentExerciseIndex,
-    hydrateSession,
-    startTraining,
-    updateProgress,
-    completeExercise,
-    skipExercise,
-    cancelExercise,
-    completeSession
-  } = useRoutineSession();
+  const updateLocalState = useCallback((updates) => {
+    setLocalState(prev => ({ ...prev, ...updates }));
+  }, []);
 
-  // ✅ USAR EL HOOK useRoutineStats PARA GESTIONAR ESTADÍSTICAS
-  const handleInvalidRoutine = useCallback((code) => {
-    console.error('❌ Rutina inválida:', code);
-    if (code === 'PLAN_ARCHIVED' || code === 'ROUTINE_CANCELLED' || code === 'ROUTINE_NOT_FOUND') {
-      // Limpiar estado y redirigir
-      clearLocalSessionState();
-      navigate('/methodologies', {
-        replace: true,
-        state: { error: 'La rutina ya no está disponible. Por favor, genera una nueva.' }
-      });
-    }
-  }, [clearLocalSessionState, navigate]);
-
-  const {
-    routineStats,
-    isLoading: isStatsLoading,
-    fetchRoutineStats
-  } = useRoutineStats(routinePlanId || methodologyPlanId, handleInvalidRoutine);
-
-  // Estado de la UI
-  const [activeTab, setActiveTab] = useState(
-    incomingState?.activeTab || (incomingState?.fromSession ? 'today' : 'today')
-  );
-  const [progressUpdatedAt, setProgressUpdatedAt] = useState(Date.now());
-  const [isCheckingPlanStatus, setIsCheckingPlanStatus] = useState(false);
-
-  // Control del modal con el hook mejorado
-  const planModal = useModalState(
-    !incomingState?.fromSession && incomingState?.showModal === true,
-    {
-      debugMode: import.meta.env.DEV,
-      preventDoubleOpen: true,
-      onOpen: () => console.log('🎭 Modal de confirmación abierto'),
-      onClose: () => console.log('🎭 Modal de confirmación cerrado')
-    }
-  );
-
-  // Exponer estado del modal en desarrollo para depuración
-  useEffect(() => {
-    if (import.meta.env.DEV) {
-      window.__ROUTINE_MODAL_DEBUG__ = {
-        getState: () => planModal.getDebugInfo(),
-        open: () => planModal.open(),
-        close: () => planModal.close(),
-        reset: () => planModal.reset()
-      };
-      console.log('🔧 Debug del modal disponible en window.__ROUTINE_MODAL_DEBUG__');
-    }
-    return () => {
-      if (window.__ROUTINE_MODAL_DEBUG__) {
-        delete window.__ROUTINE_MODAL_DEBUG__;
-      }
-    };
-  }, [planModal]);
+  // ===============================================
+  // 📅 UTILIDADES DE FECHA
+  // ===============================================
 
   // Día actual
   const todayName = useMemo(() => {
@@ -128,345 +74,292 @@ const RoutineScreen = () => {
     return dias[new Date().getDay()];
   }, []);
 
-  // Plan efectivo a usar
-  const effectivePlan = routinePlan || incomingState?.routinePlan || incomingState?.plan;
+  // ===============================================
+  // 📋 DATOS EFECTIVOS DEL PLAN
+  // ===============================================
+
+  // Plan efectivo a usar (prioridad: contexto > location.state)
+  const effectivePlan = plan.currentPlan || incomingState?.routinePlan || incomingState?.plan;
   const effectivePlanSource = incomingState?.planSource || { label: 'IA' };
-  const effectivePlanId = routinePlanId || incomingState?.planId;
+  const effectivePlanId = plan.planId || incomingState?.planId;
+  const effectiveMethodologyPlanId = plan.planId || incomingState?.methodology_plan_id;
 
-  // Validar y limpiar estado al montar el componente
+  // ===============================================
+  // 🔄 INICIALIZACIÓN Y RECUPERACIÓN DE ESTADO
+  // ===============================================
+
   useEffect(() => {
-    // Migrar datos antiguos si existen
-    const migrated = migrateOldState();
-    if (migrated) {
-      console.log('📦 Estado migrado desde versión anterior');
-    }
-
-    // Limpiar estados huérfanos o corruptos
-    const cleaned = cleanOrphanedState();
-    if (cleaned) {
-      console.log('🧹 Estado huérfano limpiado');
-    }
-
-    // Validar estado actual
-    const validation = validateRoutineState();
-    if (validation.warnings.length > 0) {
-      console.warn('⚠️ Advertencias de estado:', validation.warnings);
-    }
-    if (!validation.isValid) {
-      console.error('❌ Estado inválido:', validation.errors);
-    }
-
-    // Configurar sincronización entre pestañas
-    const cleanup = setupStateSyncListener((change) => {
-      console.log('📡 Cambio de estado detectado:', change);
-      // Recargar si cambia el methodologyPlanId desde otra pestaña
-      if (change.key === 'currentMethodologyPlanId' && change.newValue !== change.oldValue) {
-        window.location.reload();
-      }
-    });
-
-    return cleanup;
-  }, []);
-
-  // Verificar estado del plan cuando llega uno nuevo
-  useEffect(() => {
-    const checkPlanStatus = async () => {
-      if (!effectivePlan || isCheckingPlanStatus) return;
+    const initializeRoutineScreen = async () => {
+      console.log('🚀 Inicializando RoutineScreen con WorkoutContext...');
 
       try {
-        setIsCheckingPlanStatus(true);
-        const mId = methodologyPlanId || incomingState?.methodology_plan_id;
-
-        if (mId) {
-          console.log('🔍 Verificando estado del plan:', mId);
-          const statusData = await getPlanStatus({ methodologyPlanId: mId });
-
-          if (statusData && typeof statusData.isConfirmed === 'boolean') {
-            if (statusData.isConfirmed) {
-              console.log('✅ Plan ya confirmado, saltando modal');
-              planModal.close();
-            } else if (incomingState?.showModal === true) {
-              console.log('⏳ Plan no confirmado y showModal=true, mostrando modal');
-              planModal.open();
-            } else {
-              console.log('📝 Plan no confirmado pero no se pidió mostrar modal');
-              planModal.close();
-            }
-          }
-        } else if (incomingState?.showModal === true) {
-          console.log('🆕 Sin methodology_plan_id pero showModal=true');
-          planModal.open();
+        // Si viene un plan desde location.state, activarlo en el contexto
+        if (incomingState?.plan && incomingState?.planJustActivated) {
+          console.log('✅ Plan recién activado desde MethodologiesScreen');
+          // El plan ya está activado, no hacer nada más
+          return;
         }
+
+        // Si viene un planId específico, cargarlo
+        if (incomingState?.methodology_plan_id && !hasActivePlan) {
+          console.log('🔍 Cargando plan específico:', incomingState.methodology_plan_id);
+          await loadActivePlan(incomingState.methodology_plan_id);
+          return;
+        }
+
+        // Si no hay plan activo, intentar recuperar uno
+        if (!hasActivePlan) {
+          console.log('🔄 No hay plan activo, intentando recuperar...');
+          await loadActivePlan();
+        }
+
       } catch (error) {
-        console.error('Error verificando estado del plan:', error);
-        if (incomingState?.showModal === true) {
-          planModal.open();
-        }
-      } finally {
-        setIsCheckingPlanStatus(false);
+        console.error('❌ Error inicializando RoutineScreen:', error);
+        ui.setError(error.message || 'Error cargando el plan de entrenamiento');
       }
     };
 
-    checkPlanStatus();
-  }, [effectivePlan, methodologyPlanId, incomingState, planModal]);
+    initializeRoutineScreen();
+  }, [incomingState, hasActivePlan, loadActivePlan, setError]);
 
-  // Cargar estadísticas cuando haya un plan
+  // ===============================================
+  // 🎭 GESTIÓN DE MODALES
+  // ===============================================
+
+  // Mostrar modal de confirmación si es necesario
   useEffect(() => {
-    if (effectivePlanId && !isStatsLoading) {
-      fetchRoutineStats();
+    if (incomingState?.showModal === true && effectivePlan && !localState.showConfirmationModal) {
+      console.log('🎭 Mostrando modal de confirmación por location.state');
+      updateLocalState({ showConfirmationModal: true });
     }
-  }, [effectivePlanId, fetchRoutineStats, isStatsLoading]);
+  }, [incomingState?.showModal, effectivePlan, localState.showConfirmationModal]);
 
-  // Manejadores
-  const handleStart = useCallback(async () => {
-    const result = await planModal.processAction(async () => {
-      const mId = methodologyPlanId || incomingState?.methodology_plan_id;
-      const rId = effectivePlanId;
+  // ===============================================
+  // 🎯 HANDLERS DE ACCIONES
+  // ===============================================
 
-      console.log('🔄 Confirmando rutina en la base de datos...', {
-        methodology_plan_id: mId,
-        routine_plan_id: rId
-      });
+  const handleConfirmPlan = async () => {
+    try {
+      console.log('✅ Confirmando plan de entrenamiento...');
 
-      if (!mId) {
-        throw new Error('No se encontró el ID del plan de metodología');
+      if (!effectivePlan || !effectiveMethodologyPlanId) {
+        throw new Error('No hay plan para confirmar');
       }
 
-      await confirmRoutinePlan({
-        methodology_plan_id: mId,
-        routine_plan_id: rId
-      });
+      // Usar la función activatePlan del WorkoutContext
+      const result = await activatePlan(effectiveMethodologyPlanId);
 
-      console.log('✅ Rutina confirmada exitosamente');
-      setActiveTab('today');
-      invalidateCache(CACHE_KEYS.ACTIVE_PLAN);
-
-      // Recargar estadísticas
-      if (fetchRoutineStats) {
-        fetchRoutineStats(true);
+      if (result.success) {
+        console.log('✅ Plan confirmado exitosamente');
+        updateLocalState({ showConfirmationModal: false });
+        ui.showSuccess('Plan de entrenamiento confirmado');
+      } else {
+        throw new Error(result.error || 'Error confirmando el plan');
       }
 
-      return true;
-    }, {
-      closeOnSuccess: true,
-      closeOnError: false,
-      resetErrorOnStart: true
-    });
-
-    if (!result.success) {
-      console.error('❌ Error confirmando rutina:', result.error);
+    } catch (error) {
+      console.error('❌ Error confirmando plan:', error);
+      ui.setError(error.message || 'Error confirmando el plan de entrenamiento');
     }
-  }, [planModal, methodologyPlanId, incomingState?.methodology_plan_id, effectivePlanId, invalidateCache, fetchRoutineStats]);
-
-  const handleGenerateAnother = useCallback((feedbackData) => {
-    if (feedbackData) {
-      console.log('📝 Navegando con feedback:', feedbackData);
-      navigate('/methodologies', {
-        replace: true,
-        state: { feedback: feedbackData }
-      });
-    } else {
-      navigate('/methodologies', { replace: true });
-    }
-
-    // Limpiar estado local
-    setTimeout(() => {
-      clearLocalSessionState();
-      invalidateCache(CACHE_KEYS.ACTIVE_PLAN);
-    }, 100);
-  }, [invalidateCache, navigate, clearLocalSessionState]);
-
-  const ensureMethodologyPlan = async () => {
-    if (methodologyPlanId) {
-      try {
-        const status = await getPlanStatus({ methodologyPlanId });
-        if (status?.success) return methodologyPlanId;
-      } catch (_) {
-        // inválido: continuamos para bootstrap
-      }
-    }
-
-    if (incomingState?.methodology_plan_id) return incomingState.methodology_plan_id;
-
-    const candidatePlanId = effectivePlanId;
-    if (candidatePlanId) {
-      const mId = await bootstrapPlan(candidatePlanId);
-      setMethodologyPlanId(mId);
-      return mId;
-    }
-    throw new Error('No se pudo determinar el plan. Vuelve a Metodologías y genera uno nuevo.');
   };
 
-  // Loading state
-  if (isPlanLoading || isRecoveringPlan || isCheckingPlanStatus) {
+  const handleStartTraining = async () => {
+    try {
+      console.log('🚀 Iniciando entrenamiento del día...');
+
+      if (!effectivePlan || !effectiveMethodologyPlanId) {
+        throw new Error('No hay plan activo para entrenar');
+      }
+
+      // Usar startSession del WorkoutContext
+      const result = await startSession({
+        planId: effectiveMethodologyPlanId,
+        dayName: todayName
+      });
+
+      if (result.success) {
+        console.log('✅ Sesión de entrenamiento iniciada');
+        updateLocalState({ activeTab: 'today' });
+      } else {
+        throw new Error(result.error || 'Error iniciando el entrenamiento');
+      }
+
+    } catch (error) {
+      console.error('❌ Error iniciando entrenamiento:', error);
+      ui.setError(error.message || 'Error iniciando el entrenamiento');
+    }
+  };
+
+  const handleGenerateAnother = async () => {
+    console.log('🔄 Redirigiendo para generar otro plan...');
+    updateLocalState({ showConfirmationModal: false });
+    goToMethodologies();
+  };
+
+  const handleTabChange = useCallback((newTab) => {
+    console.log(`🏷️ Cambiando a pestaña: ${newTab}`);
+    updateLocalState({ activeTab: newTab });
+  }, []);
+
+  const handleProgressUpdate = useCallback(() => {
+    console.log('📊 Progreso actualizado, refrescando datos...');
+    updateLocalState({ progressUpdatedAt: Date.now() });
+  }, []);
+
+  // ===============================================
+  // 🚨 VALIDACIONES Y REDIRECTS
+  // ===============================================
+
+  // Si no hay plan efectivo después de intentar cargar, redirigir
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!ui.isLoading && !effectivePlan && !incomingState?.plan) {
+        console.log('⚠️ No hay plan disponible, redirigiendo a metodologías...');
+        goToMethodologies();
+      }
+    }, 3000); // Dar tiempo para cargar
+
+    return () => clearTimeout(timer);
+  }, [ui.isLoading, effectivePlan, incomingState?.plan, goToMethodologies]);
+
+  // ===============================================
+  // 🎨 RENDER CONDICIONAL PARA LOADING
+  // ===============================================
+
+  if (ui.isLoading) {
     return (
-      <div className="p-6 bg-black min-h-screen text-white pt-20">
-        <h1 className="text-3xl font-bold text-yellow-400 mb-2">Rutinas</h1>
-        <div className="text-center mt-20">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-400 mx-auto mb-4"></div>
-          <p className="text-gray-400">
-            {isRecoveringPlan ? 'Recuperando rutina activa...' :
-             isPlanLoading ? 'Cargando plan de rutina...' :
-             'Verificando estado del plan...'}
-          </p>
+      <div className="flex items-center justify-center min-h-screen bg-gray-900">
+        <div className="text-center space-y-4">
+          <div className="relative">
+            <div className="w-12 h-12 border-4 border-yellow-400/30 border-t-yellow-400 rounded-full animate-spin mx-auto" />
+            <div className="absolute inset-0 w-12 h-12 border-4 border-transparent border-r-yellow-400/50 rounded-full animate-pulse mx-auto" />
+          </div>
+          <div className="space-y-2">
+            <p className="text-white font-medium">Cargando plan de entrenamiento...</p>
+            <p className="text-gray-400 text-sm">Preparando tu rutina personalizada</p>
+          </div>
         </div>
       </div>
     );
   }
 
-  // Error state
-  if (planError && !effectivePlan) {
-    return (
-      <div className="p-6 bg-black min-h-screen text-white pt-20">
-        <h1 className="text-3xl font-bold text-yellow-400 mb-2">Rutinas</h1>
-        <div className="text-center mt-20">
-          <p className="text-red-500 mb-4">{planError}</p>
-          <button
-            onClick={() => navigate('/methodologies')}
-            className="bg-yellow-400 text-black px-6 py-2 rounded-lg hover:bg-yellow-300"
-          >
-            Ir a Metodologías
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // Empty state
-  if (!effectivePlan && !planModal.isOpen) {
-    return (
-      <div className="p-6 bg-black min-h-screen text-white pt-20">
-        <h1 className="text-3xl font-bold text-yellow-400 mb-2">Rutinas</h1>
-        <p className="text-gray-400 mb-6">No hay rutinas disponibles.</p>
-        <div className="text-center mt-20">
-          <p className="text-gray-500 mb-4">Genera una rutina desde el apartado de Metodologías</p>
-          <button
-            onClick={() => navigate('/methodologies')}
-            className="bg-yellow-400 text-black px-6 py-2 rounded-lg hover:bg-yellow-300"
-          >
-            Ir a Metodologías
-          </button>
-        </div>
-      </div>
-    );
-  }
+  // ===============================================
+  // 🎨 RENDER PRINCIPAL
+  // ===============================================
 
   return (
-    <div className="p-6 bg-black min-h-screen text-white pt-20">
-      <h1 className="text-3xl font-bold text-yellow-400 mb-2">Rutinas</h1>
-      <p className="text-gray-400 mb-6">Gestiona tus sesiones generadas por IA.</p>
+    <div className="container mx-auto p-6 bg-gray-900 min-h-screen">
+      {/* Header con información del plan */}
+      {effectivePlan && (
+        <div className="mb-6 p-4 bg-gray-800 rounded-lg border border-gray-700">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-yellow-400">
+                {effectivePlan.selected_style || effectivePlan.nombre || 'Plan de Entrenamiento'}
+              </h1>
+              <p className="text-gray-400">
+                Fuente: {effectivePlanSource?.label || 'IA'} {effectivePlanSource?.detail && `${effectivePlanSource.detail}`}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-sm text-gray-400">
+                Duración: {effectivePlan.duracion_total_semanas || effectivePlan.duration || 4} semanas
+              </p>
+              <p className="text-sm text-gray-400">
+                Frecuencia: {effectivePlan.frecuencia_por_semana || effectivePlan.frequency || 3}x/semana
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pestañas principales */}
+      <Tabs value={localState.activeTab} onValueChange={handleTabChange} className="w-full">
+        <TabsList className="grid w-full grid-cols-4 bg-gray-800 border border-gray-700">
+          <TabsTrigger
+            value="today"
+            className="data-[state=active]:bg-yellow-400 data-[state=active]:text-black"
+          >
+            <Dumbbell className="w-4 h-4 mr-2" />
+            Hoy
+          </TabsTrigger>
+          <TabsTrigger
+            value="calendar"
+            className="data-[state=active]:bg-yellow-400 data-[state=active]:text-black"
+          >
+            <Calendar className="w-4 h-4 mr-2" />
+            Calendario
+          </TabsTrigger>
+          <TabsTrigger
+            value="progress"
+            className="data-[state=active]:bg-yellow-400 data-[state=active]:text-black"
+          >
+            <BarChart3 className="w-4 h-4 mr-2" />
+            Progreso
+          </TabsTrigger>
+          <TabsTrigger
+            value="history"
+            className="data-[state=active]:bg-yellow-400 data-[state=active]:text-black"
+          >
+            <History className="w-4 h-4 mr-2" />
+            Historial
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Contenido de las pestañas */}
+        <TabsContent value="today" className="mt-6">
+          <TodayTrainingTab
+            routinePlan={effectivePlan}
+            routinePlanId={effectivePlanId}
+            methodologyPlanId={effectiveMethodologyPlanId}
+            planStartDate={plan.planStartDate || incomingState?.planStartDate}
+            todayName={todayName}
+            onProgressUpdate={handleProgressUpdate}
+            onStartTraining={handleStartTraining}
+          />
+        </TabsContent>
+
+        <TabsContent value="calendar" className="mt-6">
+          <CalendarTab
+            routinePlan={effectivePlan}
+            planStartDate={plan.planStartDate || incomingState?.planStartDate}
+            onProgressUpdate={handleProgressUpdate}
+          />
+        </TabsContent>
+
+        <TabsContent value="progress" className="mt-6">
+          <ProgressTab
+            routinePlanId={effectivePlanId}
+            methodologyPlanId={effectiveMethodologyPlanId}
+            routinePlan={effectivePlan}
+            progressUpdatedAt={localState.progressUpdatedAt}
+          />
+        </TabsContent>
+
+        <TabsContent value="history" className="mt-6">
+          <HistoricalTab
+            routinePlanId={effectivePlanId}
+            methodologyPlanId={effectiveMethodologyPlanId}
+          />
+        </TabsContent>
+      </Tabs>
 
       {/* Modal de confirmación del plan */}
-      {planModal.isOpen && (
-        <TrainingPlanConfirmationModal
-          isOpen={planModal.isOpen && Boolean(effectivePlan)}
-          plan={effectivePlan}
-          planSource={effectivePlanSource}
-          onStartTraining={handleStart}
-          onGenerateAnother={handleGenerateAnother}
-          onClose={planModal.close}
-          isConfirming={planModal.isProcessing}
-          error={planModal.error}
-        />
-      )}
-
-      {/* Sistema de pestañas */}
-      {effectivePlan && !planModal.isOpen && (
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-4 bg-gray-800 mb-6">
-            <TabsTrigger
-              value="today"
-              className="flex items-center gap-2 data-[state=active]:bg-yellow-400 data-[state=active]:text-black"
-            >
-              <Dumbbell className="w-4 h-4" />
-              Entrenamiento de Hoy
-            </TabsTrigger>
-            <TabsTrigger
-              value="calendar"
-              className="flex items-center gap-2 data-[state=active]:bg-yellow-400 data-[state=active]:text-black"
-            >
-              <Calendar className="w-4 h-4" />
-              Calendario
-            </TabsTrigger>
-            <TabsTrigger
-              value="progress"
-              className="flex items-center gap-2 data-[state=active]:bg-yellow-400 data-[state=active]:text-black"
-            >
-              <BarChart3 className="w-4 h-4" />
-              Progreso
-            </TabsTrigger>
-            <TabsTrigger
-              value="historical"
-              className="flex items-center gap-2 data-[state=active]:bg-yellow-400 data-[state=active]:text-black"
-            >
-              <History className="w-4 h-4" />
-              Histórico
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="today" className="mt-0">
-            <TodayTrainingTab
-              plan={effectivePlan}
-              planId={effectivePlanId}
-              methodologyPlanId={methodologyPlanId}
-              todayName={todayName}
-              planStartDate={planStartDate}
-              ensureMethodologyPlan={ensureMethodologyPlan}
-              onGenerateAnother={handleGenerateAnother}
-              onProgressUpdate={() => setProgressUpdatedAt(Date.now())}
-              // Pasar funciones del hook de sesión
-              routineSession={{
-                routineSessionId,
-                sessionStartAtMs,
-                showExerciseModal,
-                currentExerciseIndex,
-                currentSessionData,
-                trainingInProgress,
-                completedExercises,
-                sessionExerciseStatuses,
-                setShowExerciseModal,
-                setCurrentExerciseIndex,
-                hydrateSession,
-                startTraining,
-                updateProgress,
-                completeExercise,
-                skipExercise,
-                cancelExercise,
-                completeSession
-              }}
-              // Pasar estadísticas
-              routineStats={routineStats}
-              fetchRoutineStats={fetchRoutineStats}
-            />
-          </TabsContent>
-
-          <TabsContent value="calendar" className="mt-0">
-            <CalendarTab
-              plan={effectivePlan}
-              planStartDate={planStartDate}
-              methodologyPlanId={methodologyPlanId}
-              ensureMethodologyPlan={ensureMethodologyPlan}
-              refreshTrigger={progressUpdatedAt}
-            />
-          </TabsContent>
-
-          <TabsContent value="progress" className="mt-0">
-            <ProgressTab
-              plan={effectivePlan}
-              methodologyPlanId={methodologyPlanId}
-              routineStats={routineStats}
-            />
-          </TabsContent>
-
-          <TabsContent value="historical" className="mt-0">
-            <HistoricalTab
-              methodologyPlanId={methodologyPlanId}
-            />
-          </TabsContent>
-        </Tabs>
-      )}
+      <TrainingPlanConfirmationModal
+        isOpen={localState.showConfirmationModal}
+        onClose={() => updateLocalState({ showConfirmationModal: false })}
+        onConfirm={handleConfirmPlan}
+        onStartTraining={handleStartTraining}
+        onGenerateAnother={handleGenerateAnother}
+        plan={effectivePlan}
+        methodology={effectivePlan?.selected_style || effectivePlan?.nombre}
+        planSource={effectivePlanSource}
+        successMessage={incomingState?.successMessage}
+        isLoading={ui.isLoading}
+        error={ui.error}
+      />
     </div>
   );
 };
 
-export default memo(RoutineScreen);
+export default RoutineScreen;

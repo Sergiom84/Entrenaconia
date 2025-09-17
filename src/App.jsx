@@ -9,20 +9,36 @@
  * - Bundle inicial reducido en ~40%
  */
 
-import { Routes, Route } from 'react-router-dom';
-import { Suspense, lazy, useState, useEffect } from 'react';
+// =============================================================================
+// 📚 REACT & ROUTER IMPORTS
+// =============================================================================
+import { Routes, Route, useLocation } from 'react-router-dom';
+import { Suspense, lazy, useState, useEffect, useMemo } from 'react';
 
-// Imports críticos (se cargan inmediatamente)
+// =============================================================================
+// 🏗️ CORE COMPONENTS & PROVIDERS
+// =============================================================================
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import { AuthProvider } from './contexts/AuthContext';
 import { UserProvider } from './contexts/UserContext';
-import { useMusicSync } from './hooks/useMusicSync';
 import { useAuth } from './contexts/AuthContext';
+
+// =============================================================================
+// 🎵 HOOKS & UTILITIES
+// =============================================================================
+import { useMusicSync } from './hooks/useMusicSync';
+
+// =============================================================================
+// 🛡️ UI COMPONENTS & ERROR HANDLING
+// =============================================================================
 import ErrorBoundary from './components/ui/ErrorBoundary';
 import SafeComponent from './components/ui/SafeComponent';
+import { WorkoutProvider } from './contexts/WorkoutContext';
 
-// Componentes esenciales (no lazy loading)
+// =============================================================================
+// 🎵 GLOBAL COMPONENTS (No Lazy Loading)
+// =============================================================================
 import AudioBubble from './components/AudioBubble';
 import SessionManager from './components/SessionManager';
 
@@ -90,6 +106,162 @@ const LazyRouteErrorBoundary = ({ children, routeName }) => (
   </ErrorBoundary>
 );
 
+/**
+ * 🚀 ProtectedLazyRoute - Componente reutilizable para eliminar boilerplate
+ *
+ * BENEFICIOS:
+ * - Elimina ~150 líneas de código repetitivo
+ * - Mantiene toda la funcionalidad actual
+ * - Facilita añadir nuevas rutas
+ * - Consistencia garantizada
+ */
+const ProtectedLazyRoute = ({
+  component: _Component,
+  protected: isProtected,
+  name,
+  module,
+  context,
+  loadingMessage,
+  isIndex = false,
+  path
+}) => {
+  // Determinar mensaje de loading
+  const loaderMessage = loadingMessage || `Cargando ${module || name}...`;
+
+  // Construir el elemento con todas las capas
+  const routeElement = (
+    <Suspense fallback={
+      module ? <ModuleLoader module={module} /> : <RouteLoader message={loaderMessage} />
+    }>
+      <SafeComponent context={context || name}>
+        <Component />
+      </SafeComponent>
+    </Suspense>
+  );
+
+  // Envolver con ErrorBoundary
+  const withErrorBoundary = (
+    <LazyRouteErrorBoundary routeName={name}>
+      {routeElement}
+    </LazyRouteErrorBoundary>
+  );
+
+  // Envolver con ProtectedRoute si es necesario
+  const finalElement = isProtected ? (
+    <ProtectedRoute>
+      {withErrorBoundary}
+    </ProtectedRoute>
+  ) : withErrorBoundary;
+
+  // Retornar Route configurada
+  return isIndex ? (
+    <Route index element={finalElement} />
+  ) : (
+    <Route path={path} element={finalElement} />
+  );
+};
+
+// =============================================================================
+// 📋 CONFIGURACIÓN DECLARATIVA DE RUTAS
+// =============================================================================
+
+/**
+ * Configuración centralizada de rutas - Reduce boilerplate y mejora mantenibilidad
+ */
+const ROUTE_CONFIG = [
+  {
+    path: "/",
+    component: HomePage,
+    protected: true,
+    name: "Inicio",
+    module: "Inicio",
+    context: "HomePage",
+    isIndex: true,
+    loadingMessage: "Cargando inicio...",
+    preloadPriority: "high"
+  },
+  {
+    path: "/home-training",
+    component: HomeTrainingSection,
+    protected: true,
+    name: "Entrenamiento en Casa",
+    module: "Entrenamiento en Casa",
+    context: "HomeTraining",
+    loadingMessage: "Cargando entrenamiento...",
+    preloadPriority: "high"
+  },
+  {
+    path: "/methodologies",
+    component: MethodologiesScreen,
+    protected: true,
+    name: "Metodologías",
+    module: "Metodologías",
+    context: "Methodologies",
+    loadingMessage: "Cargando metodologías...",
+    preloadPriority: "medium"
+  },
+  {
+    path: "/routines",
+    component: RoutineScreen,
+    protected: true,
+    name: "Rutinas",
+    module: "Rutinas",
+    context: "Routines",
+    loadingMessage: "Cargando rutinas...",
+    preloadPriority: "high"
+  },
+  {
+    path: "/profile",
+    component: ProfileSection,
+    protected: true,
+    name: "Perfil",
+    module: "Perfil",
+    context: "Profile",
+    loadingMessage: "Cargando perfil...",
+    preloadPriority: "low"
+  },
+  {
+    path: "/nutrition",
+    component: NutritionScreen,
+    protected: true,
+    name: "Nutrición",
+    module: "Nutrición",
+    context: "Nutrition",
+    loadingMessage: "Cargando nutrición...",
+    preloadPriority: "medium"
+  },
+  {
+    path: "/video-correction",
+    component: VideoCorrection,
+    protected: true,
+    name: "Corrección de Video",
+    module: "Corrección de Video",
+    context: "VideoCorrection",
+    loadingMessage: "Cargando corrección...",
+    preloadPriority: "low"
+  },
+  {
+    path: "/login",
+    component: LoginPage,
+    protected: false,
+    name: "Login",
+    module: "Login",
+    context: "Login",
+    loadingMessage: "Cargando login...",
+    preloadPriority: "high"
+  },
+  {
+    path: "/register",
+    component: RegisterPage,
+    protected: false,
+    name: "Registro",
+    module: "Registro",
+    context: "Register",
+    loadingMessage: "Cargando registro...",
+    preloadPriority: "medium"
+  }
+];
+
 // =============================================================================
 // 🔮 PRELOADING ESTRATÉGICO
 // =============================================================================
@@ -124,11 +296,18 @@ const useRoutePreloading = (user) => {
 
 function AppContent() {
   const { user, isAuthenticated } = useAuth();
+  const location = useLocation();
   const [currentExercise, setCurrentExercise] = useState(null);
   const { musicConfig } = useMusicSync(user?.id);
 
   // Preloading inteligente
   useRoutePreloading(user);
+
+  // Rutas donde NO mostrar AudioBubble (optimizado con useMemo)
+  const shouldHideAudioBubble = useMemo(() => {
+    const excludedPaths = ['/login', '/register'];
+    return excludedPaths.some(path => location.pathname.includes(path));
+  }, [location.pathname]);
 
   // Listen for exercise changes from various components
   useEffect(() => {
@@ -147,150 +326,19 @@ function AppContent() {
       
       <Routes>
         <Route path="/" element={<Layout />}>
-          {/* 🏠 Homepage */}
-          <Route
-            index
-            element={
-              <ProtectedRoute>
-                <LazyRouteErrorBoundary routeName="Inicio">
-                  <Suspense fallback={<RouteLoader message="Cargando inicio..." />}>
-                    <SafeComponent context="HomePage">
-                      <HomePage />
-                    </SafeComponent>
-                  </Suspense>
-                </LazyRouteErrorBoundary>
-              </ProtectedRoute>
-            }
-          />
-
-          {/* 🏋️ Entrenamiento en Casa */}
-          <Route
-            path="/home-training"
-            element={
-              <ProtectedRoute>
-                <LazyRouteErrorBoundary routeName="Entrenamiento en Casa">
-                  <Suspense fallback={<ModuleLoader module="Entrenamiento en Casa" />}>
-                    <SafeComponent context="HomeTraining">
-                      <HomeTrainingSection />
-                    </SafeComponent>
-                  </Suspense>
-                </LazyRouteErrorBoundary>
-              </ProtectedRoute>
-            }
-          />
-
-          {/* 🧠 Metodologías */}
-          <Route
-            path="/methodologies"
-            element={
-              <ProtectedRoute>
-                <LazyRouteErrorBoundary routeName="Metodologías">
-                  <Suspense fallback={<ModuleLoader module="Metodologías" />}>
-                    <SafeComponent context="Methodologies">
-                      <MethodologiesScreen />
-                    </SafeComponent>
-                  </Suspense>
-                </LazyRouteErrorBoundary>
-              </ProtectedRoute>
-            }
-          />
-
-          {/* 📅 Rutinas */}
-          <Route
-            path="/routines"
-            element={
-              <ProtectedRoute>
-                <LazyRouteErrorBoundary routeName="Rutinas">
-                  <Suspense fallback={<ModuleLoader module="Rutinas" />}>
-                    <SafeComponent context="Routines">
-                      <RoutineScreen />
-                    </SafeComponent>
-                  </Suspense>
-                </LazyRouteErrorBoundary>
-              </ProtectedRoute>
-            }
-          />
-
-          {/* 👤 Perfil */}
-          <Route
-            path="/profile"
-            element={
-              <ProtectedRoute>
-                <LazyRouteErrorBoundary routeName="Perfil">
-                  <Suspense fallback={<ModuleLoader module="Perfil" />}>
-                    <SafeComponent context="Profile">
-                      <ProfileSection />
-                    </SafeComponent>
-                  </Suspense>
-                </LazyRouteErrorBoundary>
-              </ProtectedRoute>
-            }
-          />
-
-          {/* 🍎 Nutrición */}
-          <Route
-            path="/nutrition"
-            element={
-              <ProtectedRoute>
-                <LazyRouteErrorBoundary routeName="Nutrición">
-                  <Suspense fallback={<ModuleLoader module="Nutrición" />}>
-                    <SafeComponent context="Nutrition">
-                      <NutritionScreen />
-                    </SafeComponent>
-                  </Suspense>
-                </LazyRouteErrorBoundary>
-              </ProtectedRoute>
-            }
-          />
-
-          {/* 📹 Corrección de Video */}
-          <Route
-            path="/video-correction"
-            element={
-              <ProtectedRoute>
-                <LazyRouteErrorBoundary routeName="Corrección de Video">
-                  <Suspense fallback={<ModuleLoader module="Corrección de Video" />}>
-                    <SafeComponent context="VideoCorrection">
-                      <VideoCorrection />
-                    </SafeComponent>
-                  </Suspense>
-                </LazyRouteErrorBoundary>
-              </ProtectedRoute>
-            }
-          />
-
-          {/* 🔐 Autenticación */}
-          <Route
-            path="/login"
-            element={
-              <LazyRouteErrorBoundary routeName="Login">
-                <Suspense fallback={<RouteLoader message="Cargando login..." />}>
-                  <SafeComponent context="Login">
-                    <LoginPage />
-                  </SafeComponent>
-                </Suspense>
-              </LazyRouteErrorBoundary>
-            }
-          />
-
-          <Route
-            path="/register"
-            element={
-              <LazyRouteErrorBoundary routeName="Registro">
-                <Suspense fallback={<RouteLoader message="Cargando registro..." />}>
-                  <SafeComponent context="Register">
-                    <RegisterPage />
-                  </SafeComponent>
-                </Suspense>
-              </LazyRouteErrorBoundary>
-            }
-          />
+          {/* 🚀 Rutas automáticas generadas desde ROUTE_CONFIG */}
+          {ROUTE_CONFIG.map((routeConfig) => (
+            <ProtectedLazyRoute
+              key={routeConfig.path || 'index'}
+              {...routeConfig}
+            />
+          ))}
         </Route>
       </Routes>
 
       {/* Audio Bubble - Solo para usuarios autenticados */}
-      {isAuthenticated && user && !window.location.pathname.includes('/login') && !window.location.pathname.includes('/register') && (
-        <AudioBubble 
+      {isAuthenticated && user && !shouldHideAudioBubble && (
+        <AudioBubble
           musicConfig={musicConfig}
           currentExercise={currentExercise}
         />
@@ -301,7 +349,7 @@ function AppContent() {
 
 function App() {
   return (
-    <ErrorBoundary 
+    <ErrorBoundary
       context="Entrena con IA"
       title="Error en la aplicación"
       message="La aplicación encontró un problema inesperado. Por favor, recarga la página."
@@ -309,7 +357,9 @@ function App() {
     >
       <AuthProvider>
         <UserProvider>
-          <AppContent />
+          <WorkoutProvider>
+            <AppContent />
+          </WorkoutProvider>
         </UserProvider>
       </AuthProvider>
     </ErrorBoundary>

@@ -1,13 +1,22 @@
 /**
- * Methodologies Data - Arquitectura Modular Profesional v3.0
- * Centralized methodology database with validation utilities
- * Refactored with type safety, consistency, and maintainability focus
+ * 🎨 FRONTEND METHODOLOGY DATA - UI/UX Rich Data
+ *
+ * RESPONSABILIDAD: Datos ricos para interfaz de usuario:
+ * - Descripciones detalladas para UI
+ * - Iconos y elementos visuales
+ * - Textos explicativos y marketing
+ * - Validaciones de frontend
+ * - Datos para componentes React
+ *
+ * ⚠️ IMPORTANTE: Para lógica técnica usar backend/config/methodologies/
+ * 🔗 MAPEO: src/config/methodologyMapping.js mantiene consistencia
  *
  * @author Claude Code - Arquitectura Modular Profesional
- * @version 3.0.0 - Centralized Config & Data Consistency
+ * @version 4.0.0 - Role-Separated Architecture
  */
 
 import { Zap, Trophy, Dumbbell, Activity, Target, User, Home, Shield } from 'lucide-react';
+import methodologyMapping from '../../config/methodologyMapping.js';
 
 // Configuraciones centralizadas
 const METHODOLOGIES_CONFIG = {
@@ -132,6 +141,15 @@ const MethodologyUtils = {
    */
   findMethodologyById(methodologyId) {
     return METHODOLOGIES.find(methodology => methodology.id === methodologyId) || null;
+  },
+
+  /**
+   * Valida consistencia con backend usando mapping
+   * @returns {Object} Reporte de consistencia
+   */
+  validateWithBackend() {
+    const frontendIds = METHODOLOGIES.map(m => m.id);
+    return methodologyMapping.validateConsistency([], METHODOLOGIES);
   },
 
   /**

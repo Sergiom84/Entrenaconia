@@ -18,28 +18,34 @@ function getSpanishTimestamp() {
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/users.js';
 import medicalDocsRoutes from './routes/medicalDocs.js';
-import homeTrainingRoutes from './routes/homeTraining.js';
-import iaHomeTrainingRoutes from './routes/IAHomeTraining.js';
 import equipmentRoutes from './routes/equipment.js';
 import aiVideoCorrection from './routes/aiVideoCorrection.js';
 import aiPhotoCorrection from './routes/aiPhotoCorrection.js';
-import aiMethodologie from './routes/aiMethodologie.js';
-import methodologyManualRoutes from './routes/methodologyManual.js';
-import methodologyManualRoutinesRoutes from './routes/methodologyManualRoutines.js';
-import gymRoutineAIRoutes from './routes/gymRoutineAI.js';
+
+// ===============================================
+// 🎯 RUTAS CONSOLIDADAS (NUEVA ARQUITECTURA)
+// ===============================================
+import routineGenerationRoutes from './routes/routineGeneration.js';
+import trainingSessionRoutes from './routes/trainingSession.js';
+import exerciseCatalogRoutes from './routes/exerciseCatalog.js';
+
+// ===============================================
+// 🔗 OTRAS RUTAS DEL SISTEMA
+// ===============================================
 import bodyCompositionRoutes from './routes/bodyComposition.js';
 import uploadsRoutes from './routes/uploads.js';
-import exercisesRoutes from './routes/exercises.js';
 import techniqueRoutes from './routes/technique.js';
 import nutritionRoutes from './routes/nutrition.js';
 import musicRoutes from './routes/music.js';
-import { pool } from './db.js';
-import routinesRoutes from './routes/routines.js';
-import calisteniaManualRoutes from './routes/calisteniaManual.js';
-import calisteniaExercisesRoutes from './routes/calisteniaExercises.js';
-import calisteniaSpecialistRoutes from './routes/calisteniaSpecialist.js';
 import analyticsRoutes from './routes/analytics.js';
-import methodologyUnified from './routes/methodologyUnified.js';
+
+// ===============================================
+// 🗄️ RUTAS LEGACY (MANTENER TEMPORALMENTE)
+// ===============================================
+import routinesRoutes from './routes/routines.js';
+import homeTrainingRoutes from './routes/homeTraining.js';
+
+import { pool } from './db.js';
 
 // Solo cargar dotenv en desarrollo
 if (process.env.NODE_ENV !== 'production') {
@@ -131,39 +137,100 @@ app.get('/api/auth', (req, res) => {
   });
 });
 
-// Rutas API
+console.log('✅ Sistema consolidado de generación de rutinas activado en /api/routine-generation');
+
+// === ALIASES DE COMPATIBILIDAD PARA EL FRONTEND ===
+// Mantienen funcionando las rutas existentes redirigiendo al sistema consolidado
+
+// Calistenia Specialist - Evaluación y Generación
+app.post('/api/calistenia-specialist/evaluate-profile', (req, res, next) => {
+  req.url = '/api/routine-generation/specialist/calistenia/evaluate';
+  next();
+});
+
+app.post('/api/calistenia-specialist/generate-plan', (req, res, next) => {
+  req.url = '/api/routine-generation/specialist/calistenia/generate';
+  next();
+});
+
+// Metodologías IA - Múltiples endpoints
+app.post('/api/methodologie/generate', (req, res, next) => {
+  req.url = '/api/routine-generation/ai/methodology';
+  next();
+});
+
+app.post('/api/methodologie/generate-plan', (req, res, next) => {
+  req.url = '/api/routine-generation/ai/methodology';
+  next();
+});
+
+app.get('/api/methodologie/list', (req, res, next) => {
+  req.url = '/api/routine-generation/methodologies';
+  next();
+});
+
+// Metodologías Manual
+app.post('/api/methodology-manual/generate-manual', (req, res, next) => {
+  req.url = '/api/routine-generation/manual/methodology';
+  next();
+});
+
+// Calistenia Manual
+app.post('/api/calistenia-manual/generate', (req, res, next) => {
+  req.url = '/api/routine-generation/manual/calistenia';
+  next();
+});
+
+// Gym Routine AI
+app.post('/api/gym-routine/generate', (req, res, next) => {
+  req.url = '/api/routine-generation/ai/gym-routine';
+  next();
+});
+
+// GET endpoints auxiliares
+app.get('/api/gym-routine/methodologies', (req, res, next) => {
+  req.url = '/api/routine-generation/methodologies';
+  next();
+});
+
+app.get('/api/calistenia-manual/exercises/:level', (req, res, next) => {
+  req.url = `/api/routine-generation/calistenia/exercises/${req.params.level}`;
+  next();
+});
+
+// ===============================================
+// 🎯 RUTAS PRINCIPALES CONSOLIDADAS
+// ===============================================
+app.use('/api/routine-generation', routineGenerationRoutes);
+app.use('/api/training-session', trainingSessionRoutes);
+app.use('/api/exercise-catalog', exerciseCatalogRoutes);
+
+// === RUTAS NO AFECTADAS POR LA CONSOLIDACIÓN ===
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/medical-docs', medicalDocsRoutes);
-app.use('/api/home-training', homeTrainingRoutes);
-app.use('/api/ia-home-training', iaHomeTrainingRoutes);
 app.use('/api/equipment', equipmentRoutes);
 app.use('/api/ai', aiVideoCorrection);
 app.use('/api/ai-photo-correction', aiPhotoCorrection);
-app.use('/api/methodologie', aiMethodologie);
-app.use('/api/methodology-manual', methodologyManualRoutes);
-app.use('/api/manual-routines', methodologyManualRoutinesRoutes);
-app.use('/api/gym-routine', gymRoutineAIRoutes);
 app.use('/api/body-composition', bodyCompositionRoutes);
 app.use('/api/uploads', uploadsRoutes);
-app.use('/api/exercises', exercisesRoutes);
-app.use('/api/exercises', calisteniaExercisesRoutes);
+// Legacy routes mantidas temporalmente para compatibilidad
+app.use('/api/routines', routinesRoutes);
+app.use('/api/home-training', homeTrainingRoutes);
 app.use('/api/technique', techniqueRoutes);
 app.use('/api/nutrition', nutritionRoutes);
 app.use('/api/music', musicRoutes);
-app.use('/api/routines', routinesRoutes);
-app.use('/api/calistenia-manual', calisteniaManualRoutes);
-app.use('/api/calistenia-specialist', calisteniaSpecialistRoutes);
 app.use('/api/analytics', analyticsRoutes);
 
-// Sistema Unificado de Metodologías (Feature Flag)
-if (process.env.USE_NEW_METHODOLOGY_SYSTEM === 'true') {
-  console.log('🆕 Using unified methodology system');
-  app.use('/api/methodology', methodologyUnified);
-} else {
-  console.log('🔄 Using legacy methodology system');
-  // Mantener rutas legacy si existen
-}
+// Sistema Unificado de Metodologías - Redirección a rutas consolidadas
+console.log('🆕 Using unified methodology system (consolidated routes)');
+app.use('/api/methodology', (req, res, next) => {
+  // Redireccionar a las nuevas rutas consolidadas
+  if (req.path.includes('generate')) {
+    req.url = req.url.replace('/api/methodology', '/api/routine-generation');
+  }
+  next();
+});
 
 // Endpoint simple de salud
 app.get('/api/health', (req, res) => {

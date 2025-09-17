@@ -8,7 +8,7 @@
  * - Gestión de múltiples modales
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import logger from '../utils/logger';
 
 /**
