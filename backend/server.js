@@ -45,6 +45,10 @@ import analyticsRoutes from './routes/analytics.js';
 import routinesRoutes from './routes/routines.js';
 import homeTrainingRoutes from './routes/homeTraining.js';
 
+// ===============================================
+// 🎯 SERVICIO UNIFICADO DE METODOLOGÍA
+// ===============================================
+
 import { pool } from './db.js';
 
 // Solo cargar dotenv en desarrollo
@@ -197,6 +201,10 @@ app.get('/api/calistenia-manual/exercises/:level', (req, res, next) => {
   req.url = `/api/routine-generation/calistenia/exercises/${req.params.level}`;
   next();
 });
+
+// ===============================================
+// 🎯 SERVICIO UNIFICADO DE METODOLOGÍA (PRIORIDAD)
+// ===============================================
 
 // ===============================================
 // 🎯 RUTAS PRINCIPALES CONSOLIDADAS

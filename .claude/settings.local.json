@@ -134,7 +134,9 @@
       "Bash(npx vite build:*)",
       "Bash(npm run:*)",
       "Bash(PORT=3002 npm run dev)",
-      "Bash(xargs basename:*)"
+      "Bash(xargs basename:*)",
+      "Bash(sed:*)",
+      "Bash(sort:*)"
     ]
   }
 }
