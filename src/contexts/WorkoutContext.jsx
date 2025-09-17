@@ -452,6 +452,31 @@ export function WorkoutProvider({ children }) {
     dispatch({ type: WORKOUT_ACTIONS.CLEAR_PLAN });
   }, []);
 
+  // Función específica para cancelar un plan completamente
+  const cancelPlan = useCallback(async (methodologyPlanId) => {
+    try {
+      // Primero hacer la llamada al backend
+      const { cancelRoutine } = await import('@/components/routines/api');
+      await cancelRoutine({
+        methodology_plan_id: methodologyPlanId || state.plan.planId,
+        routine_plan_id: state.plan.currentPlan?.id || null
+      });
+
+      // Limpiar el estado del contexto
+      dispatch({ type: WORKOUT_ACTIONS.CLEAR_PLAN });
+
+      // Limpiar el localStorage
+      if (user) {
+        localStorage.removeItem(`workout_state_${user.id}`);
+      }
+
+      return { success: true };
+    } catch (error) {
+      dispatch({ type: WORKOUT_ACTIONS.SET_ERROR, payload: error.message });
+      return { success: false, error: error.message };
+    }
+  }, [state.plan.planId, state.plan.currentPlan, user]);
+
   // =============================================================================
   // 🏃 SESSION ACTIONS
   // =============================================================================
@@ -591,6 +616,7 @@ export function WorkoutProvider({ children }) {
     generatePlan,
     activatePlan,
     archivePlan,
+    cancelPlan,
 
     // Session actions
     startSession,

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useTrace } from '@/contexts/TraceContext';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.jsx';
@@ -67,16 +67,22 @@ const RoutineScreen = () => {
     setLocalState(prev => ({ ...prev, ...updates }));
   }, []);
 
-  // Trace: apertura/cierre del modal de confirmación de plan
+  // Ref para evitar loop infinito en tracking
+  const prevConfirmationModalRef = useRef(localState.showConfirmationModal);
+
+  // Trace: apertura/cierre del modal de confirmación de plan - CORREGIDO
   useEffect(() => {
     try {
-      if (localState.showConfirmationModal) {
-        track('MODAL_OPEN', { name: 'TrainingPlanConfirmationModal' }, { component: 'RoutineScreen' });
-      } else {
-        track('MODAL_CLOSE', { name: 'TrainingPlanConfirmationModal' }, { component: 'RoutineScreen' });
+      if (prevConfirmationModalRef.current !== localState.showConfirmationModal) {
+        track(
+          localState.showConfirmationModal ? 'MODAL_OPEN' : 'MODAL_CLOSE',
+          { name: 'TrainingPlanConfirmationModal' },
+          { component: 'RoutineScreen' }
+        );
+        prevConfirmationModalRef.current = localState.showConfirmationModal;
       }
     } catch {}
-  }, [localState.showConfirmationModal]);
+  }, [localState.showConfirmationModal, track]);
 
   // ===============================================
   // 📅 UTILIDADES DE FECHA
@@ -102,9 +108,16 @@ const RoutineScreen = () => {
   // 🔄 INICIALIZACIÓN Y RECUPERACIÓN DE ESTADO
   // ===============================================
 
+  // Ref para prevenir múltiples inicializaciones
+  const initializationRef = useRef(false);
+
   useEffect(() => {
+    // Prevenir múltiples ejecuciones
+    if (initializationRef.current) return;
+
     const initializeRoutineScreen = async () => {
       console.log('🚀 Inicializando RoutineScreen con WorkoutContext...');
+      initializationRef.current = true;
 
       try {
         // Si viene un plan desde location.state, activarlo en el contexto
@@ -117,24 +130,34 @@ const RoutineScreen = () => {
         // Si viene un planId específico, cargarlo
         if (incomingState?.methodology_plan_id && !hasActivePlan) {
           console.log('🔍 Cargando plan específico:', incomingState.methodology_plan_id);
-          await loadActivePlan(incomingState.methodology_plan_id);
+          const result = await loadActivePlan(incomingState.methodology_plan_id);
+
+          // Si el plan está cancelado o no existe, redirigir
+          if (!result.success || result.plan?.status === 'cancelled') {
+            console.log('⚠️ Plan cancelado o no disponible, redirigiendo...');
+            goToMethodologies();
+            return;
+          }
           return;
         }
 
-        // Si no hay plan activo, intentar recuperar uno
+        // Si no hay plan activo, redirigir directamente (no intentar recuperar)
         if (!hasActivePlan) {
-          console.log('🔄 No hay plan activo, intentando recuperar...');
-          await loadActivePlan();
+          console.log('⚠️ No hay plan activo disponible, redirigiendo a metodologías...');
+          goToMethodologies();
+          return;
         }
 
       } catch (error) {
         console.error('❌ Error inicializando RoutineScreen:', error);
         ui.setError(error.message || 'Error cargando el plan de entrenamiento');
+        // En caso de error, también redirigir a metodologías
+        setTimeout(() => goToMethodologies(), 2000);
       }
     };
 
     initializeRoutineScreen();
-  }, [incomingState, hasActivePlan, loadActivePlan, ui.setError]);
+  }, [incomingState]);
 
   // ===============================================
   // 🎭 GESTIÓN DE MODALES

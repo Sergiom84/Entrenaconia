@@ -9,7 +9,7 @@
  * - Código más consistente con MethodologiesScreen y RoutineScreen
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button.jsx';
 import { Alert, AlertDescription } from '@/components/ui/alert.jsx';
@@ -64,7 +64,11 @@ export default function TodayTrainingTab({
     // Utilidades
     isTraining,
     hasActivePlan,
-    hasActiveSession
+    hasActiveSession,
+
+    // Función de reset
+    resetWorkout,
+    cancelPlan
   } = useWorkout();
 
   const { track } = useTrace();
@@ -96,16 +100,35 @@ export default function TodayTrainingTab({
   // 🆕 NUEVA LÓGICA: Usar todaySession del WorkoutContext si viene de workout_schedule
   const [todaySessionFromAPI, setTodaySessionFromAPI] = useState(null);
 
-  // Eventos de apertura/cierre de modales clave
+  // Refs para tracking de modales - evitar loops infinitos
+  const prevWarmupModalRef = useRef(localState.showWarmupModal);
+  const prevSessionModalRef = useRef(localState.showSessionModal);
+  const prevRejectionModalRef = useRef(localState.showRejectionModal);
+
+  // Eventos de apertura/cierre de modales clave - CORREGIDO con useRef
   useEffect(() => {
-    track(localState.showWarmupModal ? 'MODAL_OPEN' : 'MODAL_CLOSE', { name: 'WarmupModal' }, { component: 'TodayTrainingTab' });
-  }, [localState.showWarmupModal]);
+    // Solo hacer tracking cuando realmente cambia el estado
+    if (prevWarmupModalRef.current !== localState.showWarmupModal) {
+      track(localState.showWarmupModal ? 'MODAL_OPEN' : 'MODAL_CLOSE', { name: 'WarmupModal' }, { component: 'TodayTrainingTab' });
+      prevWarmupModalRef.current = localState.showWarmupModal;
+    }
+  }, [localState.showWarmupModal, track]);
+
   useEffect(() => {
-    track(localState.showSessionModal ? 'MODAL_OPEN' : 'MODAL_CLOSE', { name: 'RoutineSessionModal' }, { component: 'TodayTrainingTab' });
-  }, [localState.showSessionModal]);
+    // Solo hacer tracking cuando realmente cambia el estado
+    if (prevSessionModalRef.current !== localState.showSessionModal) {
+      track(localState.showSessionModal ? 'MODAL_OPEN' : 'MODAL_CLOSE', { name: 'RoutineSessionModal' }, { component: 'TodayTrainingTab' });
+      prevSessionModalRef.current = localState.showSessionModal;
+    }
+  }, [localState.showSessionModal, track]);
+
   useEffect(() => {
-    track(localState.showRejectionModal ? 'MODAL_OPEN' : 'MODAL_CLOSE', { name: 'HomeTrainingRejectionModal' }, { component: 'TodayTrainingTab' });
-  }, [localState.showRejectionModal]);
+    // Solo hacer tracking cuando realmente cambia el estado
+    if (prevRejectionModalRef.current !== localState.showRejectionModal) {
+      track(localState.showRejectionModal ? 'MODAL_OPEN' : 'MODAL_CLOSE', { name: 'HomeTrainingRejectionModal' }, { component: 'TodayTrainingTab' });
+      prevRejectionModalRef.current = localState.showRejectionModal;
+    }
+  }, [localState.showRejectionModal, track]);
 
   // 🆕 Obtener sesión de hoy desde la nueva API
   useEffect(() => {
@@ -192,7 +215,7 @@ export default function TodayTrainingTab({
       return;
     }
 
-    if (!todaySession.ejercicios || todaySession.ejercicios.length === 0) {
+    if (!todaySession?.ejercicios || todaySession.ejercicios.length === 0) {
       logger.error('La sesión de hoy no tiene ejercicios definidos', { todaySession }, 'Routines');
       setError('La sesión de hoy no tiene ejercicios definidos');
       return;
@@ -210,16 +233,16 @@ export default function TodayTrainingTab({
       // Usar la función startSession del WorkoutContext
       const result = await startSession({
         planId: methodologyPlanId,
-        dayName: todaySession.dia,
-        weekNumber: todaySession.weekNumber || 1,
+        dayName: todaySession?.dia || 'Unknown',
+        weekNumber: todaySession?.weekNumber || 1,
         dayInfo: todaySession,
         exerciseIndex
       });
 
-      if (result.success) { track('SESSION_START', { sessionId: result.sessionId, totalExercises: todaySession.ejercicios.length, startingAt: exerciseIndex }, { component: 'TodayTrainingTab' });
+      if (result.success) { track('SESSION_START', { sessionId: result.sessionId, totalExercises: todaySession?.ejercicios?.length || 0, startingAt: exerciseIndex }, { component: 'TodayTrainingTab' });
         logger.info('Sesión iniciada exitosamente desde WorkoutContext', {
           sessionId: result.sessionId,
-          totalExercises: todaySession.ejercicios.length,
+          totalExercises: todaySession?.ejercicios?.length || 0,
           startingAt: exerciseIndex
         }, 'Routines');
 
@@ -227,7 +250,7 @@ export default function TodayTrainingTab({
         const enrichedSession = {
           ...todaySession,
           sessionId: result.sessionId,
-          currentExerciseIndex: Math.max(0, Math.min(exerciseIndex, todaySession.ejercicios.length - 1))
+          currentExerciseIndex: Math.max(0, Math.min(exerciseIndex, (todaySession?.ejercicios?.length || 1) - 1))
         };
 
         // Guardar datos de sesión para después del calentamiento
@@ -251,7 +274,7 @@ export default function TodayTrainingTab({
     } catch (error) {
       logger.error('Error iniciando sesión', {
         error: error.message,
-        todaySession: todaySession?.dia,
+        todaySession: todaySession?.dia || 'N/A',
         methodologyPlanId,
         exerciseCount: todaySession?.ejercicios?.length
       }, 'Routines');
@@ -485,22 +508,41 @@ export default function TodayTrainingTab({
         throw new Error('No se pudo determinar methodology_plan_id para cancelar');
       }
 
-      // TODO: Implementar cancelRoutine en WorkoutContext
-      const { cancelRoutine } = await import('../api');
-      await cancelRoutine({
-        methodology_plan_id: methodologyPlanId,
-        routine_plan_id: routinePlanId || null
-      });
-
       updateLocalState({ showRejectionModal: false });
 
-      logger.info('Rutina cancelada exitosamente', {
-        methodology_plan_id: methodologyPlanId,
-        routine_plan_id: routinePlanId || null
-      }, 'Routines');
+      // Usar la función cancelPlan del WorkoutContext
+      // Esta función ya maneja la llamada al backend y limpia el estado
+      const result = await cancelPlan(methodologyPlanId);
 
-      // Navegar a metodologías para generar una nueva rutina
-      goToMethodologies();
+      if (result.success) {
+        logger.info('Rutina cancelada exitosamente', {
+          methodology_plan_id: methodologyPlanId,
+          routine_plan_id: routinePlanId || null
+        }, 'Routines');
+
+        // Limpiar claves adicionales del localStorage que puedan existir
+        const userId = localStorage.getItem('userId') || localStorage.getItem('user_id');
+        if (userId) {
+          // Limpiar claves específicas de rutinas
+          localStorage.removeItem(`methodology_plan_${userId}`);
+          localStorage.removeItem(`routine_session_${userId}`);
+          localStorage.removeItem(`plan_start_date_${userId}`);
+          localStorage.removeItem(`today_session_status_${userId}`);
+          localStorage.removeItem(`active_plan_${userId}`);
+          localStorage.removeItem(`current_routine_${userId}`);
+        }
+
+        // Limpiar claves genéricas (sin userId)
+        localStorage.removeItem('methodologyPlanId');
+        localStorage.removeItem('routineSessionId');
+        localStorage.removeItem('planStartDate');
+        localStorage.removeItem('todaySessionStatus');
+
+        // Navegar a metodologías para generar una nueva rutina
+        goToMethodologies();
+      } else {
+        throw new Error(result.error || 'Error cancelando rutina');
+      }
 
     } catch (error) {
       logger.error('Error cancelando rutina', error, 'Routines');
@@ -657,7 +699,8 @@ export default function TodayTrainingTab({
   // Estados para mostrar el entrenamiento de hoy
   const isCurrentlyTraining = session.status === 'in_progress' || isTraining;
   const hasCompletedSession = session.status === 'completed';
-  const isRestDay = !todaySession;
+  const isRestDay = hasActivePlan && !todaySession; // Solo es día de descanso si HAY plan activo pero no sesión hoy
+  const noActivePlan = !hasActivePlan;
 
   return (
     <SafeComponent context="TodayTrainingTab">
@@ -696,15 +739,15 @@ export default function TodayTrainingTab({
         )}
 
         {/* Si es día de entrenamiento y no hay sesión activa */}
-        {!isRestDay && !isCurrentlyTraining && !hasCompletedSession && (
+        {!isRestDay && !isCurrentlyTraining && !hasCompletedSession && todaySession && hasActivePlan && (
           <>
             <div className="text-center py-6">
               <Dumbbell className="w-12 h-12 text-yellow-400 mx-auto mb-4" />
               <h3 className="text-lg font-medium text-white mb-2">
-                Entrenamiento de hoy: {todaySession.dia}
+                Entrenamiento de hoy: {todaySession?.dia || 'Sin información'}
               </h3>
               <p className="text-gray-400 mb-4">
-                {todaySession.ejercicios?.length || 0} ejercicios programados
+                {todaySession?.ejercicios?.length || 0} ejercicios programados
               </p>
               <Button
                 onClick={() => handleStartSession(0)}
@@ -716,7 +759,7 @@ export default function TodayTrainingTab({
             </div>
 
             <ExerciseList
-              exercises={todaySession.ejercicios || []}
+              exercises={todaySession?.ejercicios || []}
               sessionStatus={null}
               onStartSession={handleStartSession}
               showProgress={false}
@@ -724,8 +767,21 @@ export default function TodayTrainingTab({
           </>
         )}
 
+        {/* Si no hay plan activo */}
+        {noActivePlan && (
+          <div className="text-center py-12">
+            <Calendar className="w-12 h-12 text-gray-600 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-white mb-2">
+              No hay rutina programada
+            </h3>
+            <p className="text-gray-400 mb-6">
+              No tienes ninguna rutina activa. Ve a metodologías para crear una nueva rutina.
+            </p>
+          </div>
+        )}
+
         {/* Si es día de descanso o ya completó el entrenamiento */}
-        {(isRestDay || hasCompletedSession) && (
+        {!noActivePlan && (isRestDay || hasCompletedSession) && (
           <div className="text-center py-12">
             <Calendar className="w-12 h-12 text-gray-600 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-white mb-2">
@@ -779,17 +835,19 @@ export default function TodayTrainingTab({
           />
         )}
 
-        {/* Botones de acción */}
-        <div className="flex gap-4 justify-center pt-4">
-          <Button
-            onClick={() => updateLocalState({ showRejectionModal: true })}
-            variant="outline"
-            className="border-red-500/30 text-red-400 hover:bg-red-500/10"
-            disabled={ui.isLoading}
-          >
-            Cancelar rutina
-          </Button>
-        </div>
+        {/* Botones de acción - Solo mostrar si hay plan activo */}
+        {hasActivePlan && (
+          <div className="flex gap-4 justify-center pt-4">
+            <Button
+              onClick={() => updateLocalState({ showRejectionModal: true })}
+              variant="outline"
+              className="border-red-500/30 text-red-400 hover:bg-red-500/10"
+              disabled={ui.isLoading}
+            >
+              Cancelar rutina
+            </Button>
+          </div>
+        )}
 
         {/* Modales adicionales */}
         {localState.showRejectionModal && (

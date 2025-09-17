@@ -67,11 +67,19 @@ export default function ExerciseFeedbackModal({
   isSubmitting = false
 }) {
   const { track } = useTrace();
-  React.useEffect(() => {
-    track(isOpen ? 'MODAL_OPEN' : 'MODAL_CLOSE', { name: 'ExerciseFeedbackModal' }, { component: 'ExerciseFeedbackModal' });
-  }, [isOpen]);
   const [selectedFeedback, setSelectedFeedback] = useState([]);
   const [additionalComments, setAdditionalComments] = useState('');
+
+  // Ref para evitar loop infinito en tracking
+  const prevIsOpenRef = React.useRef(isOpen);
+
+  // Tracking corregido con useRef
+  React.useEffect(() => {
+    if (prevIsOpenRef.current !== isOpen) {
+      track(isOpen ? 'MODAL_OPEN' : 'MODAL_CLOSE', { name: 'ExerciseFeedbackModal' }, { component: 'ExerciseFeedbackModal' });
+      prevIsOpenRef.current = isOpen;
+    }
+  }, [isOpen, track]);
 
   const handleFeedbackToggle = (feedbackId) => {
     setSelectedFeedback(prev => {

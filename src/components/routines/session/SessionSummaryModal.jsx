@@ -19,9 +19,17 @@ export const SessionSummaryModal = ({
   navigateToRoutines
 }) => {
   const { track } = useTrace();
+
+  // Ref para evitar loop infinito en tracking
+  const prevShowRef = React.useRef(show);
+
+  // Tracking corregido con useRef
   React.useEffect(() => {
-    track(show ? 'MODAL_OPEN' : 'MODAL_CLOSE', { name: 'SessionSummaryModal' }, { component: 'SessionSummaryModal' });
-  }, [show]);
+    if (prevShowRef.current !== show) {
+      track(show ? 'MODAL_OPEN' : 'MODAL_CLOSE', { name: 'SessionSummaryModal' }, { component: 'SessionSummaryModal' });
+      prevShowRef.current = show;
+    }
+  }, [show, track]);
   if (!show) return null;
 
   const { exerciseStates, total } = progressState;

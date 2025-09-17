@@ -1,6 +1,6 @@
 import { ArrowLeft, Home, Dumbbell, Target, BarChart3 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useState, useEffect, memo, useCallback, useMemo } from 'react';
+import { useState, useEffect, memo, useCallback, useMemo, useRef } from 'react';
 import HomeTrainingExerciseModal from './HomeTrainingExerciseModal';
 import HomeTrainingProgress from './HomeTrainingProgress';
 import HomeTrainingPlanModal from './HomeTrainingPlanModal';
@@ -45,26 +45,37 @@ const HomeTrainingSection = () => {
   const [showProgress, setShowProgress] = useState(false);
   // Flags para evitar PUT duplicados
   const [sending, setSending] = useState(false);
-  // Trace apertura/cierre de modales clave
+
+  // Refs para evitar loops infinitos en tracking
+  const prevShowExerciseModalRef = useRef(showExerciseModal);
+  const prevShowPersonalizedMessageRef = useRef(showPersonalizedMessage);
+
+  // Trace apertura/cierre de modales clave - CORREGIDO con useRef
   useEffect(() => {
     try {
-      if (showExerciseModal) {
-        track('MODAL_OPEN', { name: 'HomeTrainingExerciseModal', index: currentExerciseIndex }, { component: 'HomeTrainingSection' });
-      } else {
-        track('MODAL_CLOSE', { name: 'HomeTrainingExerciseModal' }, { component: 'HomeTrainingSection' });
+      if (prevShowExerciseModalRef.current !== showExerciseModal) {
+        if (showExerciseModal) {
+          track('MODAL_OPEN', { name: 'HomeTrainingExerciseModal', index: currentExerciseIndex }, { component: 'HomeTrainingSection' });
+        } else {
+          track('MODAL_CLOSE', { name: 'HomeTrainingExerciseModal' }, { component: 'HomeTrainingSection' });
+        }
+        prevShowExerciseModalRef.current = showExerciseModal;
       }
     } catch {}
-  }, [showExerciseModal, currentExerciseIndex]);
+  }, [showExerciseModal, currentExerciseIndex, track]);
 
   useEffect(() => {
     try {
-      if (showPersonalizedMessage) {
-        track('MODAL_OPEN', { name: 'HomeTrainingPersonalizedMessage' }, { component: 'HomeTrainingSection' });
-      } else {
-        track('MODAL_CLOSE', { name: 'HomeTrainingPersonalizedMessage' }, { component: 'HomeTrainingSection' });
+      if (prevShowPersonalizedMessageRef.current !== showPersonalizedMessage) {
+        if (showPersonalizedMessage) {
+          track('MODAL_OPEN', { name: 'HomeTrainingPersonalizedMessage' }, { component: 'HomeTrainingSection' });
+        } else {
+          track('MODAL_CLOSE', { name: 'HomeTrainingPersonalizedMessage' }, { component: 'HomeTrainingSection' });
+        }
+        prevShowPersonalizedMessageRef.current = showPersonalizedMessage;
       }
     } catch {}
-  }, [showPersonalizedMessage]);
+  }, [showPersonalizedMessage, track]);
 
   const [sendingProgress, setSendingProgress] = useState(false);
   // Modal de rechazo de ejercicios

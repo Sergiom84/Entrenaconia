@@ -1178,6 +1178,7 @@ router.get('/active-plan', authenticateToken, async (req, res) => {
        WHERE ws.user_id = $1
          AND ws.scheduled_date = CURRENT_DATE
          AND ws.status = 'scheduled'
+         AND mp.status = 'confirmed'
        LIMIT 1`,
       [userId]
     );
@@ -1795,10 +1796,10 @@ router.get('/plan-exercises', authenticateToken, async (req, res) => {
 
     console.log('✅ [STEP 1] Parámetros validados:', { methodology_plan_id, userId });
 
-    // PASO 2: Consulta simple para verificar existencia del plan
+    // PASO 2: Consulta simple para verificar existencia del plan y su estado
     console.log('🔍 [STEP 2] Verificando existencia del plan...');
     const planQuery = await pool.query(
-      'SELECT plan_data FROM app.methodology_plans WHERE id = $1 AND user_id = $2',
+      'SELECT plan_data, status FROM app.methodology_plans WHERE id = $1 AND user_id = $2',
       [methodology_plan_id, userId]
     );
 
@@ -1809,7 +1810,17 @@ router.get('/plan-exercises', authenticateToken, async (req, res) => {
         error: 'Plan no encontrado'
       });
     }
-    console.log('✅ [STEP 2] Plan encontrado');
+
+    // Verificar que el plan esté activo (confirmed)
+    const planStatus = planQuery.rows[0].status;
+    if (planStatus !== 'confirmed') {
+      console.log(`❌ [STEP 2] Plan no activo - Estado: ${planStatus}`);
+      return res.status(400).json({
+        success: false,
+        error: `Plan no disponible - Estado: ${planStatus}`
+      });
+    }
+    console.log('✅ [STEP 2] Plan encontrado y activo');
 
     // PASO 3: Consulta simplificada SIN conversiones complejas
     console.log('🔍 [STEP 3] Ejecutando consulta simplificada...');

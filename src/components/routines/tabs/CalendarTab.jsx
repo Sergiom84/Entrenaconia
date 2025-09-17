@@ -78,13 +78,20 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
     apiCacheRef.current = apiCache;
   }, [apiCache]);
 
+  // Ref para evitar loop infinito en tracking del modal
+  const prevShowDayModalRef = React.useRef(showDayModal);
+
+  // Tracking corregido con useRef
   React.useEffect(() => {
-    if (showDayModal) {
-      track('MODAL_OPEN', { name: 'CalendarDayModal' }, { component: 'CalendarTab' });
-    } else if (selectedDay) {
-      track('MODAL_CLOSE', { name: 'CalendarDayModal' }, { component: 'CalendarTab' });
+    if (prevShowDayModalRef.current !== showDayModal) {
+      if (showDayModal) {
+        track('MODAL_OPEN', { name: 'CalendarDayModal' }, { component: 'CalendarTab' });
+      } else if (selectedDay) {
+        track('MODAL_CLOSE', { name: 'CalendarDayModal' }, { component: 'CalendarTab' });
+      }
+      prevShowDayModalRef.current = showDayModal;
     }
-  }, [showDayModal]);
+  }, [showDayModal, selectedDay, track]);
 
   // Días de la semana (empezando por lunes) - used for display reference
   // const weekDays = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];

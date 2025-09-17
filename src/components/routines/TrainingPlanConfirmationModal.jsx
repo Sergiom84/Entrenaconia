@@ -43,17 +43,26 @@ export default function TrainingPlanConfirmationModal({
 }) {
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const { track } = useTrace();
+
+  // Referencias para evitar loops infinitos en tracking
   const prevOpenRef = React.useRef(isOpen);
+  const prevFeedbackModalRef = React.useRef(showFeedbackModal);
+
+  // Tracking del modal principal - CORREGIDO
   React.useEffect(() => {
     if (prevOpenRef.current !== isOpen) {
       track(isOpen ? 'MODAL_OPEN' : 'MODAL_CLOSE', { name: 'TrainingPlanConfirmationModal' }, { component: 'TrainingPlanConfirmationModal' });
       prevOpenRef.current = isOpen;
     }
-  }, [isOpen]);
+  }, [isOpen, track]);
 
+  // Tracking del modal de feedback - CORREGIDO
   React.useEffect(() => {
-    track(showFeedbackModal ? 'MODAL_OPEN' : 'MODAL_CLOSE', { name: 'ExerciseFeedbackModal' }, { component: 'TrainingPlanConfirmationModal' });
-  }, [showFeedbackModal]);
+    if (prevFeedbackModalRef.current !== showFeedbackModal) {
+      track(showFeedbackModal ? 'MODAL_OPEN' : 'MODAL_CLOSE', { name: 'ExerciseFeedbackModal' }, { component: 'TrainingPlanConfirmationModal' });
+      prevFeedbackModalRef.current = showFeedbackModal;
+    }
+  }, [showFeedbackModal, track]);
 
   const [isGeneratingAnother, setIsGeneratingAnother] = useState(false);
 
