@@ -561,7 +561,7 @@ export default function TodayTrainingTab({
   // ===============================================
 
   // Estados para mostrar el entrenamiento de hoy
-  const hasActiveSession = session.status === 'in_progress' || isTraining;
+  const isCurrentlyTraining = session.status === 'in_progress' || isTraining;
   const hasCompletedSession = session.status === 'completed';
   const isRestDay = !todaySession;
 
@@ -570,7 +570,7 @@ export default function TodayTrainingTab({
       <div className="space-y-6">
 
         {/* Si hay una sesión en progreso - mostrar botón continuar */}
-        {hasActiveSession && !isRestDay && (
+        {isCurrentlyTraining && !isRestDay && (
           <>
             <div className="text-center py-6">
               <Dumbbell className="w-12 h-12 text-yellow-400 mx-auto mb-4" />
@@ -602,7 +602,7 @@ export default function TodayTrainingTab({
         )}
 
         {/* Si es día de entrenamiento y no hay sesión activa */}
-        {!isRestDay && !hasActiveSession && !hasCompletedSession && (
+        {!isRestDay && !isCurrentlyTraining && !hasCompletedSession && (
           <>
             <div className="text-center py-6">
               <Dumbbell className="w-12 h-12 text-yellow-400 mx-auto mb-4" />
