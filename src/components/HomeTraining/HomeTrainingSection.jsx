@@ -61,7 +61,9 @@ const HomeTrainingSection = () => {
         }
         prevShowExerciseModalRef.current = showExerciseModal;
       }
-    } catch {}
+    } catch (error) {
+      // Ignore tracking errors
+    }
   }, [showExerciseModal, currentExerciseIndex, track]);
 
   useEffect(() => {
@@ -74,7 +76,9 @@ const HomeTrainingSection = () => {
         }
         prevShowPersonalizedMessageRef.current = showPersonalizedMessage;
       }
-    } catch {}
+    } catch (error) {
+      // Ignore tracking errors
+    }
   }, [showPersonalizedMessage, track]);
 
   const [sendingProgress, setSendingProgress] = useState(false);
@@ -1064,7 +1068,9 @@ const HomeTrainingSection = () => {
                 setSelectedEquipment(equipment.id);
                 try {
                   track('CARD_CLICK', { id: equipment.id, title: equipment.title, group: 'equipment' }, { component: 'HomeTrainingSection' });
-                } catch {}
+                } catch {
+                  // Ignore tracking errors
+                }
               }}
               className={`bg-gray-800/50 backdrop-blur-sm border-2 rounded-2xl p-6 cursor-pointer transition-all duration-200 hover:bg-gray-800/70 ${
                 selectedEquipment === equipment.id
@@ -1109,7 +1115,9 @@ const HomeTrainingSection = () => {
                 setSelectedEquipment('personalizado');
                 try {
                   track('CARD_CLICK', { id: 'personalizado', title: 'Usar mi equipamiento', group: 'equipment' }, { component: 'HomeTrainingSection' });
-                } catch {}
+                } catch {
+                  // Ignore tracking errors
+                }
               }}
               className={`bg-gray-800/50 backdrop-blur-sm border-2 rounded-2xl p-6 cursor-pointer transition-all duration-200 hover:bg-gray-800/70 ${
                 selectedEquipment === 'personalizado'
@@ -1142,7 +1150,9 @@ const HomeTrainingSection = () => {
                 setSelectedTrainingType(type.id);
                 try {
                   track('TAB_CLICK', { id: type.id, title: type.title, group: 'training-type' }, { component: 'HomeTrainingSection' });
-                } catch {}
+                } catch {
+                  // Ignore tracking errors
+                }
               }}
               className={`py-3 px-6 rounded-lg font-semibold transition-all duration-200 ${
                 selectedTrainingType === type.id

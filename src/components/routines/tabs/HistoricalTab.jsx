@@ -26,7 +26,14 @@ export default function HistoricalTab({ methodologyPlanId }) {
     track('VIEW', { name: 'HistoricalTab' }, { component: 'HistoricalTab' });
   }, []);
 
-  const [historicalData, setHistoricalData] = useState(null);
+  const [historicalData, setHistoricalData] = useState({
+    totalRoutinesCompleted: 0,
+    totalSessionsEver: 0,
+    totalExercisesEver: 0,
+    totalSeriesEver: 0,
+    routineHistory: [],
+    monthlyStats: []
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -129,16 +136,16 @@ export default function HistoricalTab({ methodologyPlanId }) {
     );
   }
 
-  if (error && !historicalData) {
-    return <ErrorDisplay error={error} />;
-  }
-
   // Verificar si hay datos históricos
   const hasData = historicalData && (
     historicalData.totalRoutinesCompleted > 0 ||
     historicalData.totalSessionsEver > 0 ||
     historicalData.routineHistory.length > 0
   );
+
+  if (error && !hasData) {
+    return <ErrorDisplay error={error} />;
+  }
 
   return (
     <div className="space-y-6">

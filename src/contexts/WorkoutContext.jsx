@@ -13,7 +13,7 @@
  * @version 1.0.0 - Refactorización Arquitectural Completa
  */
 
-import React, { createContext, useContext, useReducer, useEffect, useCallback } from 'react';
+import { createContext, useContext, useReducer, useEffect, useCallback } from 'react';
 import { useAuth } from './AuthContext';
 
 // =============================================================================
@@ -43,7 +43,12 @@ const WORKOUT_ACTIONS = {
   RESET_WORKOUT: 'RESET_WORKOUT',
 
   // Navigation
-  SET_VIEW: 'SET_VIEW'
+  SET_VIEW: 'SET_VIEW',
+
+  // Modal management
+  SHOW_MODAL: 'SHOW_MODAL',
+  HIDE_MODAL: 'HIDE_MODAL',
+  HIDE_ALL_MODALS: 'HIDE_ALL_MODALS'
 };
 
 const WORKOUT_VIEWS = {
@@ -119,10 +124,18 @@ const initialState = {
     currentView: WORKOUT_VIEWS.METHODOLOGIES, // Vista actual
     isLoading: false,               // Estado de carga global
     error: null,                    // Error actual
+
+    // Modal states
     showWarmup: false,              // Mostrar modal de calentamiento
     showSession: false,             // Mostrar modal de sesión
     showFeedback: false,            // Mostrar modal de feedback
-    showConfirmation: false         // Mostrar modal de confirmación
+    showConfirmation: false,        // Mostrar modal de confirmación
+    showPlanConfirmation: false,    // Mostrar modal de confirmación de plan
+    showRoutineSession: false,      // Mostrar modal de sesión de rutina
+    showVersionSelection: false,    // Mostrar modal de selección de versión
+    showMethodologyDetails: false,  // Mostrar modal de detalles de metodología
+    showActiveTrainingWarning: false, // Mostrar modal de advertencia de entrenamiento activo
+    showCalisteniaManual: false     // Mostrar modal de calistenia manual
   },
 
   // ===============================
@@ -279,6 +292,65 @@ function workoutReducer(state, action) {
 
     case WORKOUT_ACTIONS.RESET_WORKOUT:
       return { ...initialState };
+
+    // ===============================
+    // 🎭 MODAL ACTIONS
+    // ===============================
+    case WORKOUT_ACTIONS.SHOW_MODAL: {
+      const modalKey = `show${action.payload.charAt(0).toUpperCase() + action.payload.slice(1)}`;
+      // Convert camelCase to proper modal names
+      const mappedKey = modalKey.replace('calisteniaManual', 'CalisteniaManual')
+                              .replace('planConfirmation', 'PlanConfirmation')
+                              .replace('routineSession', 'RoutineSession')
+                              .replace('versionSelection', 'VersionSelection')
+                              .replace('methodologyDetails', 'MethodologyDetails')
+                              .replace('activeTrainingWarning', 'ActiveTrainingWarning');
+
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          [mappedKey]: true
+        }
+      };
+    }
+
+    case WORKOUT_ACTIONS.HIDE_MODAL: {
+      const modalKey = `show${action.payload.charAt(0).toUpperCase() + action.payload.slice(1)}`;
+      // Convert camelCase to proper modal names
+      const mappedKey = modalKey.replace('calisteniaManual', 'CalisteniaManual')
+                              .replace('planConfirmation', 'PlanConfirmation')
+                              .replace('routineSession', 'RoutineSession')
+                              .replace('versionSelection', 'VersionSelection')
+                              .replace('methodologyDetails', 'MethodologyDetails')
+                              .replace('activeTrainingWarning', 'ActiveTrainingWarning');
+
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          [mappedKey]: false
+        }
+      };
+    }
+
+    case WORKOUT_ACTIONS.HIDE_ALL_MODALS:
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          showWarmup: false,
+          showSession: false,
+          showFeedback: false,
+          showConfirmation: false,
+          showPlanConfirmation: false,
+          showRoutineSession: false,
+          showVersionSelection: false,
+          showMethodologyDetails: false,
+          showActiveTrainingWarning: false,
+          showCalisteniaManual: false
+        }
+      };
 
     default:
       return state;
@@ -604,6 +676,22 @@ export function WorkoutProvider({ children }) {
   }, [user]);
 
   // =============================================================================
+  // 🧭 MODAL ACTIONS
+  // =============================================================================
+
+  const showModal = useCallback((modalName) => {
+    dispatch({ type: WORKOUT_ACTIONS.SHOW_MODAL, payload: modalName });
+  }, []);
+
+  const hideModal = useCallback((modalName) => {
+    dispatch({ type: WORKOUT_ACTIONS.HIDE_MODAL, payload: modalName });
+  }, []);
+
+  const hideAllModals = useCallback(() => {
+    dispatch({ type: WORKOUT_ACTIONS.HIDE_ALL_MODALS });
+  }, []);
+
+  // =============================================================================
   // 🎯 CONTEXT VALUE
   // =============================================================================
 
@@ -632,6 +720,11 @@ export function WorkoutProvider({ children }) {
     goToProgress,
     resetWorkout,
 
+    // Modal actions
+    showModal,
+    hideModal,
+    hideAllModals,
+
     // Utilities
     isTraining: state.session.status === SESSION_STATUS.IN_PROGRESS,
     isPaused: state.session.status === SESSION_STATUS.PAUSED,
@@ -639,7 +732,16 @@ export function WorkoutProvider({ children }) {
     hasActiveSession: Boolean(state.session.sessionId &&
       [SESSION_STATUS.IN_PROGRESS, SESSION_STATUS.PAUSED].includes(state.session.status)),
 
-    // UI helpers
+    // UI helpers with enhanced object
+    ui: {
+      ...state.ui,
+      showModal,
+      hideModal,
+      hideAllModals,
+      setError: (error) => dispatch({ type: WORKOUT_ACTIONS.SET_ERROR, payload: error }),
+      clearError: () => dispatch({ type: WORKOUT_ACTIONS.CLEAR_ERROR }),
+      setLoading: (loading) => dispatch({ type: WORKOUT_ACTIONS.SET_LOADING, payload: loading })
+    },
     setError: (error) => dispatch({ type: WORKOUT_ACTIONS.SET_ERROR, payload: error }),
     showSuccess: (message) => console.log('✅', message), // Temporary success handler
     setLoading: (loading) => dispatch({ type: WORKOUT_ACTIONS.SET_LOADING, payload: loading }),

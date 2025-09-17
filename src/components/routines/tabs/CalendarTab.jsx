@@ -79,10 +79,10 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
   }, [apiCache]);
 
   // Ref para evitar loop infinito en tracking del modal
-  const prevShowDayModalRef = React.useRef(showDayModal);
+  const prevShowDayModalRef = useRef(showDayModal);
 
   // Tracking corregido con useRef
-  React.useEffect(() => {
+  useEffect(() => {
     if (prevShowDayModalRef.current !== showDayModal) {
       if (showDayModal) {
         track('MODAL_OPEN', { name: 'CalendarDayModal' }, { component: 'CalendarTab' });

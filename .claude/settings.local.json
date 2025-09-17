@@ -136,7 +136,10 @@
       "Bash(PORT=3002 npm run dev)",
       "Bash(xargs basename:*)",
       "Bash(sed:*)",
-      "Bash(sort:*)"
+      "Bash(sort:*)",
+      "Bash(git pull:*)",
+      "Bash(env)",
+      "Bash(git reset:*)"
     ]
   }
 }
