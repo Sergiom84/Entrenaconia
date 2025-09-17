@@ -86,7 +86,7 @@ export default function MethodologiesScreen() {
         }
       });
       modalPrevRef.current = current;
-    } catch {}
+    } catch (e) { console.warn('Track error:', e); }
   }, [ui.showMethodologyDetails, ui.showVersionSelection, ui.showActiveTrainingWarning, ui.showPlanConfirmation, ui.showWarmup, ui.showRoutineSession]);
 
 
@@ -165,7 +165,7 @@ export default function MethodologiesScreen() {
   // ===============================================
 
   const handleActivateIA = async (forcedMethodology = null) => {
-    try { track('BUTTON_CLICK', { id: 'activar_ia' }, { component: 'MethodologiesScreen' }); } catch {}
+    try { track('BUTTON_CLICK', { id: 'activar_ia' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
     if (!user) return;
 
     // Verificar si hay entrenamiento activo usando WorkoutContext
@@ -186,7 +186,7 @@ export default function MethodologiesScreen() {
   };
 
   const handleVersionSelectionConfirm = async (versionConfig) => {
-    try { track('ACTION', { id: 'version_confirm', mode: 'automatic', version: versionConfig?.version }, { component: 'MethodologiesScreen' }); } catch {}
+    try { track('ACTION', { id: 'version_confirm', mode: 'automatic', version: versionConfig?.version }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
     ui.hideModal('versionSelection');
 
     // Construir perfil completo
@@ -224,7 +224,7 @@ export default function MethodologiesScreen() {
   };
 
   const handleManualCardClick = (methodology) => {
-    try { track('CARD_CLICK', { id: methodology?.name, group: 'methodology', mode: 'manual' }, { component: 'MethodologiesScreen' }); } catch {}
+    try { track('CARD_CLICK', { id: methodology?.name, group: 'methodology', mode: 'manual' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
     if (localState.selectionMode === 'manual') {
       // Si es Calistenia, mostrar el modal específico
       if (methodology.name === 'Calistenia') {
@@ -244,7 +244,7 @@ export default function MethodologiesScreen() {
   };
 
   const confirmManualSelection = async (versionConfig) => {
-    try { track('ACTION', { id: 'manual_version_confirm', methodology: localState.pendingMethodology?.name, version: versionConfig?.version }, { component: 'MethodologiesScreen' }); } catch {}
+    try { track('ACTION', { id: 'manual_version_confirm', methodology: localState.pendingMethodology?.name, version: versionConfig?.version }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
     if (!localState.pendingMethodology) return;
 
     // Verificar si hay entrenamiento activo
@@ -282,13 +282,13 @@ export default function MethodologiesScreen() {
   };
 
   const handleOpenDetails = (methodology) => {
-    try { track('BUTTON_CLICK', { id: 'ver_detalles', methodology: methodology?.name }, { component: 'MethodologiesScreen' }); } catch {}
+    try { track('BUTTON_CLICK', { id: 'ver_detalles', methodology: methodology?.name }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
     updateLocalState({ detailsMethod: methodology });
     ui.showModal('methodologyDetails');
   };
 
   const handleCalisteniaManualGenerate = async (calisteniaData) => {
-    try { track('ACTION', { id: 'generate_calistenia' }, { component: 'MethodologiesScreen' }); } catch {}
+    try { track('ACTION', { id: 'generate_calistenia' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
     // Verificar si hay entrenamiento activo
     if (hasActivePlan) {
       updateLocalState({ activeTrainingInfo: plan.currentPlan });
@@ -321,7 +321,7 @@ export default function MethodologiesScreen() {
 
   const handleStartTraining = async () => {
     try {
-      try { track('BUTTON_CLICK', { id: 'start_training' }, { component: 'MethodologiesScreen' }); } catch {}
+      try { track('BUTTON_CLICK', { id: 'start_training' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
       console.log('🚀 Iniciando sesión de entrenamiento...');
 
       if (!plan.currentPlan || !plan.planId) {
@@ -349,34 +349,34 @@ export default function MethodologiesScreen() {
   };
 
   const handleWarmupComplete = () => {
-    try { track('BUTTON_CLICK', { id: 'warmup_complete' }, { component: 'MethodologiesScreen' }); } catch {}
+    try { track('BUTTON_CLICK', { id: 'warmup_complete' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
     console.log('✅ Calentamiento completado');
     ui.hideModal('warmup');
     ui.showModal('routineSession');
   };
 
   const handleSkipWarmup = () => {
-    try { track('BUTTON_CLICK', { id: 'warmup_skip' }, { component: 'MethodologiesScreen' }); } catch {}
+    try { track('BUTTON_CLICK', { id: 'warmup_skip' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
     console.log('⭕ Calentamiento saltado');
     ui.hideModal('warmup');
     ui.showModal('routineSession');
   };
 
   const handleCloseWarmup = () => {
-    try { track('BUTTON_CLICK', { id: 'warmup_close' }, { component: 'MethodologiesScreen' }); } catch {}
+    try { track('BUTTON_CLICK', { id: 'warmup_close' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
     console.log('❌ Calentamiento cancelado');
     ui.hideModal('warmup');
   };
 
   const handleEndSession = () => {
-    try { track('BUTTON_CLICK', { id: 'end_session' }, { component: 'MethodologiesScreen' }); } catch {}
+    try { track('BUTTON_CLICK', { id: 'end_session' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
     console.log('🏁 Sesión terminada, navegando con WorkoutContext');
     ui.hideModal('routineSession');
     goToTraining();
   };
 
   const handleGenerateAnother = async (feedbackData) => {
-    try { track('BUTTON_CLICK', { id: 'generate_another' }, { component: 'MethodologiesScreen' }); } catch {}
+    try { track('BUTTON_CLICK', { id: 'generate_another' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
     try {
       console.log('🔄 Generando nuevo plan con feedback:', feedbackData);
 
@@ -430,7 +430,7 @@ export default function MethodologiesScreen() {
 
           <div className="grid md:grid-cols-2 gap-4 mt-4">
             <div
-              onClick={() => { updateLocalState({ selectionMode: 'automatico' }); try { track('CARD_CLICK', { id: 'selection-mode', value: 'automatico' }, { component: 'MethodologiesScreen' }); } catch {} }}
+              onClick={() => { updateLocalState({ selectionMode: 'automatico' }); try { track('CARD_CLICK', { id: 'selection-mode', value: 'automatico' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); } }}
               className={`p-4 rounded-lg transition-all bg-black/80 cursor-pointer
                 ${localState.selectionMode === 'automatico'
                   ? 'border border-yellow-400 ring-2 ring-yellow-400/30'
@@ -466,7 +466,7 @@ export default function MethodologiesScreen() {
             </div>
 
             <div
-              onClick={() => { updateLocalState({ selectionMode: 'manual' }); try { track('CARD_CLICK', { id: 'selection-mode', value: 'manual' }, { component: 'MethodologiesScreen' }); } catch {} }}
+              onClick={() => { updateLocalState({ selectionMode: 'manual' }); try { track('CARD_CLICK', { id: 'selection-mode', value: 'manual' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); } }}
               className={`p-4 rounded-lg transition-all cursor-pointer bg-black/80
                 ${localState.selectionMode === 'manual'
                   ? 'border border-yellow-400 ring-2 ring-yellow-400/30'

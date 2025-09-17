@@ -513,7 +513,7 @@ apiClient.addRequestInterceptor((url, options) => {
   // Trace de request
   try {
     traceTrack('API_REQUEST', { url, method: (options?.method || 'GET').toUpperCase() }, { component: 'ApiClient' });
-  } catch {}
+  } catch (e) { console.warn('Track error:', e); }
 
   return options; // No modificar options
 });
@@ -523,7 +523,7 @@ apiClient.addResponseInterceptor((response, url) => {
   // Trace de response
   try {
     traceTrack('API_RESPONSE', { url, status: response.status, ok: response.ok }, { component: 'ApiClient' });
-  } catch {}
+  } catch (e) { console.warn('Track error:', e); }
 
   if (!response.ok) {
     logger.api.error(response.status >= 500 ? 'Server Error' : 'Client Error', url, {

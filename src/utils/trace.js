@@ -5,7 +5,7 @@
  * - Intenta capturar archivo/línea desde el stack en modo dev
  */
 
-import logger, { createContextLogger } from './logger';
+import { createContextLogger } from './logger';
 
 const IS_DEV = typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.DEV;
 const STORAGE_KEY = 'TRACE_EVENTS';
@@ -31,7 +31,7 @@ function persistEvent(rec) {
     const prev = raw ? JSON.parse(raw) : [];
     const next = [...prev, rec].slice(-MAX_EVENTS);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-  } catch (e) {
+  } catch {
     // Ignorar errores de storage
   }
 }
@@ -77,7 +77,7 @@ export function getRecentTraces(limit = 200) {
 export function clearTraces() {
   try {
     localStorage.removeItem(STORAGE_KEY);
-  } catch {}
+  } catch (e) { console.warn('Trace error:', e); }
 }
 
 // Pequeña ayuda para envolver handlers
@@ -85,7 +85,7 @@ export function withTrace(handler, meta = {}) {
   return (...args) => {
     try {
       track(meta.event || 'HANDLER', meta.data, { component: meta.component, note: meta.note });
-    } catch {}
+    } catch (e) { console.warn('Trace error:', e); }
     return handler?.(...args);
   };
 }
