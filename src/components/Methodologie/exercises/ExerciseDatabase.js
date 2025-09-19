@@ -9,11 +9,13 @@
 import React from 'react';
 
 // Configuración centralizada de API
+const RAW_API_URL = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_URL) ? import.meta.env.VITE_API_URL : '';
+const BASE_API = RAW_API_URL ? `${RAW_API_URL.replace(/\/$/, '')}/api` : '/api';
 const API_CONFIG = {
-  BASE_URL: import.meta.env.VITE_API_URL || 'http://localhost:3002',
+  BASE_URL: BASE_API,
   ENDPOINTS: {
-    EXERCISES: '/api/exercises',
-    CALISTENIA: '/api/exercises/calistenia'
+    EXERCISES: '/exercises',
+    CALISTENIA: '/exercises/calistenia'
   },
   TIMEOUT: 10000 // 10 segundos
 };

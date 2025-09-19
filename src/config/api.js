@@ -20,7 +20,10 @@
  */
 const ENVIRONMENT_CONFIG = {
   development: {
-    API_URL: 'http://localhost:3002',
+    // En dev, usa VITE_API_URL si existe; de lo contrario, usa el mismo origen (Vite proxy a /api)
+    API_URL: (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_URL)
+      ? import.meta.env.VITE_API_URL.replace(/\/$/, '')
+      : (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173'),
     DEBUG: true,
     ENABLE_MOCKS: false,
     LOG_LEVEL: 'debug',
@@ -114,8 +117,11 @@ const getApiBaseUrl = (config = CURRENT_CONFIG) => {
     new URL(url);
     return url.replace(/\/$/, ''); // Eliminar slash final si existe
   } catch (error) {
-    console.warn('🚨 URL de API inválida, usando fallback:', error);
-    return 'http://localhost:3002';
+    console.warn('🚨 URL de API inválida, usando fallback al mismo origen');
+    const origin = (typeof window !== 'undefined' && window.location && window.location.origin)
+      ? window.location.origin
+      : 'http://localhost:5173';
+    return origin;
   }
 };
 
@@ -441,7 +447,7 @@ export const checkApiHealth = async (config = CURRENT_CONFIG) => {
   const apiConfig = createApiConfig(config);
 
   try {
-    const response = await fetch(`${baseUrl}/health`, {
+    const response = await fetch(`${baseUrl}/api/health`, {
       method: 'GET',
       timeout: apiConfig.TIMEOUT.HEALTH_CHECK,
       headers: {
@@ -467,7 +473,7 @@ export const getApiVersion = async (config = CURRENT_CONFIG) => {
   const apiConfig = createApiConfig(config);
 
   try {
-    const response = await fetch(`${baseUrl}/version`, {
+    const response = await fetch(`${baseUrl}/api/version`, {
       method: 'GET',
       timeout: apiConfig.TIMEOUT.HEALTH_CHECK,
       headers: apiConfig.HEADERS

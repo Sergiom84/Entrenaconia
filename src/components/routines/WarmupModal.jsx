@@ -77,7 +77,8 @@ export default function WarmupModal({
   }, [saveProgress]);
 
   // Configuración por nivel
-  const levelConfig = getLevelRecommendations(level) || {};
+  const normalizedLevel = typeof level === 'string' ? level : (level?.level || 'básico');
+  const levelConfig = getLevelRecommendations(normalizedLevel) || {};
   const warmupDuration = levelConfig.warmupDuration || 10; // minutos
 
   // Ejercicios de calentamiento por nivel
@@ -111,7 +112,7 @@ export default function WarmupModal({
     ]
   };
 
-  const exercises = warmupExercises[level] || warmupExercises.básico;
+  const exercises = warmupExercises[normalizedLevel] || warmupExercises.básico;
   const currentExercise = exercises[currentExerciseIndex] || {};
 
   // Timer effect

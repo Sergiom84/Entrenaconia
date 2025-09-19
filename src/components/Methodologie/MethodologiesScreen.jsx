@@ -446,9 +446,12 @@ export default function MethodologiesScreen() {
       console.log('🎯 PASO 2: Iniciando sesión...');
 
       // Usar startSession del WorkoutContext (DESPUÉS de confirmar)
+      // Enviar el nombre real del día en español (e.g., 'Viernes') para evitar fallback 'today'
+      const _todayName = new Date().toLocaleDateString('es-ES', { weekday: 'long' });
+      const dayNameEs = _todayName.charAt(0).toUpperCase() + _todayName.slice(1);
       const result = await startSession({
         planId: plan.planId,
-        dayName: 'today'
+        dayName: dayNameEs
       });
 
       if (result.success) {

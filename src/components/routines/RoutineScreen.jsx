@@ -141,9 +141,15 @@ const RoutineScreen = () => {
           return;
         }
 
-        // Si no hay plan activo, redirigir directamente (no intentar recuperar)
+        // Fallback: si no hay plan en contexto, intentar recuperarlo del backend
         if (!hasActivePlan) {
-          console.log('⚠️ No hay plan activo disponible, redirigiendo a metodologías...');
+          console.log('🔎 No hay plan en contexto; consultando /api/routines/active-plan...');
+          const result = await loadActivePlan();
+          if (result?.success) {
+            console.log('✅ Plan activo recuperado desde backend');
+            return;
+          }
+          console.log('⚠️ Sin plan activo tras consultar backend; redirigiendo a metodologías...');
           goToMethodologies();
           return;
         }
@@ -363,8 +369,9 @@ const RoutineScreen = () => {
 
         <TabsContent value="calendar" className="mt-6">
           <CalendarTab
-            routinePlan={effectivePlan}
+            plan={effectivePlan}
             planStartDate={plan.planStartDate || incomingState?.planStartDate}
+            methodologyPlanId={effectiveMethodologyPlanId}
             onProgressUpdate={handleProgressUpdate}
           />
         </TabsContent>

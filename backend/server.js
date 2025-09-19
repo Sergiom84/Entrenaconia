@@ -16,6 +16,7 @@ function getSpanishTimestamp() {
 }
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/users.js';
+import authenticateToken from './middleware/auth.js';
 import medicalDocsRoutes from './routes/medicalDocs.js';
 import equipmentRoutes from './routes/equipment.js';
 import aiVideoCorrection from './routes/aiVideoCorrection.js';
@@ -27,6 +28,7 @@ import aiPhotoCorrection from './routes/aiPhotoCorrection.js';
 import routineGenerationRoutes from './routes/routineGeneration.js';
 import trainingSessionRoutes from './routes/trainingSession.js';
 import exerciseCatalogRoutes from './routes/exerciseCatalog.js';
+import trainingStateRoutes from './routes/trainingState.js';
 
 // ===============================================
 // 🔗 OTRAS RUTAS DEL SISTEMA
@@ -162,6 +164,8 @@ app.post('/api/methodologie/generate', (req, res, next) => {
   next();
 });
 
+// 🎯 REDIRECCIÓN INTELIGENTE PARA METODOLOGÍAS - MOVIDO ABAJO
+
 app.post('/api/methodologie/generate-plan', (req, res, next) => {
   req.url = '/api/routine-generation/ai/methodology';
   next();
@@ -206,10 +210,85 @@ app.get('/api/calistenia-manual/exercises/:level', (req, res, next) => {
 // ===============================================
 
 // ===============================================
+// 🎯 SISTEMA UNIFICADO DE METODOLOGÍAS (DEBE IR ANTES DE LAS RUTAS)
+// ===============================================
+
+// Sistema Unificado de Metodologías - Proxy inteligente
+console.log('🆕 Using unified methodology system (proxy approach)');
+
+// IMPORTANTE: Este endpoint actúa como proxy hacia las rutas consolidadas
+app.post('/api/methodology/generate', authenticateToken, async (req, res) => {
+  const { mode } = req.body;
+  const methodology = (req.body.methodology || req.body.metodologia_solicitada || '').toLowerCase();
+
+  console.log(`🔀 Proxy metodología: mode=${mode}, methodology=${methodology}`);
+
+  // Construir la URL de destino basada en los parámetros
+  let targetUrl;
+
+  // Normalizar caso histórico: mode === 'calistenia' → manual calistenia
+  const isCalisteniaManual = (mode === 'calistenia') || (mode === 'manual' && methodology === 'calistenia');
+
+  if (isCalisteniaManual) {
+    console.log('🤸 Calistenia manual detectada - specialist/calistenia/generate');
+    targetUrl = 'http://localhost:3003/api/routine-generation/specialist/calistenia/generate';
+  } else if (mode === 'manual' && methodology) {
+    // Para otras metodologías, mantener patrón actual (se añadirá routing específico cuando se habiliten)
+    if (methodology === 'oposicion' || methodology === 'oposiciones') {
+      targetUrl = 'http://localhost:3003/api/routine-generation/specialist/oposicion';
+    } else if (methodology === 'hipertrofia') {
+      targetUrl = 'http://localhost:3003/api/routine-generation/specialist/hipertrofia';
+    } else if (methodology === 'crossfit') {
+      targetUrl = 'http://localhost:3003/api/routine-generation/specialist/crossfit';
+    } else if (methodology === 'powerlifting') {
+      targetUrl = 'http://localhost:3003/api/routine-generation/specialist/powerlifting';
+    } else if (methodology === 'funcional') {
+      targetUrl = 'http://localhost:3003/api/routine-generation/specialist/funcional';
+    } else {
+      // Metodología manual genérica
+      targetUrl = 'http://localhost:3003/api/routine-generation/manual/methodology';
+    }
+  } else if (mode === 'automatic' || mode === 'regenerate') {
+    // AUTOMÁTICO: IA decide la metodología
+    targetUrl = 'http://localhost:3003/api/routine-generation/ai/methodology';
+  } else {
+    // Default: IA methodology
+    targetUrl = 'http://localhost:3003/api/routine-generation/ai/methodology';
+  }
+
+  console.log(`🎯 Proxying to: ${targetUrl}`);
+
+  try {
+    // Hacer la petición al endpoint correcto
+    const proxyResponse = await fetch(targetUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': req.headers.authorization // Pasar el token
+      },
+      body: JSON.stringify(req.body)
+    });
+
+    // Obtener la respuesta
+    const data = await proxyResponse.json();
+
+    // Devolver la respuesta al cliente
+    res.status(proxyResponse.status).json(data);
+  } catch (error) {
+    console.error('❌ Error en proxy:', error);
+    res.status(500).json({
+      error: 'Error procesando solicitud de metodología',
+      details: error.message
+    });
+  }
+});
+
+// ===============================================
 // 🎯 RUTAS PRINCIPALES CONSOLIDADAS
 // ===============================================
 app.use('/api/routine-generation', routineGenerationRoutes);
 app.use('/api/training-session', trainingSessionRoutes);
+app.use('/api/training', trainingStateRoutes);
 app.use('/api/exercise-catalog', exerciseCatalogRoutes);
 
 // === RUTAS NO AFECTADAS POR LA CONSOLIDACIÓN ===
@@ -229,22 +308,13 @@ app.use('/api/nutrition', nutritionRoutes);
 app.use('/api/music', musicRoutes);
 app.use('/api/analytics', analyticsRoutes);
 
-// Sistema Unificado de Metodologías - Redirección a rutas consolidadas
-console.log('🆕 Using unified methodology system (consolidated routes)');
-app.use('/api/methodology', (req, res, next) => {
-  // Redireccionar a las nuevas rutas consolidadas
-  if (req.path.includes('generate')) {
-    req.url = req.url.replace('/api/methodology', '/api/routine-generation');
-  }
-  next();
-});
-
 // Endpoint simple de salud
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
-    message: 'Servidor funcionando correctamente',
-    timestamp: new Date().toISOString()
+    message: 'Servidor funcionando correctamente - v2',
+    timestamp: new Date().toISOString(),
+    version: '2.0'
   });
 });
 

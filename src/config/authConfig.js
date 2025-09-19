@@ -15,7 +15,10 @@
 
 const ENVIRONMENTS = {
   development: {
-    API_BASE: 'http://localhost:3003',
+    // Si se define VITE_API_URL la usa; si no, usa rutas relativas con proxy (/api)
+    API_BASE: (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_URL)
+      ? import.meta.env.VITE_API_URL.replace(/\/$/, '')
+      : '',
     TOKEN_REFRESH_THRESHOLD: 5 * 60 * 1000, // 5 minutos
     SESSION_TIMEOUT: 24 * 60 * 60 * 1000, // 24 horas
     INACTIVITY_TIMEOUT: 2 * 60 * 60 * 1000, // 2 horas
@@ -24,7 +27,9 @@ const ENVIRONMENTS = {
     MAX_LOGIN_ATTEMPTS: 10 // Más relajado en desarrollo
   },
   production: {
-    API_BASE: import.meta.env.VITE_API_URL || 'https://api.entrenaconai.com',
+    API_BASE: ((typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_URL)
+      ? import.meta.env.VITE_API_URL
+      : 'https://api.entrenaconai.com').replace(/\/$/, ''),
     TOKEN_REFRESH_THRESHOLD: 10 * 60 * 1000, // 10 minutos
     SESSION_TIMEOUT: 8 * 60 * 60 * 1000, // 8 horas
     INACTIVITY_TIMEOUT: 30 * 60 * 1000, // 30 minutos

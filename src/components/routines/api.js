@@ -27,14 +27,12 @@ export async function bootstrapPlan(routine_plan_id) {
 }
 
 export async function startSession({ methodology_plan_id, week_number, day_name }) {
-  const token = getToken();
-  const resp = await fetch('/api/routines/sessions/start', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-    body: JSON.stringify({ methodology_plan_id, week_number, day_name })
+  const data = await apiClient.post('/routines/sessions/start', {
+    methodology_plan_id,
+    week_number,
+    day_name
   });
-  const data = await resp.json().catch(() => ({}));
-  if (!resp.ok || !data.success) throw new Error(data.error || 'No se pudo iniciar la sesión');
+  if (!data.success) throw new Error(data.error || 'No se pudo iniciar la sesión');
   return data; // { session_id, total_exercises }
 }
 
@@ -120,12 +118,8 @@ export async function getProgressData({ methodology_plan_id }) {
 }
 
 export async function getActivePlan() {
-  const token = getToken();
-  const resp = await fetch('/api/routines/active-plan', {
-    headers: { 'Authorization': `Bearer ${token}` }
-  });
-  const data = await resp.json().catch(() => ({}));
-  if (!resp.ok || !data.success) throw new Error(data.error || 'No se pudo obtener la rutina activa');
+  const data = await apiClient.get('/routines/active-plan');
+  if (!data.success) throw new Error(data.error || 'No se pudo obtener la rutina activa');
   return data; // { hasActivePlan, routinePlan, planSource, planId, methodology_plan_id }
 }
 

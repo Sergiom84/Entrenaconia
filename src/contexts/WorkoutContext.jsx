@@ -16,6 +16,8 @@
 import { createContext, useContext, useReducer, useEffect, useCallback } from 'react';
 import { useAuth } from './AuthContext';
 
+import apiClient from '../lib/apiClient';
+
 // =============================================================================
 // 🎯 TIPOS Y CONSTANTES
 // =============================================================================
@@ -458,13 +460,45 @@ export function WorkoutProvider({ children }) {
     dispatch({ type: WORKOUT_ACTIONS.CLEAR_ERROR });
 
     try {
-      const response = await fetch('/api/methodology/generate', {
+      let requestBody;
+
+      // Mapear datos según el modo específico
+      // Construir payload estándar con campo methodology (lowercase)
+      if (
+        config.mode === 'calistenia' ||
+        (config.mode === 'manual' && String(config.methodology || '').toLowerCase() === 'calistenia')
+      ) {
+        const { calisteniaData = {} } = config;
+        requestBody = {
+          mode: 'manual',
+          methodology: 'calistenia',
+          userProfile: calisteniaData.userProfile || { id: user.id },
+          selectedLevel: (calisteniaData.level?.toLowerCase?.() || calisteniaData.selectedLevel?.toLowerCase?.() || 'basico'),
+          goals: calisteniaData.goals || '',
+          selectedMuscleGroups: calisteniaData.selectedMuscleGroups || [],
+          aiEvaluation: calisteniaData.aiEvaluation || null,
+          source: calisteniaData.source || 'manual_selection',
+          version: calisteniaData.version || '5.0'
+        };
+      } else {
+        // Para otros modos (automático, manual, etc.)
+        requestBody = {
+          ...config,
+          mode: (config.mode || 'automatic'),
+          ...(config.methodology ? { methodology: String(config.methodology).toLowerCase() } : {})
+        };
+      }
+
+      // Determinar el endpoint correcto según el modo
+      const endpoint = '/api/methodology/generate';
+
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`
         },
-        body: JSON.stringify(config)
+        body: JSON.stringify(requestBody)
       });
 
       if (!response.ok) {
@@ -473,21 +507,38 @@ export function WorkoutProvider({ children }) {
 
       const result = await response.json();
 
+      // Log para debug
+      console.log('📦 Respuesta del servidor:', {
+        success: result.success,
+        hasPlan: !!result.plan,
+        planId: result.planId || result.methodologyPlanId,
+        methodology: result.methodology || config.mode
+      });
+
+      // Verificar que la respuesta sea válida
+      if (!result.success || !result.plan) {
+        throw new Error(result.error || 'No se recibió un plan válido del servidor');
+      }
+
       // Activar plan automáticamente
       const planData = {
         currentPlan: result.plan,
-        planId: result.planId,
+        planId: result.planId || result.methodologyPlanId,
         planStartDate: new Date().toISOString(),
         planType: config.mode || 'automatic',
-        methodology: result.methodology,
+        methodology: result.methodology || config.mode || 'Calistenia',
         generatedAt: result.metadata?.generatedAt || new Date().toISOString(),
-        weekTotal: result.plan?.weeks?.length || 0,
+        weekTotal: result.plan?.semanas?.length || result.plan?.weeks?.length || 0,
         currentWeek: 1
       };
 
       dispatch({ type: WORKOUT_ACTIONS.SET_PLAN, payload: planData });
 
-      return result;
+      // Retornar el resultado con success para que MethodologiesScreen pueda procesarlo
+      return {
+        ...result,
+        success: true
+      };
     } catch (error) {
       dispatch({ type: WORKOUT_ACTIONS.SET_ERROR, payload: error.message });
       throw error;
@@ -508,6 +559,14 @@ export function WorkoutProvider({ children }) {
       });
 
       if (result.success) {
+        // Generar programación de sesiones para que TodayTrainingTab y CalendarTab
+        // tengan datos de "hoy" inmediatamente desde workout_schedule
+        try {
+          await apiClient.post('/routines/generate-schedule', { methodology_plan_id: planId });
+        } catch (e) {
+          console.warn('No se pudo generar la programación automática:', e?.message || e);
+        }
+
         dispatch({ type: WORKOUT_ACTIONS.ACTIVATE_PLAN });
         dispatch({ type: WORKOUT_ACTIONS.SET_VIEW, payload: WORKOUT_VIEWS.TODAY_TRAINING });
         return { success: true };
@@ -599,43 +658,35 @@ export function WorkoutProvider({ children }) {
     // Actualizar en backend si hay sesión activa
     if (state.session.sessionId) {
       try {
-        await fetch(`/api/routines/sessions/${state.session.sessionId}/progress`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-          },
-          body: JSON.stringify({
-            exerciseId,
-            progress: progressData
-          })
+        await apiClient.put(`/routines/sessions/${state.session.sessionId}/progress`, {
+          exerciseId,
+          progress: progressData
         });
+        return { success: true };
       } catch (error) {
         console.warn('Error guardando progreso en backend:', error);
+        return { success: false, error: error?.message || String(error) };
       }
     }
+
+    // Sin sesión activa, pero estado local actualizado
+    return { success: true };
   }, [state.session.sessionId]);
 
   const completeSession = useCallback(async () => {
-    if (!state.session.sessionId) return;
+    if (!state.session.sessionId) return { success: false, error: 'No sessionId' };
 
     try {
-      await fetch(`/api/routines/sessions/${state.session.sessionId}/complete`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-        },
-        body: JSON.stringify({
-          completedAt: new Date().toISOString(),
-          exerciseProgress: state.session.exerciseProgress
-        })
+      await apiClient.post(`/routines/sessions/${state.session.sessionId}/complete`, {
+        completedAt: new Date().toISOString(),
+        exerciseProgress: state.session.exerciseProgress
       });
 
       dispatch({ type: WORKOUT_ACTIONS.COMPLETE_SESSION });
+      return { success: true };
     } catch (error) {
       dispatch({ type: WORKOUT_ACTIONS.SET_ERROR, payload: error.message });
-      throw error;
+      return { success: false, error: error?.message || String(error) };
     }
   }, [state.session.sessionId, state.session.exerciseProgress]);
 
@@ -692,6 +743,62 @@ export function WorkoutProvider({ children }) {
   }, []);
 
   // =============================================================================
+  // 🎯 API FUNCTIONS FOR SUPABASE INTEGRATION
+  // =============================================================================
+
+  // Obtener estado desde BD (reemplaza localStorage)
+  const getTrainingStateFromDB = useCallback(async () => {
+    if (!user?.id) return null;
+
+    try {
+      const data = await apiClient.get('/training/state');
+      return data;
+    } catch (error) {
+      console.error('Error obteniendo estado desde BD:', error);
+      return null;
+    }
+  }, [user?.id]);
+
+  // hasActivePlan desde BD (no localStorage)
+  const hasActivePlanFromDB = useCallback(async () => {
+    const trainingState = await getTrainingStateFromDB();
+    return trainingState?.hasActivePlan || false;
+  }, [getTrainingStateFromDB]);
+
+  // Sincronizar estado local con BD
+  const syncWithDatabase = useCallback(async () => {
+    if (!user?.id) return;
+
+    try {
+      const dbState = await getTrainingStateFromDB();
+      if (dbState && dbState.hasActivePlan && dbState.activePlan) {
+        // Actualizar estado local con datos de BD
+        dispatch({
+          type: WORKOUT_ACTIONS.SET_PLAN,
+          payload: {
+            currentPlan: dbState.activePlan.plan_data,
+            planId: dbState.activePlan.id,
+            status: PLAN_STATUS.ACTIVE,
+            planStartDate: dbState.activePlan.started_at || new Date().toISOString(),
+            methodology: dbState.activePlan.methodology_type,
+            weekTotal: dbState.activePlan.plan_data?.weeks?.length || 0,
+            currentWeek: dbState.activePlan.current_week || 1
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Error sincronizando con BD:', error);
+    }
+  }, [user?.id]);
+
+  // Efecto para sincronizar al montar
+  useEffect(() => {
+    if (user?.id) {
+      syncWithDatabase();
+    }
+  }, [user?.id, syncWithDatabase]);
+
+  // =============================================================================
   // 🎯 CONTEXT VALUE
   // =============================================================================
 
@@ -731,6 +838,11 @@ export function WorkoutProvider({ children }) {
     hasActivePlan: Boolean(state.plan.planId && state.plan.status === PLAN_STATUS.ACTIVE),
     hasActiveSession: Boolean(state.session.sessionId &&
       [SESSION_STATUS.IN_PROGRESS, SESSION_STATUS.PAUSED].includes(state.session.status)),
+
+    // 🚀 NEW: Supabase Integration Functions
+    getTrainingStateFromDB,
+    hasActivePlanFromDB,
+    syncWithDatabase,
 
     // UI helpers with enhanced object
     ui: {

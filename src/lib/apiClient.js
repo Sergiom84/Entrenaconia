@@ -474,7 +474,13 @@ class ApiClient {
 }
 
 // Instancia principal del cliente API
-const apiClient = new ApiClient('http://localhost:3003/api');
+// Base URL dinámica: usa VITE_API_URL si existe (producción/despliegues),
+// si no, usa ruta relativa '/api' para funcionar con el proxy de Vite en dev.
+const RAW_API_URL = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_URL) ? import.meta.env.VITE_API_URL : '';
+const NORMALIZED_BASE = RAW_API_URL
+  ? `${RAW_API_URL.replace(/\/$/, '')}/api`
+  : '/api';
+const apiClient = new ApiClient(NORMALIZED_BASE);
 
 // Interceptor de error mejorado con integración tokenManager
 apiClient.addErrorInterceptor(async (error, url) => {

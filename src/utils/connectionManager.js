@@ -129,7 +129,9 @@ class ConnectionManager {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-      const response = await fetch('http://localhost:3003/api/health', {
+      const RAW_API_URL = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_URL) ? import.meta.env.VITE_API_URL : '';
+      const HEALTH_URL = RAW_API_URL ? `${RAW_API_URL.replace(/\/$/, '')}/api/health` : '/api/health';
+      const response = await fetch(HEALTH_URL, {
         method: 'HEAD',
         signal: controller.signal,
         cache: 'no-cache'

@@ -11,6 +11,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Frontend Development
 
 ```bash
+# 🚀 RECOMENDADO: Inicio automático con sincronización de puertos
+npm run dev:auto
+
+# Start frontend con verificación de puertos
+npm run dev:sync
+
 # Start frontend dev server (default port 5173)
 npm run dev
 
@@ -43,11 +49,27 @@ npm run dev:backend
 cd backend && npm start
 ```
 
+### 🔧 Scripts de Sincronización de Puertos
+
+```bash
+# 🎯 SOLUCIÓN AUTOMÁTICA: Detecta y corrige problemas de puertos
+npm run check-ports      # Verificar y actualizar configuración
+npm run monitor          # Monitor continuo de conectividad
+npm run dev:auto         # Inicio completo con verificación automática
+npm run dev:sync         # Solo frontend con verificación
+scripts\sync-dev.bat     # Script interactivo (Windows)
+```
+
+**🚨 PROBLEMA COMÚN:** Cuando el backend cambia de puerto y el frontend sigue apuntando al anterior, las peticiones API devuelven 404.
+
+**✅ SOLUCIÓN:** Los scripts detectan automáticamente el puerto del backend y actualizan `.env.local`
+
 ### Port Configuration
 
 - Frontend: Port 5173 (configurable via VITE_PORT)
 - Backend: Port 3003 (configurable via PORT)
 - Alternative ports supported: 5174, 5175, 3000
+- **Sincronización automática**: Los scripts mantienen frontend/backend sincronizados
 - Use environment variables: `VITE_API_PORT=3004 VITE_PORT=5177 npm run dev`
 
 ## Project Architecture
@@ -222,6 +244,139 @@ VITE_PORT=5173
 2. Add prompt to prompt registry
 3. Update frontend methodology selection
 4. Test with AI generation endpoint
+
+## 🎯 METHODOLOGY FLOW SYSTEM (CORE ARCHITECTURE)
+
+### Overview
+
+The application uses a **unified flow system** where both AUTOMATIC and MANUAL methodology selection converge to the same generation endpoint, ensuring consistency and scalability.
+
+### Flow Architecture
+
+```
+AUTOMATIC MODE:
+  User clicks "Activar IA"
+  → AI analyzes profile and proposes routine
+  → Modal with proposal (includes "Generate another" + exercise feedback)
+  → User accepts
+  → WarmupModal.jsx → RoutineSessionModal.jsx → Navigate to TodayTrainingTab.jsx
+
+MANUAL MODE:
+  User clicks methodology card (Calistenia, Hipertrofia, etc.)
+  → MethodologyCard.jsx (evaluation)
+  → Training generation
+  → Modal with proposal
+  → User accepts
+  → WarmupModal.jsx → RoutineSessionModal.jsx → Navigate to TodayTrainingTab.jsx
+
+CONVERGENCE POINT: Both modes end up calling generatePlan() from WorkoutContext
+```
+
+### Intelligent Redirection System
+
+**Location**: `backend/server.js` (lines 167-201)
+
+```javascript
+// 🎯 SMART METHODOLOGY ROUTING
+app.use('/api/methodology', (req, res, next) => {
+  if (req.path.includes('generate')) {
+    const { mode, metodologia_solicitada } = req.body;
+
+    // MANUAL: User chose specific methodology
+    if (mode === 'manual' || metodologia_solicitada) {
+      const metodologia = (metodologia_solicitada || mode || '').toLowerCase();
+
+      if (metodologia === 'calistenia') {
+        req.url = '/api/routine-generation/manual/calistenia';
+      } else if (metodologia === 'oposicion') {
+        req.url = '/api/routine-generation/specialist/oposicion';
+      } else if (metodologia === 'hipertrofia') {
+        req.url = '/api/routine-generation/specialist/hipertrofia';
+      } else {
+        req.url = '/api/routine-generation/manual/methodology';
+      }
+    } else {
+      // AUTOMATIC: AI decides methodology
+      req.url = '/api/routine-generation/ai/methodology';
+    }
+  }
+  next();
+});
+```
+
+### Scalability Pattern
+
+**To add a new methodology**, only add **ONE LINE**:
+
+```javascript
+} else if (metodologia === 'crossfit') {
+  req.url = req.url.replace('/api/methodology', '/api/routine-generation/specialist/crossfit');
+} else if (metodologia === 'powerlifting') {
+  req.url = req.url.replace('/api/methodology', '/api/routine-generation/specialist/powerlifting');
+```
+
+### Key Benefits
+
+1. **Unified Endpoint**: Frontend always calls `/api/methodology/generate`
+2. **Smart Routing**: Backend redirects based on methodology type
+3. **Zero Breaking Changes**: Existing code continues working
+4. **Infinite Scalability**: New methodologies = 1 line of code
+5. **Consistent Flow**: Both modes converge to same user experience
+
+### Methodology Types
+
+#### Specialist Routes (Advanced AI)
+- **Calistenia**: `/api/routine-generation/specialist/calistenia/*`
+- **Oposiciones**: `/api/routine-generation/specialist/oposicion/*`
+- **Hipertrofia**: `/api/routine-generation/specialist/hipertrofia/*`
+- **CrossFit**: `/api/routine-generation/specialist/crossfit/*`
+- **Powerlifting**: `/api/routine-generation/specialist/powerlifting/*`
+
+#### Manual Routes (User-driven)
+- **Generic Manual**: `/api/routine-generation/manual/methodology`
+- **Calistenia Manual**: `/api/routine-generation/manual/calistenia`
+
+#### AI Routes (Automatic)
+- **AI Decision**: `/api/routine-generation/ai/methodology`
+- **Gym Routines**: `/api/routine-generation/ai/gym-routine`
+
+### Frontend Integration
+
+**Component Flow**:
+1. `MethodologiesScreen.jsx` - Main selection interface
+2. `handleManualCardClick()` - Detects methodology and calls modal
+3. `handleActivateIA()` - For automatic mode
+4. `WorkoutContext.generatePlan()` - Unified generation endpoint
+5. Modal chain: Proposal → Warmup → Session → Training
+
+### Request Format
+
+```javascript
+// Frontend sends this to /api/methodology/generate
+{
+  "mode": "manual" | "automatic",
+  "metodologia_solicitada": "calistenia" | "hipertrofia" | "oposicion" | ...,
+  // ... other parameters
+}
+
+// Backend intelligently routes to appropriate specialist
+```
+
+### Debug & Monitoring
+
+The system includes comprehensive logging:
+```javascript
+console.log(`🔀 Redirección metodología: mode=${mode}, metodologia=${metodologia_solicitada}`);
+console.log(`🎯 Redirigiendo a: ${req.url}`);
+```
+
+### IMPORTANT NOTES
+
+- **NEVER modify the frontend flow** - it's designed to be methodology-agnostic
+- **Always use the redirection system** for new methodologies
+- **Each methodology can have unique logic** in its specialist route
+- **The convergence point ensures consistent UX** across all methodologies
+- **This system is the CORE of the entire application** - handle with care
 
 ### Database Schema Changes
 

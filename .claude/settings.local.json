@@ -139,7 +139,17 @@
       "Bash(sort:*)",
       "Bash(git pull:*)",
       "Bash(env)",
-      "Bash(git reset:*)"
+      "Bash(git reset:*)",
+      "Bash(tasklist:*)",
+      "Bash(VITE_API_PORT=3003 VITE_API_URL=http://localhost:3003 npm run dev)",
+      "Bash(VITE_PORT=5174 VITE_API_PORT=3003 VITE_API_URL=http://localhost:3003 npm run dev)",
+      "Bash(VITE_PORT=5174 VITE_API_PORT=3004 VITE_API_URL=http://localhost:3004 npm run dev)",
+      "Bash(VITE_PORT=5175 VITE_API_PORT=3004 VITE_API_URL=http://localhost:3004 npm run dev)",
+      "Bash(cmd.exe:*)",
+      "Bash(ren:*)",
+      "Bash(VITE_API_PORT=3010 VITE_API_URL=http://localhost:3010 npm run dev)",
+      "Bash(VITE_PORT=5175 VITE_API_PORT=3010 VITE_API_URL=http://localhost:3010 npm run dev)",
+      "Bash(git diff:*)"
     ]
   }
 }

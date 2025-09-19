@@ -24,8 +24,12 @@ import { useWorkout } from '@/contexts/WorkoutContext';
 import { formatExerciseName } from '../../../utils/exerciseUtils';
 import SafeComponent from '../../ui/SafeComponent';
 import logger from '../../../utils/logger';
+import apiClient from '@/lib/apiClient';
+
 
 import { useTrace } from '@/contexts/TraceContext.jsx';
+import { getTodaySessionStatus } from '../api';
+
 
 export default function TodayTrainingTab({
   routinePlan,
@@ -122,6 +126,11 @@ export default function TodayTrainingTab({
     }
   }, [localState.showSessionModal, track]);
 
+  // Track cambios en flag global de sesión del contexto
+  useEffect(() => {
+    track(ui.showRoutineSession ? 'MODAL_OPEN' : 'MODAL_CLOSE', { name: 'RoutineSessionModal(ui)' }, { component: 'TodayTrainingTab' });
+  }, [ui.showRoutineSession, track]);
+
   useEffect(() => {
     // Solo hacer tracking cuando realmente cambia el estado
     if (prevRejectionModalRef.current !== localState.showRejectionModal) {
@@ -130,37 +139,41 @@ export default function TodayTrainingTab({
     }
   }, [localState.showRejectionModal, track]);
 
-  // 🆕 Obtener sesión de hoy desde la nueva API
+  // 🆕 Obtener sesión de hoy desde la nueva API (independiente de recibir prop methodologyPlanId)
   useEffect(() => {
     const fetchTodaySession = async () => {
       try {
-        const response = await fetch('/api/routines/active-plan', {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-          }
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          if (data.success && data.source === 'workout_schedule' && data.todaySession) {
-            console.log('🆕 Usando sesión de hoy desde workout_schedule:', data.todaySession);
-            setTodaySessionFromAPI({
-              ...data.todaySession,
-              ejercicios: data.todaySession.exercises, // Mapear exercises a ejercicios
-              dia: data.todaySession.day_name,
-              weekNumber: data.todaySession.week_number
-            });
-          }
+        // Usa el apiClient central para respetar VITE_API_URL en producción
+        const data = await apiClient.get('/routines/active-plan');
+        if (data?.success && data?.todaySession) {
+          console.log('🆕 Usando sesión de hoy desde workout_schedule:', data.todaySession);
+          setTodaySessionFromAPI({
+            ...data.todaySession,
+            ejercicios: data.todaySession.exercises || [], // Mapear exercises a ejercicios
+            dia: data.todaySession.day_name,
+            weekNumber: data.todaySession.week_number
+          });
         }
       } catch (error) {
         console.error('Error obteniendo sesión de hoy:', error);
       }
     };
 
-    if (methodologyPlanId) {
-      fetchTodaySession();
+    fetchTodaySession();
+  }, [hasActivePlan, plan?.planId]);
+
+  // Trace diagnóstico de todaySession cargada
+  useEffect(() => {
+    if (todaySessionFromAPI) {
+      try {
+        track('TODAY_SESSION_FROM_API', {
+          day_name: todaySessionFromAPI?.dia,
+          week_number: todaySessionFromAPI?.weekNumber,
+          exercises_count: todaySessionFromAPI?.ejercicios?.length || 0
+        }, { component: 'TodayTrainingTab' });
+      } catch {}
     }
-  }, [methodologyPlanId]);
+  }, [todaySessionFromAPI, track]);
 
   const todaySession = useMemo(() => {
     // 🆕 PRIORIDAD: Si hay sesión desde workout_schedule, usarla
@@ -187,6 +200,7 @@ export default function TodayTrainingTab({
           const currentDay = todayName.toLowerCase();
           return sessionDay === currentDay ||
                  sessionDay === currentDay.replace('é', 'e') ||
+
                  (sessionDay === 'mie' && currentDay === 'miércoles') ||
                  (sessionDay === 'sab' && currentDay === 'sábado');
         });
@@ -220,6 +234,7 @@ export default function TodayTrainingTab({
       setError('La sesión de hoy no tiene ejercicios definidos');
       return;
     }
+
 
     if (!methodologyPlanId) {
       logger.error('No se puede iniciar sesión: falta methodologyPlanId', null, 'Routines');
@@ -257,10 +272,12 @@ export default function TodayTrainingTab({
         updateLocalState({
           pendingSessionData: {
             session: enrichedSession,
-            sessionId: result.sessionId
+            sessionId: result.sessionId || result.session_id || session.sessionId
           },
           showWarmupModal: true
         });
+        // 🔒 Persistir en contexto para evitar que un remount cierre el modal
+        try { ui.showModal?.('warmup'); } catch {}
 
         // Opcional: Callback para notificar al componente padre
         if (onStartTraining) {
@@ -292,13 +309,38 @@ export default function TodayTrainingTab({
     track('BUTTON_CLICK', { id: 'warmup_complete' }, { component: 'TodayTrainingTab' });
     logger.info('Calentamiento completado, iniciando entrenamiento principal', null, 'Routines');
 
-    if (localState.pendingSessionData) {
-      updateLocalState({
-        showWarmupModal: false,
-        showSessionModal: true
-        // 🔧 MANTENER pendingSessionData para que el modal se pueda abrir
-      });
+    const pendingId = localState.pendingSessionData?.sessionId || session.sessionId;
+    const hasPending = !!pendingId;
+    try { track('OPEN_ROUTINE_MODAL_ATTEMPT', { hasPending, pendingId }, { component: 'TodayTrainingTab' }); } catch {}
+
+    if (!hasPending) return;
+
+    // Asegurar estructura de session para el modal aun si se perdió pendingSessionData
+    if (!localState.pendingSessionData && todaySession && session.sessionId) {
+      updateLocalState(prev => ({
+        ...prev,
+        pendingSessionData: {
+          session: { ...todaySession, sessionId: session.sessionId, currentExerciseIndex: 0 },
+          sessionId: session.sessionId
+        }
+      }));
     }
+
+    try { ui.hideAllModals?.(); } catch {}
+
+    updateLocalState({
+      showWarmupModal: false,
+      showSessionModal: true
+    });
+
+    try { ui.showModal?.('routineSession'); } catch {}
+
+    // Fallback: forzar apertura en el siguiente tick
+    setTimeout(() => {
+      updateLocalState(prev => ({ ...prev, showSessionModal: true }));
+      try { ui.showModal?.('routineSession'); } catch {}
+      try { track('OPEN_ROUTINE_MODAL_DONE', { forced: true }, { component: 'TodayTrainingTab' }); } catch {}
+    }, 0);
   };
 
   /**
@@ -308,13 +350,36 @@ export default function TodayTrainingTab({
     track('BUTTON_CLICK', { id: 'warmup_skip' }, { component: 'TodayTrainingTab' });
     logger.info('Calentamiento saltado, yendo directo al entrenamiento', null, 'Routines');
 
-    if (localState.pendingSessionData) {
-      updateLocalState({
-        showWarmupModal: false,
-        showSessionModal: true
-        // 🔧 MANTENER pendingSessionData para que el modal se pueda abrir
-      });
+    const pendingId = localState.pendingSessionData?.sessionId || session.sessionId;
+    const hasPending = !!pendingId;
+    try { track('OPEN_ROUTINE_MODAL_ATTEMPT', { hasPending, pendingId, reason: 'skip' }, { component: 'TodayTrainingTab' }); } catch {}
+
+    if (!hasPending) return;
+
+    if (!localState.pendingSessionData && todaySession && session.sessionId) {
+      updateLocalState(prev => ({
+        ...prev,
+        pendingSessionData: {
+          session: { ...todaySession, sessionId: session.sessionId, currentExerciseIndex: 0 },
+          sessionId: session.sessionId
+        }
+      }));
     }
+
+    try { ui.hideAllModals?.(); } catch {}
+
+    updateLocalState({
+      showWarmupModal: false,
+      showSessionModal: true
+    });
+
+    try { ui.showModal?.('routineSession'); } catch {}
+
+    setTimeout(() => {
+      updateLocalState(prev => ({ ...prev, showSessionModal: true }));
+      try { ui.showModal?.('routineSession'); } catch {}
+      try { track('OPEN_ROUTINE_MODAL_DONE', { forced: true, reason: 'skip' }, { component: 'TodayTrainingTab' }); } catch {}
+    }, 0);
   };
 
   /**
@@ -328,6 +393,8 @@ export default function TodayTrainingTab({
       showWarmupModal: false,
       pendingSessionData: null
     });
+
+    try { ui.hideModal?.('warmup'); } catch {}
 
     // TODO: Considerar usar endSession del contexto para cancelar la sesión backend
     logger.debug('Estados de modal de calentamiento limpiados', null, 'Routines');
@@ -618,14 +685,15 @@ export default function TodayTrainingTab({
   // Cargar ejercicios reales del plan desde BD
   useEffect(() => {
     const loadPlanExercises = async () => {
-      if (!methodologyPlanId) return;
+      const effectivePlanId = Number(methodologyPlanId) || plan.planId;
+      if (!effectivePlanId) return;
 
       updateLocalState({ loadingExercises: true });
       try {
         const { getPlanExercises } = await import('../api');
-        const exercises = await getPlanExercises({ methodologyPlanId });
+        const exercises = await getPlanExercises({ methodologyPlanId: effectivePlanId });
         updateLocalState({ planExercises: exercises || [] });
-        logger.debug('Ejercicios del plan cargados desde BD', { count: exercises?.length || 0 }, 'Routines');
+        logger.debug('Ejercicios del plan cargados desde BD', { count: exercises?.length || 0, effectivePlanId }, 'Routines');
       } catch (error) {
         logger.error('Error cargando ejercicios del plan', error, 'Routines');
         // Fallback a plan.semanas solo si falla la BD
@@ -697,17 +765,70 @@ export default function TodayTrainingTab({
   // ===============================================
 
   // Estados para mostrar el entrenamiento de hoy
-  const isCurrentlyTraining = session.status === 'in_progress' || isTraining;
+  const isCurrentlyTraining = hasActiveSession && (
+    session.dayName?.toLowerCase() === todaySession?.dia?.toLowerCase()
+  ); // "Reanudar" solo si la sesi f3n activa es del mismo d eda
   const hasCompletedSession = session.status === 'completed';
   const isRestDay = hasActivePlan && !todaySession; // Solo es día de descanso si HAY plan activo pero no sesión hoy
   const noActivePlan = !hasActivePlan;
+  // Estados exclusivos para HOY
+  const sessionMatchesToday = hasActiveSession && !!session?.dayName && !!todaySession?.dia && (
+    session.dayName.toLowerCase() === todaySession.dia.toLowerCase()
+  );
+
+  // Sesión efectiva para el modal (resiliente a remounts)
+  const wantRoutineModal = localState.showSessionModal || ui.showRoutineSession || ui.showSession;
+  const effectiveSession = localState.pendingSessionData?.session || (
+    wantRoutineModal && (session.sessionId || localState.pendingSessionData?.sessionId) && todaySession
+      ? {
+          ...todaySession,
+          sessionId: session.sessionId || localState.pendingSessionData?.sessionId,
+          currentExerciseIndex: localState.pendingSessionData?.session?.currentExerciseIndex || 0
+        }
+      : null
+  );
+  const effectiveSessionId = localState.pendingSessionData?.sessionId || session.sessionId;
+
+  const hasToday = Boolean(todaySession?.ejercicios?.length > 0);
+
+  // Diagnóstico ligero
+  try {
+    console.debug('[TodayTrainingTab] flags', {
+      hasActivePlan,
+      hasActiveSession,
+      sessionDay: session?.dayName,
+      todayName: todaySession?.dia,
+      sessionMatchesToday,
+      hasToday,
+      hasCompletedSession: session.status === 'completed'
+    });
+  } catch {}
+  // Trace de flags lgicos para diagnosticar render doble (reanudar vs descanso)
+  useEffect(() => {
+    try {
+      track('TODAY_FLAGS', {
+        hasActivePlan,
+        hasActiveSession,
+        sessionDay: session?.dayName || null,
+        todayDia: todaySession?.dia || null,
+        sessionMatchesToday,
+        hasToday,
+        hasCompletedSession
+      }, { component: 'TodayTrainingTab' });
+    } catch {}
+  }, [hasActivePlan, hasActiveSession, todaySession?.dia, session?.dayName, sessionMatchesToday, hasToday, hasCompletedSession, track]);
+
+
+  const pendingExercisesCount = (session.exerciseProgress && Object.keys(session.exerciseProgress).length > 0)
+    ? Object.values(session.exerciseProgress).filter(ex => ex.status === 'pending').length
+    : (todaySession?.ejercicios?.length || 0);
 
   return (
     <SafeComponent context="TodayTrainingTab">
       <div className="space-y-6">
 
         {/* Si hay una sesión en progreso - mostrar botón continuar */}
-        {isCurrentlyTraining && !isRestDay && (
+        {sessionMatchesToday && (
           <>
             <div className="text-center py-6">
               <Dumbbell className="w-12 h-12 text-yellow-400 mx-auto mb-4" />
@@ -715,10 +836,7 @@ export default function TodayTrainingTab({
                 Continúa tu entrenamiento
               </h3>
               <p className="text-gray-400 mb-4">
-                Te quedan {session.exerciseProgress ?
-                  Object.values(session.exerciseProgress).filter(ex => ex.status === 'pending').length :
-                  0
-                } ejercicios por completar
+                Te quedan {pendingExercisesCount} ejercicios por completar
               </p>
               <Button
                 onClick={() => handleStartSession(0)}
@@ -729,17 +847,24 @@ export default function TodayTrainingTab({
               </Button>
             </div>
 
-            <ExerciseList
-              exercises={session.exerciseProgress ? Object.values(session.exerciseProgress) : []}
-              sessionStatus={session}
-              onStartSession={handleStartSession}
-              showProgress={true}
-            />
+            {(() => {
+              const resumeExercises = (session.exerciseProgress && Object.keys(session.exerciseProgress).length > 0)
+                ? Object.values(session.exerciseProgress)
+                : (todaySession?.ejercicios || []);
+              return (
+                <ExerciseList
+                  exercises={resumeExercises}
+                  sessionStatus={session}
+                  onStartSession={handleStartSession}
+                  showProgress={true}
+                />
+              );
+            })()}
           </>
         )}
 
         {/* Si es día de entrenamiento y no hay sesión activa */}
-        {!isRestDay && !isCurrentlyTraining && !hasCompletedSession && todaySession && hasActivePlan && (
+        {!sessionMatchesToday && hasToday && hasActivePlan && !hasCompletedSession && (
           <>
             <div className="text-center py-6">
               <Dumbbell className="w-12 h-12 text-yellow-400 mx-auto mb-4" />
@@ -781,7 +906,7 @@ export default function TodayTrainingTab({
         )}
 
         {/* Si es día de descanso o ya completó el entrenamiento */}
-        {!noActivePlan && (isRestDay || hasCompletedSession) && (
+        {hasActivePlan && !hasToday && !sessionMatchesToday && !hasCompletedSession && (
           <div className="text-center py-12">
             <Calendar className="w-12 h-12 text-gray-600 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-white mb-2">
@@ -808,10 +933,10 @@ export default function TodayTrainingTab({
         )}
 
         {/* Modal de Calentamiento */}
-        {localState.showWarmupModal && localState.pendingSessionData?.sessionId && (
+        {(localState.showWarmupModal || ui.showWarmup) && (localState.pendingSessionData?.sessionId || session.sessionId) && (
           <WarmupModal
             level={(routinePlan || plan.currentPlan)?.level || 'básico'}
-            sessionId={localState.pendingSessionData.sessionId}
+            sessionId={localState.pendingSessionData?.sessionId || session.sessionId}
             onComplete={handleWarmupComplete}
             onSkip={handleSkipWarmup}
             onClose={handleCloseWarmup}
@@ -819,14 +944,14 @@ export default function TodayTrainingTab({
         )}
 
         {/* Modal de Entrenamiento */}
-        {localState.showSessionModal && localState.pendingSessionData?.session && (
+        {(localState.showSessionModal || ui.showRoutineSession) && effectiveSession && (
           <RoutineSessionModal
-            session={localState.pendingSessionData.session}
-            sessionId={session.sessionId}
-            onClose={() => updateLocalState({
-              showSessionModal: false,
-              pendingSessionData: null
-            })}
+            session={effectiveSession}
+            sessionId={effectiveSessionId}
+            onClose={() => {
+              updateLocalState({ showSessionModal: false, pendingSessionData: null });
+              try { ui.hideModal?.('routineSession'); } catch {}
+            }}
             onFinishExercise={handleFinishExercise}
             onSkipExercise={handleSkipExercise}
             onCancelExercise={handleCancelExercise}
