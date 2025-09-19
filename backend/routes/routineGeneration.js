@@ -40,6 +40,34 @@ const router = express.Router();
 // =========================================
 
 /**
+ * Limpiar drafts fallidos del usuario antes de crear un plan nuevo
+ * Esta función previene la acumulación de planes draft corruptos
+ */
+async function cleanUserDrafts(userId, client = null) {
+  const dbClient = client || pool;
+
+  try {
+    console.log(`🧹 Limpiando drafts fallidos para usuario ${userId}...`);
+
+    const result = await dbClient.query(`
+      DELETE FROM app.methodology_plans
+      WHERE user_id = $1 AND status = 'draft'
+    `, [userId]);
+
+    const deletedCount = result.rowCount;
+    if (deletedCount > 0) {
+      console.log(`✅ Eliminados ${deletedCount} drafts fallidos del usuario ${userId}`);
+    }
+
+    return deletedCount;
+  } catch (error) {
+    console.error('❌ Error limpiando drafts:', error);
+    // No lanzar error - la limpieza es opcional
+    return 0;
+  }
+}
+
+/**
  * Obtener perfil completo del usuario desde la BD
  */
 async function getUserFullProfile(userId) {
@@ -431,6 +459,9 @@ router.post('/specialist/calistenia/generate', authenticateToken, async (req, re
     try {
       await dbClient.query('BEGIN');
 
+      // 🧹 LIMPIAR DRAFTS FALLIDOS ANTES DE CREAR PLAN NUEVO
+      await cleanUserDrafts(userId, dbClient);
+
       const methodologyResult = await dbClient.query(`
         INSERT INTO app.methodology_plans (
           user_id, methodology_type, plan_data, generation_mode, status, created_at
@@ -604,11 +635,14 @@ Responde únicamente con el JSON solicitado.`;
       throw new Error('Plan inválido: estructura incorrecta');
     }
 
+    // 🧹 LIMPIAR DRAFTS FALLIDOS ANTES DE CREAR PLAN NUEVO
+    await cleanUserDrafts(userId);
+
     // Guardar en BD
     const insertResult = await pool.query(`
       INSERT INTO app.methodology_plans (
-        user_id, methodology_type, plan_data, generation_mode, created_at
-      ) VALUES ($1, $2, $3, 'automatic', NOW())
+        user_id, methodology_type, plan_data, generation_mode, status, created_at
+      ) VALUES ($1, $2, $3, 'automatic', 'draft', NOW())
       RETURNING id
     `, [userId, parsedPlan.selected_style, JSON.stringify(parsedPlan)]);
 
@@ -750,6 +784,9 @@ router.post('/manual/methodology', authenticateToken, async (req, res) => {
       throw new Error('La IA no generó la metodología solicitada');
     }
 
+    // 🧹 LIMPIAR DRAFTS FALLIDOS ANTES DE CREAR PLAN NUEVO
+    await cleanUserDrafts(userId);
+
     // Guardar en BD como activo
     const insertResult = await pool.query(`
       INSERT INTO app.methodology_plans (
@@ -820,11 +857,11 @@ router.post('/manual/calistenia', authenticateToken, async (req, res) => {
 
     // Obtener historial
     const historyQuery = await client.query(`
-      SELECT DISTINCT exercise_name, feedback_rating, MAX(completed_at) as last_completed
+      SELECT DISTINCT exercise_name, MAX(completed_at) as last_completed
       FROM app.methodology_exercise_history_complete
       WHERE user_id = $1
         AND methodology_type IN ('Calistenia', 'Calistenia Manual')
-      GROUP BY exercise_name, feedback_rating
+      GROUP BY exercise_name
       ORDER BY last_completed DESC
       LIMIT 50
     `, [userId]);
@@ -903,6 +940,9 @@ INSTRUCCIONES:
     } else {
       throw new Error('No se pudo parsear el plan generado');
     }
+
+    // 🧹 LIMPIAR DRAFTS FALLIDOS ANTES DE CREAR PLAN NUEVO
+    await cleanUserDrafts(userId, client);
 
     // Guardar en BD
     const insertResult = await client.query(`

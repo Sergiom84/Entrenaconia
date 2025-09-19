@@ -176,8 +176,8 @@ router.post('/bootstrap-plan', authenticateToken, async (req, res) => {
 
     // Crear methodology_plans
     const ins = await client.query(
-      `INSERT INTO app.methodology_plans (user_id, methodology_type, plan_data, generation_mode, created_at)
-       VALUES ($1, $2, $3, $4, NOW()) RETURNING id`,
+      `INSERT INTO app.methodology_plans (user_id, methodology_type, plan_data, generation_mode, status, created_at)
+       VALUES ($1, $2, $3, $4, 'draft', NOW()) RETURNING id`,
       [userId, methodology_type, plan_data, generation_mode || 'automatic']
     );
 
@@ -893,7 +893,7 @@ router.get('/progress-data', authenticateToken, async (req, res) => {
          COUNT(DISTINCT mep.id) as total_exercises,
          SUM(CASE WHEN mep.status = 'completed' THEN mep.series_completed ELSE 0 END) as series_completed,
          SUM(CASE WHEN mep.status = 'completed' THEN COALESCE(mep.time_spent_seconds, 0) ELSE 0 END) +
-         COALESCE(mes.warmup_time_seconds, 0) as time_spent_seconds
+         SUM(DISTINCT COALESCE(mes.warmup_time_seconds, 0)) as time_spent_seconds
        FROM app.methodology_exercise_sessions mes
        LEFT JOIN app.methodology_exercise_progress mep ON mep.methodology_session_id = mes.id
        WHERE mes.user_id = $1 AND mes.methodology_plan_id = $2
@@ -1811,9 +1811,9 @@ router.get('/plan-exercises', authenticateToken, async (req, res) => {
       });
     }
 
-    // Verificar que el plan esté activo (confirmed)
+    // Verificar que el plan esté activo
     const planStatus = planQuery.rows[0].status;
-    if (planStatus !== 'confirmed') {
+    if (planStatus !== 'active' && planStatus !== 'confirmed') {
       console.log(`❌ [STEP 2] Plan no activo - Estado: ${planStatus}`);
       return res.status(400).json({
         success: false,
@@ -2088,6 +2088,101 @@ router.get('/schedule/:methodology_plan_id', authenticateToken, async (req, res)
   } catch (error) {
     console.error('❌ [/schedule] Error:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// 🎯 POST /api/routines/confirm-plan
+// Confirma un plan cambiando su status de 'draft' a 'active'
+// Esto se ejecuta cuando el usuario pulsa "Comenzar Entrenamiento"
+router.post('/confirm-plan', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    const { methodology_plan_id } = req.body;
+
+    console.log(`🎯 [/confirm-plan] Confirmando plan ${methodology_plan_id} para usuario ${userId}`);
+
+    if (!methodology_plan_id) {
+      return res.status(400).json({
+        success: false,
+        error: 'methodology_plan_id es requerido'
+      });
+    }
+
+    // Verificar que el plan existe, pertenece al usuario y está en draft
+    const planCheck = await pool.query(`
+      SELECT id, status, plan_data
+      FROM app.methodology_plans
+      WHERE id = $1 AND user_id = $2
+    `, [methodology_plan_id, userId]);
+
+    if (planCheck.rowCount === 0) {
+      console.log(`❌ [/confirm-plan] Plan ${methodology_plan_id} no encontrado para usuario ${userId}`);
+      return res.status(404).json({
+        success: false,
+        error: 'Plan no encontrado'
+      });
+    }
+
+    const plan = planCheck.rows[0];
+
+    // Verificar que el plan tiene datos válidos
+    if (!plan.plan_data || Object.keys(plan.plan_data).length === 0) {
+      console.log(`❌ [/confirm-plan] Plan ${methodology_plan_id} tiene datos vacíos`);
+      return res.status(400).json({
+        success: false,
+        error: 'Plan incompleto - no se puede confirmar'
+      });
+    }
+
+    // Verificar que el plan está en draft
+    if (plan.status !== 'draft') {
+      console.log(`⚠️ [/confirm-plan] Plan ${methodology_plan_id} ya está en estado: ${plan.status}`);
+      return res.status(400).json({
+        success: false,
+        error: `Plan ya está en estado: ${plan.status}`
+      });
+    }
+
+    // Confirmar el plan
+    const confirmResult = await pool.query(`
+      UPDATE app.methodology_plans
+      SET
+        status = 'active',
+        confirmed_at = NOW(),
+        plan_start_date = NOW()
+      WHERE id = $1 AND user_id = $2
+      RETURNING id, status, confirmed_at, plan_start_date
+    `, [methodology_plan_id, userId]);
+
+    if (confirmResult.rowCount === 0) {
+      console.log(`❌ [/confirm-plan] No se pudo confirmar el plan ${methodology_plan_id}`);
+      return res.status(500).json({
+        success: false,
+        error: 'Error al confirmar el plan'
+      });
+    }
+
+    const confirmedPlan = confirmResult.rows[0];
+    console.log(`✅ [/confirm-plan] Plan ${methodology_plan_id} confirmado exitosamente`);
+
+    res.json({
+      success: true,
+      message: 'Plan confirmado exitosamente',
+      plan: {
+        id: confirmedPlan.id,
+        status: confirmedPlan.status,
+        confirmed_at: confirmedPlan.confirmed_at,
+        plan_start_date: confirmedPlan.plan_start_date
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ [/confirm-plan] Error confirmando plan:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error interno del servidor',
+      details: error.message
+    });
   }
 });
 

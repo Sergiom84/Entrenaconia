@@ -23,9 +23,9 @@ import { useTrace } from '@/contexts/TraceContext';
 // ===============================================
 
 const LOCAL_STATE_INITIAL = {
-  selectionMode: 'automatico',
+  selectionMode: 'auto', // Cambiar de 'automatico' a 'auto' para coincidir con validación
   pendingMethodology: null,
-  detailsMethod: null,
+  detailsMethod: {}, // Cambiar de null a objeto vacío para evitar warnings
   activeTrainingInfo: null,
   versionSelectionData: null
 };
@@ -33,6 +33,58 @@ const LOCAL_STATE_INITIAL = {
 export default function MethodologiesScreen() {
   const { user } = useAuth();
   const { userData } = useUserContext();
+
+  // ===============================================
+  // 🛡️ FUNCIONES DE VALIDACIÓN
+  // ===============================================
+
+  /**
+   * Valida que un plan tenga datos completos antes de mostrar el modal
+   * Previene mostrar planes corruptos o incompletos
+   */
+  const validatePlanData = (planData) => {
+    console.log('🛡️ Validando datos del plan...', planData);
+
+    if (!planData) {
+      console.log('❌ Plan es null o undefined');
+      return { isValid: false, error: 'Plan no generado' };
+    }
+
+    if (typeof planData !== 'object' || Object.keys(planData).length === 0) {
+      console.log('❌ Plan está vacío o no es un objeto');
+      return { isValid: false, error: 'Plan vacío o corrupto' };
+    }
+
+    if (!planData.semanas || !Array.isArray(planData.semanas) || planData.semanas.length === 0) {
+      console.log('❌ Plan no tiene semanas válidas');
+      return { isValid: false, error: 'Plan sin semanas de entrenamiento' };
+    }
+
+    // Verificar que al menos una semana tenga sesiones
+    const hasValidSessions = planData.semanas.some(semana =>
+      semana.sesiones && Array.isArray(semana.sesiones) && semana.sesiones.length > 0
+    );
+
+    if (!hasValidSessions) {
+      console.log('❌ Plan no tiene sesiones válidas');
+      return { isValid: false, error: 'Plan sin sesiones de entrenamiento' };
+    }
+
+    // Verificar que al menos una sesión tenga ejercicios
+    const hasValidExercises = planData.semanas.some(semana =>
+      semana.sesiones && semana.sesiones.some(sesion =>
+        sesion.ejercicios && Array.isArray(sesion.ejercicios) && sesion.ejercicios.length > 0
+      )
+    );
+
+    if (!hasValidExercises) {
+      console.log('❌ Plan no tiene ejercicios válidos');
+      return { isValid: false, error: 'Plan sin ejercicios' };
+    }
+
+    console.log('✅ Plan válido - puede mostrar modal');
+    return { isValid: true };
+  };
 
   // ===============================================
   // 🚀 INTEGRACIÓN CON WorkoutContext
@@ -47,6 +99,7 @@ export default function MethodologiesScreen() {
     // Acciones de plan
     generatePlan,
     activatePlan,
+    cancelPlan,
 
     // Acciones de sesión
     startSession,
@@ -56,7 +109,11 @@ export default function MethodologiesScreen() {
     goToTraining,
 
     // Utilidades
-    hasActivePlan
+    hasActivePlan,
+
+    // 🚀 NEW: Supabase Integration
+    hasActivePlanFromDB,
+    syncWithDatabase
   } = useWorkout();
   const { track } = useTrace();
 
@@ -168,11 +225,13 @@ export default function MethodologiesScreen() {
     try { track('BUTTON_CLICK', { id: 'activar_ia' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
     if (!user) return;
 
-    // Verificar si hay entrenamiento activo usando WorkoutContext
-    if (hasActivePlan) {
-      updateLocalState({ activeTrainingInfo: plan.currentPlan });
-      ui.showModal('activeTrainingWarning');
-      return;
+    // 🎯 FLUJO SIMPLIFICADO - SUPABASE FIRST: Usuario quiere activar IA
+    // Si hay plan → limpiar y generar nuevo con IA
+    const hasActivePlanInDB = await hasActivePlanFromDB();
+    if (hasActivePlanInDB) {
+      console.log('🔄 Plan activo detectado en BD, limpiando para generar nuevo con IA...');
+      await cancelPlan(); // Limpiar plan anterior
+      await syncWithDatabase(); // Sincronizar estado
     }
 
     // Configurar datos de selección de versión
@@ -212,7 +271,15 @@ export default function MethodologiesScreen() {
 
       if (result.success) {
         console.log('✅ Plan automático generado exitosamente');
-        ui.showModal('planConfirmation');
+
+        // 🛡️ VALIDAR DATOS ANTES DE MOSTRAR MODAL
+        const validation = validatePlanData(plan.currentPlan);
+        if (validation.isValid) {
+          ui.showModal('planConfirmation');
+        } else {
+          console.error('❌ Plan inválido:', validation.error);
+          ui.setError(`Plan generado incorrectamente: ${validation.error}`);
+        }
       } else {
         throw new Error(result.error || 'Error generando plan automático');
       }
@@ -247,11 +314,13 @@ export default function MethodologiesScreen() {
     try { track('ACTION', { id: 'manual_version_confirm', methodology: localState.pendingMethodology?.name, version: versionConfig?.version }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
     if (!localState.pendingMethodology) return;
 
-    // Verificar si hay entrenamiento activo
-    if (hasActivePlan) {
-      updateLocalState({ activeTrainingInfo: plan.currentPlan });
-      ui.showModal('activeTrainingWarning');
-      return;
+    // 🎯 FLUJO SIMPLIFICADO - SUPABASE FIRST: Usuario eligió metodología manual
+    // Si hay plan → limpiar y generar nuevo con metodología elegida
+    const hasActivePlanInDB = await hasActivePlanFromDB();
+    if (hasActivePlanInDB) {
+      console.log(`🔄 Plan activo detectado en BD, limpiando para generar nuevo (${localState.pendingMethodology?.name})...`);
+      await cancelPlan(); // Limpiar plan anterior
+      await syncWithDatabase(); // Sincronizar estado
     }
 
     ui.hideModal('versionSelection');
@@ -268,7 +337,15 @@ export default function MethodologiesScreen() {
 
       if (result.success) {
         console.log('✅ Plan manual generado exitosamente');
-        ui.showModal('planConfirmation');
+
+        // 🛡️ VALIDAR DATOS ANTES DE MOSTRAR MODAL
+        const validation = validatePlanData(plan.currentPlan);
+        if (validation.isValid) {
+          ui.showModal('planConfirmation');
+        } else {
+          console.error('❌ Plan inválido:', validation.error);
+          ui.setError(`Plan generado incorrectamente: ${validation.error}`);
+        }
       } else {
         throw new Error(result.error || 'Error al generar el plan');
       }
@@ -289,11 +366,18 @@ export default function MethodologiesScreen() {
 
   const handleCalisteniaManualGenerate = async (calisteniaData) => {
     try { track('ACTION', { id: 'generate_calistenia' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
-    // Verificar si hay entrenamiento activo
-    if (hasActivePlan) {
-      updateLocalState({ activeTrainingInfo: plan.currentPlan });
-      ui.showModal('activeTrainingWarning');
-      return;
+
+    // 🎯 FLUJO SIMPLIFICADO - SUPABASE FIRST:
+    // - Sin plan → generar
+    // - Con plan → usuario quiere NUEVO plan, limpiar anterior y generar
+    // - Para continuar plan existente → usar botón "Ir a Entrenamientos"
+
+    // 🚀 Verificar desde BD (no localStorage)
+    const hasActivePlanInDB = await hasActivePlanFromDB();
+    if (hasActivePlanInDB) {
+      console.log('🔄 Plan activo detectado en BD, limpiando para generar nuevo...');
+      await cancelPlan(); // Limpiar plan anterior
+      await syncWithDatabase(); // Sincronizar estado
     }
 
     try {
@@ -308,7 +392,15 @@ export default function MethodologiesScreen() {
       if (result.success) {
         console.log('✅ Plan de calistenia generado exitosamente');
         ui.hideModal('calisteniaManual');
-        ui.showModal('planConfirmation');
+
+        // 🛡️ VALIDAR DATOS ANTES DE MOSTRAR MODAL
+        const validation = validatePlanData(plan.currentPlan);
+        if (validation.isValid) {
+          ui.showModal('planConfirmation');
+        } else {
+          console.error('❌ Plan inválido:', validation.error);
+          ui.setError(`Plan generado incorrectamente: ${validation.error}`);
+        }
       } else {
         throw new Error(result.error || 'Error al generar el plan de calistenia');
       }
@@ -328,7 +420,31 @@ export default function MethodologiesScreen() {
         throw new Error('No hay plan generado para iniciar');
       }
 
-      // Usar startSession del WorkoutContext
+      console.log('🎯 PASO 1: Confirmando plan...');
+
+      // 🎯 NUEVO: Confirmar el plan ANTES de iniciar sesión (draft → active)
+      const confirmResponse = await fetch('/api/routines/confirm-plan', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+        },
+        body: JSON.stringify({
+          methodology_plan_id: plan.planId
+        })
+      });
+
+      if (!confirmResponse.ok) {
+        const errorData = await confirmResponse.json();
+        throw new Error(errorData.error || 'Error al confirmar el plan');
+      }
+
+      const confirmData = await confirmResponse.json();
+      console.log('✅ Plan confirmado exitosamente:', confirmData);
+
+      console.log('🎯 PASO 2: Iniciando sesión...');
+
+      // Usar startSession del WorkoutContext (DESPUÉS de confirmar)
       const result = await startSession({
         planId: plan.planId,
         dayName: 'today'
@@ -389,7 +505,15 @@ export default function MethodologiesScreen() {
 
       if (result.success) {
         console.log('✅ Nuevo plan generado con feedback');
-        ui.showModal('planConfirmation');
+
+        // 🛡️ VALIDAR DATOS ANTES DE MOSTRAR MODAL
+        const validation = validatePlanData(plan.currentPlan);
+        if (validation.isValid) {
+          ui.showModal('planConfirmation');
+        } else {
+          console.error('❌ Plan inválido:', validation.error);
+          ui.setError(`Plan generado incorrectamente: ${validation.error}`);
+        }
       } else {
         throw new Error(result.error || 'Error al generar nuevo plan');
       }
@@ -430,9 +554,9 @@ export default function MethodologiesScreen() {
 
           <div className="grid md:grid-cols-2 gap-4 mt-4">
             <div
-              onClick={() => { updateLocalState({ selectionMode: 'automatico' }); try { track('CARD_CLICK', { id: 'selection-mode', value: 'automatico' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); } }}
+              onClick={() => { updateLocalState({ selectionMode: 'auto' }); try { track('CARD_CLICK', { id: 'selection-mode', value: 'auto' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); } }}
               className={`p-4 rounded-lg transition-all bg-black/80 cursor-pointer
-                ${localState.selectionMode === 'automatico'
+                ${localState.selectionMode === 'auto'
                   ? 'border border-yellow-400 ring-2 ring-yellow-400/30'
                   : 'border border-yellow-400/20 hover:border-yellow-400/40'}`}
             >
@@ -442,8 +566,8 @@ export default function MethodologiesScreen() {
                   onValueChange={(mode) => updateLocalState({ selectionMode: mode })}
                 >
                   <div className="flex items-center gap-2">
-                    <RadioGroupItem value="automatico" id="automatico" />
-                    <Label htmlFor="automatico" className="text-white font-semibold flex items-center gap-2">
+                    <RadioGroupItem value="auto" id="auto" />
+                    <Label htmlFor="auto" className="text-white font-semibold flex items-center gap-2">
                       <Brain className="w-4 h-4 text-yellow-400" />
                       Automático (Recomendado)
                     </Label>
@@ -451,7 +575,7 @@ export default function MethodologiesScreen() {
                 </RadioGroup>
               </div>
               <p className="text-gray-400 text-sm mt-2">La IA elige la mejor metodología para tu perfil.</p>
-              {localState.selectionMode === 'automatico' && (
+              {localState.selectionMode === 'auto' && (
                 <div className="mt-4">
                   <Button
                     onClick={() => handleActivateIA(null)}
