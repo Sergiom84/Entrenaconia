@@ -272,8 +272,8 @@ export default function MethodologiesScreen() {
       if (result.success) {
         console.log('✅ Plan automático generado exitosamente');
 
-        // 🛡️ VALIDAR DATOS ANTES DE MOSTRAR MODAL
-        const validation = validatePlanData(plan.currentPlan);
+        // 🛡️ VALIDAR DATOS ANTES DE MOSTRAR MODAL (usar result.plan en lugar de plan.currentPlan)
+        const validation = validatePlanData(result.plan);
         if (validation.isValid) {
           ui.showModal('planConfirmation');
         } else {
@@ -331,15 +331,15 @@ export default function MethodologiesScreen() {
       // Usar generatePlan del WorkoutContext
       const result = await generatePlan({
         mode: 'manual',
-        methodology: localState.pendingMethodology.name,
+        methodology: (localState.pendingMethodology.name || '').toLowerCase(),
         versionConfig: versionConfig || { version: 'adapted', customWeeks: 4 }
       });
 
       if (result.success) {
         console.log('✅ Plan manual generado exitosamente');
 
-        // 🛡️ VALIDAR DATOS ANTES DE MOSTRAR MODAL
-        const validation = validatePlanData(plan.currentPlan);
+        // 🛡️ VALIDAR DATOS ANTES DE MOSTRAR MODAL (usar result.plan en lugar de plan.currentPlan)
+        const validation = validatePlanData(result.plan);
         if (validation.isValid) {
           ui.showModal('planConfirmation');
         } else {
@@ -385,7 +385,8 @@ export default function MethodologiesScreen() {
 
       // Usar generatePlan del WorkoutContext
       const result = await generatePlan({
-        mode: 'calistenia',
+        mode: 'manual',
+        methodology: 'calistenia',
         calisteniaData
       });
 
@@ -393,8 +394,8 @@ export default function MethodologiesScreen() {
         console.log('✅ Plan de calistenia generado exitosamente');
         ui.hideModal('calisteniaManual');
 
-        // 🛡️ VALIDAR DATOS ANTES DE MOSTRAR MODAL
-        const validation = validatePlanData(plan.currentPlan);
+        // 🛡️ VALIDAR DATOS ANTES DE MOSTRAR MODAL (usar result.plan en lugar de plan.currentPlan)
+        const validation = validatePlanData(result.plan);
         if (validation.isValid) {
           ui.showModal('planConfirmation');
         } else {
@@ -506,8 +507,8 @@ export default function MethodologiesScreen() {
       if (result.success) {
         console.log('✅ Nuevo plan generado con feedback');
 
-        // 🛡️ VALIDAR DATOS ANTES DE MOSTRAR MODAL
-        const validation = validatePlanData(plan.currentPlan);
+        // 🛡️ VALIDAR DATOS ANTES DE MOSTRAR MODAL (usar result.plan en lugar de plan.currentPlan)
+        const validation = validatePlanData(result.plan);
         if (validation.isValid) {
           ui.showModal('planConfirmation');
         } else {
