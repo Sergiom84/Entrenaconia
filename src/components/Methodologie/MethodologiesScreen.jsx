@@ -757,9 +757,15 @@ export default function MethodologiesScreen() {
       {/* Modal de sesión de rutina */}
       <RoutineSessionModal
         isOpen={ui.showRoutineSession}
-        onClose={handleEndSession}
-        sessionData={session.currentSession}
-        onUpdateExercise={updateExercise}
+        session={session.currentSession}
+        sessionId={session.sessionId}
+        onClose={() => ui.hideModal('routineSession')}
+        onFinishExercise={(exerciseIndex, seriesCompleted, timeSpent) =>
+          updateExercise(exerciseIndex, { status: 'completed', seriesCompleted, timeSpent })
+        }
+        onSkipExercise={(exerciseIndex) => updateExercise(exerciseIndex, { status: 'skipped' })}
+        onCancelExercise={(exerciseIndex) => updateExercise(exerciseIndex, { status: 'cancelled' })}
+        onEndSession={handleEndSession}
       />
     </div>
   );

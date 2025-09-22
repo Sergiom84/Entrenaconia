@@ -600,7 +600,7 @@ export function WorkoutProvider({ children }) {
     if (!state.session.sessionId) return;
 
     try {
-      const result = await apiCall(`/training/session/${state.session.sessionId}/complete`, {
+      const result = await apiCall(`/training-session/complete/methodology/${state.session.sessionId}`, {
         method: 'POST'
       });
 

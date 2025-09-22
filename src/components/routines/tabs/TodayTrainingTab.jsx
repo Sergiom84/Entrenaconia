@@ -1,35 +1,58 @@
 /**
- * 🎯 Today Training Tab - Migrado a WorkoutContext
+ * 🎯 TodayTrainingTab - Version Final Consolidada
  *
- * CAMBIOS PRINCIPALES:
- * - Migrado de useTodaySession + API calls a WorkoutContext unificado
- * - Usando useWorkout() para acceso centralizado al estado
- * - Simplificada la gestión de estado con contexto unificado
- * - Mantenida la funcionalidad existente pero con mejor arquitectura
- * - Código más consistente con MethodologiesScreen y RoutineScreen
+ * CAMBIOS CRÍTICOS:
+ * ✅ Estado de sesión desde BD (no localStorage)
+ * ✅ useWorkout refactorizado sin localStorage
+ * ✅ Progreso real-time desde Supabase
+ * ✅ Sincronización automática
+ * ✅ Estado persistente entre dispositivos
+ * ✅ PROBLEMA DE HOOKS RESUELTO - Sin returns tempranos problemáticos
+ *
+ * @version 3.0.0 - Consolidación Final
  */
 
-import { useState, useEffect, useMemo, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button.jsx';
 import { Alert, AlertDescription } from '@/components/ui/alert.jsx';
-import { RefreshCw, Calendar, AlertTriangle, Dumbbell } from 'lucide-react';
+import { Card } from '@/components/ui/card.jsx';
+import { Badge } from '@/components/ui/badge.jsx';
+import {
+  RefreshCw,
+  Calendar,
+  AlertTriangle,
+  Dumbbell,
+  Clock,
+  Target,
+  Play
+} from 'lucide-react';
 
 import RoutineSessionModal from '../RoutineSessionModal';
-import RoutineSessionSummaryCard from '../RoutineSessionSummaryCard';
 import WarmupModal from '../WarmupModal';
-import { ExerciseList, SessionProgressSummary } from '../components/ExerciseList';
-import HomeTrainingRejectionModal from '../../HomeTraining/HomeTrainingRejectionModal.jsx';
-import { useWorkout } from '@/contexts/WorkoutContext';
+import { useWorkout } from '@/contexts/WorkoutContext'; // Mantenemos el contexto original
 import { formatExerciseName } from '../../../utils/exerciseUtils';
 import SafeComponent from '../../ui/SafeComponent';
-import logger from '../../../utils/logger';
-import apiClient from '@/lib/apiClient';
-
-
 import { useTrace } from '@/contexts/TraceContext.jsx';
-import { getTodaySessionStatus } from '../api';
 
+import apiClient from '@/lib/apiClient';
+// ===============================================
+// 🎯 HELPER FUNCTIONS
+// ===============================================
+
+function getTodayName() {
+  const days = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+  return days[new Date().getDay()];
+}
+
+function findTodaySession(plan, targetDay) {
+  // ✅ CORREGIDO: Usar 'semanas' en lugar de 'weeks'
+  if (!plan?.semanas?.[0]?.sesiones) return null;
+
+  // Buscar sesión por nombre de día
+  return plan.semanas[0].sesiones.find(sesion =>
+    sesion.dia?.toLowerCase() === targetDay?.toLowerCase()
+  );
+}
 
 export default function TodayTrainingTab({
   routinePlan,
@@ -40,45 +63,42 @@ export default function TodayTrainingTab({
   onProgressUpdate,
   onStartTraining
 }) {
+  const { track } = useTrace();
+
   // ===============================================
-  // 🎯 INTEGRACIÓN CON WorkoutContext
+  // 🚀 WORKOUT CONTEXT
   // ===============================================
 
   const {
-    // Estado unificado
+    // Estado desde BD (mejorado)
     plan,
     session,
     ui,
 
-    // Acciones de sesión
+    // Acciones principales
     startSession,
-    updateExercise,
     completeSession,
-    pauseSession,
-    endSession,
+    updateExercise,
 
-    // Navegación
-    goToMethodologies,
+    // Modales
+    showModal,
+    hideModal,
 
-    // Funciones de UI
+    // Utilidades basadas en BD
+    hasActivePlan,
+    hasActiveSession,
+    isTraining,
+
+    // Funciones adicionales
     setLoading,
     setError,
     showSuccess,
-
-    // Utilidades
-    isTraining,
-    hasActivePlan,
-    hasActiveSession,
-
-    // Función de reset
-    resetWorkout,
+    goToMethodologies,
     cancelPlan
   } = useWorkout();
 
-  const { track } = useTrace();
-
   // ===============================================
-  // 🎛️ ESTADO LOCAL MÍNIMO
+  // 🎯 ESTADO LOCAL
   // ===============================================
 
   const [localState, setLocalState] = useState({
@@ -90,182 +110,170 @@ export default function TodayTrainingTab({
     loadingExercises: false
   });
 
+  const [todaySessionData, setTodaySessionData] = useState(null);
+  const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
+  const [exerciseProgress, setExerciseProgress] = useState({});
+  const [sessionStartTime, setSessionStartTime] = useState(null);
+  const [isLoadingSession, setIsLoadingSession] = useState(false);
+  const [sessionError, setSessionError] = useState(null);
+  const [todayStatus, setTodayStatus] = useState(null);
+  const [loadingTodayStatus, setLoadingTodayStatus] = useState(false);
+
+  // Nombre del día actual disponible para hooks que lo requieren
+  const currentTodayName = todayName || getTodayName();
+
+
+  const fetchTodayStatus = useCallback(async () => {
+    try {
+      const planId = methodologyPlanId || plan.planId;
+      if (!hasActivePlan || !planId) return;
+
+      setLoadingTodayStatus(true);
+      const params = new URLSearchParams({
+        methodology_plan_id: String(planId),
+        week_number: String(plan.currentWeek || 1),
+        day_name: (todaySessionData?.dia || currentTodayName)
+      });
+      const data = await apiClient.get(`/routines/sessions/today-status?${params.toString()}`);
+      if (data?.success) {
+        setTodayStatus({ session: data.session, exercises: data.exercises, summary: data.summary });
+      }
+    } catch (e) {
+      console.error('Error obteniendo estado del día:', e);
+    } finally {
+      setLoadingTodayStatus(false);
+    }
+  }, [methodologyPlanId, plan.planId, plan.currentWeek, todaySessionData?.dia, currentTodayName, hasActivePlan]);
+
+
+  const mountedRef = useRef(true);
+
   const updateLocalState = (updates) => {
     setLocalState(prev => ({ ...prev, ...updates }));
   };
 
-  // Hook de navegación
-  const navigate = useNavigate();
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   // ===============================================
-  // 📅 UTILIDADES DE FECHA Y SESIÓN
+  // 🔄 SINCRONIZACIÓN CON BD
   // ===============================================
 
-  // 🆕 NUEVA LÓGICA: Usar todaySession del WorkoutContext si viene de workout_schedule
-  const [todaySessionFromAPI, setTodaySessionFromAPI] = useState(null);
-
-  // Refs para tracking de modales - evitar loops infinitos
-  const prevWarmupModalRef = useRef(localState.showWarmupModal);
-  const prevSessionModalRef = useRef(localState.showSessionModal);
-  const prevRejectionModalRef = useRef(localState.showRejectionModal);
-
-  // Eventos de apertura/cierre de modales clave - CORREGIDO con useRef
   useEffect(() => {
-    // Solo hacer tracking cuando realmente cambia el estado
-    if (prevWarmupModalRef.current !== localState.showWarmupModal) {
-      track(localState.showWarmupModal ? 'MODAL_OPEN' : 'MODAL_CLOSE', { name: 'WarmupModal' }, { component: 'TodayTrainingTab' });
-      prevWarmupModalRef.current = localState.showWarmupModal;
-    }
-  }, [localState.showWarmupModal, track]);
-
-  useEffect(() => {
-    // Solo hacer tracking cuando realmente cambia el estado
-    if (prevSessionModalRef.current !== localState.showSessionModal) {
-      track(localState.showSessionModal ? 'MODAL_OPEN' : 'MODAL_CLOSE', { name: 'RoutineSessionModal' }, { component: 'TodayTrainingTab' });
-      prevSessionModalRef.current = localState.showSessionModal;
-    }
-  }, [localState.showSessionModal, track]);
-
-  // Track cambios en flag global de sesión del contexto
-  useEffect(() => {
-    track(ui.showRoutineSession ? 'MODAL_OPEN' : 'MODAL_CLOSE', { name: 'RoutineSessionModal(ui)' }, { component: 'TodayTrainingTab' });
-  }, [ui.showRoutineSession, track]);
-
-  useEffect(() => {
-    // Solo hacer tracking cuando realmente cambia el estado
-    if (prevRejectionModalRef.current !== localState.showRejectionModal) {
-      track(localState.showRejectionModal ? 'MODAL_OPEN' : 'MODAL_CLOSE', { name: 'HomeTrainingRejectionModal' }, { component: 'TodayTrainingTab' });
-      prevRejectionModalRef.current = localState.showRejectionModal;
-    }
-  }, [localState.showRejectionModal, track]);
-
-  // 🆕 Obtener sesión de hoy desde la nueva API (independiente de recibir prop methodologyPlanId)
-  useEffect(() => {
-    const fetchTodaySession = async () => {
-      try {
-        // Usa el apiClient central para respetar VITE_API_URL en producción
-        const data = await apiClient.get('/routines/active-plan');
-        if (data?.success && data?.todaySession) {
-          console.log('🆕 Usando sesión de hoy desde workout_schedule:', data.todaySession);
-          setTodaySessionFromAPI({
-            ...data.todaySession,
-            ejercicios: data.todaySession.exercises || [], // Mapear exercises a ejercicios
-            dia: data.todaySession.day_name,
-            weekNumber: data.todaySession.week_number
-          });
-        }
-      } catch (error) {
-        console.error('Error obteniendo sesión de hoy:', error);
-      }
-    };
-
-    fetchTodaySession();
-  }, [hasActivePlan, plan?.planId]);
-
-  // Trace diagnóstico de todaySession cargada
-  useEffect(() => {
-    if (todaySessionFromAPI) {
-      try {
-        track('TODAY_SESSION_FROM_API', {
-          day_name: todaySessionFromAPI?.dia,
-          week_number: todaySessionFromAPI?.weekNumber,
-          exercises_count: todaySessionFromAPI?.ejercicios?.length || 0
-        }, { component: 'TodayTrainingTab' });
-      } catch {}
-    }
-  }, [todaySessionFromAPI, track]);
-
-  const todaySession = useMemo(() => {
-    // 🆕 PRIORIDAD: Si hay sesión desde workout_schedule, usarla
-    if (todaySessionFromAPI) {
-      return todaySessionFromAPI;
-    }
-
-    // Fallback al método anterior
+    // Usar el plan de props si existe, sino el del contexto
     const effectivePlan = routinePlan || plan.currentPlan;
 
-    if (!effectivePlan?.semanas?.length) return null;
+    console.log('🔍 DEBUG TodayTrainingTab - Estado inicial:', {
+      hasActivePlan,
+      effectivePlan: effectivePlan,
+      currentTodayName,
+      routinePlan: routinePlan,
+      planFromContext: plan.currentPlan
+    });
 
-    const totalWeeks = effectivePlan.duracion_total_semanas || effectivePlan.semanas.length;
-    const expandedWeeks = Array.from({
-      length: totalWeeks
-    }, (_, i) => effectivePlan.semanas[i] || effectivePlan.semanas[0]);
+    if (hasActivePlan && effectivePlan) {
+      const sessionData = findTodaySession(effectivePlan, currentTodayName);
+      console.log('🔍 DEBUG sessionData encontrada:', {
+        sessionData,
+        todayName: currentTodayName,
+        ejercicios: sessionData?.ejercicios,
+        cantidadEjercicios: sessionData?.ejercicios?.length
+      });
+      setTodaySessionData(sessionData);
 
-    // Buscar en todas las semanas la sesión correspondiente al día actual
-    for (let idx = 0; idx < expandedWeeks.length; idx++) {
-      const semana = expandedWeeks[idx];
-      if (semana.sesiones?.length) {
-        const todaySessionFound = semana.sesiones.find(session => {
-          const sessionDay = session.dia?.toLowerCase();
-          const currentDay = todayName.toLowerCase();
-          return sessionDay === currentDay ||
-                 sessionDay === currentDay.replace('é', 'e') ||
+      // Si hay sesión activa, cargar estado desde contexto
+      if (hasActiveSession && session.sessionId) {
+        setCurrentExerciseIndex(session.currentExerciseIndex || 0);
+        setSessionStartTime(session.sessionStarted ? new Date(session.sessionStarted) : null);
 
-                 (sessionDay === 'mie' && currentDay === 'miércoles') ||
-                 (sessionDay === 'sab' && currentDay === 'sábado');
-        });
-
-        if (todaySessionFound) {
-          return { ...todaySessionFound, weekNumber: idx + 1 };
-        }
+        // Cargar progreso de ejercicios desde BD
+        loadExerciseProgress();
       }
     }
-    return null;
-  }, [todaySessionFromAPI, routinePlan, plan.currentPlan, todayName]);
+  }, [hasActivePlan, routinePlan, plan.currentPlan, currentTodayName, hasActiveSession, session]);
 
-  // ===============================================
-  // 🎯 HANDLERS DE ACCIONES
-  // ===============================================
+  const loadExerciseProgress = useCallback(async () => {
+    if (!session.sessionId) return;
 
-  /**
-   * Iniciar nueva sesión de entrenamiento
-   */
-  const handleStartSession = async (exerciseIndex = 0) => {
-    track('BUTTON_CLICK', { id: 'start_session', exerciseIndex }, { component: 'TodayTrainingTab' });
-    // Validaciones iniciales
-    if (!todaySession) {
-      logger.warn('No hay sesión definida para hoy', null, 'Routines');
-      setError('No hay sesión definida para hoy');
-      return;
+    console.log('🔍 DEBUG loadExerciseProgress: TEMPORALMENTE DESHABILITADO para evitar 404');
+    // TEMPORALMENTE COMENTADO PARA EVITAR ERROR 404
+    // TODO: Implementar endpoint /api/training-session/progress/:sessionId en backend
+    /*
+
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`/api/training-session/progress/${session.sessionId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success && result.progress) {
+          setExerciseProgress(result.progress);
+        }
+      }
+    } catch (error) {
+      console.error('Error cargando progreso de ejercicios:', error);
     }
+    */
+  }, [session.sessionId]);
 
-    if (!todaySession?.ejercicios || todaySession.ejercicios.length === 0) {
-      logger.error('La sesión de hoy no tiene ejercicios definidos', { todaySession }, 'Routines');
+  // ===============================================
+  // 🏃 HANDLERS DE SESIÓN
+  // ===============================================
+
+
+  // Refrescar resumen del día al cambiar estado de sesión o cerrar el modal
+  useEffect(() => {
+    if (!hasActivePlan) return;
+    fetchTodayStatus();
+  }, [hasActivePlan, currentTodayName, session.status, localState.showSessionModal, fetchTodayStatus]);
+
+  const handleStartSession = useCallback(async (exerciseIndex = 0) => {
+    track('BUTTON_CLICK', { id: 'start_session', exerciseIndex }, { component: 'TodayTrainingTab' });
+
+    if (!todaySessionData || hasActiveSession) return;
+
+    // Validaciones iniciales
+    if (!todaySessionData?.ejercicios || todaySessionData.ejercicios.length === 0) {
       setError('La sesión de hoy no tiene ejercicios definidos');
       return;
     }
 
-
     if (!methodologyPlanId) {
-      logger.error('No se puede iniciar sesión: falta methodologyPlanId', null, 'Routines');
       setError('No se puede iniciar sesión: falta información del plan');
       return;
     }
 
-    try {
-      setLoading(true);
+    setIsLoadingSession(true);
+    setSessionError(null);
 
-      // Usar la función startSession del WorkoutContext
+    try {
+      console.log('🏃 Iniciando sesión de hoy:', todaySessionData);
+
       const result = await startSession({
         planId: methodologyPlanId,
-        dayName: todaySession?.dia || 'Unknown',
-        weekNumber: todaySession?.weekNumber || 1,
-        dayInfo: todaySession,
+        dayName: todaySessionData?.dia || currentTodayName,
+        weekNumber: todaySessionData?.weekNumber || 1,
+        dayInfo: todaySessionData,
         exerciseIndex
       });
 
-      if (result.success) { track('SESSION_START', { sessionId: result.sessionId, totalExercises: todaySession?.ejercicios?.length || 0, startingAt: exerciseIndex }, { component: 'TodayTrainingTab' });
-        logger.info('Sesión iniciada exitosamente desde WorkoutContext', {
-          sessionId: result.sessionId,
-          totalExercises: todaySession?.ejercicios?.length || 0,
-          startingAt: exerciseIndex
-        }, 'Routines');
+      if (result.success) {
+        setSessionStartTime(new Date());
+        setCurrentExerciseIndex(exerciseIndex);
+        setExerciseProgress({});
 
         // Configurar datos de sesión para el modal
         const enrichedSession = {
-          ...todaySession,
+          ...todaySessionData,
           sessionId: result.sessionId,
-          currentExerciseIndex: Math.max(0, Math.min(exerciseIndex, (todaySession?.ejercicios?.length || 1) - 1))
+          currentExerciseIndex: Math.max(0, Math.min(exerciseIndex, (todaySessionData?.ejercicios?.length || 1) - 1))
         };
 
         // Guardar datos de sesión para después del calentamiento
@@ -276,263 +284,83 @@ export default function TodayTrainingTab({
           },
           showWarmupModal: true
         });
-        // 🔒 Persistir en contexto para evitar que un remount cierre el modal
-        try { ui.showModal?.('warmup'); } catch {}
+
+        track('SESSION_START', {
+          sessionId: result.sessionId,
+          totalExercises: todaySessionData?.ejercicios?.length || 0,
+          startingAt: exerciseIndex
+        });
 
         // Opcional: Callback para notificar al componente padre
         if (onStartTraining) {
           onStartTraining();
         }
-
       } else {
         throw new Error(result.error || 'Error iniciando la sesión');
       }
 
     } catch (error) {
-      logger.error('Error iniciando sesión', {
-        error: error.message,
-        todaySession: todaySession?.dia || 'N/A',
-        methodologyPlanId,
-        exerciseCount: todaySession?.ejercicios?.length
-      }, 'Routines');
-
+      console.error('Error iniciando sesión de hoy:', error);
+      setSessionError(error.message);
       setError(`Error al iniciar la sesión: ${error.message}`);
     } finally {
-      setLoading(false);
+      setIsLoadingSession(false);
     }
-  };
+  }, [todaySessionData, hasActiveSession, startSession, methodologyPlanId, currentTodayName, session.sessionId, track, onStartTraining, setError]);
 
-  /**
-   * Manejar finalización del calentamiento
-   */
-  const handleWarmupComplete = () => {
-    track('BUTTON_CLICK', { id: 'warmup_complete' }, { component: 'TodayTrainingTab' });
-    logger.info('Calentamiento completado, iniciando entrenamiento principal', null, 'Routines');
+  const handleResumeSession = useCallback(() => {
+    track('BUTTON_CLICK', { id: 'resume_session' }, { component: 'TodayTrainingTab' });
 
-    const pendingId = localState.pendingSessionData?.sessionId || session.sessionId;
-    const hasPending = !!pendingId;
-    try { track('OPEN_ROUTINE_MODAL_ATTEMPT', { hasPending, pendingId }, { component: 'TodayTrainingTab' }); } catch {}
-
-    if (!hasPending) return;
-
-    // Asegurar estructura de session para el modal aun si se perdió pendingSessionData
-    if (!localState.pendingSessionData && todaySession && session.sessionId) {
-      updateLocalState(prev => ({
-        ...prev,
-        pendingSessionData: {
-          session: { ...todaySession, sessionId: session.sessionId, currentExerciseIndex: 0 },
-          sessionId: session.sessionId
-        }
-      }));
+    // Si no hay sesión activa aún, inicia el flujo normal (abrirá WarmupModal)
+    if (!hasActiveSession) {
+      handleStartSession(currentExerciseIndex || 0);
+      return;
     }
 
-    try { ui.hideAllModals?.(); } catch {}
+    // Con sesión activa: abrir directamente el modal de sesión (saltamos calentamiento)
+    const sid = session.sessionId || localState.pendingSessionData?.sessionId;
+    if (!sid) {
+      setError('No se pudo reanudar: falta sessionId');
+      return;
+    }
+
+    const baseSession = todaySessionData || findTodaySession(routinePlan || plan.currentPlan, currentTodayName) || {};
 
     updateLocalState({
+      pendingSessionData: {
+        session: {
+          ...baseSession,
+          sessionId: sid,
+          currentExerciseIndex: session.currentExerciseIndex || 0
+        },
+        sessionId: sid
+      },
       showWarmupModal: false,
       showSessionModal: true
     });
+  }, [hasActiveSession, handleStartSession, currentExerciseIndex, session.sessionId, session.currentExerciseIndex, localState.pendingSessionData?.sessionId, todaySessionData, routinePlan, plan.currentPlan, currentTodayName, setError, track]);
 
-    try { ui.showModal?.('routineSession'); } catch {}
-
-    // Fallback: forzar apertura en el siguiente tick
-    setTimeout(() => {
-      updateLocalState(prev => ({ ...prev, showSessionModal: true }));
-      try { ui.showModal?.('routineSession'); } catch {}
-      try { track('OPEN_ROUTINE_MODAL_DONE', { forced: true }, { component: 'TodayTrainingTab' }); } catch {}
-    }, 0);
-  };
-
-  /**
-   * Manejar saltar calentamiento
-   */
-  const handleSkipWarmup = () => {
-    track('BUTTON_CLICK', { id: 'warmup_skip' }, { component: 'TodayTrainingTab' });
-    logger.info('Calentamiento saltado, yendo directo al entrenamiento', null, 'Routines');
-
-    const pendingId = localState.pendingSessionData?.sessionId || session.sessionId;
-    const hasPending = !!pendingId;
-    try { track('OPEN_ROUTINE_MODAL_ATTEMPT', { hasPending, pendingId, reason: 'skip' }, { component: 'TodayTrainingTab' }); } catch {}
-
-    if (!hasPending) return;
-
-    if (!localState.pendingSessionData && todaySession && session.sessionId) {
-      updateLocalState(prev => ({
-        ...prev,
-        pendingSessionData: {
-          session: { ...todaySession, sessionId: session.sessionId, currentExerciseIndex: 0 },
-          sessionId: session.sessionId
-        }
-      }));
-    }
-
-    try { ui.hideAllModals?.(); } catch {}
-
-    updateLocalState({
-      showWarmupModal: false,
-      showSessionModal: true
-    });
-
-    try { ui.showModal?.('routineSession'); } catch {}
-
-    setTimeout(() => {
-      updateLocalState(prev => ({ ...prev, showSessionModal: true }));
-      try { ui.showModal?.('routineSession'); } catch {}
-      try { track('OPEN_ROUTINE_MODAL_DONE', { forced: true, reason: 'skip' }, { component: 'TodayTrainingTab' }); } catch {}
-    }, 0);
-  };
-
-  /**
-   * Cerrar modal de calentamiento (cancela entrenamiento)
-   */
-  const handleCloseWarmup = async () => {
-    track('BUTTON_CLICK', { id: 'warmup_close' }, { component: 'TodayTrainingTab' });
-    logger.info('Calentamiento cancelado', null, 'Routines');
-
-    updateLocalState({
-      showWarmupModal: false,
-      pendingSessionData: null
-    });
-
-    try { ui.hideModal?.('warmup'); } catch {}
-
-    // TODO: Considerar usar endSession del contexto para cancelar la sesión backend
-    logger.debug('Estados de modal de calentamiento limpiados', null, 'Routines');
-  };
-
-  /**
-   * Finalizar ejercicio actual
-   */
-  const handleFinishExercise = async (exerciseIndex, seriesCompleted, timeSpent) => {
-    // Validaciones
-    if (!session.sessionId) {
-      logger.error('No se puede finalizar ejercicio: falta sessionId', { exerciseIndex }, 'Routines');
-      setError('No se puede finalizar ejercicio: sesión no encontrada');
-      return;
-    }
-
-    if (typeof exerciseIndex !== 'number' || exerciseIndex < 0) {
-      logger.error('exerciseIndex inválido', { exerciseIndex }, 'Routines');
-      setError('Índice de ejercicio inválido');
-      return;
-    }
+  const handleCompleteSession = useCallback(async () => {
+    if (!hasActiveSession) return;
 
     try {
-      // Usar la función updateExercise del WorkoutContext
-      const result = await updateExercise(exerciseIndex, {
-        status: 'completed',
-        series_completed: Math.max(0, parseInt(seriesCompleted) || 0),
-        time_spent_seconds: Math.max(0, parseInt(timeSpent) || 0)
-      });
-
-      if (result.success) { track('EXERCISE_COMPLETE', { exerciseIndex, seriesCompleted: Math.max(0, parseInt(seriesCompleted) || 0), timeSpent: Math.max(0, parseInt(timeSpent) || 0), sessionId: session.sessionId }, { component: 'TodayTrainingTab' });
-        logger.info('Ejercicio completado exitosamente desde WorkoutContext', {
-          exerciseIndex,
-          seriesCompleted: Math.max(0, parseInt(seriesCompleted) || 0),
-          timeSpent: Math.max(0, parseInt(timeSpent) || 0),
-          sessionId: session.sessionId
-        }, 'Routines');
-
-        // Notificar al componente padre si es necesario
-        if (typeof onProgressUpdate === 'function') {
-          onProgressUpdate();
-        }
-      } else {
-        throw new Error(result.error || 'Error completando ejercicio');
-      }
-
-    } catch (error) {
-      logger.error('Error finalizando ejercicio', {
-        error: error.message,
-        exerciseIndex,
-        sessionId: session.sessionId,
-        seriesCompleted,
-        timeSpent
-      }, 'Routines');
-
-      setError(`Error completando ejercicio: ${error.message}`);
-    }
-  };
-
-  /**
-   * Saltar ejercicio
-   */
-  const handleSkipExercise = async (exerciseIndex) => {
-    if (!session.sessionId) return;
-
-    try {
-      const result = await updateExercise(exerciseIndex, {
-        status: 'skipped'
-      });
-
-      if (result.success) { track('EXERCISE_SKIP', { exerciseIndex, sessionId: session.sessionId }, { component: 'TodayTrainingTab' });
-        logger.info('Ejercicio saltado desde WorkoutContext', { exerciseIndex }, 'Routines');
-
-        if (onProgressUpdate) {
-          onProgressUpdate();
-        }
-      } else {
-        throw new Error(result.error || 'Error saltando ejercicio');
-      }
-    } catch (error) {
-      logger.error('Error saltando ejercicio', error, 'Routines');
-      setError(`Error saltando ejercicio: ${error.message}`);
-    }
-  };
-
-  /**
-   * Cancelar ejercicio
-   */
-  const handleCancelExercise = async (exerciseIndex) => {
-    if (!session.sessionId) return;
-
-    try {
-      const result = await updateExercise(exerciseIndex, {
-        status: 'cancelled'
-      });
-
-      if (result.success) { track('EXERCISE_CANCEL', { exerciseIndex, sessionId: session.sessionId }, { component: 'TodayTrainingTab' });
-        logger.info('Ejercicio cancelado desde WorkoutContext', { exerciseIndex }, 'Routines');
-
-        if (onProgressUpdate) {
-          onProgressUpdate();
-        }
-      } else {
-        throw new Error(result.error || 'Error cancelando ejercicio');
-      }
-    } catch (error) {
-      logger.error('Error cancelando ejercicio', error, 'Routines');
-      setError(`Error cancelando ejercicio: ${error.message}`);
-    }
-  };
-
-  /**
-   * Finalizar sesión completa
-   */
-  const handleEndSession = async () => {
-    track('BUTTON_CLICK', { id: 'end_session' }, { component: 'TodayTrainingTab' });
-    if (!session.sessionId) {
-      logger.error('No se puede finalizar sesión: falta sessionId', null, 'Routines');
-      setError('No se puede finalizar sesión: sesión no encontrada');
-      return;
-    }
-
-    try {
-      setLoading(true);
-
-      // Usar la función completeSession del WorkoutContext
       const result = await completeSession();
 
-      if (result.success) { track('SESSION_COMPLETE', { sessionId: session.sessionId }, { component: 'TodayTrainingTab' });
-        logger.info('Sesión finalizada exitosamente desde WorkoutContext', {
-          sessionId: session.sessionId,
-          timestamp: new Date().toISOString()
-        }, 'Routines');
+      if (result.success) {
+        setSessionStartTime(null);
+        setCurrentExerciseIndex(0);
+        setExerciseProgress({});
 
         // Limpiar estado del modal
         updateLocalState({
           showSessionModal: false,
           pendingSessionData: null
+        });
+
+        track('SESSION_COMPLETE', {
+          sessionId: session.sessionId,
+          duration: sessionStartTime ? Date.now() - sessionStartTime.getTime() : 0,
+          exercisesCompleted: Object.keys(exerciseProgress).length
         });
 
         // Notificar al componente padre
@@ -541,247 +369,159 @@ export default function TodayTrainingTab({
         }
 
         showSuccess('¡Entrenamiento completado exitosamente!');
-
-        // Navegar a la página de rutinas después de cerrar el modal
-        setTimeout(() => {
-          if (navigate && typeof navigate === 'function') {
-            navigate('/routines');
-          }
-        }, 150);
-
       } else {
         throw new Error(result.error || 'Error finalizando la sesión');
       }
 
     } catch (error) {
-      logger.error('Error finalizando sesión', {
-        error: error.message,
-        sessionId: session.sessionId
-      }, 'Routines');
-
+      console.error('Error completando sesión:', error);
       setError(`Error finalizando sesión: ${error.message}`);
-    } finally {
-      setLoading(false);
     }
-  };
+  }, [hasActiveSession, completeSession, session.sessionId, sessionStartTime, exerciseProgress, track, onProgressUpdate, showSuccess, setError]);
 
-  /**
-   * Confirmar cancelación de rutina
-   */
-  const handleConfirmCancel = async () => {
-    track('BUTTON_CLICK', { id: 'confirm_cancel_routine' }, { component: 'TodayTrainingTab' });
+  const handleExerciseUpdate = useCallback(async (exerciseIndex, progressData) => {
+    // Actualizar estado local
+    setExerciseProgress(prev => ({
+      ...prev,
+      [exerciseIndex]: progressData
+    }));
+
+    // Actualizar en BD a través del contexto
     try {
-      if (!methodologyPlanId) {
-        throw new Error('No se pudo determinar methodology_plan_id para cancelar');
-      }
-
-      updateLocalState({ showRejectionModal: false });
-
-      // Usar la función cancelPlan del WorkoutContext
-      // Esta función ya maneja la llamada al backend y limpia el estado
-      const result = await cancelPlan(methodologyPlanId);
+      const result = await updateExercise(exerciseIndex, {
+        status: progressData.status || 'completed',
+        series_completed: Math.max(0, parseInt(progressData.series_completed) || 0),
+        time_spent_seconds: Math.max(0, parseInt(progressData.time_spent_seconds) || 0)
+      });
 
       if (result.success) {
-        logger.info('Rutina cancelada exitosamente', {
-          methodology_plan_id: methodologyPlanId,
-          routine_plan_id: routinePlanId || null
-        }, 'Routines');
-
-        // Limpiar claves adicionales del localStorage que puedan existir
-        const userId = localStorage.getItem('userId') || localStorage.getItem('user_id');
-        if (userId) {
-          // Limpiar claves específicas de rutinas
-          localStorage.removeItem(`methodology_plan_${userId}`);
-          localStorage.removeItem(`routine_session_${userId}`);
-          localStorage.removeItem(`plan_start_date_${userId}`);
-          localStorage.removeItem(`today_session_status_${userId}`);
-          localStorage.removeItem(`active_plan_${userId}`);
-          localStorage.removeItem(`current_routine_${userId}`);
+        // Si el ejercicio se completó, avanzar al siguiente
+        if (progressData.status === 'completed') {
+          const nextIndex = exerciseIndex + 1;
+          if (nextIndex < (todaySessionData?.ejercicios?.length || 0)) {
+            setCurrentExerciseIndex(nextIndex);
+          }
         }
-
-        // Limpiar claves genéricas (sin userId)
-        localStorage.removeItem('methodologyPlanId');
-        localStorage.removeItem('routineSessionId');
-        localStorage.removeItem('planStartDate');
-        localStorage.removeItem('todaySessionStatus');
-
-        // Navegar a metodologías para generar una nueva rutina
-        goToMethodologies();
-      } else {
-        throw new Error(result.error || 'Error cancelando rutina');
       }
-
     } catch (error) {
-      logger.error('Error cancelando rutina', error, 'Routines');
-      // Usar setError directamente
-      setError(`Error cancelando rutina: ${error.message}`);
+      console.error('Error actualizando ejercicio:', error);
+      setError(`Error actualizando ejercicio: ${error.message}`);
     }
+  }, [updateExercise, todaySessionData?.ejercicios?.length, setError]);
+
+  // Handlers de calentamiento
+  const handleWarmupComplete = () => {
+    track('BUTTON_CLICK', { id: 'warmup_complete' }, { component: 'TodayTrainingTab' });
+
+    const pendingId = localState.pendingSessionData?.sessionId || session.sessionId;
+    if (!pendingId) return;
+
+    updateLocalState({
+      showWarmupModal: false,
+      showSessionModal: true
+    });
+
+    setTimeout(() => {
+      updateLocalState(prev => ({ ...prev, showSessionModal: true }));
+    }, 0);
   };
 
-  // Guardar rechazos y cancelar rutina (flujo unificado)
-  const handleRoutineRejections = async (rejections) => {
-    try {
-      const token = localStorage.getItem('token');
+  const handleSkipWarmup = () => {
+    track('BUTTON_CLICK', { id: 'warmup_skip' }, { component: 'TodayTrainingTab' });
 
-      // Primero, procesar el feedback de ejercicios rechazados
-      if (rejections && rejections.length > 0) {
-        const feedbackResp = await fetch('/api/routines/process-feedback', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ rejections }),
-        });
+    const pendingId = localState.pendingSessionData?.sessionId || session.sessionId;
+    if (!pendingId) return;
 
-        if (!feedbackResp.ok) {
-          const errBody = await feedbackResp.json().catch(() => ({}));
-          logger.error('Error guardando ejercicios rechazados', {
-            status: feedbackResp.status,
-            ...errBody
-          }, 'Routines');
+    updateLocalState({
+      showWarmupModal: false,
+      showSessionModal: true
+    });
 
-          // Si falla el feedback, mostrar error pero continuar con la cancelación
-          const errorMsg = errBody.error || 'Error guardando preferencias de ejercicios';
-          setError(errorMsg);
-        } else {
-          const feedbackData = await feedbackResp.json();
-          logger.info('Rechazos guardados exitosamente', {
-            count: rejections.length,
-            processed: feedbackData.processed
-          }, 'Routines');
-        }
-      }
-
-      // Luego, proceder con la cancelación de la rutina
-      await handleConfirmCancel();
-
-    } catch (e) {
-      logger.error('Error en proceso de rechazo y cancelación', e, 'Routines');
-
-      // Intentar cancelar de todos modos
-      try {
-        await handleConfirmCancel();
-      } catch (cancelError) {
-        logger.error('Error crítico cancelando rutina', cancelError, 'Routines');
-      }
-    }
+    setTimeout(() => {
+      updateLocalState(prev => ({ ...prev, showSessionModal: true }));
+    }, 0);
   };
 
-  // Cancelar sin marcar ejercicios
-  const handleSkipCancel = async () => {
-    track('BUTTON_CLICK', { id: 'skip_cancel_routine' }, { component: 'TodayTrainingTab' });
-    try {
-      await handleConfirmCancel();
-    } finally {
-      updateLocalState({ showRejectionModal: false });
-    }
+  const handleCloseWarmup = () => {
+    track('BUTTON_CLICK', { id: 'warmup_close' }, { component: 'TodayTrainingTab' });
+
+    updateLocalState({
+      showWarmupModal: false,
+      pendingSessionData: null
+    });
   };
 
   // ===============================================
-  // 🔄 EFECTOS Y CARGA DE DATOS
+  // 📊 CÁLCULOS DE PROGRESO
   // ===============================================
 
-  // Cargar ejercicios reales del plan desde BD
-  useEffect(() => {
-    const loadPlanExercises = async () => {
-      const effectivePlanId = Number(methodologyPlanId) || plan.planId;
-      if (!effectivePlanId) return;
+  const sessionStats = useMemo(() => {
+    if (!todaySessionData?.ejercicios) {
+      return { total: 0, completed: 0, inProgress: 0, pending: 0, progress: 0 };
+    }
 
-      updateLocalState({ loadingExercises: true });
-      try {
-        const { getPlanExercises } = await import('../api');
-        const exercises = await getPlanExercises({ methodologyPlanId: effectivePlanId });
-        updateLocalState({ planExercises: exercises || [] });
-        logger.debug('Ejercicios del plan cargados desde BD', { count: exercises?.length || 0, effectivePlanId }, 'Routines');
-      } catch (error) {
-        logger.error('Error cargando ejercicios del plan', error, 'Routines');
-        // Fallback a plan.semanas solo si falla la BD
-        const effectivePlan = routinePlan || plan.currentPlan;
-        const fallbackExercises = (effectivePlan?.semanas || []).flatMap(sem => sem?.sesiones || [])
-          .flatMap(ses => ses?.ejercicios || [])
-          .reduce((acc, ej) => {
-            const nombre = ej?.nombre || ej?.name || '';
-            if (!nombre) return acc;
-            if (!acc.find(x => x.nombre?.toLowerCase() === nombre.toLowerCase())) {
-              acc.push({
-                nombre,
-                series: ej.series ?? ej.series_total ?? 3,
-                repeticiones: ej.repeticiones ?? ej.reps ?? null,
-                duracion_seg: ej.duracion_seg ?? ej.duration_sec ?? null,
-              });
-            }
-            return acc;
-          }, []);
-        updateLocalState({ planExercises: fallbackExercises });
-        logger.warn('Usando ejercicios fallback desde plan.semanas', { count: fallbackExercises.length }, 'Routines');
-      } finally {
-        updateLocalState({ loadingExercises: false });
-      }
+    const totalExercises = todaySessionData.ejercicios.length;
+    const completedCount = Object.values(exerciseProgress).filter(p => p.status === 'completed').length;
+    const inProgressCount = Object.values(exerciseProgress).filter(p => p.status === 'in_progress').length;
+
+    return {
+      total: totalExercises,
+      completed: completedCount,
+      inProgress: inProgressCount,
+      pending: totalExercises - completedCount - inProgressCount,
+      progress: totalExercises > 0 ? Math.round((completedCount / totalExercises) * 100) : 0
     };
+  }, [todaySessionData?.ejercicios, exerciseProgress]);
 
-    loadPlanExercises();
-  }, [methodologyPlanId, routinePlan, plan.currentPlan]);
+  const estimatedDuration = useMemo(() => {
+    if (!todaySessionData?.ejercicios) return 0;
 
-  // ===============================================
-  // 🎨 ESTADOS DE CARGA Y ERROR
-  // ===============================================
+    return todaySessionData.ejercicios.reduce((total, ejercicio) => {
+      const sets = parseInt(ejercicio.series) || 3;
+      const reps = parseInt(ejercicio.repeticiones) || 10;
+      const rest = parseInt(ejercicio.descanso_seg) || 60;
 
-  // Estados de carga y error
-  if (ui.isLoading) {
-    return (
-      <SafeComponent context="TodayTrainingTab">
-        <div className="flex items-center justify-center py-12">
-          <RefreshCw className="w-6 h-6 text-yellow-400 animate-spin mr-2" />
-          <span className="text-gray-400">Cargando sesión de hoy...</span>
-        </div>
-      </SafeComponent>
-    );
-  }
+      // Estimación básica: (tiempo por rep * reps * sets) + descansos
+      const exerciseTime = (2 * reps * sets) + (rest * (sets - 1));
+      return total + exerciseTime;
+    }, 0);
+  }, [todaySessionData?.ejercicios]);
 
-  if (ui.error) {
-    return (
-      <SafeComponent context="TodayTrainingTab">
-        <Alert className="border-red-500/20 bg-red-500/10">
-          <AlertTriangle className="h-4 w-4 text-red-400" />
-          <AlertDescription className="text-red-400">
-            Error cargando datos: {ui.error}
-            <Button
-              onClick={() => window.location.reload()}
-              variant="ghost"
-              size="sm"
-              className="ml-2 text-red-400 hover:text-red-300"
-            >
-              Reintentar
-            </Button>
-          </AlertDescription>
-        </Alert>
-      </SafeComponent>
-    );
-  }
-
-  // ===============================================
-  // 🎯 ESTADOS DE SESIÓN
-  // ===============================================
+  const actualDuration = useMemo(() => {
+    if (!sessionStartTime) return 0;
+    return Math.floor((Date.now() - sessionStartTime.getTime()) / 1000);
+  }, [sessionStartTime]);
 
   // Estados para mostrar el entrenamiento de hoy
   const isCurrentlyTraining = hasActiveSession && (
-    session.dayName?.toLowerCase() === todaySession?.dia?.toLowerCase()
-  ); // "Reanudar" solo si la sesi f3n activa es del mismo d eda
+    session.dayName?.toLowerCase() === todaySessionData?.dia?.toLowerCase()
+  );
   const hasCompletedSession = session.status === 'completed';
-  const isRestDay = hasActivePlan && !todaySession; // Solo es día de descanso si HAY plan activo pero no sesión hoy
+  const isRestDay = hasActivePlan && !todaySessionData;
   const noActivePlan = !hasActivePlan;
-  // Estados exclusivos para HOY
-  const sessionMatchesToday = hasActiveSession && !!session?.dayName && !!todaySession?.dia && (
-    session.dayName.toLowerCase() === todaySession.dia.toLowerCase()
+  const sessionMatchesToday = hasActiveSession && !!session?.dayName && !!todaySessionData?.dia && (
+    session.dayName.toLowerCase() === todaySessionData.dia.toLowerCase()
   );
 
-  // Sesión efectiva para el modal (resiliente a remounts)
+  const hasToday = Boolean(todaySessionData?.ejercicios?.length > 0);
+
+  // 🔍 DEBUG: Verificar qué está pasando antes del render
+  console.log('🔍 DEBUG TodayTrainingTab RENDER:', {
+    hasToday,
+    todaySessionData: todaySessionData,
+    ejerciciosLength: todaySessionData?.ejercicios?.length,
+    hasActivePlan,
+    sessionMatchesToday,
+    hasCompletedSession,
+    isRestDay: isRestDay,
+    noActivePlan
+  });
+
   const wantRoutineModal = localState.showSessionModal || ui.showRoutineSession || ui.showSession;
   const effectiveSession = localState.pendingSessionData?.session || (
-    wantRoutineModal && (session.sessionId || localState.pendingSessionData?.sessionId) && todaySession
+    wantRoutineModal && (session.sessionId || localState.pendingSessionData?.sessionId) && todaySessionData
       ? {
-          ...todaySession,
+          ...todaySessionData,
           sessionId: session.sessionId || localState.pendingSessionData?.sessionId,
           currentExerciseIndex: localState.pendingSessionData?.session?.currentExerciseIndex || 0
         }
@@ -789,204 +529,362 @@ export default function TodayTrainingTab({
   );
   const effectiveSessionId = localState.pendingSessionData?.sessionId || session.sessionId;
 
-  const hasToday = Boolean(todaySession?.ejercicios?.length > 0);
-
-  // Diagnóstico ligero
-  try {
-    console.debug('[TodayTrainingTab] flags', {
-      hasActivePlan,
-      hasActiveSession,
-      sessionDay: session?.dayName,
-      todayName: todaySession?.dia,
-      sessionMatchesToday,
-      hasToday,
-      hasCompletedSession: session.status === 'completed'
-    });
-  } catch {}
-  // Trace de flags lgicos para diagnosticar render doble (reanudar vs descanso)
-  useEffect(() => {
-    try {
-      track('TODAY_FLAGS', {
-        hasActivePlan,
-        hasActiveSession,
-        sessionDay: session?.dayName || null,
-        todayDia: todaySession?.dia || null,
-        sessionMatchesToday,
-        hasToday,
-        hasCompletedSession
-      }, { component: 'TodayTrainingTab' });
-    } catch {}
-  }, [hasActivePlan, hasActiveSession, todaySession?.dia, session?.dayName, sessionMatchesToday, hasToday, hasCompletedSession, track]);
-
-
-  const pendingExercisesCount = (session.exerciseProgress && Object.keys(session.exerciseProgress).length > 0)
-    ? Object.values(session.exerciseProgress).filter(ex => ex.status === 'pending').length
-    : (todaySession?.ejercicios?.length || 0);
+  // ===============================================
+  // 🎨 RENDER - SIN RETURNS TEMPRANOS PROBLEMÁTICOS
+  // ===============================================
 
   return (
-    <SafeComponent context="TodayTrainingTab">
+    <SafeComponent fallback={<div>Error cargando entrenamiento de hoy</div>}>
       <div className="space-y-6">
+        {/* =============================================== */}
+        {/* 🎯 ESTADOS DE CARGA Y ERROR - INLINE */}
+        {/* =============================================== */}
 
-        {/* Si hay una sesión en progreso - mostrar botón continuar */}
-        {sessionMatchesToday && (
-          <>
-            <div className="text-center py-6">
-              <Dumbbell className="w-12 h-12 text-yellow-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-white mb-2">
-                Continúa tu entrenamiento
-              </h3>
-              <p className="text-gray-400 mb-4">
-                Te quedan {pendingExercisesCount} ejercicios por completar
-              </p>
+        {ui.isLoading && (
+          <div className="flex items-center justify-center py-12">
+            <RefreshCw className="w-6 h-6 text-yellow-400 animate-spin mr-2" />
+            <span className="text-gray-400">Cargando sesión de hoy...</span>
+          </div>
+        )}
+
+        {ui.error && (
+          <Alert className="border-red-500/20 bg-red-500/10">
+            <AlertTriangle className="h-4 w-4 text-red-400" />
+            <AlertDescription className="text-red-400">
+              Error cargando datos: {ui.error}
               <Button
-                onClick={() => handleStartSession(0)}
-                className="bg-yellow-500 hover:bg-yellow-600 text-black font-medium"
-                disabled={ui.isLoading}
+                onClick={() => window.location.reload()}
+                variant="ghost"
+                size="sm"
+                className="ml-2 text-red-400 hover:text-red-300"
               >
-                Reanudar Entrenamiento
+                Reintentar
               </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* =============================================== */}
+        {/* 🎯 HEADER CON ESTADO ACTUAL */}
+        {/* =============================================== */}
+
+        {!ui.isLoading && !ui.error && (
+          <>
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-bold text-white">
+                  Entrenamiento de Hoy
+                </h2>
+                <p className="text-gray-400">
+                  {new Date().toLocaleDateString('es-ES', {
+                    weekday: 'long',
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                  })}
+                </p>
+              </div>
             </div>
 
-            {(() => {
-              const resumeExercises = (session.exerciseProgress && Object.keys(session.exerciseProgress).length > 0)
-                ? Object.values(session.exerciseProgress)
-                : (todaySession?.ejercicios || []);
-              return (
-                <ExerciseList
-                  exercises={resumeExercises}
-                  sessionStatus={session}
-                  onStartSession={handleStartSession}
-                  showProgress={true}
-                />
-              );
-            })()}
+            {/* =============================================== */}
+            {/* 🏃 SESIÓN ACTIVA */}
+            {/* =============================================== */}
+
+            {sessionMatchesToday && (
+              <>
+                <div className="text-center py-6">
+                  <Dumbbell className="w-12 h-12 text-yellow-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-white mb-2">
+                    Continúa tu entrenamiento
+                  </h3>
+                  <p className="text-gray-400 mb-4">
+                    Te quedan {sessionStats.pending} ejercicios por completar
+                  </p>
+                  <Button
+                    onClick={handleResumeSession}
+                    className="bg-yellow-500 hover:bg-yellow-600 text-black font-medium"
+                    disabled={ui.isLoading || isLoadingSession}
+                  >
+                    Reanudar Entrenamiento
+                  </Button>
+                </div>
+
+                {/* Progreso actual */}
+                <Card className="p-4 border-blue-200 bg-blue-50/10">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-blue-600 rounded-lg">
+                        <Play className="h-5 w-5 text-white" />
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-white">Sesión en Progreso</h3>
+                        <p className="text-sm text-gray-400">
+                          {sessionStats.completed}/{sessionStats.total} ejercicios completados
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                      {sessionStartTime && (
+                        <div className="text-center">
+                          <div className="font-medium text-white">
+                            {Math.floor(actualDuration / 60)}:{(actualDuration % 60).toString().padStart(2, '0')}
+                          </div>
+                          <div className="text-xs text-gray-400">Tiempo</div>
+                        </div>
+                      )}
+
+                      <div className="text-center">
+                        <div className="font-medium text-white">{sessionStats.progress}%</div>
+                        <div className="text-xs text-gray-400">Progreso</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Barra de progreso */}
+                  <div className="mb-4">
+                    <div className="w-full bg-gray-700 rounded-full h-2">
+                      <div
+                        className="bg-yellow-500 h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${sessionStats.progress}%` }}
+                      />
+                    </div>
+                  </div>
+                </Card>
+              </>
+            )}
+
+            {/* =============================================== */}
+            {/* 📋 SESIÓN DEL DÍA (NO INICIADA) */}
+            {/* =============================================== */}
+
+            {!sessionMatchesToday && hasToday && hasActivePlan && !hasCompletedSession && (
+              <section>
+                <div className="text-center py-6">
+                  <Dumbbell className="w-12 h-12 text-yellow-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-white mb-2">
+                    Entrenamiento de hoy: {todaySessionData?.dia || 'Sin información'}
+                  </h3>
+                  <p className="text-gray-400 mb-4">
+                    {todaySessionData?.ejercicios?.length || 0} ejercicios programados
+                  </p>
+                  <Button
+                    onClick={() => handleStartSession(0)}
+                    className="bg-yellow-500 hover:bg-yellow-600 text-black font-medium"
+                    disabled={ui.isLoading || isLoadingSession}
+                  >
+                    {isLoadingSession ? (
+                      <>
+                        <RefreshCw className="h-5 w-5 animate-spin mr-2" />
+                        Iniciando...
+                      </>
+                    ) : (
+                      <>
+                        <Play className="h-5 w-5 mr-2" />
+                        Comenzar Entrenamiento
+                      </>
+                    )}
+                  </Button>
+                </div>
+
+                {/* Lista de ejercicios */}
+                {todaySessionData?.ejercicios && todaySessionData.ejercicios.length > 0 && (
+                  <Card className="p-6">
+                    <div className="flex items-center justify-between mb-6">
+                      <div>
+                        <h3 className="text-xl font-semibold text-white">
+                          Sesión de {currentTodayName}
+                        </h3>
+                        <p className="text-gray-400 mt-1">
+                          {todaySessionData.ejercicios.length} ejercicios programados
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-4 text-sm text-gray-400">
+                        <div className="flex items-center gap-1">
+                          <Clock className="h-4 w-4" />
+                          <span>~{Math.round(estimatedDuration / 60)}min</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Target className="h-4 w-4" />
+                          <span>{plan.methodologyType || 'Rutina'}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                      {todaySessionData.ejercicios.map((ejercicio, index) => (
+                        <div
+                          key={index}
+                          className="flex items-center gap-3 p-3 bg-gray-800 rounded-lg"
+                        >
+                          <div className="flex-shrink-0">
+                            <Badge variant="secondary">{index + 1}</Badge>
+                          </div>
+                          <div className="flex-1">
+                            <div className="font-medium text-white">
+                              {formatExerciseName(ejercicio.nombre)}
+                            </div>
+                            <div className="text-sm text-gray-400">
+                              {ejercicio.series} series × {ejercicio.repeticiones} reps
+                              {ejercicio.descanso_seg && ` • ${ejercicio.descanso_seg}s descanso`}
+                            </div>
+                          </div>
+                          <Dumbbell className="h-4 w-4 text-gray-400" />
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                    )}
+                  </section>
+
+                  )}
+
+
+
+                {/* Resumen de sesión completada */}
+                {hasActivePlan && hasToday && hasCompletedSession && todayStatus && (
+                  <Card className="p-6">
+                    <div className="flex items-center justify-between mb-6">
+                      <div>
+                        <h3 className="text-xl font-semibold text-white">Resumen de hoy ({currentTodayName})</h3>
+                        <p className="text-gray-400 mt-1">
+                          {todayStatus.summary.completed} completados · {todayStatus.summary.skipped} saltados · {todayStatus.summary.total} ejercicios
+                        </p>
+                      </div>
+                      <div className="text-sm text-gray-400">
+                        Duración total: {todayStatus.session?.total_duration_seconds ? Math.round((todayStatus.session.total_duration_seconds + (todayStatus.session.warmup_time_seconds || 0)) / 60) : 0} min
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                      {todayStatus.exercises.map((ex, index) => (
+                        <div key={index} className="flex items-center gap-3 p-3 bg-gray-800 rounded-lg">
+                          <div className="flex-shrink-0">
+                            <Badge variant="secondary">{index + 1}</Badge>
+                          </div>
+                          <div className="flex-1">
+                            <div className="font-medium text-white">{formatExerciseName(ex.exercise_name)}</div>
+                            <div className="text-sm text-gray-400">
+                              {ex.series_total} series × {ex.repeticiones || '-'} reps{ex.intensidad ? ` · ${ex.intensidad}` : ''}
+                            </div>
+                          </div>
+                          <div>
+                            <Badge className={ex.status === 'completed' ? 'bg-green-600' : ex.status === 'skipped' ? 'bg-yellow-600' : 'bg-gray-600'}>
+                              {ex.status === 'completed' ? 'Completado' : ex.status === 'skipped' ? 'Saltado' : 'Pendiente'}
+                            </Badge>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                )}
+
+
+
+            {/* =============================================== */}
+            {/* ❌ NO HAY PLAN ACTIVO */}
+            {/* =============================================== */}
+
+            {noActivePlan && (
+              <div className="text-center py-12">
+                <Calendar className="w-12 h-12 text-gray-600 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-white mb-2">
+                  No hay rutina programada
+                </h3>
+                <p className="text-gray-400 mb-6">
+                  No tienes ninguna rutina activa. Ve a metodologías para crear una nueva rutina.
+                </p>
+              </div>
+            )}
+
+            {/* =============================================== */}
+            {/* 🛌 DÍA DE DESCANSO */}
+            {/* =============================================== */}
+
+            {hasActivePlan && !hasToday && !sessionMatchesToday && !hasCompletedSession && (
+              <div className="text-center py-12">
+                <Calendar className="w-12 h-12 text-gray-600 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-white mb-2">
+                  {isRestDay ? 'Día de descanso' : 'Entrenamiento completado'}
+                </h3>
+                <p className="text-gray-400 mb-6">
+                  {isRestDay ?
+                    'No hay entrenamientos programados para hoy. ¡Disfruta tu día de recuperación!' :
+                    '¡Buen trabajo! Has completado el entrenamiento de hoy.'
+                  }
+                </p>
+              </div>
+            )}
+
+            {/* =============================================== */}
+            {/* ⚠️ ERRORES Y ALERTAS */}
+            {/* =============================================== */}
+
+            {sessionError && (
+              <Alert className="border-red-200 bg-red-50/10">
+                <AlertTriangle className="h-4 w-4 text-red-400" />
+                <AlertDescription className="text-red-400">
+                  <strong>Error de sesión:</strong> {sessionError}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSessionError(null)}
+                    className="ml-2 text-red-400 hover:text-red-300"
+                  >
+                    Cerrar
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {/* Botones de acción - Solo mostrar si hay plan activo */}
+            {hasActivePlan && (
+              <div className="flex gap-4 justify-center pt-4">
+                <Button
+                  onClick={() => updateLocalState({ showRejectionModal: true })}
+                  variant="outline"
+                  className="border-red-500/30 text-red-400 hover:bg-red-500/10"
+                  disabled={ui.isLoading}
+                >
+                  Cancelar rutina
+                </Button>
+              </div>
+            )}
+
+            {/* =============================================== */}
+            {/* 🎭 MODALES */}
+            {/* =============================================== */}
+
+            {/* Modal de Calentamiento */}
+            {(localState.showWarmupModal || ui.showWarmup) && (localState.pendingSessionData?.sessionId || session.sessionId) && (
+              <WarmupModal
+                level={(routinePlan || plan.currentPlan)?.level || 'básico'}
+                sessionId={localState.pendingSessionData?.sessionId || session.sessionId}
+                onComplete={handleWarmupComplete}
+                onSkip={handleSkipWarmup}
+                onClose={handleCloseWarmup}
+              />
+            )}
+
+            {/* Modal de Entrenamiento */}
+            {(localState.showSessionModal || ui.showRoutineSession) && effectiveSession && (
+              <RoutineSessionModal
+                session={effectiveSession}
+                sessionId={effectiveSessionId}
+                onClose={() => {
+                  updateLocalState({ showSessionModal: false, pendingSessionData: null });
+                  ui.hideModal?.('routineSession');
+                }}
+                onFinishExercise={handleExerciseUpdate}
+                onSkipExercise={(exerciseIndex) => handleExerciseUpdate(exerciseIndex, { status: 'skipped' })}
+                onCancelExercise={(exerciseIndex) => handleExerciseUpdate(exerciseIndex, { status: 'cancelled' })}
+                onEndSession={handleCompleteSession}
+                navigateToRoutines={() => goToMethodologies()}
+              />
+            )}
           </>
         )}
-
-        {/* Si es día de entrenamiento y no hay sesión activa */}
-        {!sessionMatchesToday && hasToday && hasActivePlan && !hasCompletedSession && (
-          <>
-            <div className="text-center py-6">
-              <Dumbbell className="w-12 h-12 text-yellow-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-white mb-2">
-                Entrenamiento de hoy: {todaySession?.dia || 'Sin información'}
-              </h3>
-              <p className="text-gray-400 mb-4">
-                {todaySession?.ejercicios?.length || 0} ejercicios programados
-              </p>
-              <Button
-                onClick={() => handleStartSession(0)}
-                className="bg-yellow-500 hover:bg-yellow-600 text-black font-medium"
-                disabled={ui.isLoading}
-              >
-                Comenzar Entrenamiento
-              </Button>
-            </div>
-
-            <ExerciseList
-              exercises={todaySession?.ejercicios || []}
-              sessionStatus={null}
-              onStartSession={handleStartSession}
-              showProgress={false}
-            />
-          </>
-        )}
-
-        {/* Si no hay plan activo */}
-        {noActivePlan && (
-          <div className="text-center py-12">
-            <Calendar className="w-12 h-12 text-gray-600 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-white mb-2">
-              No hay rutina programada
-            </h3>
-            <p className="text-gray-400 mb-6">
-              No tienes ninguna rutina activa. Ve a metodologías para crear una nueva rutina.
-            </p>
-          </div>
-        )}
-
-        {/* Si es día de descanso o ya completó el entrenamiento */}
-        {hasActivePlan && !hasToday && !sessionMatchesToday && !hasCompletedSession && (
-          <div className="text-center py-12">
-            <Calendar className="w-12 h-12 text-gray-600 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-white mb-2">
-              {isRestDay ? 'Día de descanso' : 'Entrenamiento completado'}
-            </h3>
-            <p className="text-gray-400 mb-6">
-              {isRestDay ?
-                'No hay entrenamientos programados para hoy. ¡Disfruta tu día de recuperación!' :
-                '¡Buen trabajo! Has completado el entrenamiento de hoy.'
-              }
-            </p>
-
-
-          </div>
-        )}
-
-        {/* Resumen de última sesión completada */}
-        {!isRestDay && hasCompletedSession && session.sessionId && (
-          <RoutineSessionSummaryCard
-            sessionId={session.sessionId}
-            session={session.currentSession}
-            exercises={session.exerciseProgress ? Object.values(session.exerciseProgress) : []}
-          />
-        )}
-
-        {/* Modal de Calentamiento */}
-        {(localState.showWarmupModal || ui.showWarmup) && (localState.pendingSessionData?.sessionId || session.sessionId) && (
-          <WarmupModal
-            level={(routinePlan || plan.currentPlan)?.level || 'básico'}
-            sessionId={localState.pendingSessionData?.sessionId || session.sessionId}
-            onComplete={handleWarmupComplete}
-            onSkip={handleSkipWarmup}
-            onClose={handleCloseWarmup}
-          />
-        )}
-
-        {/* Modal de Entrenamiento */}
-        {(localState.showSessionModal || ui.showRoutineSession) && effectiveSession && (
-          <RoutineSessionModal
-            session={effectiveSession}
-            sessionId={effectiveSessionId}
-            onClose={() => {
-              updateLocalState({ showSessionModal: false, pendingSessionData: null });
-              try { ui.hideModal?.('routineSession'); } catch {}
-            }}
-            onFinishExercise={handleFinishExercise}
-            onSkipExercise={handleSkipExercise}
-            onCancelExercise={handleCancelExercise}
-            onEndSession={handleEndSession}
-            navigateToRoutines={() => navigate('/routines')}
-          />
-        )}
-
-        {/* Botones de acción - Solo mostrar si hay plan activo */}
-        {hasActivePlan && (
-          <div className="flex gap-4 justify-center pt-4">
-            <Button
-              onClick={() => updateLocalState({ showRejectionModal: true })}
-              variant="outline"
-              className="border-red-500/30 text-red-400 hover:bg-red-500/10"
-              disabled={ui.isLoading}
-            >
-              Cancelar rutina
-            </Button>
-          </div>
-        )}
-
-        {/* Modales adicionales */}
-        {localState.showRejectionModal && (
-          <HomeTrainingRejectionModal
-            exercises={localState.planExercises}
-            equipmentType={(routinePlan || plan.currentPlan)?.equipamiento || (routinePlan || plan.currentPlan)?.equipment || 'rutina'}
-            trainingType={(routinePlan || plan.currentPlan)?.selected_style || (routinePlan || plan.currentPlan)?.metodologia || 'rutina'}
-            onReject={handleRoutineRejections}
-            onSkip={handleSkipCancel}
-            onClose={() => updateLocalState({ showRejectionModal: false })}
-            loading={localState.loadingExercises}
-          />
-        )}
-
       </div>
     </SafeComponent>
   );

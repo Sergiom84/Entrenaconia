@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { X as IconX } from 'lucide-react';
 import { formatExerciseName } from '../../utils/exerciseUtils';
 import ExerciseFeedbackModal from '../HomeTraining/ExerciseFeedbackModal';
@@ -37,6 +37,7 @@ export default function RoutineSessionModal({
   sessionId,
   allowManualTimer = true,
   navigateToRoutines = null,
+  isOpen = true,
 }) {
   // Datos de la sesión
   const exercises = useMemo(() => Array.isArray(session?.ejercicios) ? session.ejercicios : [], [session?.ejercicios]);
@@ -52,14 +53,39 @@ export default function RoutineSessionModal({
   const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
   const [showExerciseToast, setShowExerciseToast] = useState(false);
   const [showEndModal, setShowEndModal] = useState(false);
+  // Guards y refs
+  const closingRef = useRef(false);
+  const toastTimeoutRef = useRef(null);
+
+  // Cierre seguro para evitar múltiples llamadas a onClose (según traces)
+  const safeClose = useCallback(() => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    onClose?.();
+  }, [onClose]);
+
+  // Gestionar timeout del toast de ejercicio completado con cleanup
+  useEffect(() => {
+    if (!showExerciseToast) return;
+    toastTimeoutRef.current = setTimeout(() => setShowExerciseToast(false), 1500);
+    return () => {
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+        toastTimeoutRef.current = null;
+      }
+    };
+  }, [showExerciseToast]);
+
 
   // Cargar feedback existente al abrir modal
   useEffect(() => {
-    const loadExistingFeedback = async () => {
-      if (!sessionId) return;
+    if (!isOpen || !sessionId) return;
+    let cancelled = false;
 
+    const loadExistingFeedback = async () => {
       try {
         const feedbackData = await getSessionFeedback({ sessionId });
+        if (cancelled) return;
         const feedbackMap = {};
 
         feedbackData.forEach(fb => {
@@ -72,12 +98,15 @@ export default function RoutineSessionModal({
         setExerciseFeedback(feedbackMap);
         console.log('📝 Feedback cargado:', feedbackMap);
       } catch (error) {
-        console.error('Error cargando feedback existente:', error);
+        if (!cancelled) {
+          console.error('Error cargando feedback existente:', error);
+        }
       }
     };
 
     loadExistingFeedback();
-  }, [sessionId]);
+    return () => { cancelled = true; };
+  }, [sessionId, isOpen]);
 
   // Detectar si hay ejercicio en progreso
   const isCurrentExerciseInProgress = useCallback(() => {
@@ -88,6 +117,7 @@ export default function RoutineSessionModal({
 
   // Manejar auto-avance del timer
   useEffect(() => {
+    if (!isOpen) return;
     if (timerState.timeLeft === 0 && timerState.isRunning) {
       if (timerState.phase === 'exercise') {
         // Fin de ejercicio -> descanso
@@ -107,7 +137,7 @@ export default function RoutineSessionModal({
         }
       }
     }
-  }, [timerState.timeLeft, timerState.isRunning, timerState.phase, timerState.series, timerState.seriesTotal, timerState.baseDuration, timerState.restDuration]);
+  }, [timerState.timeLeft, timerState.isRunning, timerState.phase, timerState.series, timerState.seriesTotal, timerState.baseDuration, timerState.restDuration, isOpen]);
 
   // Completar ejercicio actual
   const handleCompleteExercise = useCallback(() => {
@@ -121,7 +151,6 @@ export default function RoutineSessionModal({
       // Hay más ejercicios -> avanzar y resetear timer
       timerState.actions.prepareNext();
       setShowExerciseToast(true);
-      setTimeout(() => setShowExerciseToast(false), 1500);
       console.log('✅ Ejercicio completado, avanzando a ejercicio', result.nextIndex);
     } else {
       // No hay más ejercicios -> mostrar resumen
@@ -160,7 +189,7 @@ export default function RoutineSessionModal({
     if (currentInProgress) {
       setShowExitConfirmModal(true);
     } else {
-      onClose?.();
+      safeClose();
     }
   }, [isCurrentExerciseInProgress, onClose]);
 
@@ -184,7 +213,7 @@ export default function RoutineSessionModal({
     }
 
     setShowExitConfirmModal(false);
-    onClose?.();
+    safeClose();
   }, [isCurrentExerciseInProgress, timerState.series, timerState.spent, progressState.currentIndex, progressState.actions, onFinishExercise, onSkipExercise, onCancelExercise, onClose]);
 
   // Guardar feedback de ejercicio

@@ -186,8 +186,8 @@ export default function CalendarTabRefactored() {
     const daysDifference = Math.floor((today - startDate) / (1000 * 60 * 60 * 24));
     const weeksDifference = Math.floor(daysDifference / 7);
 
-    return Math.max(0, Math.min(weeksDifference, (plan.currentPlan?.weeks?.length || 1) - 1));
-  }, [planStartDate, plan.currentPlan?.weeks?.length]);
+    return Math.max(0, Math.min(weeksDifference, (plan.currentPlan?.semanas?.length || 1) - 1));
+  }, [planStartDate, plan.currentPlan?.semanas?.length]);
 
   useEffect(() => {
     if (hasActivePlan) {
@@ -200,11 +200,11 @@ export default function CalendarTabRefactored() {
   // ===============================================
 
   const currentWeekSessions = useMemo(() => {
-    if (!hasActivePlan || !plan.currentPlan?.weeks?.[currentWeekIndex]) {
+    if (!hasActivePlan || !plan.currentPlan?.semanas?.[currentWeekIndex]) {
       return [];
     }
 
-    const currentWeek = plan.currentPlan.weeks[currentWeekIndex];
+    const currentWeek = plan.currentPlan.semanas[currentWeekIndex];
     const weekDates = getWeekDates(planStartDate, currentWeekIndex);
 
     // Usar utilidad existente para mapear sesiones
@@ -283,7 +283,7 @@ export default function CalendarTabRefactored() {
   }, [track]);
 
   const navigateWeek = useCallback((direction) => {
-    const maxWeeks = plan.currentPlan?.weeks?.length || 1;
+    const maxWeeks = plan.currentPlan?.semanas?.length || 1;
     setCurrentWeekIndex(prev => {
       if (direction === 'prev') {
         return Math.max(0, prev - 1);
@@ -291,7 +291,7 @@ export default function CalendarTabRefactored() {
         return Math.min(maxWeeks - 1, prev + 1);
       }
     });
-  }, [plan.currentPlan?.weeks?.length]);
+  }, [plan.currentPlan?.semanas?.length]);
 
   // ===============================================
   // 📊 ESTADÍSTICAS DE LA SEMANA
@@ -360,7 +360,7 @@ export default function CalendarTabRefactored() {
               variant="outline"
               size="sm"
               onClick={() => navigateWeek('next')}
-              disabled={currentWeekIndex >= (plan.currentPlan?.weeks?.length || 1) - 1}
+              disabled={currentWeekIndex >= (plan.currentPlan?.semanas?.length || 1) - 1}
             >
               <ChevronRight className="h-4 w-4" />
             </Button>

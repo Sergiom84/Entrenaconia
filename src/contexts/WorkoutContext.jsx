@@ -677,7 +677,7 @@ export function WorkoutProvider({ children }) {
     if (!state.session.sessionId) return { success: false, error: 'No sessionId' };
 
     try {
-      await apiClient.post(`/routines/sessions/${state.session.sessionId}/complete`, {
+      await apiClient.post(`/training-session/complete/methodology/${state.session.sessionId}`, {
         completedAt: new Date().toISOString(),
         exerciseProgress: state.session.exerciseProgress
       });
@@ -781,7 +781,7 @@ export function WorkoutProvider({ children }) {
             status: PLAN_STATUS.ACTIVE,
             planStartDate: dbState.activePlan.started_at || new Date().toISOString(),
             methodology: dbState.activePlan.methodology_type,
-            weekTotal: dbState.activePlan.plan_data?.weeks?.length || 0,
+            weekTotal: dbState.activePlan.plan_data?.semanas?.length || dbState.activePlan.plan_data?.weeks?.length || 0,
             currentWeek: dbState.activePlan.current_week || 1
           }
         });
