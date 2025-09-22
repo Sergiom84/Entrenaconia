@@ -13,7 +13,7 @@
  * @version 1.0.0 - Refactorización Arquitectural Completa
  */
 
-import { createContext, useContext, useReducer, useEffect, useCallback } from 'react';
+import { createContext, useContext, useReducer, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from './AuthContext';
 
 import apiClient from '../lib/apiClient';
@@ -802,6 +802,42 @@ export function WorkoutProvider({ children }) {
   }, [user?.id, syncWithDatabase]);
 
   // =============================================================================
+  // 🔁 Today-status cache compartido (dedupe entre pestañas)
+  // =============================================================================
+
+  const todayStatusCacheRef = useRef({});
+
+  const getTodayStatusCached = useCallback(async ({ planId, dayId }) => {
+    if (!planId || !dayId) return null;
+    const key = `${planId}:${dayId}`;
+    const entry = todayStatusCacheRef.current[key] || {};
+
+    // Reutilizar petición en curso
+    if (entry.inflight) return entry.inflight;
+
+    // TTL corto para evitar bursts de renders
+    const TTL_MS = 1500;
+    if (entry.ts && entry.data && (Date.now() - entry.ts < TTL_MS)) {
+      return entry.data;
+    }
+
+    const params = new URLSearchParams({ methodology_plan_id: String(planId), day_id: String(dayId) });
+    const promise = apiClient.get(`/routines/sessions/today-status?${params.toString()}`)
+      .then((data) => {
+        todayStatusCacheRef.current[key] = { data, ts: Date.now(), inflight: null };
+        return data;
+      })
+      .catch((err) => {
+        // Limpiar inflight en error para permitir reintentos
+        todayStatusCacheRef.current[key] = { data: null, ts: Date.now(), inflight: null };
+        throw err;
+      });
+
+    todayStatusCacheRef.current[key] = { ...entry, inflight: promise };
+    return promise;
+  }, []);
+
+  // =============================================================================
   // 🎯 CONTEXT VALUE
   // =============================================================================
 
@@ -811,6 +847,10 @@ export function WorkoutProvider({ children }) {
 
     // Plan actions
     loadActivePlan,
+
+    // Shared cache helpers
+    getTodayStatusCached,
+
     generatePlan,
     activatePlan,
     archivePlan,

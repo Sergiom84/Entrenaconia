@@ -33,8 +33,7 @@ import { useWorkout } from '@/contexts/WorkoutContext'; // Mantenemos el context
 import { formatExerciseName } from '../../../utils/exerciseUtils';
 import SafeComponent from '../../ui/SafeComponent';
 import { useTrace } from '@/contexts/TraceContext.jsx';
-
-import apiClient from '@/lib/apiClient';
+import { ExerciseListItem } from '../summary/ExerciseListItem.jsx';
 
 
 // ===============================================
@@ -121,7 +120,10 @@ export default function TodayTrainingTab({
     setError,
     showSuccess,
     goToMethodologies,
-    cancelPlan
+    cancelPlan,
+
+    // Cache compartida
+    getTodayStatusCached
   } = useWorkout();
 
   // ===============================================
@@ -149,32 +151,16 @@ export default function TodayTrainingTab({
   // Nombre del día actual disponible para hooks que lo requieren
   const currentTodayName = todayName || getTodayName();
 
-  // Dedupe de requests a today-status
-  const todayFetchInFlight = useRef(false);
-  const lastTodayFetch = useRef({ key: null, ts: 0 });
-
-
+  
   const fetchTodayStatus = useCallback(async () => {
     const planId = methodologyPlanId || plan.planId;
     if (!hasActivePlan || !planId) return;
 
-    const startISO = (plan.planStartDate || planStartDate || new Date().toISOString());
-    const dayId = computeDayId(startISO, 'Europe/Madrid');
-    const key = `${planId}:${dayId}`;
-
-    // Dedupe: evitar múltiples llamadas simultáneas o repetidas en un corto intervalo
-    if (todayFetchInFlight.current) return;
-    if (lastTodayFetch.current.key === key && Date.now() - lastTodayFetch.current.ts < 1000) return;
-
-    todayFetchInFlight.current = true;
     setLoadingTodayStatus(true);
-
     try {
-      const params = new URLSearchParams({
-        methodology_plan_id: String(planId),
-        day_id: String(dayId)
-      });
-      const data = await apiClient.get(`/routines/sessions/today-status?${params.toString()}`);
+      const startISO = (plan.planStartDate || planStartDate || new Date().toISOString());
+      const dayId = computeDayId(startISO, 'Europe/Madrid');
+      const data = await getTodayStatusCached({ planId, dayId });
       if (data?.success) {
         setTodayStatus({ session: data.session, exercises: data.exercises, summary: data.summary });
       }
@@ -182,10 +168,8 @@ export default function TodayTrainingTab({
       console.error('Error obteniendo estado del día:', e);
     } finally {
       setLoadingTodayStatus(false);
-      todayFetchInFlight.current = false;
-      lastTodayFetch.current = { key, ts: Date.now() };
     }
-  }, [methodologyPlanId, plan.planId, plan.planStartDate, planStartDate, hasActivePlan]);
+  }, [methodologyPlanId, plan.planId, plan.planStartDate, planStartDate, hasActivePlan, getTodayStatusCached]);
 
 
   const mountedRef = useRef(true);
@@ -536,9 +520,6 @@ export default function TodayTrainingTab({
   }, [sessionStartTime]);
 
   // Estados para mostrar el entrenamiento de hoy
-  const isCurrentlyTraining = hasActiveSession && (
-    session.dayName?.toLowerCase() === todaySessionData?.dia?.toLowerCase()
-  );
   const hasCompletedSession = session.status === 'completed';
   const isRestDay = hasActivePlan && !todaySessionData;
   const noActivePlan = !hasActivePlan;
@@ -802,22 +783,7 @@ export default function TodayTrainingTab({
 
                     <div className="space-y-2 max-h-64 overflow-y-auto">
                       {todayStatus.exercises.map((ex, index) => (
-                        <div key={index} className="flex items-center gap-3 p-3 bg-gray-800 rounded-lg">
-                          <div className="flex-shrink-0">
-                            <Badge variant="secondary">{index + 1}</Badge>
-                          </div>
-                          <div className="flex-1">
-                            <div className="font-medium text-white">{formatExerciseName(ex.exercise_name)}</div>
-                            <div className="text-sm text-gray-400">
-                              {ex.series_total} series × {ex.repeticiones || '-'} reps{ex.intensidad ? ` · ${ex.intensidad}` : ''}
-                            </div>
-                          </div>
-                          <div>
-                            <Badge className={ex.status === 'completed' ? 'bg-green-600' : ex.status === 'skipped' ? 'bg-yellow-600' : 'bg-gray-600'}>
-                              {ex.status === 'completed' ? 'Completado' : ex.status === 'skipped' ? 'Saltado' : 'Pendiente'}
-                            </Badge>
-                          </div>
-                        </div>
+                        <ExerciseListItem key={index} exercise={ex} index={index} />
                       ))}
                     </div>
                   </Card>
