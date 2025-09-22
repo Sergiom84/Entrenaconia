@@ -681,6 +681,10 @@ router.put('/sessions/:sessionId/warmup-time', authenticateToken, async (req, re
 // Ahora acepta también day_id como forma preferida de identificar el día
 router.get('/sessions/today-status', authenticateToken, async (req, res) => {
   try {
+    // Log completo de la ruta y query para ver los parámetros (incluye day_id y methodology_plan_id)
+    console.log(`📥 GET ${req.originalUrl} - ${new Date().toISOString()}`);
+    console.log('🧭 today-status query:', req.query);
+
     const userIdRaw = req.user?.userId || req.user?.id;
     const userId = parseInt(userIdRaw, 10);
     const { methodology_plan_id: planIdParam } = req.query;

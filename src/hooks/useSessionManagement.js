@@ -129,18 +129,11 @@ const useSessionManagement = () => {
 
   // Función para manejar beforeunload
   const handleBeforeUnload = useCallback(() => {
-    if (!isAuthenticated) return;
-
-    // Enviar señal de que la página se está cerrando
-    // Usar sendBeacon para mejor confiabilidad
-    const token = localStorage.getItem('token');
-    if (token && navigator.sendBeacon) {
-      const data = new FormData();
-      data.append('logoutType', 'beforeunload');
-      
-      navigator.sendBeacon('/api/auth/logout', data);
-    }
-  }, [isAuthenticated]);
+    // No cerrar sesión automáticamente al recargar/cerrar la pestaña.
+    // Si se necesita telemetría, enviar un ping ligero a un endpoint no destructivo.
+    // Ejemplo (opcional): navigator.sendBeacon('/api/analytics/page-unload');
+    return;
+  }, []);
 
   // Configurar event listeners y timers
   useEffect(() => {

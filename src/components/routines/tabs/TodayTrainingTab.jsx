@@ -739,7 +739,7 @@ export default function TodayTrainingTab({
                     {todaySessionData?.ejercicios?.length || 0} ejercicios programados
                   </p>
                   <Button
-                    onClick={() => handleStartSession(0)}
+                    onClick={() => (hasActiveSession ? handleResumeSession() : handleStartSession(0))}
                     className="bg-yellow-500 hover:bg-yellow-600 text-black font-medium"
                     disabled={ui.isLoading || isLoadingSession}
                   >
@@ -899,39 +899,41 @@ export default function TodayTrainingTab({
               </div>
             )}
 
-            {/* =============================================== */}
-            {/* 🎭 MODALES */}
-            {/* =============================================== */}
-
-            {/* Modal de Calentamiento */}
-            {(localState.showWarmupModal || ui.showWarmup) && (localState.pendingSessionData?.sessionId || session.sessionId) && (
-              <WarmupModal
-                level={(routinePlan || plan.currentPlan)?.level || 'básico'}
-                sessionId={localState.pendingSessionData?.sessionId || session.sessionId}
-                onComplete={handleWarmupComplete}
-                onSkip={handleSkipWarmup}
-                onClose={handleCloseWarmup}
-              />
-            )}
-
-            {/* Modal de Entrenamiento */}
-            {(localState.showSessionModal || ui.showRoutineSession) && effectiveSession && (
-              <RoutineSessionModal
-                session={effectiveSession}
-                sessionId={effectiveSessionId}
-                onClose={() => {
-                  updateLocalState({ showSessionModal: false, pendingSessionData: null });
-                  ui.hideModal?.('routineSession');
-                }}
-                onFinishExercise={handleExerciseUpdate}
-                onSkipExercise={(exerciseIndex) => handleExerciseUpdate(exerciseIndex, { status: 'skipped' })}
-                onCancelExercise={(exerciseIndex) => handleExerciseUpdate(exerciseIndex, { status: 'cancelled' })}
-                onEndSession={handleCompleteSession}
-                navigateToRoutines={() => goToMethodologies()}
-              />
-            )}
           </>
         )}
+
+      {/* =============================================== */}
+      {/* 🎭 MODALES (fuera de gating de loading/error para no bloquear apertura) */}
+      {/* =============================================== */}
+
+      {/* Modal de Calentamiento */}
+      {(localState.showWarmupModal || ui.showWarmup) && (localState.pendingSessionData?.sessionId || session.sessionId) && (
+        <WarmupModal
+          level={(routinePlan || plan.currentPlan)?.level || 'básico'}
+          sessionId={localState.pendingSessionData?.sessionId || session.sessionId}
+          onComplete={handleWarmupComplete}
+          onSkip={handleSkipWarmup}
+          onClose={handleCloseWarmup}
+        />
+      )}
+
+      {/* Modal de Entrenamiento */}
+      {(localState.showSessionModal || ui.showRoutineSession) && effectiveSession && (
+        <RoutineSessionModal
+          session={effectiveSession}
+          sessionId={effectiveSessionId}
+          onClose={() => {
+            updateLocalState({ showSessionModal: false, pendingSessionData: null });
+            ui.hideModal?.('routineSession');
+          }}
+          onFinishExercise={handleExerciseUpdate}
+          onSkipExercise={(exerciseIndex) => handleExerciseUpdate(exerciseIndex, { status: 'skipped' })}
+          onCancelExercise={(exerciseIndex) => handleExerciseUpdate(exerciseIndex, { status: 'cancelled' })}
+          onEndSession={handleCompleteSession}
+          navigateToRoutines={() => goToMethodologies()}
+        />
+      )}
+
       </div>
     </SafeComponent>
   );
