@@ -304,7 +304,8 @@ export default function TodayTrainingTab({
         const enrichedSession = {
           ...todaySessionData,
           sessionId: result.sessionId,
-          currentExerciseIndex: Math.max(0, Math.min(exerciseIndex, (todaySessionData?.ejercicios?.length || 1) - 1))
+          currentExerciseIndex: Math.max(0, Math.min(exerciseIndex, (todaySessionData?.ejercicios?.length || 1) - 1)),
+          exerciseProgress: sessionExerciseProgress
         };
 
         // Guardar datos de sesión para después del calentamiento
@@ -362,7 +363,8 @@ export default function TodayTrainingTab({
         session: {
           ...baseSession,
           sessionId: sid,
-          currentExerciseIndex: session.currentExerciseIndex || 0
+          currentExerciseIndex: session.currentExerciseIndex || 0,
+          exerciseProgress: sessionExerciseProgress
         },
         sessionId: sid
       },
@@ -519,6 +521,28 @@ export default function TodayTrainingTab({
     }, 0);
   }, [todaySessionData?.ejercicios]);
 
+  // Progreso por ejercicio que usará el modal para saltar completados
+  const sessionExerciseProgress = useMemo(() => {
+    // Fuente preferente: todayStatus.exercises (estructura del backend)
+    if (Array.isArray(todayStatus?.exercises) && todayStatus.exercises.length > 0) {
+      return todayStatus.exercises.map((ex, idx) => ({
+        exercise_order: idx,
+        status: String(ex?.status || 'pending').toLowerCase()
+      }));
+    }
+
+    // Fallback: estado local exerciseProgress
+    if (todaySessionData?.ejercicios?.length) {
+      return todaySessionData.ejercicios.map((_, idx) => ({
+        exercise_order: idx,
+        status: String(exerciseProgress?.[idx]?.status || 'pending').toLowerCase()
+      }));
+    }
+
+    return [];
+  }, [todayStatus?.exercises, exerciseProgress, todaySessionData?.ejercicios]);
+
+
   const actualDuration = useMemo(() => {
     if (!sessionStartTime) return 0;
     return Math.floor((Date.now() - sessionStartTime.getTime()) / 1000);
@@ -583,7 +607,8 @@ export default function TodayTrainingTab({
       ? {
           ...todaySessionData,
           sessionId: session.sessionId || localState.pendingSessionData?.sessionId,
-          currentExerciseIndex: localState.pendingSessionData?.session?.currentExerciseIndex || 0
+          currentExerciseIndex: localState.pendingSessionData?.session?.currentExerciseIndex || 0,
+          exerciseProgress: sessionExerciseProgress
         }
       : null
   );
@@ -738,8 +763,9 @@ export default function TodayTrainingTab({
                   <p className="text-gray-400 mb-4">
                     {todaySessionData?.ejercicios?.length || 0} ejercicios programados
                   </p>
+                  {/* Decidir si debemos reanudar (hay sesión activa o ya hay ejercicios realizados) */}
                   <Button
-                    onClick={() => (hasActiveSession ? handleResumeSession() : handleStartSession(0))}
+                    onClick={() => ((hasActiveSession || sessionStats.completed > 0) ? handleResumeSession() : handleStartSession(0))}
                     className="bg-yellow-500 hover:bg-yellow-600 text-black font-medium"
                     disabled={ui.isLoading || isLoadingSession}
                   >
@@ -751,7 +777,7 @@ export default function TodayTrainingTab({
                     ) : (
                       <>
                         <Play className="h-5 w-5 mr-2" />
-                        Comenzar Entrenamiento
+                        {(hasActiveSession || sessionStats.completed > 0) ? 'Reanudar Entrenamiento' : 'Comenzar Entrenamiento'}
                       </>
                     )}
                   </Button>

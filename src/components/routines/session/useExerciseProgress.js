@@ -13,10 +13,10 @@ export const useExerciseProgress = (session, exercises) => {
     // Calcular índice inicial basado en progreso existente
     if (!session?.exerciseProgress) return 0;
 
-    // Buscar el primer ejercicio que no esté completado
+    // Buscar el primer ejercicio que NO esté completado (permitimos skipped/cancelled aparecer)
     for (let i = 0; i < exercises.length; i++) {
       const progress = session.exerciseProgress.find(p => p.exercise_order === i);
-      if (!progress || progress.status !== 'completed') {
+      if (!progress || String(progress.status).toLowerCase() !== 'completed') {
         return i;
       }
     }
@@ -32,18 +32,20 @@ export const useExerciseProgress = (session, exercises) => {
   const total = exercises.length;
   const seriesTotal = Number(currentExercise?.series) || 3;
 
-  // Encontrar el siguiente ejercicio no completado
+  // Encontrar el siguiente ejercicio NO completado (permitimos skipped/cancelled)
   const findNextIncompleteExercise = useCallback((fromIndex = currentIndex + 1) => {
-    if (!session?.exerciseProgress) return fromIndex;
-
     for (let i = fromIndex; i < exercises.length; i++) {
-      const progress = session.exerciseProgress.find(p => p.exercise_order === i);
-      if (!progress || progress.status !== 'completed') {
+      // Estado efectivo: preferir local (recién marcado), si no, estado de BD
+      const localState = exerciseStates[i];
+      const dbState = session?.exerciseProgress?.find(p => p.exercise_order === i)?.status;
+      const status = (localState ?? dbState ?? '').toLowerCase();
+
+      if (status !== 'completed') {
         return i;
       }
     }
     return exercises.length; // No hay más ejercicios incompletos
-  }, [currentIndex, session, exercises]);
+  }, [currentIndex, session, exercises, exerciseStates]);
 
   // Generar mensaje final basado en estados
   const generateEndMessage = useCallback(() => {
