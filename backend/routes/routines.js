@@ -281,17 +281,39 @@ router.post('/bootstrap-plan', authenticateToken, async (req, res) => {
 });
 
 // POST /api/routines/sessions/start
-// Body: { methodology_plan_id, week_number, day_name }
+// Body: { methodology_plan_id, week_number, day_name } OR { methodology_plan_id, day_id }
 router.post('/sessions/start', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
     const userId = req.user?.userId || req.user?.id;
-    const { methodology_plan_id, week_number, day_name } = req.body;
-    if (!methodology_plan_id || !week_number || !day_name) {
+    const { methodology_plan_id } = req.body;
+    let { week_number, day_name } = req.body;
+    const day_id = req.body?.day_id ? parseInt(req.body.day_id, 10) : null;
+
+    if (!methodology_plan_id || (!day_id && (!week_number || !day_name))) {
       await client.query('ROLLBACK');
-      return res.status(400).json({ success: false, error: 'Faltan parámetros: methodology_plan_id, week_number, day_name' });
+      return res.status(400).json({ success: false, error: 'Faltan parámetros: methodology_plan_id y (day_id) o (week_number, day_name)' });
+    }
+
+    // Si viene day_id, resolver week_number y day_name desde calendario del plan
+    if (day_id && (!week_number || !day_name)) {
+      const dayInfoQ = await client.query(
+        `SELECT week_number, day_name FROM app.methodology_plan_days WHERE plan_id = $1 AND day_id = $2`,
+        [methodology_plan_id, day_id]
+      );
+      if (dayInfoQ.rowCount > 0) {
+        week_number = dayInfoQ.rows[0].week_number;
+        day_name = dayInfoQ.rows[0].day_name;
+      } else {
+        // Fallback simple si no existe fila (debería existir por migración):
+        week_number = Math.ceil(Number(day_id) / 7);
+        // Derivar nombre del día por seguridad (Lunes..Domingo)
+        const days = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+        // Usar plan_start_datetime para calcularlo sería ideal; en ausencia, asumimos lunes si no podemos derivar
+        day_name = day_name || 'lunes';
+      }
     }
 
     // Verificar plan y obtener plan_data
@@ -656,16 +678,19 @@ router.put('/sessions/:sessionId/warmup-time', authenticateToken, async (req, re
 
 // GET /api/routines/sessions/today-status
 // Obtiene el estado de la sesión del día actual (si existe)
+// Ahora acepta también day_id como forma preferida de identificar el día
 router.get('/sessions/today-status', authenticateToken, async (req, res) => {
   try {
     const userIdRaw = req.user?.userId || req.user?.id;
     const userId = parseInt(userIdRaw, 10);
-    const { methodology_plan_id: planIdParam, week_number, day_name } = req.query;
+    const { methodology_plan_id: planIdParam } = req.query;
+    let { week_number, day_name } = req.query;
+    const day_id = req.query?.day_id ? parseInt(req.query.day_id, 10) : null;
 
-    if (!planIdParam || !week_number || !day_name) {
+    if (!planIdParam || (!day_id && (!week_number || !day_name))) {
       return res.status(400).json({
         success: false,
-        error: 'Parámetros requeridos: methodology_plan_id, week_number, day_name'
+        error: 'Parámetros requeridos: methodology_plan_id y (day_id) o (week_number, day_name)'
       });
     }
 
@@ -676,6 +701,22 @@ router.get('/sessions/today-status', authenticateToken, async (req, res) => {
         success: false,
         error: 'methodology_plan_id debe ser un número válido'
       });
+    }
+
+    // Si viene day_id, resolver week/day desde tabla calendario
+    if (day_id && (!week_number || !day_name)) {
+      const dres = await pool.query(
+        `SELECT week_number, day_name FROM app.methodology_plan_days WHERE plan_id = $1 AND day_id = $2`,
+        [methodology_plan_id, day_id]
+      );
+      if (dres.rowCount > 0) {
+        week_number = dres.rows[0].week_number;
+        day_name = dres.rows[0].day_name;
+      } else {
+        // Fallback seguro: derivar semana
+        week_number = Math.ceil(Number(day_id) / 7);
+        day_name = day_name || 'lunes';
+      }
     }
 
     const normalizedDay = normalizeDayAbbrev(day_name);

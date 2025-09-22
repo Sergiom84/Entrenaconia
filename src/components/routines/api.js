@@ -26,12 +26,12 @@ export async function bootstrapPlan(routine_plan_id) {
   return data.methodology_plan_id;
 }
 
-export async function startSession({ methodology_plan_id, week_number, day_name }) {
-  const data = await apiClient.post('/routines/sessions/start', {
-    methodology_plan_id,
-    week_number,
-    day_name
-  });
+export async function startSession({ methodology_plan_id, day_id = null, week_number = null, day_name = null }) {
+  const payload = { methodology_plan_id };
+  if (day_id !== null && day_id !== undefined) payload.day_id = day_id;
+  if (week_number !== null && week_number !== undefined) payload.week_number = week_number;
+  if (day_name) payload.day_name = day_name;
+  const data = await apiClient.post('/routines/sessions/start', payload);
   if (!data.success) throw new Error(data.error || 'No se pudo iniciar la sesión');
   return data; // { session_id, total_exercises }
 }

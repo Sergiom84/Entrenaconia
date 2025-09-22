@@ -625,8 +625,7 @@ export function WorkoutProvider({ children }) {
 
       const sessionData = await startSessionAPI({
         methodology_plan_id: config.planId || state.plan.planId,
-        week_number: state.plan.currentWeek,
-        day_name: config.dayName
+        day_id: config.dayId
       });
 
       dispatch({
@@ -634,7 +633,7 @@ export function WorkoutProvider({ children }) {
         payload: {
           currentSession: sessionData,
           sessionId: sessionData.session_id || sessionData.id,
-          dayName: config.dayName,
+          dayName: (config.dayInfo?.dia || config.dayName || null),
           dayInfo: config.dayInfo || null,
           weekNumber: state.plan.currentWeek,
           totalExercises: sessionData.total_exercises || 0
@@ -658,10 +657,14 @@ export function WorkoutProvider({ children }) {
     // Actualizar en backend si hay sesión activa
     if (state.session.sessionId) {
       try {
-        await apiClient.put(`/routines/sessions/${state.session.sessionId}/progress`, {
-          exerciseId,
-          progress: progressData
-        });
+        await apiClient.put(
+          `/routines/sessions/${state.session.sessionId}/exercise/${exerciseId}`,
+          {
+            series_completed: Math.max(0, parseInt(progressData.series_completed) || 0),
+            status: progressData.status || 'completed',
+            time_spent_seconds: Math.max(0, parseInt(progressData.time_spent_seconds) || 0)
+          }
+        );
         return { success: true };
       } catch (error) {
         console.warn('Error guardando progreso en backend:', error);

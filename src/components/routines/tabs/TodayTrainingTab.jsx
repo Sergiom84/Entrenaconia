@@ -35,6 +35,8 @@ import SafeComponent from '../../ui/SafeComponent';
 import { useTrace } from '@/contexts/TraceContext.jsx';
 
 import apiClient from '@/lib/apiClient';
+
+
 // ===============================================
 // 🎯 HELPER FUNCTIONS
 // ===============================================
@@ -42,6 +44,31 @@ import apiClient from '@/lib/apiClient';
 function getTodayName() {
   const days = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
   return days[new Date().getDay()];
+}
+
+// Compute day_id from plan start datetime and timezone (calendar days, 1-indexed)
+function computeDayId(startISO, timezone = 'Europe/Madrid', now = new Date()) {
+  try {
+    const getParts = (d, tz) => {
+      const s = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+      const [y, m, dd] = s.split('-').map(Number);
+      return { y, m, d: dd };
+    };
+    const s = getParts(new Date(startISO), timezone);
+    const n = getParts(now, timezone);
+    const startUTC = Date.UTC(s.y, s.m - 1, s.d);
+    const nowUTC = Date.UTC(n.y, n.m - 1, n.d);
+    const diffDays = Math.floor((nowUTC - startUTC) / 86400000) + 1;
+    return Math.max(1, diffDays);
+  } catch (e) {
+    // Fallback simple sin timezone
+    const start = new Date(startISO);
+    const startDateOnly = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    const current = new Date();
+    const currentDateOnly = new Date(current.getFullYear(), current.getMonth(), current.getDate());
+    const diffDays = Math.floor((currentDateOnly - startDateOnly) / 86400000) + 1;
+    return Math.max(1, diffDays);
+  }
 }
 
 function findTodaySession(plan, targetDay) {
@@ -122,17 +149,30 @@ export default function TodayTrainingTab({
   // Nombre del día actual disponible para hooks que lo requieren
   const currentTodayName = todayName || getTodayName();
 
+  // Dedupe de requests a today-status
+  const todayFetchInFlight = useRef(false);
+  const lastTodayFetch = useRef({ key: null, ts: 0 });
+
 
   const fetchTodayStatus = useCallback(async () => {
-    try {
-      const planId = methodologyPlanId || plan.planId;
-      if (!hasActivePlan || !planId) return;
+    const planId = methodologyPlanId || plan.planId;
+    if (!hasActivePlan || !planId) return;
 
-      setLoadingTodayStatus(true);
+    const startISO = (plan.planStartDate || planStartDate || new Date().toISOString());
+    const dayId = computeDayId(startISO, 'Europe/Madrid');
+    const key = `${planId}:${dayId}`;
+
+    // Dedupe: evitar múltiples llamadas simultáneas o repetidas en un corto intervalo
+    if (todayFetchInFlight.current) return;
+    if (lastTodayFetch.current.key === key && Date.now() - lastTodayFetch.current.ts < 1000) return;
+
+    todayFetchInFlight.current = true;
+    setLoadingTodayStatus(true);
+
+    try {
       const params = new URLSearchParams({
         methodology_plan_id: String(planId),
-        week_number: String(plan.currentWeek || 1),
-        day_name: (todaySessionData?.dia || currentTodayName)
+        day_id: String(dayId)
       });
       const data = await apiClient.get(`/routines/sessions/today-status?${params.toString()}`);
       if (data?.success) {
@@ -142,8 +182,10 @@ export default function TodayTrainingTab({
       console.error('Error obteniendo estado del día:', e);
     } finally {
       setLoadingTodayStatus(false);
+      todayFetchInFlight.current = false;
+      lastTodayFetch.current = { key, ts: Date.now() };
     }
-  }, [methodologyPlanId, plan.planId, plan.currentWeek, todaySessionData?.dia, currentTodayName, hasActivePlan]);
+  }, [methodologyPlanId, plan.planId, plan.planStartDate, planStartDate, hasActivePlan]);
 
 
   const mountedRef = useRef(true);
@@ -256,10 +298,11 @@ export default function TodayTrainingTab({
     try {
       console.log('🏃 Iniciando sesión de hoy:', todaySessionData);
 
+      const startISO = (plan.planStartDate || planStartDate || new Date().toISOString());
+      const dayId = computeDayId(startISO, 'Europe/Madrid');
       const result = await startSession({
         planId: methodologyPlanId,
-        dayName: todaySessionData?.dia || currentTodayName,
-        weekNumber: todaySessionData?.weekNumber || 1,
+        dayId,
         dayInfo: todaySessionData,
         exerciseIndex
       });
