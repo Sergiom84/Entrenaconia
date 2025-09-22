@@ -64,8 +64,13 @@ export const getEquipment = (plan) => {
  * Obtiene las clases CSS para un estado de ejercicio
  */
 export const getStatusClasses = (status) => {
-  const normalizedStatus = (status || '').toLowerCase();
-  return STATUS_COLORS[normalizedStatus] || STATUS_COLORS.default;
+  const s = (status || '').toLowerCase();
+  // Clases explícitas para que Tailwind las incluya en el build
+  if (s === 'completed') return { bg: 'bg-green-900/20', border: 'border-green-600' };
+  if (s === 'cancelled') return { bg: 'bg-red-900/20', border: 'border-red-600' };
+  if (s === 'skipped') return { bg: 'bg-gray-800/50', border: 'border-gray-700' };
+  if (s === 'in_progress') return { bg: 'bg-yellow-500/10', border: 'border-yellow-500/30' };
+  return { bg: 'bg-gray-800/40', border: 'border-gray-700' };
 };
 
 /**

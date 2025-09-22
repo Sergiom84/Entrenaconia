@@ -737,26 +737,18 @@ export default function TodayTrainingTab({
                     </div>
 
                     <div className="space-y-2 max-h-64 overflow-y-auto">
-                      {todaySessionData.ejercicios.map((ejercicio, index) => (
-                        <div
-                          key={index}
-                          className="flex items-center gap-3 p-3 bg-gray-800 rounded-lg"
-                        >
-                          <div className="flex-shrink-0">
-                            <Badge variant="secondary">{index + 1}</Badge>
-                          </div>
-                          <div className="flex-1">
-                            <div className="font-medium text-white">
-                              {formatExerciseName(ejercicio.nombre)}
-                            </div>
-                            <div className="text-sm text-gray-400">
-                              {ejercicio.series} series × {ejercicio.repeticiones} reps
-                              {ejercicio.descanso_seg && ` • ${ejercicio.descanso_seg}s descanso`}
-                            </div>
-                          </div>
-                          <Dumbbell className="h-4 w-4 text-gray-400" />
-                        </div>
-                      ))}
+                      {todaySessionData.ejercicios.map((ejercicio, index) => {
+                        const status = (() => {
+                          if (todayStatus?.exercises?.[index]?.status) return String(todayStatus.exercises[index].status).toLowerCase();
+                          if (exerciseProgress[index]?.status) return String(exerciseProgress[index].status).toLowerCase();
+                          if (hasActiveSession && (session.currentExerciseIndex === index)) return 'in_progress';
+                          return 'pending';
+                        })();
+                        const ex = { ...ejercicio, status, exercise_name: ejercicio.nombre, series_total: ejercicio.series };
+                        return (
+                          <ExerciseListItem key={index} exercise={ex} index={index} />
+                        );
+                      })}
                     </div>
                   </Card>
                     )}
