@@ -351,7 +351,20 @@ export const AuthProvider = ({ children }) => {
         return userData;
       }
 
-      // Si no hay datos o están corruptos, limpiar
+      // Fallback defensivo: si la clave de usuario está corrupta pero hay token,
+      // intentar recuperar datos desde la clave legacy 'user' para evitar logout por recarga.
+      const token = (typeof tokenManager?.getToken === 'function')
+        ? tokenManager.getToken()
+        : (localStorage.getItem('authToken') || localStorage.getItem('token'));
+      const legacyUser = StorageManager.get('user');
+      if (token && legacyUser && legacyUser.id) {
+        // Sincronizar con la clave moderna y continuar
+        StorageManager.set(STORAGE_KEYS.USER, legacyUser);
+        setUser(legacyUser);
+        return legacyUser;
+      }
+
+      // Si no hay forma de recuperar datos, limpiar sesión de forma segura
       await performLogout(false, 'corrupted_data');
       return null;
     } catch (error) {
@@ -440,7 +453,9 @@ export const AuthProvider = ({ children }) => {
   // =============================================================================
 
   const logout = async (reason = 'manual') => {
-    await performLogout(true, reason);
+    // Solo notificar al servidor en logout manual/solicitado por usuario
+    const notifyServer = (reason === 'manual' || reason === 'user_requested');
+    await performLogout(notifyServer, reason);
   };
 
   const performLogout = async (notifyServer = true, reason = 'manual') => {

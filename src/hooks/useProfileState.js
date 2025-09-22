@@ -129,15 +129,31 @@ export const useProfileState = () => {
     return payload
   }
 
-  // Cargar perfil desde localStorage y luego desde la API
+  // Cargar perfil desde localStorage (clave dedicada) y luego desde la API
   useEffect(() => {
-    const savedProfile = localStorage.getItem('userProfile')
+    // Migración: si existe 'userProfile' sin "id", moverlo a 'profileData' para no
+    // interferir con AuthContext (que usa STORAGE_KEYS.USER = 'userProfile').
+    try {
+      const legacyUP = localStorage.getItem('userProfile')
+      if (legacyUP) {
+        const parsed = JSON.parse(legacyUP)
+        if (parsed && typeof parsed === 'object' && parsed.id === undefined) {
+          localStorage.setItem('profileData', legacyUP)
+          localStorage.removeItem('userProfile')
+        }
+      }
+    } catch (error) {
+      // Ignorar errores de parsing de userProfile legacy
+      console.debug('Error parsing legacy userProfile:', error)
+    }
+
+    const savedProfile = localStorage.getItem('profileData')
     if (savedProfile) {
       const parsed = JSON.parse(savedProfile)
       setUserProfile({ ...defaultProfile, ...parsed })
     }
 
-    // Intentar cargar desde API si hay usuario autenticado
+    // Intentar cargar desde API si hay usuario autenticado (claves legacy por ahora)
     const token = localStorage.getItem('token')
     const userStr = localStorage.getItem('user')
     if (token && userStr) {
@@ -151,7 +167,7 @@ export const useProfileState = () => {
             if (data?.user) {
               const ui = mapDbToUi(data.user)
               setUserProfile(ui)
-              localStorage.setItem('userProfile', JSON.stringify(ui))
+              localStorage.setItem('profileData', JSON.stringify(ui))
             }
           })
           .catch(err => console.error('Error cargando perfil desde API:', err))
@@ -159,9 +175,9 @@ export const useProfileState = () => {
     }
   }, [])
 
-  // Guardar datos del perfil en localStorage cuando cambien
+  // Guardar datos del perfil en localStorage cuando cambien (clave dedicada)
   useEffect(() => {
-    localStorage.setItem('userProfile', JSON.stringify(userProfile))
+    localStorage.setItem('profileData', JSON.stringify(userProfile))
   }, [userProfile])
 
   // Funciones helper
