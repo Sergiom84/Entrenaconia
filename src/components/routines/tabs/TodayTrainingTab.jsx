@@ -16,7 +16,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button.jsx';
 import { Alert, AlertDescription } from '@/components/ui/alert.jsx';
 import { Card } from '@/components/ui/card.jsx';
-import { Badge } from '@/components/ui/badge.jsx';
+
 import {
   RefreshCw,
   Calendar,
@@ -30,10 +30,14 @@ import {
 import RoutineSessionModal from '../RoutineSessionModal';
 import WarmupModal from '../WarmupModal';
 import { useWorkout } from '@/contexts/WorkoutContext'; // Mantenemos el contexto original
-import { formatExerciseName } from '../../../utils/exerciseUtils';
+
 import SafeComponent from '../../ui/SafeComponent';
 import { useTrace } from '@/contexts/TraceContext.jsx';
 import { ExerciseListItem } from '../summary/ExerciseListItem.jsx';
+import { SummaryHeader } from '../summary/SummaryHeader.jsx';
+import { UserProfileDisplay } from '../summary/UserProfileDisplay.jsx';
+import { ProgressBar } from '../summary/ProgressBar.jsx';
+
 
 
 // ===============================================
@@ -151,7 +155,7 @@ export default function TodayTrainingTab({
   // Nombre del día actual disponible para hooks que lo requieren
   const currentTodayName = todayName || getTodayName();
 
-  
+
   const fetchTodayStatus = useCallback(async () => {
     const planId = methodologyPlanId || plan.planId;
     if (!hasActivePlan || !planId) return;
@@ -495,6 +499,7 @@ export default function TodayTrainingTab({
       total: totalExercises,
       completed: completedCount,
       inProgress: inProgressCount,
+
       pending: totalExercises - completedCount - inProgressCount,
       progress: totalExercises > 0 ? Math.round((completedCount / totalExercises) * 100) : 0
     };
@@ -528,6 +533,37 @@ export default function TodayTrainingTab({
   );
 
   const hasToday = Boolean(todaySessionData?.ejercicios?.length > 0);
+
+  // Progreso para header (completados/total/skip/cancel)
+  const headerProgressStats = useMemo(() => {
+    const total = (todaySessionData?.ejercicios?.length) || (todayStatus?.summary?.total) || 0;
+    let completed = 0, skipped = 0, cancelled = 0;
+
+    if (Array.isArray(todayStatus?.exercises)) {
+      for (const ex of todayStatus.exercises) {
+        const s = String(ex?.status || '').toLowerCase();
+        if (s === 'completed') completed++;
+        else if (s === 'skipped') skipped++;
+        else if (s === 'cancelled') cancelled++;
+      }
+    } else if (exerciseProgress && typeof exerciseProgress === 'object') {
+      for (const p of Object.values(exerciseProgress)) {
+        const s = String(p?.status || '').toLowerCase();
+        if (s === 'completed') completed++;
+        else if (s === 'skipped') skipped++;
+        else if (s === 'cancelled') cancelled++;
+      }
+    }
+
+    // Fallback a summary si existe (prioriza datos de backend)
+    if (todayStatus?.summary) {
+      completed = todayStatus.summary.completed ?? completed;
+      skipped = todayStatus.summary.skipped ?? skipped;
+      cancelled = todayStatus.summary.cancelled ?? cancelled;
+    }
+
+    return { completed, total, skipped, cancelled };
+  }, [todayStatus?.exercises, todayStatus?.summary, exerciseProgress, todaySessionData?.ejercicios?.length]);
 
   // 🔍 DEBUG: Verificar qué está pasando antes del render
   console.log('🔍 DEBUG TodayTrainingTab RENDER:', {
@@ -573,6 +609,8 @@ export default function TodayTrainingTab({
 
         {ui.error && (
           <Alert className="border-red-500/20 bg-red-500/10">
+
+
             <AlertTriangle className="h-4 w-4 text-red-400" />
             <AlertDescription className="text-red-400">
               Error cargando datos: {ui.error}
@@ -609,6 +647,14 @@ export default function TodayTrainingTab({
                 </p>
               </div>
             </div>
+
+            {/* Header enriquecido con metodología, fuente, perfil y progreso */}
+            <section className="mt-4">
+              <SummaryHeader plan={plan?.currentPlan || plan} session={session} planSource={{ label: 'OpenAI' }} />
+              <UserProfileDisplay />
+              <ProgressBar progressStats={headerProgressStats} />
+            </section>
+
 
             {/* =============================================== */}
             {/* 🏃 SESIÓN ACTIVA */}
@@ -736,7 +782,7 @@ export default function TodayTrainingTab({
                       </div>
                     </div>
 
-                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                    <div className="space-y-2">
                       {todaySessionData.ejercicios.map((ejercicio, index) => {
                         const status = (() => {
                           if (todayStatus?.exercises?.[index]?.status) return String(todayStatus.exercises[index].status).toLowerCase();
@@ -773,7 +819,7 @@ export default function TodayTrainingTab({
                       </div>
                     </div>
 
-                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                    <div className="space-y-2">
                       {todayStatus.exercises.map((ex, index) => (
                         <ExerciseListItem key={index} exercise={ex} index={index} />
                       ))}
