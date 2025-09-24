@@ -31,9 +31,18 @@ export async function startSession({ methodology_plan_id, day_id = null, week_nu
   if (day_id !== null && day_id !== undefined) payload.day_id = day_id;
   if (week_number !== null && week_number !== undefined) payload.week_number = week_number;
   if (day_name) payload.day_name = day_name;
-  const data = await apiClient.post('/routines/sessions/start', payload);
-  if (!data.success) throw new Error(data.error || 'No se pudo iniciar la sesión');
-  return data; // { session_id, total_exercises }
+
+  console.log('🔄 [API] Llamando a startSession con:', payload);
+
+  try {
+    const data = await apiClient.post('/routines/sessions/start', payload);
+    console.log('✅ [API] startSession respuesta:', data);
+    if (!data.success) throw new Error(data.error || 'No se pudo iniciar la sesión');
+    return data; // { session_id, total_exercises }
+  } catch (error) {
+    console.error('❌ [API] Error en startSession:', error);
+    throw error;
+  }
 }
 
 export async function updateExercise({ sessionId, exerciseOrder, series_completed, status, time_spent_seconds }) {
@@ -81,21 +90,19 @@ export async function confirmRoutinePlan({ methodology_plan_id, routine_plan_id 
   return data; // { success, confirmed_at, status, etc }
 }
 
-export async function getTodaySessionStatus({ methodology_plan_id, week_number, day_name, session_date }) {
+export async function getTodaySessionStatus({ methodology_plan_id, week_number, day_name, session_date, day_id }) {
   const token = getToken();
-  
-  // Construir query parameters
-  const params = new URLSearchParams({
-    methodology_plan_id,
-    week_number,
-    day_name
-  });
-  
-  // Agregar session_date si se proporciona
-  if (session_date) {
-    params.set('session_date', session_date);
+
+  // Construir query parameters (preferimos day_id si está disponible)
+  const params = new URLSearchParams();
+  if (methodology_plan_id != null) params.set('methodology_plan_id', String(methodology_plan_id));
+  if (day_id != null) params.set('day_id', String(day_id));
+  if (!day_id) {
+    if (week_number != null) params.set('week_number', String(week_number));
+    if (day_name) params.set('day_name', String(day_name));
   }
-  
+  if (session_date) params.set('session_date', session_date);
+
   const resp = await fetch(`/api/routines/sessions/today-status?${params.toString()}`, {
     headers: { 'Authorization': `Bearer ${token}` }
   });

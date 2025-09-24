@@ -662,7 +662,8 @@ export function WorkoutProvider({ children }) {
           {
             series_completed: Math.max(0, parseInt(progressData.series_completed) || 0),
             status: progressData.status || 'completed',
-            time_spent_seconds: Math.max(0, parseInt(progressData.time_spent_seconds) || 0)
+            time_spent_seconds: Math.max(0, parseInt(progressData.time_spent_seconds) || 0),
+            methodology_plan_id: state.plan?.planId ?? null
           }
         );
         return { success: true };
@@ -822,14 +823,22 @@ export function WorkoutProvider({ children }) {
     }
 
     const params = new URLSearchParams({ methodology_plan_id: String(planId), day_id: String(dayId) });
+    console.log('🔍 [WorkoutContext] Llamando a today-status con:', { planId, dayId });
     const promise = apiClient.get(`/routines/sessions/today-status?${params.toString()}`)
       .then((data) => {
+        console.log('✅ [WorkoutContext] today-status respuesta:', data);
         todayStatusCacheRef.current[key] = { data, ts: Date.now(), inflight: null };
         return data;
       })
       .catch((err) => {
+        console.error('❌ [WorkoutContext] Error en today-status:', err);
         // Limpiar inflight en error para permitir reintentos
         todayStatusCacheRef.current[key] = { data: null, ts: Date.now(), inflight: null };
+        // No lanzar el error si es 404 (sin sesión para este día)
+        if (err?.status === 404) {
+          console.log('ℹ️ [WorkoutContext] No hay sesión para este día (404)');
+          return { success: false, session: null, exercises: [], summary: {} };
+        }
         throw err;
       });
 

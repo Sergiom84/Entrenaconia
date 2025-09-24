@@ -148,6 +148,7 @@ export default function TodayTrainingTab({
   const [exerciseProgress, setExerciseProgress] = useState({});
   const [sessionStartTime, setSessionStartTime] = useState(null);
   const [isLoadingSession, setIsLoadingSession] = useState(false);
+  const [isStarting, setIsStarting] = useState(false); // Prevenir doble click
   const [sessionError, setSessionError] = useState(null);
   const [todayStatus, setTodayStatus] = useState(null);
   const [loadingTodayStatus, setLoadingTodayStatus] = useState(false);
@@ -265,9 +266,18 @@ export default function TodayTrainingTab({
   }, [hasActivePlan, currentTodayName, session.status, localState.showSessionModal, fetchTodayStatus]);
 
   const handleStartSession = useCallback(async (exerciseIndex = 0) => {
+    // 🚫 Prevenir doble ejecución
+    if (isStarting || isLoadingSession) {
+      console.log('⚠️ handleStartSession ya en progreso, evitando doble ejecución');
+      return;
+    }
+
     track('BUTTON_CLICK', { id: 'start_session', exerciseIndex }, { component: 'TodayTrainingTab' });
 
-    if (!todaySessionData || hasActiveSession) return;
+    if (!todaySessionData || hasActiveSession) {
+      console.log('⚠️ No hay datos de sesión o ya hay sesión activa');
+      return;
+    }
 
     // Validaciones iniciales
     if (!todaySessionData?.ejercicios || todaySessionData.ejercicios.length === 0) {
@@ -281,6 +291,7 @@ export default function TodayTrainingTab({
     }
 
     setIsLoadingSession(true);
+    setIsStarting(true); // 🔒 Bloquear nuevas ejecuciones
     setSessionError(null);
 
     try {
@@ -337,8 +348,9 @@ export default function TodayTrainingTab({
       setError(`Error al iniciar la sesión: ${error.message}`);
     } finally {
       setIsLoadingSession(false);
+      setIsStarting(false); // 🔓 Desbloquear
     }
-  }, [todaySessionData, hasActiveSession, startSession, methodologyPlanId, currentTodayName, session.sessionId, track, onStartTraining, setError]);
+  }, [todaySessionData, hasActiveSession, startSession, methodologyPlanId, currentTodayName, session.sessionId, track, onStartTraining, setError, isStarting, isLoadingSession]);
 
   const handleResumeSession = useCallback(() => {
     track('BUTTON_CLICK', { id: 'resume_session' }, { component: 'TodayTrainingTab' });
@@ -435,12 +447,16 @@ export default function TodayTrainingTab({
             setCurrentExerciseIndex(nextIndex);
           }
         }
+        // Notificar al padre para refrescar calendario/progreso
+        if (typeof onProgressUpdate === 'function') {
+          onProgressUpdate();
+        }
       }
     } catch (error) {
       console.error('Error actualizando ejercicio:', error);
       setError(`Error actualizando ejercicio: ${error.message}`);
     }
-  }, [updateExercise, todaySessionData?.ejercicios?.length, setError]);
+  }, [updateExercise, todaySessionData?.ejercicios?.length, setError, onProgressUpdate]);
 
   // Handlers de calentamiento
   const handleWarmupComplete = () => {
@@ -541,6 +557,43 @@ export default function TodayTrainingTab({
 
     return [];
   }, [todayStatus?.exercises, exerciseProgress, todaySessionData?.ejercicios]);
+
+
+  // Detectar si hoy ya tiene algún progreso (completado / saltado / en progreso)
+  const hasAnyProgress = useMemo(() => {
+    if (Array.isArray(todayStatus?.exercises)) {
+      return todayStatus.exercises.some((ex) => {
+        const s = String(ex?.status || 'pending').toLowerCase();
+        return s !== 'pending';
+      });
+    }
+    return Object.values(exerciseProgress || {}).some((p) => {
+      const s = String(p?.status || 'pending').toLowerCase();
+      return s !== 'pending';
+    });
+  }, [todayStatus?.exercises, exerciseProgress]);
+
+  // Índice recomendado para reanudar (primer ejercicio pendiente)
+  const nextPendingIndex = useMemo(() => {
+    if (Array.isArray(todayStatus?.exercises) && todayStatus.exercises.length > 0) {
+      const idx = todayStatus.exercises.findIndex((ex) => String(ex?.status || 'pending').toLowerCase() === 'pending');
+      return idx >= 0 ? idx : 0;
+    }
+    if (todaySessionData?.ejercicios?.length) {
+      for (let i = 0; i < todaySessionData.ejercicios.length; i++) {
+        const s = String(exerciseProgress?.[i]?.status || 'pending').toLowerCase();
+        if (s === 'pending') return i;
+      }
+    }
+    return 0;
+  }, [todayStatus?.exercises, exerciseProgress, todaySessionData?.ejercicios?.length]);
+
+  // Cuando no hay sesión activa, preparar el índice para reanudar
+  useEffect(() => {
+    if (!hasActiveSession) {
+      setCurrentExerciseIndex(nextPendingIndex);
+    }
+  }, [hasActiveSession, nextPendingIndex]);
 
 
   const actualDuration = useMemo(() => {
@@ -765,9 +818,9 @@ export default function TodayTrainingTab({
                   </p>
                   {/* Decidir si debemos reanudar (hay sesión activa o ya hay ejercicios realizados) */}
                   <Button
-                    onClick={() => ((hasActiveSession || sessionStats.completed > 0) ? handleResumeSession() : handleStartSession(0))}
+                    onClick={() => ((hasActiveSession || hasAnyProgress) ? handleResumeSession() : handleStartSession(0))}
                     className="bg-yellow-500 hover:bg-yellow-600 text-black font-medium"
-                    disabled={ui.isLoading || isLoadingSession}
+                    disabled={ui.isLoading || isLoadingSession || isStarting}
                   >
                     {isLoadingSession ? (
                       <>
@@ -777,7 +830,7 @@ export default function TodayTrainingTab({
                     ) : (
                       <>
                         <Play className="h-5 w-5 mr-2" />
-                        {(hasActiveSession || sessionStats.completed > 0) ? 'Reanudar Entrenamiento' : 'Comenzar Entrenamiento'}
+                        {(hasActiveSession || hasAnyProgress) ? 'Reanudar Entrenamiento' : 'Comenzar Entrenamiento'}
                       </>
                     )}
                   </Button>
@@ -957,6 +1010,7 @@ export default function TodayTrainingTab({
           onCancelExercise={(exerciseIndex) => handleExerciseUpdate(exerciseIndex, { status: 'cancelled' })}
           onEndSession={handleCompleteSession}
           navigateToRoutines={() => goToMethodologies()}
+          onProgressUpdate={onProgressUpdate}
         />
       )}
 

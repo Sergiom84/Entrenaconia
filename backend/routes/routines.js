@@ -316,6 +316,26 @@ router.post('/sessions/start', authenticateToken, async (req, res) => {
       }
     }
 
+    // Verificar si ya existe una sesión activa para este día
+    const existingActiveSession = await client.query(
+      `SELECT id, session_status FROM app.methodology_exercise_sessions
+       WHERE user_id = $1 AND methodology_plan_id = $2
+       AND week_number = $3 AND day_name = $4
+       AND session_status = 'in_progress'
+       LIMIT 1`,
+      [userId, methodology_plan_id, week_number || 1, normalizeDayAbbrev(day_name || 'lunes')]
+    );
+
+    if (existingActiveSession.rowCount > 0) {
+      console.log(`⚠️ Sesión ya activa para el usuario ${userId}, plan ${methodology_plan_id}, semana ${week_number}, día ${day_name}`);
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        error: 'Ya existe una sesión activa para este día',
+        session_id: existingActiveSession.rows[0].id
+      });
+    }
+
     // Verificar plan y obtener plan_data
     const planQ = await client.query(
       'SELECT plan_data, methodology_type FROM app.methodology_plans WHERE id = $1 AND user_id = $2',
@@ -443,6 +463,31 @@ router.put('/sessions/:sessionId/exercise/:exerciseOrder', authenticateToken, as
       await client.query('ROLLBACK');
       return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
     }
+
+    // Validación opcional de consistencia con plan/day recibidos
+    const sessionRow = ses.rows[0];
+    const bodyPlanId = req.body?.methodology_plan_id != null ? parseInt(req.body.methodology_plan_id, 10) : null;
+    const bodyDayId = req.body?.day_id != null ? parseInt(req.body.day_id, 10) : null;
+
+    if (bodyPlanId && Number(sessionRow.methodology_plan_id) !== Number(bodyPlanId)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ success: false, error: 'Inconsistencia: methodology_plan_id no coincide con la sesión' });
+    }
+
+    if (bodyDayId != null) {
+      const dres = await client.query(
+        `SELECT day_id FROM app.methodology_plan_days
+         WHERE plan_id = $1 AND week_number = $2 AND day_name = $3
+         LIMIT 1`,
+        [sessionRow.methodology_plan_id, sessionRow.week_number, sessionRow.day_name]
+      );
+      const expectedDayId = dres.rows?.[0]?.day_id || null;
+      if (!expectedDayId || Number(expectedDayId) !== Number(bodyDayId)) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ success: false, error: 'Inconsistencia: day_id no corresponde a la sesión' });
+      }
+    }
+
 
     // Asegurar fila de progreso existente
     const progSel = await client.query(
@@ -1789,6 +1834,7 @@ router.get('/historical-data', authenticateToken, async (req, res) => {
       `SELECT
          mp.id as routine_id,
          mp.methodology_type,
+         mp.status as routine_status,
          mp.confirmed_at as completed_at,
          COUNT(DISTINCT mes.id) as sessions,
          COUNT(DISTINCT mep.id) as exercises,
@@ -1798,10 +1844,9 @@ router.get('/historical-data', authenticateToken, async (req, res) => {
        FROM app.methodology_plans mp
        LEFT JOIN app.methodology_exercise_sessions mes ON mes.methodology_plan_id = mp.id
        LEFT JOIN app.methodology_exercise_progress mep ON mep.methodology_session_id = mes.id
-       WHERE mp.user_id = $1 AND mp.confirmed_at IS NOT NULL
-       GROUP BY mp.id, mp.methodology_type, mp.confirmed_at
-       HAVING mp.confirmed_at IS NOT NULL
-       ORDER BY mp.confirmed_at DESC`,
+       WHERE mp.user_id = $1 AND (mp.confirmed_at IS NOT NULL OR mp.status = 'cancelled')
+       GROUP BY mp.id, mp.methodology_type, mp.confirmed_at, mp.status
+       ORDER BY COALESCE(mp.confirmed_at, mp.updated_at) DESC`,
       [userId]
     );
 
@@ -1839,6 +1884,7 @@ router.get('/historical-data', authenticateToken, async (req, res) => {
       routineHistory: routineHistory.map(routine => ({
         id: routine.routine_id,
         methodologyType: routine.methodology_type,
+        status: routine.routine_status || 'completed',
         completedAt: routine.completed_at,
         sessions: parseInt(routine.sessions) || 0,
         exercises: parseInt(routine.exercises) || 0,
