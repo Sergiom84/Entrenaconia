@@ -8,7 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
-  const API_TARGET = env.VITE_API_URL || `http://localhost:${env.VITE_API_PORT || 3003}`
+  const API_TARGET = env.VITE_API_URL || `http://localhost:${env.VITE_API_PORT || 3002}`
   const FRONT_PORT = Number(env.VITE_PORT || 5173)
 
   return {

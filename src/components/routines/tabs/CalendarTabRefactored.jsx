@@ -271,7 +271,7 @@ export default function CalendarTabRefactored() {
       console.error('Error iniciando sesión desde calendar:', error);
       ui.setError(error.message);
     }
-  }, [hasActiveSession, startSession, plan.planId, loadSessionHistory, track, ui]);
+  }, [hasActiveSession, startSession, plan.methodologyPlanId, loadSessionHistory, track, ui]);
 
   const handleSessionClick = useCallback((sessionData) => {
     setSelectedSession(sessionData);

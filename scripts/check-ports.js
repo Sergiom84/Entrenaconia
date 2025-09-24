@@ -50,8 +50,8 @@ async function detectBackendPort() {
     }
   }
 
-  console.warn('⚠️ No se pudo detectar el puerto del backend, usando 3003');
-  return 3003;
+  console.warn('⚠️ No se pudo detectar el puerto del backend, usando 3002');
+  return 3002;
 }
 
 // 🔍 Obtener procesos node activos (multiplataforma)

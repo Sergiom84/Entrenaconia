@@ -71,7 +71,7 @@ class BackendPortDetector {
    * Escanea puertos comunes para encontrar el backend
    */
   async scanCommonPorts() {
-    const commonPorts = [3000, 3001, 3002, 3003, 3004, 8000, 8080];
+    const commonPorts = [3002, 3000, 3001, 3003, 3004, 8000, 8080];
     const activePorts = [];
 
     for (const port of commonPorts) {

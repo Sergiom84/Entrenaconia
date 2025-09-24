@@ -1,6 +1,7 @@
 import express from 'express';
 import authenticateToken from '../middleware/auth.js';
 import { pool } from '../db.js';
+import { preSessionCleanup } from '../utils/sessionCleanup.js';
 
 const router = express.Router();
 
@@ -295,6 +296,22 @@ router.post('/sessions/start', authenticateToken, async (req, res) => {
     if (!methodology_plan_id || (!day_id && (!week_number || !day_name))) {
       await client.query('ROLLBACK');
       return res.status(400).json({ success: false, error: 'Faltan parámetros: methodology_plan_id y (day_id) o (week_number, day_name)' });
+    }
+
+    // 🧹 NUEVA VALIDACIÓN: Limpieza pre-sesión
+    console.log(`🧹 Ejecutando limpieza pre-sesión para usuario ${userId}, plan ${methodology_plan_id}`);
+    const cleanup = await preSessionCleanup(userId, methodology_plan_id);
+
+    if (!cleanup.success) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        error: cleanup.error || 'Error en validación del plan'
+      });
+    }
+
+    if (cleanup.cleanedSessions > 0 || cleanup.fixedStates > 0) {
+      console.log(`✅ Limpieza completada: ${cleanup.cleanedSessions} sesiones limpiadas, ${cleanup.fixedStates} estados corregidos`);
     }
 
     // Si viene day_id, resolver week_number y day_name desde calendario del plan

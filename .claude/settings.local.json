@@ -149,7 +149,9 @@
       "Bash(ren:*)",
       "Bash(VITE_API_PORT=3010 VITE_API_URL=http://localhost:3010 npm run dev)",
       "Bash(VITE_PORT=5175 VITE_API_PORT=3010 VITE_API_URL=http://localhost:3010 npm run dev)",
-      "Bash(git diff:*)"
+      "Bash(git diff:*)",
+      "Bash(git stash:*)",
+      "Bash(git fetch:*)"
     ]
   }
 }

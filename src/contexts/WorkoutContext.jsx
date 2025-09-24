@@ -88,7 +88,7 @@ const initialState = {
   // ===============================
   plan: {
     currentPlan: null,              // Plan completo desde la API
-    planId: null,                   // methodology_plan_id
+    methodologyPlanId: null,        // methodology_plan_id
     planStartDate: null,            // Fecha de inicio del plan
     planType: null,                 // 'automatic' | 'manual'
     methodology: null,              // 'calistenia' | 'hipertrofia' | etc.
@@ -383,7 +383,7 @@ export function WorkoutProvider({ children }) {
         const parsed = JSON.parse(savedState);
 
         // Restaurar plan si existe
-        if (parsed.plan && parsed.plan.planId) {
+        if (parsed.plan && parsed.plan.methodologyPlanId) {
           dispatch({ type: WORKOUT_ACTIONS.SET_PLAN, payload: parsed.plan });
         }
 
@@ -432,7 +432,7 @@ export function WorkoutProvider({ children }) {
       if (data.hasActivePlan) {
         const planData = {
           currentPlan: data.routinePlan,
-          planId: data.methodology_plan_id,
+          methodologyPlanId: data.methodology_plan_id,
           planStartDate: data.confirmedAt || data.createdAt || new Date().toISOString(),
           planType: data.planSource?.type || 'automatic',
           methodology: data.routinePlan?.selected_style || data.routinePlan?.nombre,
@@ -511,7 +511,7 @@ export function WorkoutProvider({ children }) {
       console.log('📦 Respuesta del servidor:', {
         success: result.success,
         hasPlan: !!result.plan,
-        planId: result.planId || result.methodologyPlanId,
+        methodologyPlanId: result.planId || result.methodologyPlanId,
         methodology: result.methodology || config.mode
       });
 
@@ -523,7 +523,7 @@ export function WorkoutProvider({ children }) {
       // Activar plan automáticamente
       const planData = {
         currentPlan: result.plan,
-        planId: result.planId || result.methodologyPlanId,
+        methodologyPlanId: result.planId || result.methodologyPlanId,
         planStartDate: new Date().toISOString(),
         planType: config.mode || 'automatic',
         methodology: result.methodology || config.mode || 'Calistenia',
@@ -545,8 +545,8 @@ export function WorkoutProvider({ children }) {
     }
   }, [user]);
 
-  const activatePlan = useCallback(async (planId) => {
-    if (!planId) throw new Error('Plan ID requerido');
+  const activatePlan = useCallback(async (methodologyPlanId) => {
+    if (!methodologyPlanId) throw new Error('Plan ID requerido');
 
     dispatch({ type: WORKOUT_ACTIONS.SET_LOADING, payload: true });
 
@@ -554,15 +554,15 @@ export function WorkoutProvider({ children }) {
       // Import the API function
       const { confirmRoutinePlan } = await import('@/components/routines/api');
       const result = await confirmRoutinePlan({
-        methodology_plan_id: planId,
-        routine_plan_id: state.plan.currentPlan?.id || planId
+        methodology_plan_id: methodologyPlanId,
+        routine_plan_id: state.plan.currentPlan?.id || methodologyPlanId
       });
 
       if (result.success) {
         // Generar programación de sesiones para que TodayTrainingTab y CalendarTab
         // tengan datos de "hoy" inmediatamente desde workout_schedule
         try {
-          await apiClient.post('/routines/generate-schedule', { methodology_plan_id: planId });
+          await apiClient.post('/routines/generate-schedule', { methodology_plan_id: methodologyPlanId });
         } catch (e) {
           console.warn('No se pudo generar la programación automática:', e?.message || e);
         }
@@ -589,7 +589,7 @@ export function WorkoutProvider({ children }) {
       // Primero hacer la llamada al backend
       const { cancelRoutine } = await import('@/components/routines/api');
       await cancelRoutine({
-        methodology_plan_id: methodologyPlanId || state.plan.planId,
+        methodology_plan_id: methodologyPlanId || state.plan.methodologyPlanId,
         routine_plan_id: state.plan.currentPlan?.id || null
       });
 
@@ -606,14 +606,14 @@ export function WorkoutProvider({ children }) {
       dispatch({ type: WORKOUT_ACTIONS.SET_ERROR, payload: error.message });
       return { success: false, error: error.message };
     }
-  }, [state.plan.planId, state.plan.currentPlan, user]);
+  }, [state.plan.methodologyPlanId, state.plan.currentPlan, user]);
 
   // =============================================================================
   // 🏃 SESSION ACTIONS
   // =============================================================================
 
   const startSession = useCallback(async (config) => {
-    if (!state.plan.planId) {
+    if (!state.plan.methodologyPlanId) {
       throw new Error('No hay plan activo para iniciar sesión');
     }
 
@@ -624,7 +624,7 @@ export function WorkoutProvider({ children }) {
       const { startSession: startSessionAPI } = await import('@/components/routines/api');
 
       const sessionData = await startSessionAPI({
-        methodology_plan_id: config.planId || state.plan.planId,
+        methodology_plan_id: config.methodologyPlanId || state.plan.methodologyPlanId,
         day_id: config.dayId
       });
 
@@ -646,7 +646,7 @@ export function WorkoutProvider({ children }) {
       dispatch({ type: WORKOUT_ACTIONS.SET_ERROR, payload: error.message });
       return { success: false, error: error.message };
     }
-  }, [state.plan.planId, state.plan.currentWeek]);
+  }, [state.plan.methodologyPlanId, state.plan.currentWeek]);
 
   const updateExercise = useCallback(async (exerciseId, progressData) => {
     dispatch({
@@ -663,7 +663,7 @@ export function WorkoutProvider({ children }) {
             series_completed: Math.max(0, parseInt(progressData.series_completed) || 0),
             status: progressData.status || 'completed',
             time_spent_seconds: Math.max(0, parseInt(progressData.time_spent_seconds) || 0),
-            methodology_plan_id: state.plan?.planId ?? null
+            methodology_plan_id: state.plan?.methodologyPlanId ?? null
           }
         );
         return { success: true };
@@ -781,7 +781,7 @@ export function WorkoutProvider({ children }) {
           type: WORKOUT_ACTIONS.SET_PLAN,
           payload: {
             currentPlan: dbState.activePlan.plan_data,
-            planId: dbState.activePlan.id,
+            methodologyPlanId: dbState.activePlan.id,
             status: PLAN_STATUS.ACTIVE,
             planStartDate: dbState.activePlan.started_at || new Date().toISOString(),
             methodology: dbState.activePlan.methodology_type,
@@ -808,9 +808,9 @@ export function WorkoutProvider({ children }) {
 
   const todayStatusCacheRef = useRef({});
 
-  const getTodayStatusCached = useCallback(async ({ planId, dayId }) => {
-    if (!planId || !dayId) return null;
-    const key = `${planId}:${dayId}`;
+  const getTodayStatusCached = useCallback(async ({ methodologyPlanId, dayId }) => {
+    if (!methodologyPlanId || !dayId) return null;
+    const key = `${methodologyPlanId}:${dayId}`;
     const entry = todayStatusCacheRef.current[key] || {};
 
     // Reutilizar petición en curso
@@ -822,8 +822,8 @@ export function WorkoutProvider({ children }) {
       return entry.data;
     }
 
-    const params = new URLSearchParams({ methodology_plan_id: String(planId), day_id: String(dayId) });
-    console.log('🔍 [WorkoutContext] Llamando a today-status con:', { planId, dayId });
+    const params = new URLSearchParams({ methodology_plan_id: String(methodologyPlanId), day_id: String(dayId) });
+    console.log('🔍 [WorkoutContext] Llamando a today-status con:', { methodologyPlanId, dayId });
     const promise = apiClient.get(`/routines/sessions/today-status?${params.toString()}`)
       .then((data) => {
         console.log('✅ [WorkoutContext] today-status respuesta:', data);
@@ -887,7 +887,7 @@ export function WorkoutProvider({ children }) {
     // Utilities
     isTraining: state.session.status === SESSION_STATUS.IN_PROGRESS,
     isPaused: state.session.status === SESSION_STATUS.PAUSED,
-    hasActivePlan: Boolean(state.plan.planId && state.plan.status === PLAN_STATUS.ACTIVE),
+    hasActivePlan: Boolean(state.plan.methodologyPlanId && state.plan.status === PLAN_STATUS.ACTIVE),
     hasActiveSession: Boolean(state.session.sessionId &&
       [SESSION_STATUS.IN_PROGRESS, SESSION_STATUS.PAUSED].includes(state.session.status)),
 

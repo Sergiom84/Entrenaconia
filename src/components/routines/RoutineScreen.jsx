@@ -101,8 +101,8 @@ const RoutineScreen = () => {
   // Plan efectivo a usar (prioridad: contexto > location.state)
   const effectivePlan = plan.currentPlan || incomingState?.routinePlan || incomingState?.plan;
   const effectivePlanSource = incomingState?.planSource || { label: 'IA' };
-  const effectivePlanId = plan.planId || incomingState?.planId;
-  const effectiveMethodologyPlanId = plan.planId || incomingState?.methodology_plan_id;
+  const effectivePlanId = plan.methodologyPlanId || incomingState?.planId;
+  const effectiveMethodologyPlanId = plan.methodologyPlanId || incomingState?.methodology_plan_id;
 
   // ===============================================
   // 🔄 INICIALIZACIÓN Y RECUPERACIÓN DE ESTADO
@@ -218,13 +218,13 @@ const RoutineScreen = () => {
 
       // Usar startSession del WorkoutContext
       const result = await startSession({
-        planId: effectiveMethodologyPlanId,
+        methodologyPlanId: effectiveMethodologyPlanId,
         dayName: todayName
       });
 
       if (result.success) {
         console.log('✅ Sesión de entrenamiento iniciada');
-        try { track('SESSION_START', { planId: effectiveMethodologyPlanId, dayName: todayName }, { component: 'RoutineScreen' }); } catch {}
+        try { track('SESSION_START', { methodologyPlanId: effectiveMethodologyPlanId, dayName: todayName }, { component: 'RoutineScreen' }); } catch {}
         updateLocalState({ activeTab: 'today' });
       } else {
         throw new Error(result.error || 'Error iniciando el entrenamiento');

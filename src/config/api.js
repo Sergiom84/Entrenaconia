@@ -56,7 +56,7 @@ const ENVIRONMENT_CONFIG = {
     }
   },
   test: {
-    API_URL: 'http://localhost:3003',
+    API_URL: 'http://localhost:3002',
     DEBUG: false,
     ENABLE_MOCKS: true,
     LOG_LEVEL: 'silent',

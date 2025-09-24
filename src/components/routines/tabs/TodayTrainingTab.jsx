@@ -158,14 +158,14 @@ export default function TodayTrainingTab({
 
 
   const fetchTodayStatus = useCallback(async () => {
-    const planId = methodologyPlanId || plan.planId;
-    if (!hasActivePlan || !planId) return;
+    const currentMethodologyPlanId = methodologyPlanId || plan.methodologyPlanId;
+    if (!hasActivePlan || !currentMethodologyPlanId) return;
 
     setLoadingTodayStatus(true);
     try {
       const startISO = (plan.planStartDate || planStartDate || new Date().toISOString());
       const dayId = computeDayId(startISO, 'Europe/Madrid');
-      const data = await getTodayStatusCached({ planId, dayId });
+      const data = await getTodayStatusCached({ methodologyPlanId: currentMethodologyPlanId, dayId });
       if (data?.success) {
         setTodayStatus({ session: data.session, exercises: data.exercises, summary: data.summary });
       }
@@ -757,48 +757,6 @@ export default function TodayTrainingTab({
                   </Button>
                 </div>
 
-                {/* Progreso actual */}
-                <Card className="p-4 border-blue-200 bg-blue-50/10">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 bg-blue-600 rounded-lg">
-                        <Play className="h-5 w-5 text-white" />
-                      </div>
-                      <div>
-                        <h3 className="font-semibold text-white">Sesión en Progreso</h3>
-                        <p className="text-sm text-gray-400">
-                          {sessionStats.completed}/{sessionStats.total} ejercicios completados
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-4">
-                      {sessionStartTime && (
-                        <div className="text-center">
-                          <div className="font-medium text-white">
-                            {Math.floor(actualDuration / 60)}:{(actualDuration % 60).toString().padStart(2, '0')}
-                          </div>
-                          <div className="text-xs text-gray-400">Tiempo</div>
-                        </div>
-                      )}
-
-                      <div className="text-center">
-                        <div className="font-medium text-white">{sessionStats.progress}%</div>
-                        <div className="text-xs text-gray-400">Progreso</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Barra de progreso */}
-                  <div className="mb-4">
-                    <div className="w-full bg-gray-700 rounded-full h-2">
-                      <div
-                        className="bg-yellow-500 h-2 rounded-full transition-all duration-300"
-                        style={{ width: `${sessionStats.progress}%` }}
-                      />
-                    </div>
-                  </div>
-                </Card>
               </>
             )}
 
@@ -808,33 +766,35 @@ export default function TodayTrainingTab({
 
             {hasToday && hasActivePlan && !hasCompletedSession && (
               <section>
-                <div className="text-center py-6">
-                  <Dumbbell className="w-12 h-12 text-yellow-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-white mb-2">
-                    Entrenamiento de hoy: {todaySessionData?.dia || 'Sin información'}
-                  </h3>
-                  <p className="text-gray-400 mb-4">
-                    {todaySessionData?.ejercicios?.length || 0} ejercicios programados
-                  </p>
-                  {/* Decidir si debemos reanudar (hay sesión activa o ya hay ejercicios realizados) */}
-                  <Button
-                    onClick={() => ((hasActiveSession || hasAnyProgress) ? handleResumeSession() : handleStartSession(0))}
-                    className="bg-yellow-500 hover:bg-yellow-600 text-black font-medium"
-                    disabled={ui.isLoading || isLoadingSession || isStarting}
-                  >
-                    {isLoadingSession ? (
-                      <>
-                        <RefreshCw className="h-5 w-5 animate-spin mr-2" />
-                        Iniciando...
-                      </>
-                    ) : (
-                      <>
-                        <Play className="h-5 w-5 mr-2" />
-                        {(hasActiveSession || hasAnyProgress) ? 'Reanudar Entrenamiento' : 'Comenzar Entrenamiento'}
-                      </>
-                    )}
-                  </Button>
-                </div>
+                {!sessionMatchesToday && (
+                  <div className="text-center py-6">
+                    <Dumbbell className="w-12 h-12 text-yellow-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-white mb-2">
+                      Entrenamiento de hoy: {todaySessionData?.dia || 'Sin información'}
+                    </h3>
+                    <p className="text-gray-400 mb-4">
+                      {todaySessionData?.ejercicios?.length || 0} ejercicios programados
+                    </p>
+                    {/* Decidir si debemos reanudar (hay sesión activa o ya hay ejercicios realizados) */}
+                    <Button
+                      onClick={() => ((hasActiveSession || hasAnyProgress) ? handleResumeSession() : handleStartSession(0))}
+                      className="bg-yellow-500 hover:bg-yellow-600 text-black font-medium"
+                      disabled={ui.isLoading || isLoadingSession || isStarting}
+                    >
+                      {isLoadingSession ? (
+                        <>
+                          <RefreshCw className="h-5 w-5 animate-spin mr-2" />
+                          Iniciando...
+                        </>
+                      ) : (
+                        <>
+                          <Play className="h-5 w-5 mr-2" />
+                          {(hasActiveSession || hasAnyProgress) ? 'Reanudar Entrenamiento' : 'Comenzar Entrenamiento'}
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                )}
 
                 {/* Lista de ejercicios */}
                 {todaySessionData?.ejercicios && todaySessionData.ejercicios.length > 0 && (

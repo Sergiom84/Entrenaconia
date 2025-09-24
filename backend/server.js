@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import { preloadAllPrompts } from './lib/promptRegistry.js';
 import { validateAPIKeys } from './lib/openaiClient.js';
 import { initializeSessionMaintenance } from './utils/sessionMaintenance.js';
+import { startCleanupScheduler } from './jobs/sessionCleanupJob.js';
 
 // Helper function for Spanish timezone (UTC+2/UTC+1 depending on DST)
 function getSpanishTimestamp() {
@@ -424,4 +425,9 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`📊 Endpoint de salud: http://0.0.0.0:${PORT}/api/health`);
   console.log(`🔐 Rutas de autenticación: http://0.0.0.0:${PORT}/api/auth`);
   console.log(`🗂️  Frontend estático servido desde: ${FRONTEND_DIST}`);
+
+  // 🧹 Inicializar sistema de limpieza automática
+  console.log('🧹 Inicializando sistema de limpieza automática de sesiones...');
+  startCleanupScheduler(60); // Cada 60 minutos
+  console.log('✅ Sistema de limpieza automática iniciado');
 });
