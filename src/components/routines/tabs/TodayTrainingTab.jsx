@@ -806,7 +806,7 @@ export default function TodayTrainingTab({
             {/* 📋 SESIÓN DEL DÍA (NO INICIADA) */}
             {/* =============================================== */}
 
-            {!sessionMatchesToday && hasToday && hasActivePlan && !hasCompletedSession && (
+            {hasToday && hasActivePlan && !hasCompletedSession && (
               <section>
                 <div className="text-center py-6">
                   <Dumbbell className="w-12 h-12 text-yellow-400 mx-auto mb-4" />
