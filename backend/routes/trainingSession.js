@@ -235,18 +235,17 @@ router.post('/start/methodology', authenticateToken, async (req, res) => {
       );
     }
 
-    // Marcar sesión iniciada (primera vez o reanudando)
+    // Marcar sesión iniciada
     await client.query(
       `UPDATE app.methodology_exercise_sessions
        SET session_status = 'in_progress',
            started_at = COALESCE(started_at, NOW()),
-           session_started_at = COALESCE(session_started_at, NOW()),
            total_exercises = $2
        WHERE id = $1`,
       [session.id, ejercicios.length]
     );
 
-    console.log(`✅ Sesión marcada como iniciada - ID: ${session.id}, Primera vez: ${session.session_started_at === null ? 'SÍ' : 'NO'}`);
+    console.log(`✅ Sesión marcada como iniciada - ID: ${session.id}`);
 
     await client.query('COMMIT');
 
@@ -988,19 +987,26 @@ router.get('/today-status', authenticateToken, async (req, res) => {
       const completedExercises = exercisesQuery.rows.filter(ex => ex.status === 'completed').length;
       const skippedExercises = exercisesQuery.rows.filter(ex => ex.status === 'skipped').length;
 
-      // 🎯 NUEVA LÓGICA COHERENTE: Misma lógica que routines.js
+      // 🎯 LÓGICA INTELIGENTE: Misma que routines.js - Detectar progreso REAL
       const hasRealProgress = exercisesQuery.rows.some(ex => ex.status !== 'pending');
-      const hasStartedBefore = session.session_started_at !== null;
 
-      const canResume = session.session_status === 'in_progress' ||
-                       (hasStartedBefore && hasRealProgress);
+      let canResume;
+      if (session.session_status === 'completed') {
+        // Caso 1: Sesión completada → Mostrar resumen, no botones de inicio
+        canResume = false;
+      } else if (hasRealProgress) {
+        // Caso 2: Usuario realmente empezó ejercicios → Reanudar
+        canResume = true;
+      } else {
+        // Caso 3: Sesión creada pero sin progreso real → Comenzar
+        canResume = false;
+      }
 
-      console.log(`🎯 trainingSession today-status decision:`, {
+      console.log(`🎯 trainingSession NUEVA LÓGICA INTELIGENTE:`, {
         session_status: session.session_status,
-        session_started_at: session.session_started_at,
-        hasStartedBefore,
         hasRealProgress,
-        canResume
+        canResume,
+        decision: canResume ? 'REANUDAR ⚠️' : 'COMENZAR ✅'
       });
 
       res.json({

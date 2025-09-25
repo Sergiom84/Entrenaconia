@@ -365,7 +365,7 @@ class SessionManager {
       if (!token) return;
 
       // Enviar ping al servidor
-      const response = await fetch('http://localhost:3003/api/auth/heartbeat', {
+      const response = await fetch('http://localhost:3002/api/auth/heartbeat', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

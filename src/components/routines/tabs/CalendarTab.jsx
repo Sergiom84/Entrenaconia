@@ -219,12 +219,13 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
           daysToLoad.map(async (day) => {
             const key = getDayKey(currentWeekData.weekNumber || 1, day);
             try {
+              // Preferir day_id si el plan/sesin lo aporta
+              const maybeDayId = day?.session?.day_id ?? day?.session?.dayId ?? null;
               const data = await getTodaySessionStatus({
                 methodology_plan_id: mId,
                 week_number: currentWeekData.weekNumber || 1,
                 day_name: day.dayNameShort || day.dayName,
-                // No enviamos session_date ya que no existe en la BD,
-                // dejamos que busque por week_number y day_name
+                day_id: maybeDayId || undefined
               });
               if (data?.session?.id) {
                 try {

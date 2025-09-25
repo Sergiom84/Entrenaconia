@@ -59,7 +59,7 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 const app = express();
-const PORT = process.env.PORT || 3003;
+const PORT = process.env.PORT || 3010;
 
 // --- utilidades de path para servir el frontend ---
 const __filename = fileURLToPath(import.meta.url);
@@ -304,6 +304,7 @@ app.use('/api/uploads', uploadsRoutes);
 // Legacy routes mantidas temporalmente para compatibilidad
 app.use('/api/routines', routinesRoutes);
 app.use('/api/home-training', homeTrainingRoutes);
+app.use('/api/ia-home-training', homeTrainingRoutes); // Alias para IA home training
 app.use('/api/technique', techniqueRoutes);
 app.use('/api/nutrition', nutritionRoutes);
 app.use('/api/music', musicRoutes);

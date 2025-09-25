@@ -11,6 +11,13 @@ export default defineConfig(({ mode }) => {
   const API_TARGET = env.VITE_API_URL || `http://localhost:${env.VITE_API_PORT || 3002}`
   const FRONT_PORT = Number(env.VITE_PORT || 5173)
 
+  // 🔍 DEBUG - Ver qué está pasando
+  console.log('🔍 DEBUG - Mode:', mode)
+  console.log('🔍 DEBUG - VITE_PORT from env:', env.VITE_PORT)
+  console.log('🔍 DEBUG - FRONT_PORT calculated:', FRONT_PORT)
+  console.log('🔍 DEBUG - Type of FRONT_PORT:', typeof FRONT_PORT)
+  console.log('🔍 DEBUG - All VITE_ env vars:', Object.keys(env).filter(key => key.startsWith('VITE_')))
+
   return {
     plugins: [react()],
     resolve: {

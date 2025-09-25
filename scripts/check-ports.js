@@ -12,46 +12,14 @@ const PROJECT_ROOT = path.resolve(process.cwd());
 const ENV_LOCAL_PATH = path.join(PROJECT_ROOT, '.env.local');
 const BACKEND_PATH = path.join(PROJECT_ROOT, 'backend');
 
-// 🎯 Detectar puerto del backend desde package.json o proceso
+// 🎯 PUERTO FIJO: 3010 - NO MÁS DETECCIÓN AUTOMÁTICA
 async function detectBackendPort() {
-  console.log('🔍 Detectando puerto del backend...');
+  console.log('🔍 Puerto backend FIJO establecido en 3010');
 
-  // 1. Buscar en variables de entorno del backend
-  const backendEnvPath = path.join(BACKEND_PATH, '.env');
-  if (fs.existsSync(backendEnvPath)) {
-    const envContent = fs.readFileSync(backendEnvPath, 'utf8');
-    const portMatch = envContent.match(/PORT=(\d+)/);
-    if (portMatch) {
-      console.log(`📄 Puerto encontrado en backend/.env: ${portMatch[1]}`);
-      return parseInt(portMatch[1]);
-    }
-  }
-
-  // 2. Buscar procesos node activos
-  try {
-    const processes = await getActiveNodeProcesses();
-    const backendPort = findBackendProcess(processes);
-    if (backendPort) {
-      console.log(`🏃 Puerto encontrado en proceso activo: ${backendPort}`);
-      return backendPort;
-    }
-  } catch (error) {
-    console.warn('⚠️ No se pudieron obtener procesos activos:', error.message);
-  }
-
-  // 3. Puerto por defecto según server.js
-  const serverJsPath = path.join(BACKEND_PATH, 'server.js');
-  if (fs.existsSync(serverJsPath)) {
-    const serverContent = fs.readFileSync(serverJsPath, 'utf8');
-    const portMatch = serverContent.match(/PORT.*?(\d{4})/);
-    if (portMatch) {
-      console.log(`📝 Puerto por defecto en server.js: ${portMatch[1]}`);
-      return parseInt(portMatch[1]);
-    }
-  }
-
-  console.warn('⚠️ No se pudo detectar el puerto del backend, usando 3002');
-  return 3002;
+  // REGLA: SIEMPRE usar puerto 3010 para backend
+  const FIXED_PORT = 3010;
+  console.log(`✅ Puerto backend: ${FIXED_PORT}`);
+  return FIXED_PORT;
 }
 
 // 🔍 Obtener procesos node activos (multiplataforma)

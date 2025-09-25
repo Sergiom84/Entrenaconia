@@ -39,7 +39,7 @@ npm install:all
 ### Backend Development
 
 ```bash
-# Start backend dev server (port 3002 by default)
+# Start backend dev server (port 3003 by default)
 cd backend && npm run dev
 
 # Or from root directory
@@ -67,10 +67,10 @@ scripts\sync-dev.bat     # Script interactivo (Windows)
 ### Port Configuration
 
 - Frontend: Port 5173 (configurable via VITE_PORT)
-- Backend: Port 3002 (configurable via PORT)
-- Alternative ports supported: 5174, 5175, 3000
+- Backend: Port 3010 (configurable via PORT)
+- Alternative ports supported: Solo usar 3010 para backend
 - **Sincronización automática**: Los scripts mantienen frontend/backend sincronizados
-- Use environment variables: `VITE_API_PORT=3002 VITE_PORT=5173 npm run dev`
+- Use environment variables: `VITE_API_PORT=3004 VITE_PORT=5177 npm run dev`
 
 ## Project Architecture
 
@@ -179,7 +179,7 @@ JWT_SECRET=your_jwt_secret
 OPENAI_API_KEY=sk-proj-your-key
 
 # Server
-PORT=3002
+PORT=3010
 NODE_ENV=development
 ```
 
@@ -187,8 +187,8 @@ NODE_ENV=development
 
 ```bash
 # API Configuration
-VITE_API_URL=http://localhost:3002
-VITE_API_PORT=3002
+VITE_API_URL=http://localhost:3010
+VITE_API_PORT=3010
 VITE_PORT=5173
 ```
 

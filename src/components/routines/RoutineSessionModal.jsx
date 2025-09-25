@@ -38,6 +38,7 @@ export default function RoutineSessionModal({
   allowManualTimer = true,
   navigateToRoutines = null,
   isOpen = true,
+  onProgressUpdate,
 }) {
   // Datos de la sesión
   const exercises = useMemo(() => Array.isArray(session?.ejercicios) ? session.ejercicios : [], [session?.ejercicios]);
@@ -242,13 +243,18 @@ export default function RoutineSessionModal({
         }
       }));
 
+      // Notificar al padre para refrescar calendario/progreso
+      if (typeof onProgressUpdate === 'function') {
+        onProgressUpdate();
+      }
+
       console.log('✅ Feedback guardado:', savedFeedback);
     } catch (error) {
       console.error('❌ Error enviando feedback:', error);
     } finally {
       setShowFeedback(false);
     }
-  }, [sessionId, progressState.currentIndex, progressState.currentExercise]);
+  }, [sessionId, progressState.currentIndex, progressState.currentExercise, onProgressUpdate]);
 
   if (!session) return null;
 

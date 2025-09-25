@@ -125,12 +125,12 @@
       "Bash(VITE_PORT=5180 npm run dev)",
       "Bash(npm run lint:*)",
       "Bash(dos2unix:*)",
-      "Bash(VITE_PORT=5174 npm run dev)",
+      "Bash(VITE_PORT=5173 npm run dev)",
       "Bash(cat:*)",
       "Bash(VITE_PORT=5175 npm run dev)",
       "Bash(xxd:*)",
       "Bash(move:*)",
-      "Bash(PORT=5174 npm run dev)",
+      "Bash(PORT=5173 npm run dev)",
       "Bash(npx vite build:*)",
       "Bash(npm run:*)",
       "Bash(PORT=3002 npm run dev)",
@@ -142,16 +142,17 @@
       "Bash(git reset:*)",
       "Bash(tasklist:*)",
       "Bash(VITE_API_PORT=3003 VITE_API_URL=http://localhost:3003 npm run dev)",
-      "Bash(VITE_PORT=5174 VITE_API_PORT=3003 VITE_API_URL=http://localhost:3003 npm run dev)",
-      "Bash(VITE_PORT=5174 VITE_API_PORT=3004 VITE_API_URL=http://localhost:3004 npm run dev)",
+      "Bash(VITE_PORT=5173 VITE_API_PORT=3003 VITE_API_URL=http://localhost:3003 npm run dev)",
+      "Bash(VITE_PORT=5173 VITE_API_PORT=3004 VITE_API_URL=http://localhost:3004 npm run dev)",
       "Bash(VITE_PORT=5175 VITE_API_PORT=3004 VITE_API_URL=http://localhost:3004 npm run dev)",
       "Bash(cmd.exe:*)",
       "Bash(ren:*)",
       "Bash(VITE_API_PORT=3010 VITE_API_URL=http://localhost:3010 npm run dev)",
       "Bash(VITE_PORT=5175 VITE_API_PORT=3010 VITE_API_URL=http://localhost:3010 npm run dev)",
       "Bash(git diff:*)",
-      "Bash(git stash:*)",
-      "Bash(git fetch:*)"
+      "Bash(PGPASSWORD=Xe05Klm563kkjL psql -h aws-1-eu-north-1.pooler.supabase.com -p 6543 -U postgres.lhsnmjgdtjalfcsurxvg -d postgres -f migrations/add_session_started_at.sql)",
+      "Bash(PGPASSWORD=Xe05Klm563kkjL psql -h aws-1-eu-north-1.pooler.supabase.com -p 6543 -U postgres.lhsnmjgdtjalfcsurxvg -d postgres -c \"\nSELECT column_name, data_type, is_nullable \nFROM information_schema.columns \nWHERE table_schema = ''app'' \nAND table_name = ''methodology_exercise_sessions'' \nAND column_name = ''session_started_at'';\n\")",
+      "Bash(findstr:*)"
     ]
   }
 }

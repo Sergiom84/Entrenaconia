@@ -372,7 +372,7 @@ const RoutineScreen = () => {
             plan={effectivePlan}
             planStartDate={plan.planStartDate || incomingState?.planStartDate}
             methodologyPlanId={effectiveMethodologyPlanId}
-            onProgressUpdate={handleProgressUpdate}
+            refreshTrigger={localState.progressUpdatedAt}
           />
         </TabsContent>
 

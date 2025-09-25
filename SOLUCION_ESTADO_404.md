@@ -81,7 +81,7 @@ if (config.mode === 'calistenia' ||
 
 ### Variables de Entorno
 ```env
-VITE_PORT=5174              ✅ Frontend
+VITE_PORT=5173              ✅ Frontend
 VITE_API_PORT=3003          ✅ Backend
 VITE_API_BASE_URL=http://localhost:3003  ✅ URL Base
 ```

@@ -198,7 +198,7 @@ export default function HistoricalTab({ methodologyPlanId }) {
       <Card className="bg-gray-900/50 border-gray-700 p-6">
         <h3 className="text-lg font-semibold text-white mb-4 flex items-center">
           <Database className="w-5 h-5 mr-2 text-yellow-400" />
-          Rutinas Completadas
+          Rutinas
         </h3>
 
         <div className="space-y-4">
@@ -210,13 +210,24 @@ export default function HistoricalTab({ methodologyPlanId }) {
                     {routine.methodologyType}
                   </Badge>
                   <span className="text-sm text-gray-400">
-                    Completada el {formatDate(routine.completedAt)}
+                    {routine.status === 'cancelled' ? (
+                      <>Cancelada{routine.completedAt ? ` el ${formatDate(routine.completedAt)}` : ''}</>
+                    ) : (
+                      <>Completada el {formatDate(routine.completedAt)}</>
+                    )}
                   </span>
                 </div>
-                <div className="text-sm font-medium text-green-400 flex items-center">
-                  <CheckCircle className="w-3 h-3 mr-1" />
-                  Completada
-                </div>
+                {routine.status === 'cancelled' ? (
+                  <div className="text-sm font-medium text-red-400 flex items-center">
+                    <AlertTriangle className="w-3 h-3 mr-1" />
+                    Cancelada
+                  </div>
+                ) : (
+                  <div className="text-sm font-medium text-green-400 flex items-center">
+                    <CheckCircle className="w-3 h-3 mr-1" />
+                    Completada
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">

@@ -843,21 +843,28 @@ router.get('/sessions/today-status', authenticateToken, async (req, res) => {
     const completedExercises = exercisesQuery.rows.filter(ex => ex.status === 'completed').length;
     const skippedExercises = exercisesQuery.rows.filter(ex => ex.status === 'skipped').length;
 
-    // 🎯 NUEVA LÓGICA: Detectar si es día completamente nuevo vs reanudar
-    // - Día nuevo: session_started_at = NULL (nunca empezó) → Mostrar "Comenzar"
-    // - Reanudar: session_started_at != NULL (ya empezó alguna vez) Y hay progreso → Mostrar "Reanudar"
+    // 🎯 LÓGICA INTELIGENTE: Detectar progreso REAL vs sesión solo creada
+    // - Sin progreso real: Mostrar "Comenzar Entrenamiento"
+    // - Con progreso real: Mostrar "Reanudar Entrenamiento"
     const hasRealProgress = exercisesQuery.rows.some(ex => ex.status !== 'pending');
-    const hasStartedBefore = session.session_started_at !== null;
 
-    const canResume = session.session_status === 'in_progress' ||
-                     (hasStartedBefore && hasRealProgress);
+    let canResume;
+    if (session.session_status === 'completed') {
+      // Caso 1: Sesión completada → Mostrar resumen, no botones de inicio
+      canResume = false;
+    } else if (hasRealProgress) {
+      // Caso 2: Usuario realmente empezó ejercicios → Reanudar
+      canResume = true;
+    } else {
+      // Caso 3: Sesión creada pero sin progreso real → Comenzar
+      canResume = false;
+    }
 
-    console.log(`🎯 today-status decision logic:`, {
+    console.log(`🎯 today-status NUEVA LÓGICA INTELIGENTE:`, {
       session_status: session.session_status,
-      session_started_at: session.session_started_at,
-      hasStartedBefore,
       hasRealProgress,
       canResume,
+      decision: canResume ? 'REANUDAR ⚠️' : 'COMENZAR ✅',
       totalExercises,
       completedExercises,
       skippedExercises

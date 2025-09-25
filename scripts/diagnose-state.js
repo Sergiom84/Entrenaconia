@@ -26,7 +26,7 @@ const colors = {
 };
 
 // Configuración
-const BACKEND_PORT = process.env.PORT || 3003;
+const BACKEND_PORT = process.env.PORT || 3002;
 const API_BASE = `http://localhost:${BACKEND_PORT}`;
 const FRONTEND_PORT = 5173;
 
