@@ -602,7 +602,10 @@ export default function TodayTrainingTab({
   }, [sessionStartTime]);
 
   // Estados para mostrar el entrenamiento de hoy
-  const hasCompletedSession = session.status === 'completed';
+  // ✅ CORREGIDO: Verificar tanto contexto como backend para sesión completada
+  const hasCompletedSession = session.status === 'completed' ||
+                              todayStatus?.session?.session_status === 'completed' ||
+                              todayStatus?.summary?.isComplete === true;
   const isRestDay = hasActivePlan && !todaySessionData;
   const noActivePlan = !hasActivePlan;
   const sessionMatchesToday = hasActiveSession && !!session?.dayName && !!todaySessionData?.dia && (
@@ -643,15 +646,23 @@ export default function TodayTrainingTab({
   }, [todayStatus?.exercises, todayStatus?.summary, exerciseProgress, todaySessionData?.ejercicios?.length]);
 
   // 🔍 DEBUG: Verificar qué está pasando antes del render
-  console.log('🔍 DEBUG TodayTrainingTab RENDER:', {
-    hasToday,
-    todaySessionData: todaySessionData,
-    ejerciciosLength: todaySessionData?.ejercicios?.length,
+  console.log('🔍 DEBUG TodayTrainingTab SECTIONS:', {
+    // Condiciones principales
     hasActivePlan,
-    sessionMatchesToday,
+    hasToday,
     hasCompletedSession,
-    isRestDay: isRestDay,
-    noActivePlan
+    todayStatus: !!todayStatus,
+
+    // Sección 1: Sesión NO completada
+    showSection1: hasToday && hasActivePlan && !hasCompletedSession,
+
+    // Sección 2: Sesión SÍ completada
+    showSection2: hasActivePlan && hasToday && hasCompletedSession && todayStatus,
+
+    // Estados para debug
+    sessionStatus: session.status,
+    todayStatusSessionStatus: todayStatus?.session?.session_status,
+    todayStatusIsComplete: todayStatus?.summary?.isComplete
   });
 
   const wantRoutineModal = localState.showSessionModal || ui.showRoutineSession || ui.showSession;
@@ -836,10 +847,9 @@ export default function TodayTrainingTab({
                       })}
                     </div>
                   </Card>
-                    )}
-                  </section>
-
-                  )}
+                )}
+              </section>
+            )}
 
 
 

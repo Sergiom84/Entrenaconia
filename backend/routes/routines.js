@@ -843,11 +843,49 @@ router.get('/sessions/today-status', authenticateToken, async (req, res) => {
     const completedExercises = exercisesQuery.rows.filter(ex => ex.status === 'completed').length;
     const skippedExercises = exercisesQuery.rows.filter(ex => ex.status === 'skipped').length;
 
+    // 🎯 NUEVA LÓGICA: Detectar si es día completamente nuevo vs reanudar
+    // - Día nuevo: session_started_at = NULL (nunca empezó) → Mostrar "Comenzar"
+    // - Reanudar: session_started_at != NULL (ya empezó alguna vez) Y hay progreso → Mostrar "Reanudar"
+    const hasRealProgress = exercisesQuery.rows.some(ex => ex.status !== 'pending');
+    const hasStartedBefore = session.session_started_at !== null;
+
+    const canResume = session.session_status === 'in_progress' ||
+                     (hasStartedBefore && hasRealProgress);
+
+    console.log(`🎯 today-status decision logic:`, {
+      session_status: session.session_status,
+      session_started_at: session.session_started_at,
+      hasStartedBefore,
+      hasRealProgress,
+      canResume,
+      totalExercises,
+      completedExercises,
+      skippedExercises
+    });
+
+    // 🔍 DEBUG: Mostrar datos completos que se envían al frontend
+    console.log(`🔍 today-status RESPONSE DATA:`, {
+      session: {
+        id: session.id,
+        session_status: session.session_status,
+        canResume: canResume,
+        session_started_at: session.session_started_at
+      },
+      summary: {
+        total: totalExercises,
+        completed: completedExercises,
+        skipped: skippedExercises,
+        isComplete: session.session_status === 'completed'
+      },
+      exerciseCount: exercisesQuery.rows.length,
+      exerciseStatuses: exercisesQuery.rows.map(ex => ({ order: ex.exercise_order, status: ex.status, name: ex.exercise_name }))
+    });
+
     res.json({
       success: true,
       session: {
         ...session,
-        canResume: session.session_status === 'in_progress' || (session.session_status === 'pending' && exercisesQuery.rowCount > 0)
+        canResume
       },
       exercises: exercisesQuery.rows,
       summary: {

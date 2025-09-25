@@ -235,13 +235,18 @@ router.post('/start/methodology', authenticateToken, async (req, res) => {
       );
     }
 
-    // Marcar sesión iniciada
+    // Marcar sesión iniciada (primera vez o reanudando)
     await client.query(
       `UPDATE app.methodology_exercise_sessions
-       SET session_status = 'in_progress', started_at = COALESCE(started_at, NOW()), total_exercises = $2
+       SET session_status = 'in_progress',
+           started_at = COALESCE(started_at, NOW()),
+           session_started_at = COALESCE(session_started_at, NOW()),
+           total_exercises = $2
        WHERE id = $1`,
       [session.id, ejercicios.length]
     );
+
+    console.log(`✅ Sesión marcada como iniciada - ID: ${session.id}, Primera vez: ${session.session_started_at === null ? 'SÍ' : 'NO'}`);
 
     await client.query('COMMIT');
 
@@ -983,13 +988,27 @@ router.get('/today-status', authenticateToken, async (req, res) => {
       const completedExercises = exercisesQuery.rows.filter(ex => ex.status === 'completed').length;
       const skippedExercises = exercisesQuery.rows.filter(ex => ex.status === 'skipped').length;
 
+      // 🎯 NUEVA LÓGICA COHERENTE: Misma lógica que routines.js
+      const hasRealProgress = exercisesQuery.rows.some(ex => ex.status !== 'pending');
+      const hasStartedBefore = session.session_started_at !== null;
+
+      const canResume = session.session_status === 'in_progress' ||
+                       (hasStartedBefore && hasRealProgress);
+
+      console.log(`🎯 trainingSession today-status decision:`, {
+        session_status: session.session_status,
+        session_started_at: session.session_started_at,
+        hasStartedBefore,
+        hasRealProgress,
+        canResume
+      });
+
       res.json({
         success: true,
         session_type: 'methodology',
         session: {
           ...session,
-          canResume: session.session_status === 'in_progress' ||
-                     (session.session_status === 'pending' && exercisesQuery.rowCount > 0)
+          canResume
         },
         exercises: exercisesQuery.rows,
         summary: {
