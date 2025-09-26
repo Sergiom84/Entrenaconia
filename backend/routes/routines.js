@@ -881,12 +881,17 @@ router.get('/sessions/today-status', authenticateToken, async (req, res) => {
 
     let sessionQuery;
     if (session_date) {
-      // Si se proporciona fecha específica, buscar por fecha exacta
+      // Si se proporciona fecha específica, buscar por fecha exacta o por timestamps del día
+      // Soportamos instalaciones donde session_date aún no esté poblado
       sessionQuery = await pool.query(
         `SELECT * FROM app.methodology_exercise_sessions
          WHERE user_id = $1 AND methodology_plan_id = $2
-           AND session_date::date = $3::date
-         ORDER BY created_at DESC
+           AND (
+             (session_date IS NOT NULL AND session_date::date = $3::date)
+             OR (started_at IS NOT NULL AND started_at::date = $3::date)
+             OR (created_at::date = $3::date)
+           )
+         ORDER BY COALESCE(updated_at, started_at, created_at) DESC
          LIMIT 1`,
         [userId, methodology_plan_id, session_date]
       );

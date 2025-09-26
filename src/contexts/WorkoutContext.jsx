@@ -822,8 +822,14 @@ export function WorkoutProvider({ children }) {
       return entry.data;
     }
 
-    const params = new URLSearchParams({ methodology_plan_id: String(methodologyPlanId), day_id: String(dayId) });
-    console.log('🔍 [WorkoutContext] Llamando a today-status con:', { methodologyPlanId, dayId });
+    // A adir session_date para forzar selecci n por fecha exacta en backend (Europe/Madrid)
+    const tz = 'Europe/Madrid';
+    const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
+    const s = fmt.format(new Date()); // YYYY-MM-DD
+    const todayISODate = s; // ya est  en formato yyyy-mm-dd
+
+    const params = new URLSearchParams({ methodology_plan_id: String(methodologyPlanId), day_id: String(dayId), session_date: todayISODate });
+    console.log('🔍 [WorkoutContext] Llamando a today-status con:', { methodologyPlanId, dayId, session_date: todayISODate });
     const promise = apiClient.get(`/routines/sessions/today-status?${params.toString()}`)
       .then((data) => {
         console.log('✅ [WorkoutContext] today-status respuesta:', data);
