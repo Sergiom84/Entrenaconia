@@ -289,7 +289,13 @@ class ApiClient {
 
         return result;
       } else {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        const txt = await response.text();
+        let data;
+        try { data = JSON.parse(txt); } catch { data = { message: txt }; }
+        const err = new Error(data?.error || data?.message || `HTTP ${response.status}: ${response.statusText}`);
+        err.status = response.status;
+        err.data = data;
+        throw err;
       }
     } catch (error) {
       // 4. MANEJO AVANZADO DE ERRORES 401 CON TOKEN REFRESH

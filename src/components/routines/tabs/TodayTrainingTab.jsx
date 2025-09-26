@@ -74,14 +74,15 @@ function computeDayId(startISO, timezone = 'Europe/Madrid', now = new Date()) {
   }
 }
 
-function findTodaySession(plan, targetDay) {
-  // ✅ CORREGIDO: Usar 'semanas' en lugar de 'weeks'
-  if (!plan?.semanas?.[0]?.sesiones) return null;
+function findTodaySession(plan, targetDay, weekIdx = 0) {
+  const semanas = plan?.semanas;
+  if (!Array.isArray(semanas) || semanas.length === 0) return null;
 
-  // Buscar sesión por nombre de día
-  return plan.semanas[0].sesiones.find(sesion =>
-    sesion.dia?.toLowerCase() === targetDay?.toLowerCase()
-  );
+  const safeWeekIdx = Math.max(0, Math.min(weekIdx, semanas.length - 1));
+  const week = semanas[safeWeekIdx];
+  if (!week?.sesiones) return null;
+
+  return week.sesiones.find((sesion) => sesion.dia?.toLowerCase() === targetDay?.toLowerCase()) || null;
 }
 
 export default function TodayTrainingTab({
@@ -205,10 +206,17 @@ export default function TodayTrainingTab({
     });
 
     if (hasActivePlan && effectivePlan) {
-      const sessionData = findTodaySession(effectivePlan, currentTodayName);
+      // Calcular dayId y semana actual a partir de la fecha de inicio del plan
+      const startISO = (plan.planStartDate || planStartDate || new Date().toISOString());
+      const dayId = computeDayId(startISO, 'Europe/Madrid');
+      const currentWeekIdx = Math.max(0, Math.ceil(dayId / 7) - 1);
+
+      const sessionData = findTodaySession(effectivePlan, currentTodayName, currentWeekIdx);
       console.log('🔍 DEBUG sessionData encontrada:', {
         sessionData,
         todayName: currentTodayName,
+        currentWeekIdx,
+        dayId,
         ejercicios: sessionData?.ejercicios,
         cantidadEjercicios: sessionData?.ejercicios?.length
       });
@@ -223,7 +231,7 @@ export default function TodayTrainingTab({
         loadExerciseProgress();
       }
     }
-  }, [hasActivePlan, routinePlan, plan.currentPlan, currentTodayName, hasActiveSession, session]);
+  }, [hasActivePlan, routinePlan, plan.currentPlan, currentTodayName, hasActiveSession, session, plan.planStartDate, planStartDate]);
 
   const loadExerciseProgress = useCallback(async () => {
     if (!session.sessionId) return;
@@ -274,8 +282,16 @@ export default function TodayTrainingTab({
 
     track('BUTTON_CLICK', { id: 'start_session', exerciseIndex }, { component: 'TodayTrainingTab' });
 
-    if (!todaySessionData || hasActiveSession) {
-      console.log('⚠️ No hay datos de sesión o ya hay sesión activa');
+    // 🎯 NUEVA LÓGICA: Verificar si realmente debe reanudar usando backend
+    if (!todaySessionData) {
+      console.log('⚠️ No hay datos de sesión de hoy');
+      return;
+    }
+
+    // Si el backend dice que debe reanudar, usar handleResumeSession en su lugar
+    if (shouldResume) {
+      console.log('🔄 Redirigiendo a reanudar sesión');
+      handleResumeSession();
       return;
     }
 
@@ -288,6 +304,23 @@ export default function TodayTrainingTab({
     if (!methodologyPlanId) {
       setError('No se puede iniciar sesión: falta información del plan');
       return;
+    }
+
+    // ✅ Pre-check robusto: si existe sesión hoy y NO debemos reanudar, abrir Warmup y evitar /start
+    {
+      const existingSid = todayStatus?.session?.id;
+      const neverStarted = todayStatus?.session?.session_started_at == null;
+      const shouldOpenWarmup = (!!existingSid && !shouldResume) || neverStarted;
+      if (shouldOpenWarmup && existingSid) {
+        updateLocalState({
+          pendingSessionData: {
+            session: { ...todaySessionData, sessionId: existingSid },
+            sessionId: existingSid
+          },
+          showWarmupModal: true
+        });
+        return;
+      }
     }
 
     setIsLoadingSession(true);
@@ -344,6 +377,25 @@ export default function TodayTrainingTab({
 
     } catch (error) {
       console.error('Error iniciando sesión de hoy:', error);
+
+      // 🎯 MANEJO ESPECIAL: Sesión ya existente
+      {
+        const existingSid = todayStatus?.session?.id;
+        const sid = error?.data?.session_id || existingSid;
+        const msg = String(error?.message || '').toLowerCase();
+        if ((error?.status === 400 && sid) || (msg.includes('ya existe una sesión activa') && sid)) {
+          console.log('🔄 Sesión existente detectada, usando session_id y mostrando WarmupModal...');
+          updateLocalState({
+            pendingSessionData: {
+              session: { ...todaySessionData, sessionId: sid },
+              sessionId: sid
+            },
+            showWarmupModal: true
+          });
+          return;
+        }
+      }
+
       setSessionError(error.message);
       setError(`Error al iniciar la sesión: ${error.message}`);
     } finally {
@@ -559,8 +611,14 @@ export default function TodayTrainingTab({
   }, [todayStatus?.exercises, exerciseProgress, todaySessionData?.ejercicios]);
 
 
-  // Detectar si hoy ya tiene algún progreso (completado / saltado / en progreso)
-  const hasAnyProgress = useMemo(() => {
+  // 🎯 NUEVA LÓGICA: Usar canResume del backend en lugar de calcular localmente
+  const shouldResume = useMemo(() => {
+    // 1. Prioridad: Usar la decisión inteligente del backend
+    if (todayStatus?.session?.canResume !== undefined) {
+      return todayStatus.session.canResume;
+    }
+
+    // 2. Fallback: Si no hay respuesta del backend, calcular localmente
     if (Array.isArray(todayStatus?.exercises)) {
       return todayStatus.exercises.some((ex) => {
         const s = String(ex?.status || 'pending').toLowerCase();
@@ -571,7 +629,7 @@ export default function TodayTrainingTab({
       const s = String(p?.status || 'pending').toLowerCase();
       return s !== 'pending';
     });
-  }, [todayStatus?.exercises, exerciseProgress]);
+  }, [todayStatus?.session?.canResume, todayStatus?.exercises, exerciseProgress]);
 
   // Índice recomendado para reanudar (primer ejercicio pendiente)
   const nextPendingIndex = useMemo(() => {
@@ -777,35 +835,34 @@ export default function TodayTrainingTab({
 
             {hasToday && hasActivePlan && !hasCompletedSession && (
               <section>
-                {!sessionMatchesToday && (
-                  <div className="text-center py-6">
-                    <Dumbbell className="w-12 h-12 text-yellow-400 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-white mb-2">
-                      Entrenamiento de hoy: {todaySessionData?.dia || 'Sin información'}
-                    </h3>
-                    <p className="text-gray-400 mb-4">
-                      {todaySessionData?.ejercicios?.length || 0} ejercicios programados
-                    </p>
-                    {/* Decidir si debemos reanudar (hay sesión activa o ya hay ejercicios realizados) */}
-                    <Button
-                      onClick={() => ((hasActiveSession || hasAnyProgress) ? handleResumeSession() : handleStartSession(0))}
-                      className="bg-yellow-500 hover:bg-yellow-600 text-black font-medium"
-                      disabled={ui.isLoading || isLoadingSession || isStarting}
-                    >
-                      {isLoadingSession ? (
-                        <>
-                          <RefreshCw className="h-5 w-5 animate-spin mr-2" />
-                          Iniciando...
-                        </>
-                      ) : (
-                        <>
-                          <Play className="h-5 w-5 mr-2" />
-                          {(hasActiveSession || hasAnyProgress) ? 'Reanudar Entrenamiento' : 'Comenzar Entrenamiento'}
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                )}
+<<<<<<< HEAD
+                <div className="text-center py-6">
+                  <Dumbbell className="w-12 h-12 text-yellow-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-white mb-2">
+                    Entrenamiento de hoy: {todaySessionData?.dia || 'Sin información'}
+                  </h3>
+                  <p className="text-gray-400 mb-4">
+                    {todaySessionData?.ejercicios?.length || 0} ejercicios programados
+                  </p>
+                  {/* Decidir si debemos reanudar (hay sesión activa o ya hay ejercicios realizados) */}
+                  <Button
+                    onClick={() => (shouldResume ? handleResumeSession() : handleStartSession(0))}
+                    className="bg-yellow-500 hover:bg-yellow-600 text-black font-medium"
+                    disabled={ui.isLoading || isLoadingSession || isStarting}
+                  >
+                    {isLoadingSession ? (
+                      <>
+                        <RefreshCw className="h-5 w-5 animate-spin mr-2" />
+                        Iniciando...
+                      </>
+                    ) : (
+                      <>
+                        <Play className="h-5 w-5 mr-2" />
+                        {shouldResume ? 'Reanudar Entrenamiento' : 'Comenzar Entrenamiento'}
+                      </>
+                    )}
+                  </Button>
+                </div>
 
                 {/* Lista de ejercicios */}
                 {todaySessionData?.ejercicios && todaySessionData.ejercicios.length > 0 && (
