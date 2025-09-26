@@ -881,20 +881,34 @@ router.get('/sessions/today-status', authenticateToken, async (req, res) => {
 
     let sessionQuery;
     if (session_date) {
-      // Si se proporciona fecha específica, buscar por fecha exacta o por timestamps del día
-      // Soportamos instalaciones donde session_date aún no esté poblado
-      sessionQuery = await pool.query(
+      // Preferir la sesión PLANIFICADA para esta fecha (week_number + day_name)
+      const preferredDay = normalizeDayAbbrev(day_name);
+      const byPlanned = await pool.query(
         `SELECT * FROM app.methodology_exercise_sessions
          WHERE user_id = $1 AND methodology_plan_id = $2
-           AND (
-             (session_date IS NOT NULL AND session_date::date = $3::date)
-             OR (started_at IS NOT NULL AND started_at::date = $3::date)
-             OR (created_at::date = $3::date)
-           )
+           AND week_number = $3 AND day_name = $4
          ORDER BY COALESCE(updated_at, started_at, created_at) DESC
          LIMIT 1`,
-        [userId, methodology_plan_id, session_date]
+        [userId, methodology_plan_id, week_number, preferredDay]
       );
+
+      if (byPlanned.rowCount > 0) {
+        sessionQuery = byPlanned;
+      } else {
+        // Fallback: si no hay sesión planificada (p.ej., día faltante), intentar por fecha exacta
+        sessionQuery = await pool.query(
+          `SELECT * FROM app.methodology_exercise_sessions
+           WHERE user_id = $1 AND methodology_plan_id = $2
+             AND (
+               (session_date IS NOT NULL AND session_date::date = $3::date)
+               OR (started_at IS NOT NULL AND started_at::date = $3::date)
+               OR (created_at::date = $3::date)
+             )
+           ORDER BY COALESCE(updated_at, started_at, created_at) DESC
+           LIMIT 1`,
+          [userId, methodology_plan_id, session_date]
+        );
+      }
     } else {
       // Fallback: buscar por week_number y day_name (comportamiento anterior)
       sessionQuery = await pool.query(
@@ -970,7 +984,9 @@ router.get('/sessions/today-status', authenticateToken, async (req, res) => {
         id: session.id,
         session_status: session.session_status,
         canResume: canResume,
-        session_started_at: session.started_at
+        session_started_at: session.started_at,
+        week_number,
+        day_name
       },
       summary: {
         total: totalExercises,
