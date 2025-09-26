@@ -439,12 +439,24 @@ export default function TodayTrainingTab({
   }, [hasActiveSession, handleStartSession, currentExerciseIndex, session.sessionId, session.currentExerciseIndex, localState.pendingSessionData?.sessionId, todaySessionData, routinePlan, plan.currentPlan, currentTodayName, setError, track]);
 
   const handleCompleteSession = useCallback(async () => {
-    if (!hasActiveSession) return;
+    const sid = localState.pendingSessionData?.sessionId || session.sessionId;
+    if (!sid) return;
 
     try {
-      const result = await completeSession();
+      let ok = false;
 
-      if (result.success) {
+      if (hasActiveSession) {
+        const result = await completeSession();
+        ok = !!result?.success;
+      } else {
+        // Fallback cuando el contexto no tiene sessionId activo
+        await apiClient.post(`/training-session/complete/methodology/${sid}`, {
+          completedAt: new Date().toISOString()
+        });
+        ok = true;
+      }
+
+      if (ok) {
         setSessionStartTime(null);
         setCurrentExerciseIndex(0);
         setExerciseProgress({});
@@ -456,26 +468,25 @@ export default function TodayTrainingTab({
         });
 
         track('SESSION_COMPLETE', {
-          sessionId: session.sessionId,
+          sessionId: sid,
           duration: sessionStartTime ? Date.now() - sessionStartTime.getTime() : 0,
           exercisesCompleted: Object.keys(exerciseProgress).length
         });
 
-        // Notificar al componente padre
         if (typeof onProgressUpdate === 'function') {
           onProgressUpdate();
         }
 
         showSuccess('¡Entrenamiento completado exitosamente!');
       } else {
-        throw new Error(result.error || 'Error finalizando la sesión');
+        throw new Error('Error finalizando la sesión');
       }
 
     } catch (error) {
       console.error('Error completando sesión:', error);
       setError(`Error finalizando sesión: ${error.message}`);
     }
-  }, [hasActiveSession, completeSession, session.sessionId, sessionStartTime, exerciseProgress, track, onProgressUpdate, showSuccess, setError]);
+  }, [hasActiveSession, completeSession, session.sessionId, sessionStartTime, exerciseProgress, track, onProgressUpdate, showSuccess, setError, localState.pendingSessionData?.sessionId]);
 
   const handleExerciseUpdate = useCallback(async (exerciseIndex, progressData) => {
     // Actualizar estado local
@@ -484,17 +495,27 @@ export default function TodayTrainingTab({
       [exerciseIndex]: progressData
     }));
 
-    // Actualizar en BD a través del contexto
-    try {
-      const result = await updateExercise(exerciseIndex, {
-        status: progressData.status || 'completed',
-        series_completed: Math.max(0, parseInt(progressData.series_completed) || 0),
-        time_spent_seconds: Math.max(0, parseInt(progressData.time_spent_seconds) || 0)
-      });
+    const sid = localState.pendingSessionData?.sessionId || session.sessionId;
+    const payload = {
+      status: progressData.status || 'completed',
+      series_completed: Math.max(0, parseInt(progressData.series_completed ?? progressData.seriesCompleted) || 0),
+      time_spent_seconds: Math.max(0, parseInt(progressData.time_spent_seconds ?? progressData.timeSpent) || 0)
+    };
 
-      if (result.success) {
+    try {
+      let ok = false;
+
+      if (session.sessionId) {
+        const result = await updateExercise(exerciseIndex, payload);
+        ok = !!result?.success;
+      } else if (sid) {
+        await apiClient.put(`/routines/sessions/${sid}/exercise/${exerciseIndex}`, payload);
+        ok = true;
+      }
+
+      if (ok) {
         // Si el ejercicio se completó, avanzar al siguiente
-        if (progressData.status === 'completed') {
+        if ((progressData.status || 'completed') === 'completed') {
           const nextIndex = exerciseIndex + 1;
           if (nextIndex < (todaySessionData?.ejercicios?.length || 0)) {
             setCurrentExerciseIndex(nextIndex);
@@ -509,7 +530,7 @@ export default function TodayTrainingTab({
       console.error('Error actualizando ejercicio:', error);
       setError(`Error actualizando ejercicio: ${error.message}`);
     }
-  }, [updateExercise, todaySessionData?.ejercicios?.length, setError, onProgressUpdate]);
+  }, [updateExercise, todaySessionData?.ejercicios?.length, setError, onProgressUpdate, session.sessionId, localState.pendingSessionData?.sessionId]);
 
   // Handlers de calentamiento
   const handleWarmupComplete = async () => {
