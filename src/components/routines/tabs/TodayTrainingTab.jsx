@@ -581,6 +581,37 @@ export default function TodayTrainingTab({
     });
   };
 
+  // Handler para cancelar rutina
+  const handleCancelPlan = useCallback(async () => {
+    track('BUTTON_CLICK', { id: 'cancel_plan_confirm' }, { component: 'TodayTrainingTab' });
+
+    try {
+      setLoading(true);
+      const result = await cancelPlan();
+
+      if (result.success) {
+        updateLocalState({ showRejectionModal: false });
+        showSuccess('Rutina cancelada exitosamente');
+        // Redirigir a metodologías después de un breve delay
+        setTimeout(() => {
+          goToMethodologies();
+        }, 1500);
+      } else {
+        throw new Error(result.error || 'Error cancelando la rutina');
+      }
+    } catch (error) {
+      console.error('Error cancelando rutina:', error);
+      setError(`Error cancelando rutina: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  }, [cancelPlan, setLoading, showSuccess, setError, goToMethodologies, track]);
+
+  const handleCloseCancelModal = () => {
+    track('BUTTON_CLICK', { id: 'cancel_plan_close' }, { component: 'TodayTrainingTab' });
+    updateLocalState({ showRejectionModal: false });
+  };
+
   // ===============================================
   // 📊 CÁLCULOS DE PROGRESO
   // ===============================================
@@ -808,28 +839,33 @@ export default function TodayTrainingTab({
 
         {!ui.isLoading && !ui.error && (
           <>
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-2xl font-bold text-white">
-                  Entrenamiento de Hoy
-                </h2>
-                <p className="text-gray-400">
-                  {new Date().toLocaleDateString('es-ES', {
-                    weekday: 'long',
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric'
-                  })}
-                </p>
-              </div>
-            </div>
+            {/* Solo mostrar header completo si hay plan activo */}
+            {hasActivePlan && (
+              <>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-2xl font-bold text-white">
+                      Entrenamiento de Hoy
+                    </h2>
+                    <p className="text-gray-400">
+                      {new Date().toLocaleDateString('es-ES', {
+                        weekday: 'long',
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
+                      })}
+                    </p>
+                  </div>
+                </div>
 
-            {/* Header enriquecido con metodología, fuente, perfil y progreso */}
-            <section className="mt-4">
-              <SummaryHeader plan={plan?.currentPlan || plan} session={session} planSource={{ label: 'OpenAI' }} />
-              <UserProfileDisplay />
-              <ProgressBar progressStats={headerProgressStats} />
-            </section>
+                {/* Header enriquecido con metodología, fuente, perfil y progreso */}
+                <section className="mt-4">
+                  <SummaryHeader plan={plan?.currentPlan || plan} session={session} planSource={{ label: 'OpenAI' }} />
+                  <UserProfileDisplay />
+                  <ProgressBar progressStats={headerProgressStats} />
+                </section>
+              </>
+            )}
 
 
             {/* =============================================== */}
@@ -1068,6 +1104,54 @@ export default function TodayTrainingTab({
           navigateToRoutines={() => goToTraining()}
           onProgressUpdate={onProgressUpdate}
         />
+      )}
+
+      {/* Modal de Confirmación de Cancelación */}
+      {localState.showRejectionModal && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-gray-800 rounded-2xl p-6 max-w-md w-full border border-gray-700">
+            <div className="text-center">
+              <div className="mx-auto flex items-center justify-center w-12 h-12 rounded-full bg-red-100/10 mb-4">
+                <AlertTriangle className="w-6 h-6 text-red-400" />
+              </div>
+
+              <h3 className="text-lg font-semibold text-white mb-2">
+                ¿Cancelar rutina actual?
+              </h3>
+
+              <p className="text-gray-400 mb-6">
+                Esta acción cancelará tu rutina activa. El progreso realizado se conservará en tu historial,
+                pero tendrás que crear una nueva rutina para continuar entrenando.
+              </p>
+
+              <div className="flex gap-3 justify-center">
+                <Button
+                  onClick={handleCloseCancelModal}
+                  variant="outline"
+                  className="border-gray-600 text-gray-300 hover:bg-gray-700"
+                  disabled={ui.isLoading}
+                >
+                  Mantener rutina
+                </Button>
+
+                <Button
+                  onClick={handleCancelPlan}
+                  className="bg-red-500 hover:bg-red-600 text-white"
+                  disabled={ui.isLoading}
+                >
+                  {ui.isLoading ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin mr-2" />
+                      Cancelando...
+                    </>
+                  ) : (
+                    'Sí, cancelar rutina'
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       </div>
