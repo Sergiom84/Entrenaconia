@@ -858,8 +858,24 @@ router.get('/sessions/today-status', authenticateToken, async (req, res) => {
       });
     }
 
-    // Si viene day_id, resolver week/day desde tabla calendario
-    if (day_id && (!week_number || !day_name)) {
+    // Resolver week/day de forma robusta
+    // 1) Si viene session_date, priorizar programación (workout_schedule)
+    if (req.query.session_date && (!week_number || !day_name)) {
+      const sched = await pool.query(
+        `SELECT week_number, day_name FROM app.workout_schedule
+         WHERE methodology_plan_id = $1 AND user_id = $2 AND scheduled_date::date = $3::date
+         LIMIT 1`,
+        [methodology_plan_id, userId, req.query.session_date]
+      );
+      if (sched.rowCount > 0) {
+        week_number = sched.rows[0].week_number;
+        day_name = sched.rows[0].day_name;
+        console.log('🗓️ today-status usa programación (workout_schedule)', { week_number, day_name });
+      }
+    }
+
+    // 2) Si no hay programación o no vino session_date, usar day_id → methodology_plan_days
+    if ((!week_number || !day_name) && day_id) {
       const dres = await pool.query(
         `SELECT week_number, day_name FROM app.methodology_plan_days WHERE plan_id = $1 AND day_id = $2`,
         [methodology_plan_id, day_id]
