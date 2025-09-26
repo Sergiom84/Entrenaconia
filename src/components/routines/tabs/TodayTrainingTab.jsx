@@ -1044,7 +1044,7 @@ export default function TodayTrainingTab({
           onSkipExercise={(exerciseIndex) => handleExerciseUpdate(exerciseIndex, { status: 'skipped' })}
           onCancelExercise={(exerciseIndex) => handleExerciseUpdate(exerciseIndex, { status: 'cancelled' })}
           onEndSession={handleCompleteSession}
-          navigateToRoutines={() => goToMethodologies()}
+          navigateToRoutines={() => goToTraining()}
           onProgressUpdate={onProgressUpdate}
         />
       )}

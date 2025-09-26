@@ -335,7 +335,7 @@ export default function RoutineSessionModal({
         endTitle={progressState.endMessage.title}
         endMessage={progressState.endMessage.message}
         progressState={progressState}
-        onClose={() => setShowEndModal(false)}
+        onClose={() => { setShowEndModal(false); safeClose(); }}
         onEndSession={onEndSession}
         navigateToRoutines={navigateToRoutines}
       />
