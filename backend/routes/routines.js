@@ -460,6 +460,70 @@ router.post('/sessions/start', authenticateToken, async (req, res) => {
   }
 });
 
+
+// POST /api/routines/sessions/:sessionId/mark-started
+// Marca una sesión como iniciada de forma segura sin recrearla
+router.post('/sessions/:sessionId/mark-started', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    const sessionId = parseInt(req.params.sessionId, 10);
+
+    if (!sessionId || Number.isNaN(sessionId)) {
+      return res.status(400).json({ success: false, error: 'sessionId inválido' });
+    }
+
+    // Verificar sesión del usuario
+    const sesQ = await client.query(
+      `SELECT id, user_id, session_status, session_started_at, started_at
+       FROM app.methodology_exercise_sessions WHERE id = $1`,
+      [sessionId]
+    );
+    if (sesQ.rowCount === 0) {
+      return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
+    }
+    const ses = sesQ.rows[0];
+    if (String(ses.user_id) !== String(userId)) {
+      return res.status(403).json({ success: false, error: 'No autorizado' });
+    }
+
+    // Si ya está completada, no tocar y devolver estado actual
+    if (ses.session_status === 'completed') {
+      return res.json({
+        success: true,
+        session_id: sessionId,
+        session_status: ses.session_status,
+        session_started_at: ses.session_started_at || ses.started_at || null
+      });
+    }
+
+    // Actualizar timestamps de inicio y asegurar estado in_progress
+    const upd = await client.query(
+      `UPDATE app.methodology_exercise_sessions
+         SET session_started_at = COALESCE(session_started_at, NOW()),
+             started_at = COALESCE(started_at, NOW()),
+             session_status = CASE WHEN session_status = 'completed' THEN session_status ELSE 'in_progress' END,
+             updated_at = NOW()
+       WHERE id = $1
+       RETURNING id, session_status, session_started_at, started_at`,
+      [sessionId]
+    );
+
+    const updated = upd.rows[0];
+    return res.json({
+      success: true,
+      session_id: sessionId,
+      session_status: updated.session_status,
+      session_started_at: updated.session_started_at || updated.started_at || null
+    });
+  } catch (e) {
+    console.error('Error marcando inicio de sesión:', e);
+    return res.status(500).json({ success: false, error: 'Error marcando inicio de sesión' });
+  } finally {
+    client.release();
+  }
+});
+
 // PUT /api/routines/sessions/:sessionId/exercise/:exerciseOrder
 // Body: { series_completed, status, time_spent_seconds }
 router.put('/sessions/:sessionId/exercise/:exerciseOrder', authenticateToken, async (req, res) => {

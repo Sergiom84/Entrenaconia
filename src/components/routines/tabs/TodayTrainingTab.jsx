@@ -30,6 +30,7 @@ import {
 import RoutineSessionModal from '../RoutineSessionModal';
 import WarmupModal from '../WarmupModal';
 import { useWorkout } from '@/contexts/WorkoutContext'; // Mantenemos el contexto original
+import apiClient from '@/lib/apiClient';
 
 import SafeComponent from '../../ui/SafeComponent';
 import { useTrace } from '@/contexts/TraceContext.jsx';
@@ -511,11 +512,18 @@ export default function TodayTrainingTab({
   }, [updateExercise, todaySessionData?.ejercicios?.length, setError, onProgressUpdate]);
 
   // Handlers de calentamiento
-  const handleWarmupComplete = () => {
+  const handleWarmupComplete = async () => {
     track('BUTTON_CLICK', { id: 'warmup_complete' }, { component: 'TodayTrainingTab' });
 
     const pendingId = localState.pendingSessionData?.sessionId || session.sessionId;
     if (!pendingId) return;
+
+    // Marcar inicio real de la sesión en backend (idempotente)
+    try {
+      await apiClient.post(`/routines/sessions/${pendingId}/mark-started`);
+    } catch (e) {
+      console.warn('mark-started fallo (no bloqueante):', e?.message || e);
+    }
 
     updateLocalState({
       showWarmupModal: false,
@@ -835,7 +843,7 @@ export default function TodayTrainingTab({
 
             {hasToday && hasActivePlan && !hasCompletedSession && (
               <section>
-<<<<<<< HEAD
+
                 <div className="text-center py-6">
                   <Dumbbell className="w-12 h-12 text-yellow-400 mx-auto mb-4" />
                   <h3 className="text-lg font-medium text-white mb-2">
