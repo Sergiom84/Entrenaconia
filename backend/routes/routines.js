@@ -537,6 +537,9 @@ router.post('/sessions/:sessionId/mark-started', authenticateToken, async (req, 
       success: true,
       session_id: sessionId,
       session_status: updated.session_status,
+
+
+
       session_started_at: updated.started_at || null
     });
   } catch (e) {
@@ -597,6 +600,9 @@ router.put('/sessions/:sessionId/exercise/:exerciseOrder', authenticateToken, as
         return res.status(409).json({ success: false, error: 'Inconsistencia: day_id no corresponde a la sesión' });
       }
     }
+
+
+
 
 
     // Asegurar fila de progreso existente
@@ -2637,6 +2643,60 @@ router.post('/confirm-plan', authenticateToken, async (req, res) => {
       error: 'Error interno del servidor',
       details: error.message
     });
+  }
+});
+
+
+// DEV-ONLY: POST /api/routines/sessions/:sessionId/purge
+// Elimina una sesión y su progreso asociado (solo entorno de pruebas)
+router.post('/sessions/:sessionId/purge', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    const sessionId = parseInt(req.params.sessionId, 10);
+
+    if (!sessionId || Number.isNaN(sessionId)) {
+      return res.status(400).json({ success: false, error: 'sessionId inválido' });
+    }
+
+    // Opcional: limitar a entornos no productivos
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(403).json({ success: false, error: 'Operación no permitida en producción' });
+    }
+
+    await client.query('BEGIN');
+
+    // Verificar pertenencia
+    const sesQ = await client.query(
+      `SELECT id FROM app.methodology_exercise_sessions WHERE id = $1 AND user_id = $2`,
+      [sessionId, userId]
+    );
+    if (sesQ.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, error: 'Sesión no encontrada para este usuario' });
+    }
+
+    // Borrar progreso primero
+    await client.query(
+      `DELETE FROM app.methodology_exercise_progress WHERE methodology_session_id = $1`,
+      [sessionId]
+    );
+
+    // Borrar sesión
+    await client.query(
+      `DELETE FROM app.methodology_exercise_sessions WHERE id = $1 AND user_id = $2`,
+      [sessionId, userId]
+    );
+
+    await client.query('COMMIT');
+    console.log(`🧹 Sesión ${sessionId} purgada (dev-only) para usuario ${userId}`);
+    res.json({ success: true, purged_session_id: sessionId });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('Error purgando sesión:', e);
+    res.status(500).json({ success: false, error: 'Error interno' });
+  } finally {
+    client.release();
   }
 });
 
