@@ -534,6 +534,12 @@ router.put('/sessions/:sessionId/exercise/:exerciseOrder', authenticateToken, as
     const { sessionId, exerciseOrder } = req.params;
     const { series_completed, status, time_spent_seconds } = req.body;
 
+    console.log(`📥 UPDATE EXERCISE - PUT /sessions/${sessionId}/exercise/${exerciseOrder} - user ${userId}`, {
+      series_completed,
+      status,
+      time_spent_seconds
+    });
+
     // Verificar sesión del usuario
     const ses = await client.query(
       'SELECT * FROM app.methodology_exercise_sessions WHERE id = $1 AND user_id = $2',
@@ -585,6 +591,7 @@ router.put('/sessions/:sessionId/exercise/:exerciseOrder', authenticateToken, as
          ) VALUES ($1, $2, $3, $4, $5, $6, $7, 0, 'pending')`,
         [sessionId, userId, exerciseOrder, 'Ejercicio', 3, '—', 60]
       );
+      console.log('🆕 Progreso creado para ejercicio', { sessionId, exerciseOrder });
     }
 
     // Actualizar progreso
@@ -602,6 +609,16 @@ router.put('/sessions/:sessionId/exercise/:exerciseOrder', authenticateToken, as
       [finalSeriesCompleted, status, time_spent_seconds ?? null, sessionId, exerciseOrder]
     );
 
+    const updatedEx = upd.rows[0];
+    console.log('✅ Exercise updated', {
+      sessionId,
+      exerciseOrder: parseInt(exerciseOrder, 10),
+      status: updatedEx.status,
+      series_completed: updatedEx.series_completed,
+      time_spent_seconds: updatedEx.time_spent_seconds ?? null,
+      completed_at: updatedEx.completed_at || null
+    });
+
     // Actualizar sesión (contadores y estado)
     const counters = await client.query(
       `SELECT
@@ -612,6 +629,11 @@ router.put('/sessions/:sessionId/exercise/:exerciseOrder', authenticateToken, as
       [sessionId]
     );
     const { completed, total } = counters.rows[0];
+
+    console.log('\ud83d\udcca Session counters', { sessionId, completed: Number(completed), total: Number(total) });
+
+    const newStatus = (Number(completed) === Number(total) && Number(total) > 0) ? 'completed' : 'in_progress';
+    console.log('\ud83c\udfaf Session status decision', { sessionId, newStatus });
 
     await client.query(
       `UPDATE app.methodology_exercise_sessions
@@ -654,6 +676,8 @@ router.post('/sessions/:sessionId/finish', authenticateToken, async (req, res) =
     }
 
     // Actualizar estado de la sesión
+    console.log('\ud83d\udd1c FINISH SESSION - POST /sessions/' + sessionId + '/finish');
+
     await client.query(
       `UPDATE app.methodology_exercise_sessions
          SET session_status = 'completed', completed_at = NOW(),
@@ -661,6 +685,8 @@ router.post('/sessions/:sessionId/finish', authenticateToken, async (req, res) =
        WHERE id = $1`,
       [sessionId]
     );
+
+    console.log('\u2705 Session finished', { sessionId });
 
     // Obtener todos los ejercicios de la sesión para mover al historial
     const exercisesQuery = await client.query(
@@ -1303,6 +1329,8 @@ router.post('/sessions/:sessionId/exercise/:exerciseOrder/feedback', authenticat
     const userId = req.user?.userId || req.user?.id;
     const { sessionId, exerciseOrder } = req.params;
     const { sentiment, comment, exerciseName } = req.body;
+
+    console.log('\ud83d\udcac FEEDBACK', { sessionId, exerciseOrder: parseInt(exerciseOrder, 10), sentiment, hasComment: !!comment, exerciseName });
 
     // Validar parámetros
     if (!sentiment || !['like', 'dislike', 'hard'].includes(sentiment)) {
