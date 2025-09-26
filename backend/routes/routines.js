@@ -939,7 +939,7 @@ router.get('/sessions/today-status', authenticateToken, async (req, res) => {
         id: session.id,
         session_status: session.session_status,
         canResume: canResume,
-        session_started_at: session.session_started_at
+        session_started_at: session.started_at
       },
       summary: {
         total: totalExercises,
@@ -955,7 +955,8 @@ router.get('/sessions/today-status', authenticateToken, async (req, res) => {
       success: true,
       session: {
         ...session,
-        canResume
+        canResume,
+        session_started_at: session.started_at
       },
       exercises: exercisesQuery.rows,
       summary: {
