@@ -408,17 +408,41 @@ router.post('/sessions/start', authenticateToken, async (req, res) => {
     const session = ses.rows[0];
 
     // Precrear progreso por ejercicio (si no existe)
-    // Encontrar la definición de ejercicios en el JSON del plan
+    // 1) Preferir ejercicios de la programación (workout_schedule) para este día
+    let scheduleExercises = [];
+    try {
+      const schedQ = await client.query(
+        `SELECT exercises FROM app.workout_schedule
+         WHERE methodology_plan_id = $1 AND user_id = $2 AND week_number = $3
+           AND (LOWER(day_abbrev) = $4 OR LOWER(day_name) = $5)
+         ORDER BY session_order
+         LIMIT 1`,
+        [methodology_plan_id, userId, week_number, normalizedDay.toLowerCase(), normalizedDay.toLowerCase()]
+      );
+      if (schedQ.rowCount > 0) {
+        const ex = schedQ.rows[0].exercises;
+        scheduleExercises = Array.isArray(ex) ? ex : [];
+        if (scheduleExercises.length > 0) {
+          console.log('🗓️ start: usando ejercicios de workout_schedule');
+        }
+      }
+    } catch (e) {
+      console.warn('No se pudo leer workout_schedule, se usará plan JSON', e?.message);
+    }
+
+    // 2) Si no hay programación, usar definición de ejercicios del plan JSON
     const semana = (planData.semanas || []).find(s => Number(s.semana) === Number(week_number));
     let sesionDef = semana ? (semana.sesiones || []).find(s => normalizeDayAbbrev(s.dia) === normalizedDay) : null;
 
-    // Si no existe sesión para este día, usar la primera sesión disponible como template
-    if (!sesionDef && semana && semana.sesiones && semana.sesiones.length > 0) {
+    // 2b) Solo si no existe sesión para este día en el plan, usar la primera sesión disponible como template
+    if (!sesionDef && scheduleExercises.length === 0 && semana && semana.sesiones && semana.sesiones.length > 0) {
       sesionDef = semana.sesiones[0];
       console.log(`📋 Usando template de ${sesionDef.dia} para día faltante ${normalizedDay}`);
     }
 
-    const ejercicios = Array.isArray(sesionDef?.ejercicios) ? sesionDef.ejercicios : [];
+    const ejercicios = scheduleExercises.length > 0
+      ? scheduleExercises
+      : (Array.isArray(sesionDef?.ejercicios) ? sesionDef.ejercicios : []);
 
     for (let i = 0; i < ejercicios.length; i++) {
       const ej = ejercicios[i] || {};
