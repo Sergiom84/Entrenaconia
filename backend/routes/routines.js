@@ -475,7 +475,7 @@ router.post('/sessions/:sessionId/mark-started', authenticateToken, async (req, 
 
     // Verificar sesión del usuario
     const sesQ = await client.query(
-      `SELECT id, user_id, session_status, session_started_at, started_at
+      `SELECT id, user_id, session_status, started_at
        FROM app.methodology_exercise_sessions WHERE id = $1`,
       [sessionId]
     );
@@ -493,7 +493,7 @@ router.post('/sessions/:sessionId/mark-started', authenticateToken, async (req, 
         success: true,
         session_id: sessionId,
         session_status: ses.session_status,
-        session_started_at: ses.session_started_at || ses.started_at || null
+        session_started_at: ses.started_at || null
       });
     }
 
