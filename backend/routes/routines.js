@@ -500,12 +500,11 @@ router.post('/sessions/:sessionId/mark-started', authenticateToken, async (req, 
     // Actualizar timestamps de inicio y asegurar estado in_progress
     const upd = await client.query(
       `UPDATE app.methodology_exercise_sessions
-         SET session_started_at = COALESCE(session_started_at, NOW()),
-             started_at = COALESCE(started_at, NOW()),
+         SET started_at = COALESCE(started_at, NOW()),
              session_status = CASE WHEN session_status = 'completed' THEN session_status ELSE 'in_progress' END,
              updated_at = NOW()
        WHERE id = $1
-       RETURNING id, session_status, session_started_at, started_at`,
+       RETURNING id, session_status, started_at`,
       [sessionId]
     );
 
@@ -514,7 +513,7 @@ router.post('/sessions/:sessionId/mark-started', authenticateToken, async (req, 
       success: true,
       session_id: sessionId,
       session_status: updated.session_status,
-      session_started_at: updated.session_started_at || updated.started_at || null
+      session_started_at: updated.started_at || null
     });
   } catch (e) {
     console.error('Error marcando inicio de sesión:', e);
