@@ -154,11 +154,8 @@ export default function MethodologiesScreen() {
   const MethodologyCard = ({ methodology, manualActive, onDetails, onSelect }) => (
     <Card
       className={`bg-black/80 border-gray-700 transition-all duration-300 ${
-        manualActive ? 'cursor-pointer hover:border-yellow-400/60 hover:scale-[1.01]' : 'hover:border-gray-600'
+        manualActive ? 'hover:border-yellow-400/60 hover:scale-[1.01]' : 'hover:border-gray-600'
       }`}
-      onClick={() => manualActive && onSelect(methodology)}
-      role="button"
-      tabIndex={manualActive ? 0 : -1}
       aria-label={`Tarjeta de metodología ${methodology.name}`}
     >
       <div className="p-4 pb-3">
@@ -417,7 +414,7 @@ export default function MethodologiesScreen() {
       try { track('BUTTON_CLICK', { id: 'start_training' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
       console.log('🚀 Iniciando sesión de entrenamiento...');
 
-      if (!plan.currentPlan || !plan.planId) {
+      if (!plan.currentPlan || !plan.methodologyPlanId) {
         throw new Error('No hay plan generado para iniciar');
       }
 
@@ -431,7 +428,8 @@ export default function MethodologiesScreen() {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`
         },
         body: JSON.stringify({
-          methodology_plan_id: plan.planId
+          methodology_plan_id: plan.methodologyPlanId,
+          routine_plan_id: plan.currentPlan?.id || plan.methodologyPlanId
         })
       });
 
@@ -450,13 +448,28 @@ export default function MethodologiesScreen() {
       const _todayName = new Date().toLocaleDateString('es-ES', { weekday: 'long' });
       const dayNameEs = _todayName.charAt(0).toUpperCase() + _todayName.slice(1);
       const result = await startSession({
-        planId: plan.planId,
+        methodologyPlanId: plan.methodologyPlanId,
         dayName: dayNameEs
       });
 
       if (result.success) {
         ui.hideModal('planConfirmation');
+        console.log('🔍 Estado UI antes de warmup:', {
+          showWarmup: ui.showWarmup,
+          showRoutineSession: ui.showRoutineSession,
+          sessionId: session.sessionId,
+          allModals: {
+            planConfirmation: ui.showPlanConfirmation,
+            warmup: ui.showWarmup,
+            routineSession: ui.showRoutineSession,
+            calisteniaManual: ui.showCalisteniaManual
+          }
+        });
         ui.showModal('warmup');
+        console.log('🔍 Estado UI después de warmup:', {
+          showWarmup: ui.showWarmup,
+          sessionId: session.sessionId
+        });
         console.log('🔥 Iniciando calentamiento...');
       } else {
         throw new Error(result.error || 'Error al iniciar el entrenamiento');
@@ -754,19 +767,21 @@ export default function MethodologiesScreen() {
         />
       )}
 
-      {/* Modal de sesión de rutina */}
-      <RoutineSessionModal
-        isOpen={ui.showRoutineSession}
-        session={session.currentSession}
-        sessionId={session.sessionId}
-        onClose={() => ui.hideModal('routineSession')}
-        onFinishExercise={(exerciseIndex, seriesCompleted, timeSpent) =>
-          updateExercise(exerciseIndex, { status: 'completed', seriesCompleted, timeSpent })
-        }
-        onSkipExercise={(exerciseIndex) => updateExercise(exerciseIndex, { status: 'skipped' })}
-        onCancelExercise={(exerciseIndex) => updateExercise(exerciseIndex, { status: 'cancelled' })}
-        onEndSession={handleEndSession}
-      />
+      {/* Modal de sesión de rutina (render condicional estricto) */}
+      {ui.showRoutineSession && session.sessionId && session.currentSession && (
+        <RoutineSessionModal
+          isOpen={ui.showRoutineSession}
+          session={session.currentSession}
+          sessionId={session.sessionId}
+          onClose={() => ui.hideModal('routineSession')}
+          onFinishExercise={(exerciseIndex, seriesCompleted, timeSpent) =>
+            updateExercise(exerciseIndex, { status: 'completed', seriesCompleted, timeSpent })
+          }
+          onSkipExercise={(exerciseIndex) => updateExercise(exerciseIndex, { status: 'skipped' })}
+          onCancelExercise={(exerciseIndex) => updateExercise(exerciseIndex, { status: 'cancelled' })}
+          onEndSession={handleEndSession}
+        />
+      )}
     </div>
   );
 }

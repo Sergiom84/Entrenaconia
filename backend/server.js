@@ -217,71 +217,45 @@ app.get('/api/calistenia-manual/exercises/:level', (req, res, next) => {
 // Sistema Unificado de Metodologías - Proxy inteligente
 console.log('🆕 Using unified methodology system (proxy approach)');
 
-// IMPORTANTE: Este endpoint actúa como proxy hacia las rutas consolidadas
-app.post('/api/methodology/generate', authenticateToken, async (req, res) => {
-  const { mode } = req.body;
-  const methodology = (req.body.methodology || req.body.metodologia_solicitada || '').toLowerCase();
+// IMPORTANTE: Este endpoint actúa como enrutador interno hacia las rutas consolidadas
+app.post('/api/methodology/generate', authenticateToken, (req, res, next) => {
+  const { mode } = req.body || {};
+  const methodology = String(req.body?.methodology || req.body?.metodologia_solicitada || '').toLowerCase();
 
   console.log(`🔀 Proxy metodología: mode=${mode}, methodology=${methodology}`);
-
-  // Construir la URL de destino basada en los parámetros
-  let targetUrl;
 
   // Normalizar caso histórico: mode === 'calistenia' → manual calistenia
   const isCalisteniaManual = (mode === 'calistenia') || (mode === 'manual' && methodology === 'calistenia');
 
   if (isCalisteniaManual) {
     console.log('🤸 Calistenia manual detectada - specialist/calistenia/generate');
-    targetUrl = 'http://localhost:3003/api/routine-generation/specialist/calistenia/generate';
+    req.url = '/api/routine-generation/specialist/calistenia/generate';
   } else if (mode === 'manual' && methodology) {
     // Para otras metodologías, mantener patrón actual (se añadirá routing específico cuando se habiliten)
     if (methodology === 'oposicion' || methodology === 'oposiciones') {
-      targetUrl = 'http://localhost:3003/api/routine-generation/specialist/oposicion';
+      req.url = '/api/routine-generation/specialist/oposicion';
     } else if (methodology === 'hipertrofia') {
-      targetUrl = 'http://localhost:3003/api/routine-generation/specialist/hipertrofia';
+      req.url = '/api/routine-generation/specialist/hipertrofia';
     } else if (methodology === 'crossfit') {
-      targetUrl = 'http://localhost:3003/api/routine-generation/specialist/crossfit';
+      req.url = '/api/routine-generation/specialist/crossfit';
     } else if (methodology === 'powerlifting') {
-      targetUrl = 'http://localhost:3003/api/routine-generation/specialist/powerlifting';
+      req.url = '/api/routine-generation/specialist/powerlifting';
     } else if (methodology === 'funcional') {
-      targetUrl = 'http://localhost:3003/api/routine-generation/specialist/funcional';
+      req.url = '/api/routine-generation/specialist/funcional';
     } else {
       // Metodología manual genérica
-      targetUrl = 'http://localhost:3003/api/routine-generation/manual/methodology';
+      req.url = '/api/routine-generation/manual/methodology';
     }
   } else if (mode === 'automatic' || mode === 'regenerate') {
     // AUTOMÁTICO: IA decide la metodología
-    targetUrl = 'http://localhost:3003/api/routine-generation/ai/methodology';
+    req.url = '/api/routine-generation/ai/methodology';
   } else {
     // Default: IA methodology
-    targetUrl = 'http://localhost:3003/api/routine-generation/ai/methodology';
+    req.url = '/api/routine-generation/ai/methodology';
   }
 
-  console.log(`🎯 Proxying to: ${targetUrl}`);
-
-  try {
-    // Hacer la petición al endpoint correcto
-    const proxyResponse = await fetch(targetUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': req.headers.authorization // Pasar el token
-      },
-      body: JSON.stringify(req.body)
-    });
-
-    // Obtener la respuesta
-    const data = await proxyResponse.json();
-
-    // Devolver la respuesta al cliente
-    res.status(proxyResponse.status).json(data);
-  } catch (error) {
-    console.error('❌ Error en proxy:', error);
-    res.status(500).json({
-      error: 'Error procesando solicitud de metodología',
-      details: error.message
-    });
-  }
+  console.log(`🎯 Redirecting internally to: ${req.url}`);
+  next();
 });
 
 // ===============================================

@@ -152,7 +152,10 @@
       "Bash(git diff:*)",
       "Bash(PGPASSWORD=Xe05Klm563kkjL psql -h aws-1-eu-north-1.pooler.supabase.com -p 6543 -U postgres.lhsnmjgdtjalfcsurxvg -d postgres -f migrations/add_session_started_at.sql)",
       "Bash(PGPASSWORD=Xe05Klm563kkjL psql -h aws-1-eu-north-1.pooler.supabase.com -p 6543 -U postgres.lhsnmjgdtjalfcsurxvg -d postgres -c \"\nSELECT column_name, data_type, is_nullable \nFROM information_schema.columns \nWHERE table_schema = ''app'' \nAND table_name = ''methodology_exercise_sessions'' \nAND column_name = ''session_started_at'';\n\")",
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "Bash(PGPASSWORD=Xe05Klm563kkjL psql -h aws-1-eu-north-1.pooler.supabase.com -p 6543 -U postgres.lhsnmjgdtjalfcsurxvg -d postgres -c \"\nSELECT table_schema, table_name, column_name, data_type \nFROM information_schema.columns \nWHERE table_schema = ''app'' \nAND table_name IN (''methodology_plans'', ''methodology_exercise_sessions'', ''historico_ejercicios'', ''progreso_usuario'')\nORDER BY table_name, ordinal_position;\n\")",
+      "Bash(PORT=3010 npm run dev:backend)",
+      "Bash(PORT=3004 npm run dev:backend)"
     ]
   }
 }

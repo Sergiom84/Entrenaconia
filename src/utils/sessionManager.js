@@ -365,7 +365,8 @@ class SessionManager {
       if (!token) return;
 
       // Enviar ping al servidor
-      const response = await fetch('http://localhost:3002/api/auth/heartbeat', {
+      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3010';
+      const response = await fetch(`${baseURL}/api/auth/heartbeat`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

@@ -1117,7 +1117,8 @@ router.get('/sessions/:sessionId/progress', authenticateToken, async (req, res) 
 router.post('/confirm-plan', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
-    await client.query('BEGIN');
+    // Nota: Operamos en auto-commit para evitar estados abortados por funciones legacy.
+    // Si la función legacy falla, haremos fallback con UPDATE sin necesidad de transacciones explícitas.
 
     const userId = req.user?.userId || req.user?.id;
     const { methodology_plan_id, routine_plan_id } = req.body;
@@ -1148,16 +1149,35 @@ router.post('/confirm-plan', authenticateToken, async (req, res) => {
 
     const plan = planCheck.rows[0];
 
-    // Usar la función de la base de datos para confirmar
-    const confirmResult = await client.query(
-      'SELECT app.confirm_routine_plan($1, $2, $3) as confirmed',
-      [userId, methodology_plan_id, routine_plan_id || null]
-    );
-
-    const confirmed = confirmResult.rows[0]?.confirmed;
+    // Confirmación del plan con fallback seguro si no existe la función/tabla legacy
+    let confirmed = false;
+    try {
+      const confirmResult = await client.query(
+        'SELECT app.confirm_routine_plan($1, $2, $3) as confirmed',
+        [userId, methodology_plan_id, routine_plan_id || null]
+      );
+      confirmed = Boolean(confirmResult.rows?.[0]?.confirmed);
+    } catch (e) {
+      // Si la función/tables legacy no existen (42P01: relation does not exist), usar UPDATE directo
+      if (e?.code === '42P01' || String(e?.message || '').includes('routine_plans')) {
+        // Revertir solo la parte fallida y continuar dentro de la transaccin
+        console.warn('⚠️ confirm_routine_plan no disponible. Aplicando UPDATE sobre app.methodology_plans');
+        const upd = await pool.query(
+          `UPDATE app.methodology_plans
+             SET status = 'active',
+                 confirmed_at = COALESCE(confirmed_at, NOW()),
+                 updated_at = NOW()
+           WHERE id = $1 AND user_id = $2 AND status IN ('draft','active')
+           RETURNING id`,
+          [methodology_plan_id, userId]
+        );
+        confirmed = upd.rowCount > 0;
+      } else {
+        throw e;
+      }
+    }
 
     if (!confirmed) {
-      await client.query('ROLLBACK');
       return res.status(400).json({
         success: false,
         error: 'No se pudo confirmar el plan. Puede que ya esté confirmado o no esté en estado draft.'
@@ -1176,7 +1196,7 @@ router.post('/confirm-plan', authenticateToken, async (req, res) => {
       // No fallar la confirmación por esto, las sesiones se pueden crear después
     }
 
-    await client.query('COMMIT');
+    // Auto-commit mode: no COMMIT necesario
 
     console.log(`✅ Rutina confirmada: methodology_plan(${methodology_plan_id}) routine_plan(${routine_plan_id || 'N/A'})`);
 

@@ -40,6 +40,12 @@ export default function RoutineSessionModal({
   isOpen = true,
   onProgressUpdate,
 }) {
+  // Respetar bandera de visibilidad y evitar estados inconsistentes
+  if (!isOpen) return null;
+  if (!session || !Array.isArray(session?.exercises) || session.exercises.length === 0) {
+    // No hay sesión/ejericios válidos -> no abrir modal
+    return null;
+  }
   // Datos de la sesión
   const exercises = useMemo(() => Array.isArray(session?.ejercicios) ? session.ejercicios : [], [session?.ejercicios]);
 

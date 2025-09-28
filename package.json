@@ -19,7 +19,9 @@
     "test": "echo \"⚠️  Tests not configured yet\" && exit 0",
     "postinstall": "husky install 2>/dev/null || true",
     "pre-commit": "lint-staged",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "dev:helper": "scripts\\dev-helper.bat",
+    "ports:fix": "scripts\\dev-helper.bat"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.61.0",

@@ -73,7 +73,16 @@ const ValidationUtils = {
   },
 
   sanitizeLevelId(levelId) {
-    return typeof levelId === 'string' ? levelId.toLowerCase().trim() : null;
+    if (typeof levelId !== 'string') return null;
+    try {
+      // Normaliza y elimina diacríticos: 'básico' -> 'basico'
+      const noDiacritics = levelId
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+      return noDiacritics.toLowerCase().trim();
+    } catch {
+      return levelId.toLowerCase().trim();
+    }
   },
 
   validateLevelData(levelData) {

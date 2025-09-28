@@ -623,10 +623,18 @@ export function WorkoutProvider({ children }) {
       // Import the API function
       const { startSession: startSessionAPI } = await import('@/components/routines/api');
 
-      const sessionData = await startSessionAPI({
-        methodology_plan_id: config.methodologyPlanId || state.plan.methodologyPlanId,
-        day_id: config.dayId
-      });
+      // Construir payload segn disponibilidad: preferir day_id; si no, usar (week_number, day_name)
+      const payload = {
+        methodology_plan_id: config.methodologyPlanId || state.plan.methodologyPlanId
+      };
+      if (config.dayId != null) {
+        payload.day_id = config.dayId;
+      } else {
+        payload.week_number = config.weekNumber || state.plan.currentWeek || 1;
+        if (config.dayName) payload.day_name = config.dayName;
+      }
+
+      const sessionData = await startSessionAPI(payload);
 
       dispatch({
         type: WORKOUT_ACTIONS.START_SESSION,
