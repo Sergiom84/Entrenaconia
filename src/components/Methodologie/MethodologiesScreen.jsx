@@ -428,8 +428,7 @@ export default function MethodologiesScreen() {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`
         },
         body: JSON.stringify({
-          methodology_plan_id: plan.methodologyPlanId,
-          routine_plan_id: plan.currentPlan?.id || plan.methodologyPlanId
+          methodology_plan_id: plan.methodologyPlanId
         })
       });
 
@@ -497,8 +496,9 @@ export default function MethodologiesScreen() {
 
   const handleCloseWarmup = () => {
     try { track('BUTTON_CLICK', { id: 'warmup_close' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
-    console.log('❌ Calentamiento cancelado');
+    console.log('❌ Calentamiento cerrado → abrir RoutineSessionModal');
     ui.hideModal('warmup');
+    ui.showModal('routineSession');
   };
 
   const handleEndSession = () => {

@@ -872,27 +872,6 @@ export default function TodayTrainingTab({
             {/* 🏃 SESIÓN ACTIVA */}
             {/* =============================================== */}
 
-            {sessionMatchesToday && (
-              <>
-                <div className="text-center py-6">
-                  <Dumbbell className="w-12 h-12 text-yellow-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-white mb-2">
-                    Continúa tu entrenamiento
-                  </h3>
-                  <p className="text-gray-400 mb-4">
-                    Te quedan {sessionStats.pending} ejercicios por completar
-                  </p>
-                  <Button
-                    onClick={handleResumeSession}
-                    className="bg-yellow-500 hover:bg-yellow-600 text-black font-medium"
-                    disabled={ui.isLoading || isLoadingSession}
-                  >
-                    Reanudar Entrenamiento
-                  </Button>
-                </div>
-
-              </>
-            )}
 
             {/* =============================================== */}
             {/* 📋 SESIÓN DEL DÍA (NO INICIADA) */}

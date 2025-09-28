@@ -112,8 +112,26 @@ export default function WarmupModal({
     ]
   };
 
+  // Resolver ejercicios antes de cualquier efecto que los use
   const exercises = warmupExercises[normalizedLevel] || warmupExercises.básico;
   const currentExercise = exercises[currentExerciseIndex] || {};
+
+
+  // DEV logging para auditoría (solo en desarrollo)
+  useEffect(() => {
+    const mode = (import.meta && import.meta.env && import.meta.env.MODE) || process.env.NODE_ENV;
+    if (mode !== 'production') {
+      // Pequeño debounce para evitar ruido excesivo al montar
+      const id = setTimeout(() => {
+        console.log('🧪 [WarmupModal] Debug', {
+          levelNormalized: normalizedLevel,
+          exercisesCount: Array.isArray(exercises) ? exercises.length : 0,
+          firstExercises: (exercises || []).slice(0, 3).map(e => e?.name)
+        });
+      }, 0);
+      return () => clearTimeout(id);
+    }
+  }, [normalizedLevel, exercises?.length]);
 
   // Timer effect
   useEffect(() => {

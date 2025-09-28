@@ -387,7 +387,7 @@ router.post('/specialist/calistenia/generate', authenticateToken, async (req, re
              progresion_hacia, notas
       FROM app."Ejercicios_Calistenia"
       WHERE ${levelCondition}
-      ORDER BY categoria, nivel, nombre
+      ORDER BY RANDOM()
     `);
 
     const availableExercises = exercisesResult.rows;
@@ -849,7 +849,7 @@ router.post('/manual/calistenia', authenticateToken, async (req, res) => {
              progresion_hacia, notas
       FROM app."Ejercicios_Calistenia"
       WHERE nivel = $1
-      ORDER BY categoria, nombre
+      ORDER BY RANDOM()
     `, [levelCapitalized]);
 
     const availableExercises = exercisesQuery.rows;

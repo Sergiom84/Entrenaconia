@@ -78,12 +78,12 @@ export async function getSessionProgress(sessionId) {
   return data; // { session, exercises, summary }
 }
 
-export async function confirmRoutinePlan({ methodology_plan_id, routine_plan_id }) {
+export async function confirmRoutinePlan({ methodology_plan_id /*, routine_plan_id (legacy ignored) */ }) {
   const token = getToken();
   const resp = await fetch('/api/routines/confirm-plan', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-    body: JSON.stringify({ methodology_plan_id, routine_plan_id })
+    body: JSON.stringify({ methodology_plan_id })
   });
   const data = await resp.json().catch(() => ({}));
   if (!resp.ok || !data.success) throw new Error(data.error || 'No se pudo confirmar la rutina');
@@ -162,7 +162,7 @@ export async function getPlanStatus({ methodologyPlanId }) {
   return data; // { isConfirmed, status, confirmedAt }
 }
 
-export async function cancelRoutine({ methodology_plan_id, routine_plan_id }) {
+export async function cancelRoutine({ methodology_plan_id /*, routine_plan_id (legacy ignored) */ }) {
   const token = getToken();
   const resp = await fetch('/api/routines/cancel-routine', {
     method: 'POST',
@@ -170,7 +170,7 @@ export async function cancelRoutine({ methodology_plan_id, routine_plan_id }) {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`
     },
-    body: JSON.stringify({ methodology_plan_id, routine_plan_id })
+    body: JSON.stringify({ methodology_plan_id })
   });
 
   const data = await resp.json().catch(() => ({}));

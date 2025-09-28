@@ -45,6 +45,45 @@ function normalizePlanDays(planDataJson) {
   }
 }
 
+// Derivar nivel desde el plan JSON
+function deriveLevelFromPlan(planDataJson) {
+  try {
+    const candidates = [
+      planDataJson?.selected_level,
+      planDataJson?.nivel,
+      planDataJson?.level,
+      planDataJson?.perfil?.nivel,
+      planDataJson?.evaluation?.level,
+    ];
+    const raw = candidates.find(Boolean) || 'basico';
+    const s = stripDiacritics(String(raw).toLowerCase().trim());
+    if (s.includes('avan')) return 'avanzado';
+    if (s.includes('inter')) return 'intermedio';
+    return 'basico';
+  } catch {
+    return 'basico';
+  }
+}
+
+// Obtener ejercicios aleatorios de Calistenia por nivel (fallback)
+async function getRandomCalistheniaExercises(client, level = 'basico', limit = 6) {
+  const lvl = String(level).toLowerCase();
+  let allowed = ['Básico'];
+  if (lvl === 'intermedio') allowed = ['Básico', 'Intermedio'];
+  if (lvl === 'avanzado') allowed = ['Básico', 'Intermedio', 'Avanzado'];
+
+  const q = await client.query(
+    `SELECT nombre, series_reps_objetivo, criterio_de_progreso, notas
+     FROM app."Ejercicios_Calistenia"
+     WHERE nivel = ANY($1::text[])
+     ORDER BY RANDOM()
+     LIMIT $2`,
+    [allowed, limit]
+  );
+  return q.rows || [];
+}
+
+
 // Utilidad: asegurar sesiones creadas a partir del plan JSON (metodología)
 async function ensureMethodologySessions(client, userId, methodologyPlanId, planDataJson) {
   // ¿Existen sesiones ya?
@@ -80,11 +119,8 @@ async function ensureWorkoutSchedule(client, userId, methodologyPlanId, planData
   const dayNames = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
   const dayAbbrevs = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
 
-  // Empezar desde la fecha indicada o hoy, avanzando a día laboral si cae en finde
+  // Empezar desde la fecha indicada o hoy (incluir fines de semana)
   const currentDate = new Date(startDate);
-  while (currentDate.getDay() === 0 || currentDate.getDay() === 6) {
-    currentDate.setDate(currentDate.getDate() + 1);
-  }
 
   let globalSessionOrder = 1;
 
@@ -95,11 +131,7 @@ async function ensureWorkoutSchedule(client, userId, methodologyPlanId, planData
     for (let weekSessionOrder = 0; weekSessionOrder < semana.sesiones.length; weekSessionOrder++) {
       const sesion = semana.sesiones[weekSessionOrder];
 
-      // Asegurar no programar en fin de semana
-      while (currentDate.getDay() === 0 || currentDate.getDay() === 6) {
-        currentDate.setDate(currentDate.getDate() + 1);
-      }
-
+      // Programar en el día actual (incluye fines de semana)
       const dow = currentDate.getDay();
       const dayName = dayNames[dow];
       const dayAbbrev = dayAbbrevs[dow];
@@ -134,11 +166,8 @@ async function ensureWorkoutSchedule(client, userId, methodologyPlanId, planData
         ]
       );
 
-      // Avanzar a siguiente día laborable
+      // Avanzar al siguiente día (incluye fines de semana)
       currentDate.setDate(currentDate.getDate() + 1);
-      while (currentDate.getDay() === 0 || currentDate.getDay() === 6) {
-        currentDate.setDate(currentDate.getDate() + 1);
-      }
 
       globalSessionOrder++;
     }
@@ -440,9 +469,31 @@ router.post('/sessions/start', authenticateToken, async (req, res) => {
       console.log(`📋 Usando template de ${sesionDef.dia} para día faltante ${normalizedDay}`);
     }
 
-    const ejercicios = scheduleExercises.length > 0
+    let ejercicios = scheduleExercises.length > 0
       ? scheduleExercises
       : (Array.isArray(sesionDef?.ejercicios) ? sesionDef.ejercicios : []);
+
+    // 🛟 Fallback: si no hay ejercicios definidos para este día, tomar aleatorios por nivel desde BD
+    if (!Array.isArray(ejercicios) || ejercicios.length === 0) {
+      try {
+        const levelNorm = deriveLevelFromPlan(planData);
+        const rnd = await getRandomCalistheniaExercises(client, levelNorm, 6);
+        if (rnd.length > 0) {
+          ejercicios = rnd.map((r) => ({
+            nombre: r.nombre,
+            series: 3,
+            repeticiones: 10,
+            descanso_seg: 60,
+            notas: r.notas || null,
+          }));
+          console.log(`🛟 [start] Fallback ejercicios aleatorios aplicado (nivel=${levelNorm}) -> ${ejercicios.length} ejercicios`);
+        } else {
+          console.warn('⚠️ [start] Fallback aleatorio no encontró ejercicios en BD');
+        }
+      } catch (fe) {
+        console.warn('⚠️ [start] Error en fallback aleatorio de ejercicios:', fe?.message || fe);
+      }
+    }
 
     for (let i = 0; i < ejercicios.length; i++) {
       const ej = ejercicios[i] || {};
@@ -1121,7 +1172,7 @@ router.post('/confirm-plan', authenticateToken, async (req, res) => {
     // Si la función legacy falla, haremos fallback con UPDATE sin necesidad de transacciones explícitas.
 
     const userId = req.user?.userId || req.user?.id;
-    const { methodology_plan_id, routine_plan_id } = req.body;
+    const { methodology_plan_id } = req.body;
 
     if (!methodology_plan_id) {
       await client.query('ROLLBACK');
@@ -1154,7 +1205,7 @@ router.post('/confirm-plan', authenticateToken, async (req, res) => {
     try {
       const confirmResult = await client.query(
         'SELECT app.confirm_routine_plan($1, $2, $3) as confirmed',
-        [userId, methodology_plan_id, routine_plan_id || null]
+        [userId, methodology_plan_id, null]
       );
       confirmed = Boolean(confirmResult.rows?.[0]?.confirmed);
     } catch (e) {
@@ -1198,14 +1249,13 @@ router.post('/confirm-plan', authenticateToken, async (req, res) => {
 
     // Auto-commit mode: no COMMIT necesario
 
-    console.log(`✅ Rutina confirmada: methodology_plan(${methodology_plan_id}) routine_plan(${routine_plan_id || 'N/A'})`);
+    console.log(`✅ Rutina confirmada: methodology_plan(${methodology_plan_id})`);
 
     res.json({
       success: true,
       message: 'Rutina confirmada exitosamente',
       confirmed_at: new Date().toISOString(),
       methodology_plan_id: methodology_plan_id,
-      routine_plan_id: routine_plan_id,
       status: 'active'
     });
 
@@ -1956,7 +2006,7 @@ router.post('/cancel-routine', authenticateToken, async (req, res) => {
     await client.query('BEGIN');
 
     const userId = req.user?.userId || req.user?.id;
-    const { methodology_plan_id, routine_plan_id } = req.body;
+    const { methodology_plan_id } = req.body;
 
     if (!methodology_plan_id) {
       await client.query('ROLLBACK');
@@ -1966,7 +2016,7 @@ router.post('/cancel-routine', authenticateToken, async (req, res) => {
       });
     }
 
-    console.log('🚫 Cancelando rutina:', { methodology_plan_id, routine_plan_id, userId });
+    console.log('🚫 Cancelando rutina:', { methodology_plan_id, userId });
 
     // Verificar que el plan pertenece al usuario
     const planCheck = await client.query(
