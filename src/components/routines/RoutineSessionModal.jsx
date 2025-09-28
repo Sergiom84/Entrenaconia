@@ -42,12 +42,17 @@ export default function RoutineSessionModal({
 }) {
   // Respetar bandera de visibilidad y evitar estados inconsistentes
   if (!isOpen) return null;
-  if (!session || !Array.isArray(session?.exercises) || session.exercises.length === 0) {
-    // No hay sesión/ejericios válidos -> no abrir modal
+  // Datos de la sesión (soporta "ejercicios" y fallback a "exercises")
+  const exercises = useMemo(() => {
+    if (Array.isArray(session?.ejercicios)) return session.ejercicios;
+    if (Array.isArray(session?.exercises)) return session.exercises;
+    return [];
+  }, [session?.ejercicios, session?.exercises]);
+
+  if (!session || exercises.length === 0) {
+    // No hay sesión/ejercicios válidos -> no abrir modal
     return null;
   }
-  // Datos de la sesión
-  const exercises = useMemo(() => Array.isArray(session?.ejercicios) ? session.ejercicios : [], [session?.ejercicios]);
 
   // Hooks de estado
   const progressState = useExerciseProgress(session, exercises);

@@ -546,13 +546,35 @@ export default function TodayTrainingTab({
       console.warn('mark-started fallo (no bloqueante):', e?.message || e);
     }
 
-    updateLocalState({
+    // Preparar datos mínimos de sesión si faltaran por cualquier carrera de estado
+    updateLocalState(prev => ({
+      ...prev,
+      pendingSessionData: {
+        session: prev.pendingSessionData?.session || (todaySessionData ? {
+          ...todaySessionData,
+          sessionId: pendingId,
+          currentExerciseIndex: 0,
+          exerciseProgress: sessionExerciseProgress
+        } : null),
+        sessionId: prev.pendingSessionData?.sessionId || pendingId
+      },
       showWarmupModal: false,
       showSessionModal: true
-    });
+    }));
 
+    try { showModal?.('routineSession'); hideModal?.('warmup'); } catch (_) {}
+
+    // Reafirmar apertura tras el ciclo de render (con logs)
     setTimeout(() => {
       updateLocalState(prev => ({ ...prev, showSessionModal: true }));
+      try { showModal?.('routineSession'); hideModal?.('warmup'); } catch (_) {}
+      console.log('🔍 DEBUG después de warmup_complete:', {
+        'localState.showSessionModal': true,
+        'ui.showRoutineSession': ui.showRoutineSession,
+        'wantRoutineModal': (true || ui.showRoutineSession || ui.showSession),
+        'effectiveSessionId (post)': pendingId,
+        'pendingSessionData (post)': { hasSession: !!(todaySessionData), pendingId }
+      });
     }, 0);
   };
 
@@ -562,23 +584,60 @@ export default function TodayTrainingTab({
     const pendingId = localState.pendingSessionData?.sessionId || session.sessionId;
     if (!pendingId) return;
 
-    updateLocalState({
+    // Preparar datos mínimos de sesión si faltaran por cualquier carrera de estado
+    updateLocalState(prev => ({
+      ...prev,
+      pendingSessionData: {
+        session: prev.pendingSessionData?.session || (todaySessionData ? {
+          ...todaySessionData,
+          sessionId: pendingId,
+          currentExerciseIndex: 0,
+          exerciseProgress: sessionExerciseProgress
+        } : null),
+        sessionId: prev.pendingSessionData?.sessionId || pendingId
+      },
       showWarmupModal: false,
       showSessionModal: true
-    });
+    }));
+
+    try { showModal?.('routineSession'); hideModal?.('warmup'); } catch (_) {}
 
     setTimeout(() => {
       updateLocalState(prev => ({ ...prev, showSessionModal: true }));
+      try { showModal?.('routineSession'); hideModal?.('warmup'); } catch (_) {}
+      console.log('🔍 DEBUG después de warmup_skip:', {
+        'localState.showSessionModal': true,
+        'ui.showRoutineSession': ui.showRoutineSession,
+        'effectiveSessionId (post)': pendingId
+      });
     }, 0);
   };
 
   const handleCloseWarmup = () => {
     track('BUTTON_CLICK', { id: 'warmup_close' }, { component: 'TodayTrainingTab' });
 
-    updateLocalState({
+    const pendingId = localState.pendingSessionData?.sessionId || session.sessionId;
+    if (!pendingId) {
+      // Cerrar sin sesión válida
+      return updateLocalState({ showWarmupModal: false });
+    }
+
+    // Alinear comportamiento: cerrar warmup y abrir RoutineSessionModal
+    updateLocalState(prev => ({
+      ...prev,
+      pendingSessionData: {
+        session: prev.pendingSessionData?.session || (todaySessionData ? {
+          ...todaySessionData,
+          sessionId: pendingId,
+          currentExerciseIndex: 0,
+          exerciseProgress: sessionExerciseProgress
+        } : null),
+        sessionId: prev.pendingSessionData?.sessionId || pendingId
+      },
       showWarmupModal: false,
-      pendingSessionData: null
-    });
+      showSessionModal: true
+    }));
+    try { showModal?.('routineSession'); hideModal?.('warmup'); } catch (_) {}
   };
 
   // Handler para cancelar rutina
@@ -783,6 +842,7 @@ export default function TodayTrainingTab({
     todayStatusIsComplete: todayStatus?.summary?.isComplete
   });
 
+
   const wantRoutineModal = localState.showSessionModal || ui.showRoutineSession || ui.showSession;
   const effectiveSession = localState.pendingSessionData?.session || (
     wantRoutineModal && (session.sessionId || localState.pendingSessionData?.sessionId) && todaySessionData
@@ -800,6 +860,19 @@ export default function TodayTrainingTab({
   // 🎨 RENDER - SIN RETURNS TEMPRANOS PROBLEMÁTICOS
   // ===============================================
 
+
+  // 🔍 DEBUG: Condiciones para mostrar RoutineSessionModal (post-cálculo)
+  console.log('🔍 DEBUG RoutineSessionModal gate:', {
+    local_showSessionModal: localState.showSessionModal,
+    ui_showRoutineSession: ui.showRoutineSession,
+    wantRoutineModal,
+    hasEffectiveSession: !!effectiveSession,
+    effectiveSessionId,
+    hasPendingSessionData: !!localState.pendingSessionData,
+    pendingSessionId: localState.pendingSessionData?.sessionId,
+    hasTodaySessionData: !!todaySessionData
+  });
+
   return (
     <SafeComponent fallback={<div>Error cargando entrenamiento de hoy</div>}>
       <div className="space-y-6">
@@ -810,6 +883,9 @@ export default function TodayTrainingTab({
         {ui.isLoading && (
           <div className="flex items-center justify-center py-12">
             <RefreshCw className="w-6 h-6 text-yellow-400 animate-spin mr-2" />
+
+
+
             <span className="text-gray-400">Cargando sesión de hoy...</span>
           </div>
         )}
