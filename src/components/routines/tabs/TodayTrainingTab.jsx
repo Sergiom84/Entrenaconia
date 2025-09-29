@@ -39,6 +39,8 @@ import { SummaryHeader } from '../summary/SummaryHeader.jsx';
 import { UserProfileDisplay } from '../summary/UserProfileDisplay.jsx';
 import { ProgressBar } from '../summary/ProgressBar.jsx';
 
+import { useNavigate } from 'react-router-dom';
+
 
 
 // ===============================================
@@ -96,6 +98,8 @@ export default function TodayTrainingTab({
   onStartTraining
 }) {
   const { track } = useTrace();
+  const navigate = useNavigate();
+
 
   // ===============================================
   // 🚀 WORKOUT CONTEXT
@@ -790,9 +794,34 @@ export default function TodayTrainingTab({
 
   // Estados para mostrar el entrenamiento de hoy
   // ✅ CORREGIDO: Verificar tanto contexto como backend para sesión completada
-  const hasCompletedSession = session.status === 'completed' ||
-                              todayStatus?.session?.session_status === 'completed' ||
-                              todayStatus?.summary?.isComplete === true;
+  // Gating robusto: estados derivados para decidir si mostrar Comenzar/Reanudar o solo Resumen
+  const totalCountForGate = (todayStatus?.summary?.total ?? (todaySessionData?.ejercicios?.length || 0));
+  const completedCountForGate = (todayStatus?.summary?.completed ?? Object.values(exerciseProgress || {}).filter(p => String(p?.status || '').toLowerCase() === 'completed').length);
+  const skippedCountForGate = (todayStatus?.summary?.skipped ?? Object.values(exerciseProgress || {}).filter(p => String(p?.status || '').toLowerCase() === 'skipped').length);
+  const cancelledCountForGate = (todayStatus?.summary?.cancelled ?? Object.values(exerciseProgress || {}).filter(p => String(p?.status || '').toLowerCase() === 'cancelled').length);
+  const pendingCountForGate = (todayStatus?.summary?.pending ?? (Array.isArray(todayStatus?.exercises)
+    ? todayStatus.exercises.filter(ex => String(ex?.status || 'pending').toLowerCase() === 'pending').length
+    : (() => {
+        if (todaySessionData?.ejercicios?.length) {
+          let c = 0;
+          for (let i = 0; i < todaySessionData.ejercicios.length; i++) {
+            const s = String(exerciseProgress?.[i]?.status || 'pending').toLowerCase();
+            if (s === 'pending') c++;
+          }
+          return c;
+        }
+        return 0;
+      })()
+    ));
+  const inProgressCountForGate = (todayStatus?.summary?.in_progress ?? (Array.isArray(todayStatus?.exercises)
+    ? todayStatus.exercises.filter(ex => String(ex?.status || '').toLowerCase() === 'in_progress').length
+    : 0));
+
+  const isFinishedToday = totalCountForGate > 0 && pendingCountForGate === 0 && inProgressCountForGate === 0;
+  const hasCompletedSession = isFinishedToday && (completedCountForGate === totalCountForGate);
+  const allSkippedToday = totalCountForGate > 0 && (todayStatus?.summary?.skipped ?? 0) === totalCountForGate;
+  const allCancelledToday = totalCountForGate > 0 && (todayStatus?.summary?.cancelled ?? 0) === totalCountForGate;
+  const canRetryToday = Boolean(todayStatus?.summary?.canRetry) || allSkippedToday || allCancelledToday;
   const isRestDay = hasActivePlan && !todaySessionData;
   const noActivePlan = !hasActivePlan;
   const sessionMatchesToday = hasActiveSession && !!session?.dayName && !!todaySessionData?.dia && (
@@ -840,11 +869,11 @@ export default function TodayTrainingTab({
     hasCompletedSession,
     todayStatus: !!todayStatus,
 
-    // Sección 1: Sesión NO completada
-    showSection1: hasToday && hasActivePlan && !hasCompletedSession,
+    // Sección 1: Sesión NO finalizada (pendientes/en progreso) o caso especial (todos skipped/cancelled)
+    showSection1: hasToday && hasActivePlan && (!isFinishedToday || canRetryToday),
 
-    // Sección 2: Sesión SÍ completada
-    showSection2: hasActivePlan && hasToday && hasCompletedSession && todayStatus,
+    // Sección 2: Sesión FINALIZADA (sin pendientes)
+    showSection2: hasActivePlan && hasToday && isFinishedToday && todayStatus,
 
     // Estados para debug
     sessionStatus: session.status,
@@ -963,7 +992,7 @@ export default function TodayTrainingTab({
             {/* 📋 SESIÓN DEL DÍA (NO INICIADA) */}
             {/* =============================================== */}
 
-            {hasToday && hasActivePlan && !hasCompletedSession && (
+            {hasToday && hasActivePlan && (!isFinishedToday || canRetryToday) && (
               <section>
 
                 <div className="text-center py-6">
@@ -976,7 +1005,7 @@ export default function TodayTrainingTab({
                   </p>
                   {/* Decidir si debemos reanudar (hay sesión activa o ya hay ejercicios realizados) */}
                   <Button
-                    onClick={() => (shouldResume ? handleResumeSession() : handleStartSession(0))}
+                    onClick={() => (canRetryToday ? handleStartSession(0) : (shouldResume ? handleResumeSession() : handleStartSession(0)))}
                     className="bg-yellow-500 hover:bg-yellow-600 text-black font-medium"
                     disabled={ui.isLoading || isLoadingSession || isStarting}
                   >
@@ -988,7 +1017,7 @@ export default function TodayTrainingTab({
                     ) : (
                       <>
                         <Play className="h-5 w-5 mr-2" />
-                        {shouldResume ? 'Reanudar Entrenamiento' : 'Comenzar Entrenamiento'}
+                        {canRetryToday ? 'Comenzar Entrenamiento' : (shouldResume ? 'Reanudar Entrenamiento' : 'Comenzar Entrenamiento')}
                       </>
                     )}
                   </Button>
@@ -1040,8 +1069,8 @@ export default function TodayTrainingTab({
 
 
 
-                {/* Resumen de sesión completada */}
-                {hasActivePlan && hasToday && hasCompletedSession && todayStatus && (
+                {/* Resumen de sesión finalizada */}
+                {hasActivePlan && hasToday && isFinishedToday && todayStatus && (
                   <Card className="p-6">
                     <div className="flex items-center justify-between mb-6">
                       <div>
@@ -1166,7 +1195,7 @@ export default function TodayTrainingTab({
           onSkipExercise={(exerciseIndex) => handleExerciseUpdate(exerciseIndex, { status: 'skipped' })}
           onCancelExercise={(exerciseIndex) => handleExerciseUpdate(exerciseIndex, { status: 'cancelled' })}
           onEndSession={handleCompleteSession}
-          navigateToRoutines={() => goToTraining()}
+          navigateToRoutines={() => navigate('/routines')}
           onProgressUpdate={onProgressUpdate}
         />
       )}

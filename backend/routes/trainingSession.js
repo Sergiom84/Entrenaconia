@@ -1054,21 +1054,44 @@ router.get('/today-status', authenticateToken, async (req, res) => {
       );
 
       const exercises = progressQuery.rows;
-      const completedExercises = exercises.filter(ex => ex.status === 'completed').length;
+      const statusCounts = exercises.reduce((acc, ex) => {
+        const s = String(ex.status || 'pending').toLowerCase();
+        acc[s] = (acc[s] || 0) + 1;
+        return acc;
+      }, {});
+      const total = exercises.length;
+      const completed = statusCounts['completed'] || 0;
+      const skipped = statusCounts['skipped'] || 0;
+      const cancelled = statusCounts['cancelled'] || 0;
+      const in_progress = statusCounts['in_progress'] || 0;
+      const pending = statusCounts['pending'] || 0;
+
+      const isFinished = total > 0 && pending === 0 && in_progress === 0;
+      const isComplete = total > 0 && completed === total;
+      const allSkipped = total > 0 && skipped === total;
+      const allCancelled = total > 0 && cancelled === total;
+      const hasAnyProgress = (in_progress > 0) || ((completed + skipped + cancelled) > 0);
+      const canResume = !isFinished && hasAnyProgress;
+      const canRetry = (allSkipped || allCancelled);
 
       res.json({
         success: true,
         session_type: 'home',
         session: {
           ...session,
-          canResume: true
+          canResume
         },
-        exercises: exercises,
+        exercises,
         summary: {
-          total: exercises.length,
-          completed: completedExercises,
-          pending: exercises.length - completedExercises,
-          isComplete: session.status === 'completed'
+          total,
+          completed,
+          skipped,
+          cancelled,
+          in_progress,
+          pending,
+          isFinished,
+          isComplete,
+          canRetry
         }
       });
     }

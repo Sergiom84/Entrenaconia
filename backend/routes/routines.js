@@ -1043,36 +1043,44 @@ router.get('/sessions/today-status', authenticateToken, async (req, res) => {
       [session.id]
     );
 
-    // Calcular resumen
+    // Calcular resumen detallado por estado
     const totalExercises = exercisesQuery.rowCount;
-    const completedExercises = exercisesQuery.rows.filter(ex => ex.status === 'completed').length;
-    const skippedExercises = exercisesQuery.rows.filter(ex => ex.status === 'skipped').length;
+    const statusCounts = exercisesQuery.rows.reduce((acc, ex) => {
+      const s = String(ex.status || 'pending').toLowerCase();
+      acc[s] = (acc[s] || 0) + 1;
+      return acc;
+    }, {});
 
-    // 🎯 LÓGICA INTELIGENTE: Detectar progreso REAL vs sesión solo creada
-    // - Sin progreso real: Mostrar "Comenzar Entrenamiento"
-    // - Con progreso real: Mostrar "Reanudar Entrenamiento"
-    const hasRealProgress = exercisesQuery.rows.some(ex => ex.status !== 'pending');
+    const completedExercises = statusCounts['completed'] || 0;
+    const skippedExercises = statusCounts['skipped'] || 0;
+    const cancelledExercises = statusCounts['cancelled'] || 0;
+    const inProgressExercises = statusCounts['in_progress'] || 0;
+    const pendingExercises = statusCounts['pending'] || 0;
 
-    let canResume;
-    if (session.session_status === 'completed') {
-      // Caso 1: Sesión completada → Mostrar resumen, no botones de inicio
-      canResume = false;
-    } else if (hasRealProgress) {
-      // Caso 2: Usuario realmente empezó ejercicios → Reanudar
-      canResume = true;
-    } else {
-      // Caso 3: Sesión creada pero sin progreso real → Comenzar
-      canResume = false;
-    }
+    const isFinished = totalExercises > 0 && pendingExercises === 0 && inProgressExercises === 0;
+    const isCompleteSuccess = totalExercises > 0 && completedExercises === totalExercises;
+    const allSkipped = totalExercises > 0 && skippedExercises === totalExercises;
+    const allCancelled = totalExercises > 0 && cancelledExercises === totalExercises;
+
+    // Lógica de reanudación:
+    // - Reanudar si NO está finalizada y ya hubo algún progreso real (in_progress o completados/skipped/cancelled)
+    // - Comenzar si todo sigue pendiente
+    const hasAnyProgress = (inProgressExercises > 0) || ((completedExercises + skippedExercises + cancelledExercises) > 0);
+    const canResume = !isFinished && hasAnyProgress;
+    const canRetry = (allSkipped || allCancelled);
 
     console.log(`🎯 today-status NUEVA LÓGICA INTELIGENTE:`, {
       session_status: session.session_status,
-      hasRealProgress,
       canResume,
       decision: canResume ? 'REANUDAR ⚠️' : 'COMENZAR ✅',
       totalExercises,
       completedExercises,
-      skippedExercises
+      skippedExercises,
+      cancelledExercises,
+      inProgressExercises,
+      pendingExercises,
+      isFinished,
+      isCompleteSuccess
     });
 
     // 🔍 DEBUG: Mostrar datos completos que se envían al frontend
@@ -1089,7 +1097,12 @@ router.get('/sessions/today-status', authenticateToken, async (req, res) => {
         total: totalExercises,
         completed: completedExercises,
         skipped: skippedExercises,
-        isComplete: session.session_status === 'completed'
+        cancelled: cancelledExercises,
+        in_progress: inProgressExercises,
+        pending: pendingExercises,
+        isFinished: isFinished,
+        isComplete: isCompleteSuccess,
+        canRetry
       },
       exerciseCount: exercisesQuery.rows.length,
       exerciseStatuses: exercisesQuery.rows.map(ex => ({ order: ex.exercise_order, status: ex.status, name: ex.exercise_name }))
@@ -1107,8 +1120,12 @@ router.get('/sessions/today-status', authenticateToken, async (req, res) => {
         total: totalExercises,
         completed: completedExercises,
         skipped: skippedExercises,
-        pending: totalExercises - completedExercises - skippedExercises,
-        isComplete: session.session_status === 'completed'
+        cancelled: cancelledExercises,
+        in_progress: inProgressExercises,
+        pending: pendingExercises,
+        isFinished: isFinished,
+        isComplete: isCompleteSuccess,
+        canRetry
       }
     });
 
