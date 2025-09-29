@@ -40,8 +40,6 @@ export default function RoutineSessionModal({
   isOpen = true,
   onProgressUpdate,
 }) {
-  // Respetar bandera de visibilidad y evitar estados inconsistentes
-  if (!isOpen) return null;
   // Datos de la sesión (soporta "ejercicios" y fallback a "exercises")
   const exercises = useMemo(() => {
     if (Array.isArray(session?.ejercicios)) return session.ejercicios;
@@ -49,12 +47,7 @@ export default function RoutineSessionModal({
     return [];
   }, [session?.ejercicios, session?.exercises]);
 
-  if (!session || exercises.length === 0) {
-    // No hay sesión/ejercicios válidos -> no abrir modal
-    return null;
-  }
-
-  // Hooks de estado
+  // Hooks de estado (siempre llamar hooks, validar después)
   const progressState = useExerciseProgress(session, exercises);
   const timerState = useExerciseTimer(progressState.currentExercise, progressState.seriesTotal, 45, allowManualTimer);
 
@@ -75,6 +68,7 @@ export default function RoutineSessionModal({
     closingRef.current = true;
     onClose?.();
   }, [onClose]);
+
 
   // Gestionar timeout del toast de ejercicio completado con cleanup
   useEffect(() => {
@@ -267,7 +261,7 @@ export default function RoutineSessionModal({
     }
   }, [sessionId, progressState.currentIndex, progressState.currentExercise, onProgressUpdate]);
 
-  if (!session) return null;
+  if (!isOpen || !session || exercises.length === 0) return null;
 
   return (
     <>

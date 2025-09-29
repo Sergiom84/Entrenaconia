@@ -1,5 +1,5 @@
 import React from 'react';
-
+import { useNavigate } from 'react-router-dom';
 import { useTrace } from '@/contexts/TraceContext.jsx';
 
 /**
@@ -19,6 +19,8 @@ export const SessionSummaryModal = ({
   navigateToRoutines
 }) => {
   const { track } = useTrace();
+  const navigate = useNavigate();
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
 
   // Ref para evitar loop infinito en tracking
   const prevShowRef = React.useRef(show);
@@ -40,27 +42,31 @@ export const SessionSummaryModal = ({
   const cancelled = Object.values(exerciseStates).filter(state => state === 'cancelled').length;
 
   const handleViewProgress = async () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     track('BUTTON_CLICK', { id: 'view_progress' }, { component: 'SessionSummaryModal' });
     console.log('🎯 Terminando sesión y navegando a rutinas');
 
-    // Llamar a onEndSession primero para guardar los datos
-    if (onEndSession) {
-      await onEndSession();
-    }
+    try {
+      // Llamar a onEndSession primero para guardar los datos
+      if (onEndSession) {
+        await onEndSession();
+      }
 
-    // Si se proporcionó una función de navegación, usarla
-    // De lo contrario, intentar navegar manualmente
-    if (navigateToRoutines) {
-      navigateToRoutines();
-    } else if (typeof window !== 'undefined' && window.location) {
-      // Fallback: navegación directa si no hay función de navegación
-      setTimeout(() => {
-        window.location.href = '/routines';
-      }, 100);
-    }
+      // Si se proporcionó una función de navegación, usarla
+      if (typeof navigateToRoutines === 'function') {
+        navigateToRoutines();
+      } else {
+        // Fallback con React Router
+        navigate('/routines');
+      }
 
-    // Cerrar modal al final
-    onClose?.();
+      // Cerrar modal al final
+      onClose?.();
+    } finally {
+      // Evitar quedarse bloqueado si algo falla
+      setTimeout(() => setIsSubmitting(false), 300);
+    }
   };
 
   return (
@@ -182,10 +188,11 @@ export const SessionSummaryModal = ({
         <div className="flex flex-col gap-3">
           <button
             onClick={handleViewProgress}
-            className="w-full px-4 py-3 bg-green-600 hover:bg-green-500 text-white rounded-lg font-semibold transition-colors flex items-center justify-center gap-2"
+            disabled={isSubmitting}
+            className={`w-full px-4 py-3 rounded-lg font-semibold transition-colors flex items-center justify-center gap-2 ${isSubmitting ? 'bg-green-800 text-white cursor-not-allowed opacity-70' : 'bg-green-600 hover:bg-green-500 text-white'}`}
           >
             <span>📊</span>
-            Ver progreso en Rutinas
+            {isSubmitting ? 'Guardando y navegando…' : 'Ver progreso en Rutinas'}
           </button>
 
           <button

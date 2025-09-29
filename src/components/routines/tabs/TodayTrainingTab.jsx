@@ -562,16 +562,20 @@ export default function TodayTrainingTab({
       showSessionModal: true
     }));
 
-    try { showModal?.('routineSession'); hideModal?.('warmup'); } catch (_) {}
+    try { showModal?.('routineSession'); hideModal?.('warmup'); } catch (error) {
+      console.warn('Modal method not available:', error);
+    }
 
     // Reafirmar apertura tras el ciclo de render (con logs)
     setTimeout(() => {
       updateLocalState(prev => ({ ...prev, showSessionModal: true }));
-      try { showModal?.('routineSession'); hideModal?.('warmup'); } catch (_) {}
+      try { showModal?.('routineSession'); hideModal?.('warmup'); } catch (error) {
+      console.warn('Modal method not available:', error);
+    }
       console.log('🔍 DEBUG después de warmup_complete:', {
         'localState.showSessionModal': true,
         'ui.showRoutineSession': ui.showRoutineSession,
-        'wantRoutineModal': (true || ui.showRoutineSession || ui.showSession),
+        'wantRoutineModal': (localState.showSessionModal || ui.showRoutineSession || ui.showSession),
         'effectiveSessionId (post)': pendingId,
         'pendingSessionData (post)': { hasSession: !!(todaySessionData), pendingId }
       });
@@ -600,11 +604,15 @@ export default function TodayTrainingTab({
       showSessionModal: true
     }));
 
-    try { showModal?.('routineSession'); hideModal?.('warmup'); } catch (_) {}
+    try { showModal?.('routineSession'); hideModal?.('warmup'); } catch (error) {
+      console.warn('Modal method not available:', error);
+    }
 
     setTimeout(() => {
       updateLocalState(prev => ({ ...prev, showSessionModal: true }));
-      try { showModal?.('routineSession'); hideModal?.('warmup'); } catch (_) {}
+      try { showModal?.('routineSession'); hideModal?.('warmup'); } catch (error) {
+      console.warn('Modal method not available:', error);
+    }
       console.log('🔍 DEBUG después de warmup_skip:', {
         'localState.showSessionModal': true,
         'ui.showRoutineSession': ui.showRoutineSession,
@@ -637,7 +645,9 @@ export default function TodayTrainingTab({
       showWarmupModal: false,
       showSessionModal: true
     }));
-    try { showModal?.('routineSession'); hideModal?.('warmup'); } catch (_) {}
+    try { showModal?.('routineSession'); hideModal?.('warmup'); } catch (error) {
+      console.warn('Modal method not available:', error);
+    }
   };
 
   // Handler para cancelar rutina

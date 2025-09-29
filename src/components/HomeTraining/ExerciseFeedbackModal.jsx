@@ -43,7 +43,6 @@ const ExerciseFeedbackModal = ({ show, onClose, onSubmit, exerciseName, initialF
     }
   }, [show]);
 
-  if (!show) return null;
 
   const handleSubmit = useCallback(() => {
     if (!selected && !comment.trim()) {
@@ -61,6 +60,8 @@ const ExerciseFeedbackModal = ({ show, onClose, onSubmit, exerciseName, initialF
 
   // z-60 si es modal anidado, z-50 si es principal
   const zIndex = isNested ? 'z-[60]' : 'z-50';
+  if (!show) return null;
+
 
   return (
     <div className={`fixed inset-0 ${zIndex} flex items-center justify-center p-4`}>
@@ -87,8 +88,8 @@ const ExerciseFeedbackModal = ({ show, onClose, onSubmit, exerciseName, initialF
                 type="button"
                 onClick={() => setSelected(opt.key)}
                 className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer border transition-all duration-200 ${
-                  selected === opt.key 
-                    ? `border-yellow-400 bg-yellow-400/10 ${opt.color}` 
+                  selected === opt.key
+                    ? `border-yellow-400 bg-yellow-400/10 ${opt.color}`
                     : 'border-gray-700 hover:border-gray-600 hover:bg-gray-800/50 text-gray-400 hover:text-gray-200'
                 }`}
               >
@@ -117,14 +118,14 @@ const ExerciseFeedbackModal = ({ show, onClose, onSubmit, exerciseName, initialF
         )}
 
         <div className="flex gap-2 justify-end">
-          <button 
-            onClick={onClose} 
+          <button
+            onClick={onClose}
             className="px-4 py-2 text-sm text-gray-300 hover:text-white transition-colors"
           >
             Cancelar
           </button>
-          <button 
-            onClick={handleSubmit} 
+          <button
+            onClick={handleSubmit}
             className="px-4 py-2 text-sm bg-yellow-400 hover:bg-yellow-500 text-black font-semibold rounded-lg transition-colors shadow-lg hover:shadow-xl"
           >
             {initialFeedback ? 'Actualizar' : 'Guardar'}

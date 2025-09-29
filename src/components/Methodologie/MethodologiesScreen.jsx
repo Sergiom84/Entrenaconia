@@ -17,6 +17,7 @@ import WarmupModal from '../routines/WarmupModal.jsx';
 import MethodologyVersionSelectionModal from './shared/MethodologyVersionSelectionModal.jsx';
 import CalisteniaManualCard from './methodologies/CalisteniaManual/CalisteniaManualCard.jsx';
 import { useTrace } from '@/contexts/TraceContext';
+import { useNavigate } from 'react-router-dom';
 
 // ===============================================
 // 🎯 ESTADO LOCAL MÍNIMO PARA ESTA PANTALLA
@@ -33,6 +34,7 @@ const LOCAL_STATE_INITIAL = {
 export default function MethodologiesScreen() {
   const { user } = useAuth();
   const { userData } = useUserContext();
+  const navigate = useNavigate();
 
   // ===============================================
   // 🛡️ FUNCIONES DE VALIDACIÓN
@@ -780,6 +782,7 @@ export default function MethodologiesScreen() {
           onSkipExercise={(exerciseIndex) => updateExercise(exerciseIndex, { status: 'skipped' })}
           onCancelExercise={(exerciseIndex) => updateExercise(exerciseIndex, { status: 'cancelled' })}
           onEndSession={handleEndSession}
+          navigateToRoutines={() => navigate('/routines')}
         />
       )}
     </div>

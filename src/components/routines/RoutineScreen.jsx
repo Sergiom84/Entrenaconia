@@ -81,7 +81,7 @@ const RoutineScreen = () => {
         );
         prevConfirmationModalRef.current = localState.showConfirmationModal;
       }
-    } catch {}
+    } catch (e) { void e; }
   }, [localState.showConfirmationModal, track]);
 
   // ===============================================
@@ -183,7 +183,7 @@ const RoutineScreen = () => {
 
   const handleConfirmPlan = async () => {
     try {
-      try { track('BUTTON_CLICK', { id: 'confirm_plan' }, { component: 'RoutineScreen' }); } catch {}
+      try { track('BUTTON_CLICK', { id: 'confirm_plan' }, { component: 'RoutineScreen' }); } catch (e) { void e; }
       console.log('✅ Confirmando plan de entrenamiento...');
 
       if (!effectivePlan || !effectiveMethodologyPlanId) {
@@ -209,7 +209,7 @@ const RoutineScreen = () => {
 
   const handleStartTraining = async () => {
     try {
-      try { track('BUTTON_CLICK', { id: 'start_training' }, { component: 'RoutineScreen' }); } catch {}
+      try { track('BUTTON_CLICK', { id: 'start_training' }, { component: 'RoutineScreen' }); } catch (e) { void e; }
       console.log('🚀 Iniciando entrenamiento del día...');
 
       if (!effectivePlan || !effectiveMethodologyPlanId) {
@@ -224,7 +224,7 @@ const RoutineScreen = () => {
 
       if (result.success) {
         console.log('✅ Sesión de entrenamiento iniciada');
-        try { track('SESSION_START', { methodologyPlanId: effectiveMethodologyPlanId, dayName: todayName }, { component: 'RoutineScreen' }); } catch {}
+        try { track('SESSION_START', { methodologyPlanId: effectiveMethodologyPlanId, dayName: todayName }, { component: 'RoutineScreen' }); } catch (e) { void e; }
         updateLocalState({ activeTab: 'today' });
       } else {
         throw new Error(result.error || 'Error iniciando el entrenamiento');
@@ -237,7 +237,7 @@ const RoutineScreen = () => {
   };
 
   const handleGenerateAnother = async () => {
-    try { track('BUTTON_CLICK', { id: 'generate_another' }, { component: 'RoutineScreen' }); } catch {}
+    try { track('BUTTON_CLICK', { id: 'generate_another' }, { component: 'RoutineScreen' }); } catch (e) { void e; }
     console.log('🔄 Redirigiendo para generar otro plan...');
     updateLocalState({ showConfirmationModal: false });
     goToMethodologies();
@@ -245,7 +245,7 @@ const RoutineScreen = () => {
 
   const handleTabChange = useCallback((newTab) => {
     console.log(`🏷️ Cambiando a pestaña: ${newTab}`);
-    try { track('TAB_CLICK', { id: newTab, group: 'routine-tabs' }, { component: 'RoutineScreen' }); } catch {}
+    try { track('TAB_CLICK', { id: newTab, group: 'routine-tabs' }, { component: 'RoutineScreen' }); } catch (e) { void e; }
     updateLocalState({ activeTab: newTab });
   }, []);
 
