@@ -1005,7 +1005,7 @@ export default function TodayTrainingTab({
                   </p>
                   {/* Decidir si debemos reanudar (hay sesión activa o ya hay ejercicios realizados) */}
                   <Button
-                    onClick={() => (canRetryToday ? handleStartSession(0) : (shouldResume ? handleResumeSession() : handleStartSession(0)))}
+                    onClick={() => (shouldResume ? handleResumeSession() : handleStartSession(0))}
                     className="bg-yellow-500 hover:bg-yellow-600 text-black font-medium"
                     disabled={ui.isLoading || isLoadingSession || isStarting}
                   >
@@ -1017,14 +1017,14 @@ export default function TodayTrainingTab({
                     ) : (
                       <>
                         <Play className="h-5 w-5 mr-2" />
-                        {canRetryToday ? 'Comenzar Entrenamiento' : (shouldResume ? 'Reanudar Entrenamiento' : 'Comenzar Entrenamiento')}
+                        {'Reanudar Entrenamiento'}
                       </>
                     )}
                   </Button>
                 </div>
 
                 {/* Lista de ejercicios */}
-                {todaySessionData?.ejercicios && todaySessionData.ejercicios.length > 0 && (
+                {todaySessionData?.ejercicios && todaySessionData.ejercicios.length > 0 && !isFinishedToday && !canRetryToday && (
                   <Card className="p-6">
                     <div className="flex items-center justify-between mb-6">
                       <div>
