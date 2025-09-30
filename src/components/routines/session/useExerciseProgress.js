@@ -14,14 +14,26 @@ export const useExerciseProgress = (session, exercises) => {
     if (!session?.exerciseProgress) return 0;
 
     // Buscar el primer ejercicio que NO esté completado (permitimos skipped/cancelled aparecer)
+    // 🔥 CORRECCIÓN: Usar originalIndex del ejercicio para buscar en exerciseProgress
     for (let i = 0; i < exercises.length; i++) {
-      const progress = session.exerciseProgress.find(p => p.exercise_order === i);
-      if (!progress || String(progress.status).toLowerCase() !== 'completed') {
-        return i;
+      const exerciseOriginalIndex = exercises[i]?.originalIndex ?? i;
+      const progress = session.exerciseProgress.find(p => p.exercise_order === exerciseOriginalIndex);
+      const status = String(progress?.status || 'pending').toLowerCase();
+
+      console.log(`🔍 useExerciseProgress init - Checking exercise ${i} (original: ${exerciseOriginalIndex}):`, {
+        exerciseName: exercises[i]?.nombre,
+        status,
+        progress
+      });
+
+      if (!progress || status !== 'completed') {
+        console.log(`✅ Starting at filtered index ${i} (original: ${exerciseOriginalIndex})`);
+        return i; // Retornar índice en array FILTRADO
       }
     }
 
     // Si todos están completados, empezar desde el último
+    console.log('⚠️ All exercises completed, starting at last');
     return Math.max(0, exercises.length - 1);
   });
 
@@ -37,7 +49,9 @@ export const useExerciseProgress = (session, exercises) => {
     for (let i = fromIndex; i < exercises.length; i++) {
       // Estado efectivo: preferir local (recién marcado), si no, estado de BD
       const localState = exerciseStates[i];
-      const dbState = session?.exerciseProgress?.find(p => p.exercise_order === i)?.status;
+      // 🔥 CORRECCIÓN: Usar originalIndex del ejercicio para buscar en exerciseProgress
+      const exerciseOriginalIndex = exercises[i]?.originalIndex ?? i;
+      const dbState = session?.exerciseProgress?.find(p => p.exercise_order === exerciseOriginalIndex)?.status;
       const status = (localState ?? dbState ?? '').toLowerCase();
 
       if (status !== 'completed') {
@@ -110,10 +124,11 @@ export const useExerciseProgress = (session, exercises) => {
 
   // Completar ejercicio actual
   const completeCurrentExercise = useCallback((seriesCompleted, timeSpent, onFinishExercise) => {
-    // Llamar callback del parent
-    onFinishExercise?.(currentIndex, seriesCompleted, timeSpent);
+    // 🔥 CORRECCIÓN: Pasar originalIndex a la API
+    const originalIdx = exercises[currentIndex]?.originalIndex ?? currentIndex;
+    onFinishExercise?.(originalIdx, seriesCompleted, timeSpent);
 
-    // Actualizar estado local
+    // Actualizar estado local usando índice filtrado
     setExerciseStates(prev => ({ ...prev, [currentIndex]: 'completed' }));
 
     // Buscar siguiente ejercicio no completado
@@ -125,14 +140,15 @@ export const useExerciseProgress = (session, exercises) => {
     } else {
       return { hasNext: false, isComplete: true };
     }
-  }, [currentIndex, findNextIncompleteExercise, total]);
+  }, [currentIndex, exercises, findNextIncompleteExercise, total]);
 
   // Saltar ejercicio actual
   const skipCurrentExercise = useCallback((onSkipExercise) => {
-    // Llamar callback del parent
-    onSkipExercise?.(currentIndex);
+    // 🔥 CORRECCIÓN: Pasar originalIndex a la API
+    const originalIdx = exercises[currentIndex]?.originalIndex ?? currentIndex;
+    onSkipExercise?.(originalIdx);
 
-    // Actualizar estado local
+    // Actualizar estado local usando índice filtrado
     setExerciseStates(prev => ({ ...prev, [currentIndex]: 'skipped' }));
 
     // Buscar siguiente ejercicio no completado
@@ -144,14 +160,15 @@ export const useExerciseProgress = (session, exercises) => {
     } else {
       return { hasNext: false, isComplete: true };
     }
-  }, [currentIndex, findNextIncompleteExercise, total]);
+  }, [currentIndex, exercises, findNextIncompleteExercise, total]);
 
   // Cancelar ejercicio actual
   const cancelCurrentExercise = useCallback((onCancelExercise) => {
-    // Llamar callback del parent
-    onCancelExercise?.(currentIndex);
+    // 🔥 CORRECCIÓN: Pasar originalIndex a la API
+    const originalIdx = exercises[currentIndex]?.originalIndex ?? currentIndex;
+    onCancelExercise?.(originalIdx);
 
-    // Actualizar estado local
+    // Actualizar estado local usando índice filtrado
     setExerciseStates(prev => ({ ...prev, [currentIndex]: 'cancelled' }));
 
     // Buscar siguiente ejercicio no completado
@@ -163,7 +180,7 @@ export const useExerciseProgress = (session, exercises) => {
     } else {
       return { hasNext: false, isComplete: true };
     }
-  }, [currentIndex, findNextIncompleteExercise, total]);
+  }, [currentIndex, exercises, findNextIncompleteExercise, total]);
 
   // Navegar manualmente a ejercicio específico
   const navigateToExercise = useCallback((index) => {

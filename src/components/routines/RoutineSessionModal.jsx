@@ -204,23 +204,26 @@ export default function RoutineSessionModal({
     const currentInProgress = isCurrentExerciseInProgress();
 
     if (currentInProgress) {
+      // 🔥 CORRECCIÓN: Usar originalIndex del ejercicio actual para la API
+      const originalIdx = progressState.currentExercise?.originalIndex ?? progressState.currentIndex;
+
       if (action === 'save-as-partial') {
         // Guardar progreso parcial
         const partialSeries = Math.max(1, timerState.series - 1);
-        onFinishExercise?.(progressState.currentIndex, partialSeries, timerState.spent);
+        onFinishExercise?.(originalIdx, partialSeries, timerState.spent);
         progressState.actions.markAs(progressState.currentIndex, 'completed');
       } else if (action === 'skip-current') {
-        onSkipExercise?.(progressState.currentIndex);
+        onSkipExercise?.(originalIdx);
         progressState.actions.markAs(progressState.currentIndex, 'skipped');
       } else if (action === 'cancel-current') {
-        onCancelExercise?.(progressState.currentIndex);
+        onCancelExercise?.(originalIdx);
         progressState.actions.markAs(progressState.currentIndex, 'cancelled');
       }
     }
 
     setShowExitConfirmModal(false);
     safeClose();
-  }, [isCurrentExerciseInProgress, timerState.series, timerState.spent, progressState.currentIndex, progressState.actions, onFinishExercise, onSkipExercise, onCancelExercise, onClose]);
+  }, [isCurrentExerciseInProgress, timerState.series, timerState.spent, progressState.currentIndex, progressState.currentExercise, progressState.actions, onFinishExercise, onSkipExercise, onCancelExercise, safeClose]);
 
   // Guardar feedback de ejercicio
   const handleSaveFeedback = useCallback(async (payload) => {
@@ -231,18 +234,21 @@ export default function RoutineSessionModal({
         throw new Error('No se puede guardar feedback: falta sessionId');
       }
 
+      // 🔥 CORRECCIÓN: Usar originalIndex para la API
+      const originalIdx = progressState.currentExercise?.originalIndex ?? progressState.currentIndex;
+
       const savedFeedback = await saveExerciseFeedback({
         sessionId,
-        exerciseOrder: progressState.currentIndex,
+        exerciseOrder: originalIdx,
         sentiment: payload.sentiment,
         comment: payload.comment,
         exerciseName: formatExerciseName(progressState.currentExercise?.nombre)
       });
 
-      // Actualizar estado local
+      // Actualizar estado local usando índice original (mismo que BD)
       setExerciseFeedback(prev => ({
         ...prev,
-        [progressState.currentIndex]: {
+        [originalIdx]: {
           sentiment: payload.sentiment,
           comment: payload.comment
         }
@@ -310,7 +316,7 @@ export default function RoutineSessionModal({
         <ExerciseFeedbackModal
           show={showFeedback}
           exerciseName={formatExerciseName(progressState.currentExercise?.nombre)}
-          initialFeedback={exerciseFeedback[progressState.currentIndex]}
+          initialFeedback={exerciseFeedback[progressState.currentExercise?.originalIndex ?? progressState.currentIndex]}
           onClose={() => setShowFeedback(false)}
           onSubmit={handleSaveFeedback}
         />

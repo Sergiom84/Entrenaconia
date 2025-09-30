@@ -704,27 +704,48 @@ router.put('/sessions/:sessionId/exercise/:exerciseOrder', authenticateToken, as
     const counters = await client.query(
       `SELECT
          COUNT(*) FILTER (WHERE status = 'completed') AS completed,
+         COUNT(*) FILTER (WHERE status = 'skipped') AS skipped,
+         COUNT(*) FILTER (WHERE status = 'cancelled') AS cancelled,
+         COUNT(*) FILTER (WHERE status = 'pending') AS pending,
          COUNT(*) AS total
        FROM app.methodology_exercise_progress
        WHERE methodology_session_id = $1`,
       [sessionId]
     );
-    const { completed, total } = counters.rows[0];
+    const { completed, skipped, cancelled, pending, total } = counters.rows[0];
 
-    console.log('\ud83d\udcca Session counters', { sessionId, completed: Number(completed), total: Number(total) });
+    console.log('\ud83d\udcca Session counters', {
+      sessionId,
+      completed: Number(completed),
+      skipped: Number(skipped),
+      cancelled: Number(cancelled),
+      pending: Number(pending),
+      total: Number(total)
+    });
 
-    const newStatus = (Number(completed) === Number(total) && Number(total) > 0) ? 'completed' : 'in_progress';
-    console.log('\ud83c\udfaf Session status decision', { sessionId, newStatus });
+    // 🎯 NUEVA LÓGICA: Solo 'completed' si TODOS están 'completed' (sin saltar ni cancelar)
+    const allExercisesCompleted = (Number(completed) === Number(total) && Number(total) > 0);
+    const newStatus = allExercisesCompleted ? 'completed' : 'in_progress';
+
+    console.log('\ud83c\udfaf Session status decision', {
+      sessionId,
+      allExercisesCompleted,
+      newStatus,
+      reason: allExercisesCompleted
+        ? 'Todos los ejercicios completados'
+        : `${Number(skipped)} saltados, ${Number(cancelled)} cancelados, ${Number(pending)} pendientes`
+    });
 
     await client.query(
       `UPDATE app.methodology_exercise_sessions
          SET exercises_completed = $2,
              total_exercises = GREATEST($3, COALESCE(total_exercises, 0)),
              total_duration_seconds = COALESCE(total_duration_seconds, 0) + COALESCE($4, 0),
-             session_status = CASE WHEN $2 = $3 AND $3 > 0 THEN 'completed' ELSE 'in_progress' END,
-             completed_at = CASE WHEN $2 = $3 AND $3 > 0 THEN NOW() ELSE completed_at END
+             session_status = $5::text,
+             completed_at = CASE WHEN $5::text = 'completed' THEN NOW() ELSE NULL END,
+             updated_at = NOW()
        WHERE id = $1`,
-      [sessionId, Number(completed), Number(total), time_spent_seconds ?? 0]
+      [sessionId, Number(completed), Number(total), time_spent_seconds ?? 0, String(newStatus)]
     );
 
     await client.query('COMMIT');

@@ -278,6 +278,50 @@ export default function TodayTrainingTab({
     fetchTodayStatus();
   }, [hasActivePlan, currentTodayName, session.status, localState.showSessionModal, fetchTodayStatus]);
 
+  const wantRoutineModal = localState.showSessionModal || ui.showRoutineSession || ui.showSession;
+
+  // 🎯 FILTRAR EJERCICIOS NO COMPLETADOS para el modal
+  const filteredSessionData = useMemo(() => {
+    if (!todaySessionData?.ejercicios || !wantRoutineModal) return null;
+
+    const allExercises = todaySessionData.ejercicios;
+    const filteredExercises = [];
+    const originalIndexMapping = [];
+
+    // Filtrar ejercicios que NO estén completados
+    allExercises.forEach((ejercicio, originalIndex) => {
+      // Verificar estado desde backend (prioritario) o estado local
+      const backendStatus = todayStatus?.exercises?.[originalIndex]?.status;
+      const localStatus = exerciseProgress?.[originalIndex]?.status;
+      const effectiveStatus = String(backendStatus || localStatus || 'pending').toLowerCase();
+
+      // Incluir ejercicios: pending, in_progress, skipped, cancelled (excluir solo completed)
+      if (effectiveStatus !== 'completed') {
+        filteredExercises.push({
+          ...ejercicio,
+          originalIndex, // Mantener referencia al índice original
+          currentStatus: effectiveStatus
+        });
+        originalIndexMapping.push(originalIndex);
+      }
+    });
+
+    console.log('🔍 DEBUG Filtrado de ejercicios para modal:', {
+      totalEjercicios: allExercises.length,
+      ejerciciosFiltrados: filteredExercises.length,
+      indicesOriginales: originalIndexMapping,
+      ejerciciosExcluidos: allExercises.length - filteredExercises.length,
+      ejerciciosIncluidos: filteredExercises.map((e, i) => `${i} (orig: ${e.originalIndex}) - ${e.nombre} [${e.currentStatus}]`)
+    });
+
+    return {
+      ...todaySessionData,
+      ejercicios: filteredExercises,
+      originalIndexMapping,
+      totalOriginalExercises: allExercises.length
+    };
+  }, [todaySessionData, wantRoutineModal, todayStatus?.exercises, exerciseProgress]);
+
   const handleStartSession = useCallback(async (exerciseIndex = 0) => {
     // 🚫 Prevenir doble ejecución
     if (isStarting || isLoadingSession) {
@@ -293,12 +337,6 @@ export default function TodayTrainingTab({
       return;
     }
 
-    // Si el backend dice que debe reanudar, usar handleResumeSession en su lugar
-    if (shouldResume) {
-      console.log('🔄 Redirigiendo a reanudar sesión');
-      handleResumeSession();
-      return;
-    }
 
     // Validaciones iniciales
     if (!todaySessionData?.ejercicios || todaySessionData.ejercicios.length === 0) {
@@ -315,7 +353,7 @@ export default function TodayTrainingTab({
     {
       const existingSid = todayStatus?.session?.id;
       const neverStarted = todayStatus?.session?.session_started_at == null;
-      const shouldOpenWarmup = (!!existingSid && !shouldResume) || neverStarted;
+      const shouldOpenWarmup = (!!existingSid) || neverStarted;
       if (shouldOpenWarmup && existingSid) {
         updateLocalState({
           pendingSessionData: {
@@ -409,38 +447,62 @@ export default function TodayTrainingTab({
     }
   }, [todaySessionData, hasActiveSession, startSession, methodologyPlanId, currentTodayName, session.sessionId, track, onStartTraining, setError, isStarting, isLoadingSession]);
 
-  const handleResumeSession = useCallback(() => {
+  const handleResumeSession = useCallback(async () => {
     track('BUTTON_CLICK', { id: 'resume_session' }, { component: 'TodayTrainingTab' });
 
-    // Si no hay sesión activa aún, inicia el flujo normal (abrirá WarmupModal)
-    if (!hasActiveSession) {
+    // 🎯 PASO 1: Refrescar estado desde BD ANTES de abrir modal
+    console.log('🔄 Refrescando estado desde BD antes de reanudar...');
+    await fetchTodayStatus();
+
+    // 🔥 PASO 2: Verificar sesión desde BD (todayStatus) en lugar de solo el contexto
+    const existingSessionId = todayStatus?.session?.id || session.sessionId || localState.pendingSessionData?.sessionId;
+    const sessionStarted = todayStatus?.session?.session_started_at != null;
+
+    console.log('🔍 DEBUG handleResumeSession:', {
+      existingSessionId,
+      sessionStarted,
+      hasActiveSession,
+      'todayStatus.session': todayStatus?.session,
+      'session.sessionId': session.sessionId
+    });
+
+    // Si no hay sesión en BD, iniciar nueva sesión (con warmup)
+    if (!existingSessionId) {
+      console.log('⚠️ No hay sesión existente, iniciando nueva con warmup');
       handleStartSession(currentExerciseIndex || 0);
       return;
     }
 
-    // Con sesión activa: abrir directamente el modal de sesión (saltamos calentamiento)
-    const sid = session.sessionId || localState.pendingSessionData?.sessionId;
-    if (!sid) {
-      setError('No se pudo reanudar: falta sessionId');
+    // Si hay sesión pero NO se ha iniciado (sin warmup), abrir warmup
+    if (existingSessionId && !sessionStarted) {
+      console.log('🔥 Sesión existe pero sin warmup, abriendo warmup');
+      updateLocalState({
+        pendingSessionData: {
+          session: null,
+          sessionId: existingSessionId
+        },
+        showWarmupModal: true,
+        showSessionModal: false
+      });
       return;
     }
 
-    const baseSession = todaySessionData || findTodaySession(routinePlan || plan.currentPlan, currentTodayName) || {};
+    // Si la sesión YA está iniciada (warmup hecho), abrir directamente el modal de ejercicios
+    console.log('✅ Sesión iniciada, abriendo modal de ejercicios directamente (sin warmup)');
 
+    // 🔥 IMPORTANTE: NO asignar session aquí, dejar que effectiveSession use filteredSessionData
+    // De esta forma, el modal recibirá solo los ejercicios NO completados
     updateLocalState({
       pendingSessionData: {
-        session: {
-          ...baseSession,
-          sessionId: sid,
-          currentExerciseIndex: session.currentExerciseIndex || 0,
-          exerciseProgress: sessionExerciseProgress
-        },
-        sessionId: sid
+        session: null, // No asignar sesión aquí, usar effectiveSession del render
+        sessionId: existingSessionId
       },
       showWarmupModal: false,
       showSessionModal: true
     });
-  }, [hasActiveSession, handleStartSession, currentExerciseIndex, session.sessionId, session.currentExerciseIndex, localState.pendingSessionData?.sessionId, todaySessionData, routinePlan, plan.currentPlan, currentTodayName, setError, track]);
+
+    console.log('🔄 Reanudando sesión - effectiveSession usará filteredSessionData');
+  }, [hasActiveSession, handleStartSession, currentExerciseIndex, session.sessionId, localState.pendingSessionData?.sessionId, todayStatus, setError, track, fetchTodayStatus]);
 
   const handleCompleteSession = useCallback(async () => {
     const sid = localState.pendingSessionData?.sessionId || session.sessionId;
@@ -493,10 +555,21 @@ export default function TodayTrainingTab({
   }, [hasActiveSession, completeSession, session.sessionId, sessionStartTime, exerciseProgress, track, onProgressUpdate, showSuccess, setError, localState.pendingSessionData?.sessionId]);
 
   const handleExerciseUpdate = useCallback(async (exerciseIndex, progressData) => {
-    // Actualizar estado local
+    // 🎯 MAPEAR ÍNDICE FILTRADO A ÍNDICE ORIGINAL
+    // El modal trabaja con índices filtrados, pero la API necesita índices originales
+    const originalIndex = filteredSessionData?.originalIndexMapping?.[exerciseIndex] ?? exerciseIndex;
+
+    console.log('🔍 DEBUG handleExerciseUpdate:', {
+      exerciseIndexFromModal: exerciseIndex,
+      originalIndexForAPI: originalIndex,
+      hasMapping: !!filteredSessionData?.originalIndexMapping,
+      progressData
+    });
+
+    // Actualizar estado local usando ÍNDICE ORIGINAL (para mantener consistencia con backend)
     setExerciseProgress(prev => ({
       ...prev,
-      [exerciseIndex]: progressData
+      [originalIndex]: progressData
     }));
 
     const sid = localState.pendingSessionData?.sessionId || session.sessionId;
@@ -510,31 +583,32 @@ export default function TodayTrainingTab({
       let ok = false;
 
       if (session.sessionId) {
-        const result = await updateExercise(exerciseIndex, payload);
+        // Usar índice original para la API del contexto
+        const result = await updateExercise(originalIndex, payload);
         ok = !!result?.success;
       } else if (sid) {
-        await apiClient.put(`/routines/sessions/${sid}/exercise/${exerciseIndex}`, payload);
+        // Usar índice original para la API directa
+        await apiClient.put(`/routines/sessions/${sid}/exercise/${originalIndex}`, payload);
         ok = true;
       }
 
       if (ok) {
-        // Si el ejercicio se completó, avanzar al siguiente
-        if ((progressData.status || 'completed') === 'completed') {
-          const nextIndex = exerciseIndex + 1;
-          if (nextIndex < (todaySessionData?.ejercicios?.length || 0)) {
-            setCurrentExerciseIndex(nextIndex);
-          }
-        }
+        console.log('✅ Ejercicio actualizado correctamente:', {
+          originalIndex,
+          status: progressData.status,
+          payload
+        });
+
         // Notificar al padre para refrescar calendario/progreso
         if (typeof onProgressUpdate === 'function') {
           onProgressUpdate();
         }
       }
     } catch (error) {
-      console.error('Error actualizando ejercicio:', error);
+      console.error('❌ Error actualizando ejercicio:', error);
       setError(`Error actualizando ejercicio: ${error.message}`);
     }
-  }, [updateExercise, todaySessionData?.ejercicios?.length, setError, onProgressUpdate, session.sessionId, localState.pendingSessionData?.sessionId]);
+  }, [filteredSessionData?.originalIndexMapping, updateExercise, setError, onProgressUpdate, session.sessionId, localState.pendingSessionData?.sessionId]);
 
   // Handlers de calentamiento
   const handleWarmupComplete = async () => {
@@ -822,6 +896,8 @@ export default function TodayTrainingTab({
   const allSkippedToday = totalCountForGate > 0 && (todayStatus?.summary?.skipped ?? 0) === totalCountForGate;
   const allCancelledToday = totalCountForGate > 0 && (todayStatus?.summary?.cancelled ?? 0) === totalCountForGate;
   const canRetryToday = Boolean(todayStatus?.summary?.canRetry) || allSkippedToday || allCancelledToday;
+  // Mostrar CTA de reanudar si queda trabajo por hacer (pendientes, saltados o cancelados)
+  const hasUnfinishedWorkToday = totalCountForGate > 0 && (completedCountForGate < totalCountForGate);
   const isRestDay = hasActivePlan && !todaySessionData;
   const noActivePlan = !hasActivePlan;
   const sessionMatchesToday = hasActiveSession && !!session?.dayName && !!todaySessionData?.dia && (
@@ -870,7 +946,7 @@ export default function TodayTrainingTab({
     todayStatus: !!todayStatus,
 
     // Sección 1: Sesión NO finalizada (pendientes/en progreso) o caso especial (todos skipped/cancelled)
-    showSection1: hasToday && hasActivePlan && (!isFinishedToday || canRetryToday),
+    showSection1: hasToday && hasActivePlan && hasUnfinishedWorkToday,
 
     // Sección 2: Sesión FINALIZADA (sin pendientes)
     showSection2: hasActivePlan && hasToday && isFinishedToday && todayStatus,
@@ -882,13 +958,12 @@ export default function TodayTrainingTab({
   });
 
 
-  const wantRoutineModal = localState.showSessionModal || ui.showRoutineSession || ui.showSession;
   const effectiveSession = localState.pendingSessionData?.session || (
-    wantRoutineModal && (session.sessionId || localState.pendingSessionData?.sessionId) && todaySessionData
+    wantRoutineModal && (session.sessionId || localState.pendingSessionData?.sessionId) && filteredSessionData
       ? {
-          ...todaySessionData,
+          ...filteredSessionData,
           sessionId: session.sessionId || localState.pendingSessionData?.sessionId,
-          currentExerciseIndex: localState.pendingSessionData?.session?.currentExerciseIndex || 0,
+          currentExerciseIndex: 0, // Siempre empezar desde el primer ejercicio filtrado
           exerciseProgress: sessionExerciseProgress
         }
       : null
@@ -992,7 +1067,7 @@ export default function TodayTrainingTab({
             {/* 📋 SESIÓN DEL DÍA (NO INICIADA) */}
             {/* =============================================== */}
 
-            {hasToday && hasActivePlan && (!isFinishedToday || canRetryToday) && (
+            {hasToday && hasActivePlan && hasUnfinishedWorkToday && (
               <section>
 
                 <div className="text-center py-6">
@@ -1005,7 +1080,7 @@ export default function TodayTrainingTab({
                   </p>
                   {/* Decidir si debemos reanudar (hay sesión activa o ya hay ejercicios realizados) */}
                   <Button
-                    onClick={() => (shouldResume ? handleResumeSession() : handleStartSession(0))}
+                    onClick={() => ((shouldResume || hasUnfinishedWorkToday) ? handleResumeSession() : handleStartSession(0))}
                     className="bg-yellow-500 hover:bg-yellow-600 text-black font-medium"
                     disabled={ui.isLoading || isLoadingSession || isStarting}
                   >
@@ -1024,7 +1099,7 @@ export default function TodayTrainingTab({
                 </div>
 
                 {/* Lista de ejercicios */}
-                {todaySessionData?.ejercicios && todaySessionData.ejercicios.length > 0 && !isFinishedToday && !canRetryToday && (
+                {todaySessionData?.ejercicios && todaySessionData.ejercicios.length > 0 && !isFinishedToday && (
                   <Card className="p-6">
                     <div className="flex items-center justify-between mb-6">
                       <div>
