@@ -17,7 +17,7 @@
     "lint": "eslint --config .eslint.config.mjs .",
     "build": "vite build",
     "test": "echo \"⚠️  Tests not configured yet\" && exit 0",
-    "postinstall": "husky install 2>/dev/null || true",
+    "postinstall": "node -e \"try { require('child_process').execSync('husky install', {stdio:'ignore'}) } catch (e) {}\"",
     "pre-commit": "lint-staged",
     "preview": "vite preview",
     "dev:helper": "scripts\\dev-helper.bat",

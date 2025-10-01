@@ -155,7 +155,13 @@
       "Bash(findstr:*)",
       "Bash(PGPASSWORD=Xe05Klm563kkjL psql -h aws-1-eu-north-1.pooler.supabase.com -p 6543 -U postgres.lhsnmjgdtjalfcsurxvg -d postgres -c \"\nSELECT table_schema, table_name, column_name, data_type \nFROM information_schema.columns \nWHERE table_schema = ''app'' \nAND table_name IN (''methodology_plans'', ''methodology_exercise_sessions'', ''historico_ejercicios'', ''progreso_usuario'')\nORDER BY table_name, ordinal_position;\n\")",
       "Bash(PORT=3010 npm run dev:backend)",
-      "Bash(PORT=3004 npm run dev:backend)"
+      "Bash(PORT=3004 npm run dev:backend)",
+      "Bash(PGPASSWORD=Xe05Klm563kkjL psql -h aws-1-eu-north-1.pooler.supabase.com -p 6543 -U postgres.lhsnmjgdtjalfcsurxvg -d postgres -c \"\nSELECT table_schema, table_name, column_name, data_type, is_nullable\nFROM information_schema.columns \nWHERE table_schema = ''app'' \nAND table_name IN (''methodology_exercise_sessions'', ''methodology_plans'', ''historico_ejercicios'')\nORDER BY table_name, ordinal_position;\n\")",
+      "Read(//c/Users/Sergio/.codex/**)",
+      "Bash(codex:*)",
+      "Bash(where powershell)",
+      "Bash(PGPASSWORD=Xe05Klm563kkjL psql -h aws-0-eu-north-1.pooler.supabase.com -p 6543 -U postgres.lhsnmjgdtjalfcsurxvg -d postgres -c \"\nSELECT \n  mes.session_id,\n  mes.user_id,\n  mes.methodology_plan_id,\n  mes.day_name,\n  mes.status,\n  mes.session_started_at,\n  mes.warmup_time_seconds,\n  COUNT(mee.exercise_order) as total_exercises\nFROM app.methodology_exercise_sessions mes\nLEFT JOIN app.methodology_exercise_entries mee ON mes.session_id = mee.session_id\nWHERE mes.user_id = 19 \n  AND mes.methodology_plan_id = 30\nGROUP BY mes.session_id, mes.user_id, mes.methodology_plan_id, mes.day_name, mes.status, mes.session_started_at, mes.warmup_time_seconds\nORDER BY mes.session_id DESC\nLIMIT 5;\n\")",
+      "Bash(PGPASSWORD=Xe05Klm563kkjL psql -h aws-0-eu-north-1.pooler.supabase.com -p 6543 -U postgres.lhsnmjgdtjalfcsurxvg -d postgres -c \"\nSELECT \n  mep.exercise_order,\n  mep.status,\n  mep.series_completed,\n  mep.time_spent_seconds,\n  mep.completed_at,\n  me.exercise_name\nFROM app.methodology_exercise_progress mep\nJOIN app.methodology_exercises me ON mep.methodology_exercise_id = me.id\nWHERE mep.methodology_session_id = 29\nORDER BY mep.exercise_order;\n\")"
     ]
   }
 }

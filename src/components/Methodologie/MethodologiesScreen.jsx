@@ -122,6 +122,7 @@ export default function MethodologiesScreen() {
 
   // Estado local mínimo para datos específicos de esta pantalla
   const [localState, setLocalState] = useState(LOCAL_STATE_INITIAL);
+  const [sessionData, setSessionData] = useState(null); // 🔥 Datos de la sesión con ejercicios
 
   const updateLocalState = useCallback((updates) => {
     setLocalState(prev => ({ ...prev, ...updates }));
@@ -454,23 +455,37 @@ export default function MethodologiesScreen() {
       });
 
       if (result.success) {
-        ui.hideModal('planConfirmation');
-        console.log('🔍 Estado UI antes de warmup:', {
-          showWarmup: ui.showWarmup,
-          showRoutineSession: ui.showRoutineSession,
-          sessionId: session.sessionId,
-          allModals: {
-            planConfirmation: ui.showPlanConfirmation,
-            warmup: ui.showWarmup,
-            routineSession: ui.showRoutineSession,
-            calisteniaManual: ui.showCalisteniaManual
+        console.log('✅ Sesión iniciada, session_id:', result.session_id);
+
+        // 🔥 CRÍTICO: Cargar los ejercicios de la sesión INMEDIATAMENTE después de iniciarla
+        try {
+          const { getSessionProgress } = await import('../routines/api');
+          const progressData = await getSessionProgress(result.session_id);
+          console.log('✅ Ejercicios cargados para la sesión:', progressData);
+
+          // Verificar que los ejercicios se cargaron correctamente
+          if (!progressData.exercises || progressData.exercises.length === 0) {
+            throw new Error('La sesión no tiene ejercicios disponibles');
           }
-        });
+
+          console.log('✅ Ejercicios disponibles:', progressData.exercises.length);
+
+          // 🔥 Guardar los datos de la sesión en el estado local
+          setSessionData({
+            ejercicios: progressData.exercises,
+            session_id: result.session_id,
+            sessionId: result.session_id,
+            currentExerciseIndex: 0
+          });
+
+        } catch (exerciseError) {
+          console.error('❌ Error cargando ejercicios:', exerciseError);
+          ui.setError('Error cargando ejercicios de la sesión');
+          return;
+        }
+
+        ui.hideModal('planConfirmation');
         ui.showModal('warmup');
-        console.log('🔍 Estado UI después de warmup:', {
-          showWarmup: ui.showWarmup,
-          sessionId: session.sessionId
-        });
         console.log('🔥 Iniciando calentamiento...');
       } else {
         throw new Error(result.error || 'Error al iniciar el entrenamiento');
@@ -482,11 +497,19 @@ export default function MethodologiesScreen() {
     }
   };
 
-  const handleWarmupComplete = () => {
+  const handleWarmupComplete = async () => {
     try { track('BUTTON_CLICK', { id: 'warmup_complete' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
     console.log('✅ Calentamiento completado');
+
     ui.hideModal('warmup');
     ui.showModal('routineSession');
+
+    console.log('🔍 Estado después de warmup:', {
+      showRoutineSession: ui.showRoutineSession,
+      sessionId: session.sessionId,
+      hasSessionData: !!sessionData,
+      hasExercises: !!sessionData?.ejercicios
+    });
   };
 
   const handleSkipWarmup = () => {
@@ -770,12 +793,15 @@ export default function MethodologiesScreen() {
       )}
 
       {/* Modal de sesión de rutina (render condicional estricto) */}
-      {ui.showRoutineSession && session.sessionId && session.currentSession && (
+      {ui.showRoutineSession && session.sessionId && sessionData && sessionData.ejercicios && (
         <RoutineSessionModal
           isOpen={ui.showRoutineSession}
-          session={session.currentSession}
+          session={sessionData}
           sessionId={session.sessionId}
-          onClose={() => ui.hideModal('routineSession')}
+          onClose={() => {
+            ui.hideModal('routineSession');
+            setSessionData(null); // Limpiar datos de sesión al cerrar
+          }}
           onFinishExercise={(exerciseIndex, seriesCompleted, timeSpent) =>
             updateExercise(exerciseIndex, { status: 'completed', seriesCompleted, timeSpent })
           }
