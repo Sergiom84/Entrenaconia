@@ -107,11 +107,16 @@ async function ensureMethodologySessions(client, userId, methodologyPlanId, plan
 
 // Utilidad: asegurar programación (workout_schedule) a partir del plan JSON
 async function ensureWorkoutSchedule(client, userId, methodologyPlanId, planDataJson, startDate = new Date()) {
+  console.log(`📅 [ensureWorkoutSchedule] Iniciando para plan ${methodologyPlanId}, usuario ${userId}`);
+
   // Parsear plan si viene en string
   const planData = typeof planDataJson === 'string' ? JSON.parse(planDataJson) : planDataJson;
   if (!planData || !Array.isArray(planData.semanas) || planData.semanas.length === 0) {
+    console.warn(`⚠️ [ensureWorkoutSchedule] Plan vacío o sin semanas para plan ${methodologyPlanId}`);
     return;
   }
+
+  console.log(`📊 [ensureWorkoutSchedule] Plan tiene ${planData.semanas.length} semanas`);
 
   // 🎯 NORMALIZAR días del plan (Lunes/Lun → formato consistente)
   const normalizedPlan = normalizePlanDays(planData);
@@ -127,6 +132,8 @@ async function ensureWorkoutSchedule(client, userId, methodologyPlanId, planData
     `DELETE FROM app.methodology_plan_days WHERE plan_id = $1`,
     [methodologyPlanId]
   );
+
+  console.log(`🧹 [ensureWorkoutSchedule] Tablas limpiadas para plan ${methodologyPlanId}`);
 
   // Mapas de días en español
   const dayNames = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
@@ -144,6 +151,9 @@ async function ensureWorkoutSchedule(client, userId, methodologyPlanId, planData
     const weekNumber = weekIndex + 1;
 
     if (!semana?.sesiones?.length) continue;
+
+    // Contador de sesiones dentro de esta semana específica
+    let weekSessionOrder = 1;
 
     // Iterar los 7 días de esta semana
     for (let dayInWeek = 0; dayInWeek < 7; dayInWeek++) {
@@ -167,12 +177,13 @@ async function ensureWorkoutSchedule(client, userId, methodologyPlanId, planData
       // Si no hay sesión para este día, es día de descanso
       if (!sesion) {
         // Registrar en methodology_plan_days como día de descanso
+        // 🎯 USAR ABREVIATURA para consistencia con methodology_exercise_sessions
         await client.query(
           `INSERT INTO app.methodology_plan_days (
             plan_id, day_id, week_number, day_name, date_local, is_rest
           ) VALUES ($1, $2, $3, $4, $5, $6)
           ON CONFLICT (plan_id, day_id) DO NOTHING`,
-          [methodologyPlanId, day_id, weekNumber, dayName, currentDate.toISOString().split('T')[0], true]
+          [methodologyPlanId, day_id, weekNumber, dayAbbrev, currentDate.toISOString().split('T')[0], true]
         );
         day_id++;
         continue;
@@ -187,18 +198,20 @@ async function ensureWorkoutSchedule(client, userId, methodologyPlanId, planData
           user_id,
           week_number,
           session_order,
+          week_session_order,
           scheduled_date,
           day_name,
           day_abbrev,
           session_title,
           exercises,
           status
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
         [
           methodologyPlanId,
           userId,
           weekNumber,
           globalSessionOrder,
+          weekSessionOrder,
           currentDate.toISOString().split('T')[0],
           dayName,
           dayAbbrev,
@@ -209,20 +222,30 @@ async function ensureWorkoutSchedule(client, userId, methodologyPlanId, planData
       );
 
       // Insertar en methodology_plan_days con referencia a los ejercicios
+      // 🎯 USAR ABREVIATURA para consistencia con methodology_exercise_sessions
       await client.query(
         `INSERT INTO app.methodology_plan_days (
           plan_id, day_id, week_number, day_name, date_local, is_rest, planned_exercises_count
         ) VALUES ($1, $2, $3, $4, $5, $6, $7)
         ON CONFLICT (plan_id, day_id) DO NOTHING`,
-        [methodologyPlanId, day_id, weekNumber, dayName, currentDate.toISOString().split('T')[0], false, sesion.ejercicios?.length || 0]
+        [methodologyPlanId, day_id, weekNumber, dayAbbrev, currentDate.toISOString().split('T')[0], false, sesion.ejercicios?.length || 0]
       );
 
       day_id++;
       globalSessionOrder++;
+      weekSessionOrder++;
     }
   }
 
-  console.log(`✅ Programación generada: ${globalSessionOrder - 1} sesiones, ${day_id - 1} días totales`);
+  const totalSessions = globalSessionOrder - 1;
+  const totalDays = day_id - 1;
+  const restDays = totalDays - totalSessions;
+
+  console.log(`✅ [ensureWorkoutSchedule] Programación generada para plan ${methodologyPlanId}:`);
+  console.log(`   📊 Total días: ${totalDays}`);
+  console.log(`   💪 Días de entreno: ${totalSessions}`);
+  console.log(`   💤 Días de descanso: ${restDays}`);
+  console.log(`   📅 Fecha inicio: ${startDate.toISOString().split('T')[0]}`);
 }
 
 // Utilidad: crear una sesión específica para un día que no existe en el plan
@@ -1057,7 +1080,25 @@ router.get('/sessions/today-status', authenticateToken, async (req, res) => {
     }
 
     // Resolver week/day de forma robusta
-    // 1) Si viene session_date, priorizar programación (workout_schedule)
+    // 🎯 PRIORIDAD 1: Si viene day_id, usar methodology_plan_days (más confiable)
+    if (day_id && (!week_number || !day_name)) {
+      const dres = await pool.query(
+        `SELECT week_number, day_name FROM app.methodology_plan_days WHERE plan_id = $1 AND day_id = $2`,
+        [methodology_plan_id, day_id]
+      );
+      if (dres.rowCount > 0) {
+        week_number = dres.rows[0].week_number;
+        day_name = dres.rows[0].day_name;
+        console.log('🎯 today-status usa day_id desde methodology_plan_days', { day_id, week_number, day_name });
+      } else {
+        // Fallback seguro: derivar semana
+        week_number = Math.ceil(Number(day_id) / 7);
+        day_name = day_name || 'lunes';
+        console.log('⚠️ today-status fallback: day_id no encontrado en methodology_plan_days', { day_id, week_number, day_name });
+      }
+    }
+
+    // 🎯 PRIORIDAD 2: Si no hay day_id pero viene session_date, usar programación (workout_schedule)
     if (req.query.session_date && (!week_number || !day_name)) {
       const sched = await pool.query(
         `SELECT week_number, day_name FROM app.workout_schedule
@@ -1069,22 +1110,6 @@ router.get('/sessions/today-status', authenticateToken, async (req, res) => {
         week_number = sched.rows[0].week_number;
         day_name = sched.rows[0].day_name;
         console.log('🗓️ today-status usa programación (workout_schedule)', { week_number, day_name });
-      }
-    }
-
-    // 2) Si no hay programación o no vino session_date, usar day_id → methodology_plan_days
-    if ((!week_number || !day_name) && day_id) {
-      const dres = await pool.query(
-        `SELECT week_number, day_name FROM app.methodology_plan_days WHERE plan_id = $1 AND day_id = $2`,
-        [methodology_plan_id, day_id]
-      );
-      if (dres.rowCount > 0) {
-        week_number = dres.rows[0].week_number;
-        day_name = dres.rows[0].day_name;
-      } else {
-        // Fallback seguro: derivar semana
-        week_number = Math.ceil(Number(day_id) / 7);
-        day_name = day_name || 'lunes';
       }
     }
 
@@ -1110,6 +1135,7 @@ router.get('/sessions/today-status', authenticateToken, async (req, res) => {
     console.log('🔍 Búsqueda de sesión:', {
       userId,
       methodology_plan_id,
+      day_id_received: day_id,
       week_number,
       day_name: normalizedDay,
       found: sessionQuery.rowCount > 0,
@@ -1351,7 +1377,8 @@ router.post('/confirm-plan', authenticateToken, async (req, res) => {
       });
     }
 
-    // Asegurar que las sesiones metodológicas estén creadas
+    // 🎯 FASE 1: Asegurar que las sesiones metodológicas estén creadas
+    console.log(`📋 [confirm-plan] Creando sesiones para plan ${methodology_plan_id}...`);
     try {
       await client.query(
         'SELECT app.create_methodology_exercise_sessions($1, $2, $3::jsonb)',
@@ -1361,6 +1388,30 @@ router.post('/confirm-plan', authenticateToken, async (req, res) => {
     } catch (sessionError) {
       console.warn('⚠️ Error creando sesiones tras confirmación:', sessionError.message);
       // No fallar la confirmación por esto, las sesiones se pueden crear después
+    }
+
+    // 🎯 FASE 1: Generar programación completa (methodology_plan_days + workout_schedule)
+    console.log(`📅 [confirm-plan] Generando programación completa (methodology_plan_days + workout_schedule)...`);
+    try {
+      // Obtener la fecha de inicio del plan (usar NOW si no existe)
+      const startDateQuery = await client.query(
+        `SELECT COALESCE(plan_start_date, confirmed_at, NOW()) as start_date
+         FROM app.methodology_plans
+         WHERE id = $1`,
+        [methodology_plan_id]
+      );
+      const startDate = startDateQuery.rows[0]?.start_date || new Date();
+
+      console.log(`📅 [confirm-plan] Fecha de inicio del plan: ${startDate}`);
+
+      // Llamar a ensureWorkoutSchedule para generar la programación completa
+      await ensureWorkoutSchedule(client, userId, methodology_plan_id, plan.plan_data, startDate);
+
+      console.log('✅ Programación completa generada (methodology_plan_days + workout_schedule)');
+    } catch (scheduleError) {
+      console.error('❌ Error generando programación completa:', scheduleError.message);
+      console.error('Stack:', scheduleError.stack);
+      // No fallar la confirmación por esto, pero es importante logearlo
     }
 
     // Auto-commit mode: no COMMIT necesario
@@ -2740,100 +2791,10 @@ router.get('/schedule/:methodology_plan_id', authenticateToken, async (req, res)
   }
 });
 
-// 🎯 POST /api/routines/confirm-plan
-// Confirma un plan cambiando su status de 'draft' a 'active'
-// Esto se ejecuta cuando el usuario pulsa "Comenzar Entrenamiento"
-router.post('/confirm-plan', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user?.userId || req.user?.id;
-    const { methodology_plan_id } = req.body;
-
-    console.log(`🎯 [/confirm-plan] Confirmando plan ${methodology_plan_id} para usuario ${userId}`);
-
-    if (!methodology_plan_id) {
-      return res.status(400).json({
-        success: false,
-        error: 'methodology_plan_id es requerido'
-      });
-    }
-
-    // Verificar que el plan existe, pertenece al usuario y está en draft
-    const planCheck = await pool.query(`
-      SELECT id, status, plan_data
-      FROM app.methodology_plans
-      WHERE id = $1 AND user_id = $2
-    `, [methodology_plan_id, userId]);
-
-    if (planCheck.rowCount === 0) {
-      console.log(`❌ [/confirm-plan] Plan ${methodology_plan_id} no encontrado para usuario ${userId}`);
-      return res.status(404).json({
-        success: false,
-        error: 'Plan no encontrado'
-      });
-    }
-
-    const plan = planCheck.rows[0];
-
-    // Verificar que el plan tiene datos válidos
-    if (!plan.plan_data || Object.keys(plan.plan_data).length === 0) {
-      console.log(`❌ [/confirm-plan] Plan ${methodology_plan_id} tiene datos vacíos`);
-      return res.status(400).json({
-        success: false,
-        error: 'Plan incompleto - no se puede confirmar'
-      });
-    }
-
-    // Verificar que el plan está en draft
-    if (plan.status !== 'draft') {
-      console.log(`⚠️ [/confirm-plan] Plan ${methodology_plan_id} ya está en estado: ${plan.status}`);
-      return res.status(400).json({
-        success: false,
-        error: `Plan ya está en estado: ${plan.status}`
-      });
-    }
-
-    // Confirmar el plan
-    const confirmResult = await pool.query(`
-      UPDATE app.methodology_plans
-      SET
-        status = 'active',
-        confirmed_at = NOW(),
-        plan_start_date = NOW()
-      WHERE id = $1 AND user_id = $2
-      RETURNING id, status, confirmed_at, plan_start_date
-    `, [methodology_plan_id, userId]);
-
-    if (confirmResult.rowCount === 0) {
-      console.log(`❌ [/confirm-plan] No se pudo confirmar el plan ${methodology_plan_id}`);
-      return res.status(500).json({
-        success: false,
-        error: 'Error al confirmar el plan'
-      });
-    }
-
-    const confirmedPlan = confirmResult.rows[0];
-    console.log(`✅ [/confirm-plan] Plan ${methodology_plan_id} confirmado exitosamente`);
-
-    res.json({
-      success: true,
-      message: 'Plan confirmado exitosamente',
-      plan: {
-        id: confirmedPlan.id,
-        status: confirmedPlan.status,
-        confirmed_at: confirmedPlan.confirmed_at,
-        plan_start_date: confirmedPlan.plan_start_date
-      }
-    });
-
-  } catch (error) {
-    console.error('❌ [/confirm-plan] Error confirmando plan:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Error interno del servidor',
-      details: error.message
-    });
-  }
-});
+// ❌ ENDPOINT DUPLICADO ELIMINADO (FASE 1)
+// Este endpoint estaba duplicado y nunca se ejecutaba porque Express usa el primero que coincide.
+// El endpoint funcional está en la línea 1287.
+// Eliminado en FASE 1 para evitar confusión y código muerto.
 
 
 // DEV-ONLY: POST /api/routines/sessions/:sessionId/purge
