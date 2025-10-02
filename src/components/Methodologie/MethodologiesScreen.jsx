@@ -471,8 +471,23 @@ export default function MethodologiesScreen() {
           console.log('✅ Ejercicios disponibles:', progressData.exercises.length);
 
           // 🔥 Guardar los datos de la sesión en el estado local
+          // 🎯 MAPEAR exercise_name → nombre para compatibilidad con el modal
+          const mappedExercises = progressData.exercises.map(ex => ({
+            ...ex,
+            nombre: ex.exercise_name || ex.nombre, // Priorizar exercise_name del backend
+            series: ex.series_total || ex.series,
+            repeticiones: ex.repeticiones,
+            descanso_seg: ex.descanso_seg,
+            intensidad: ex.intensidad,
+            tempo: ex.tempo,
+            notas: ex.notas,
+            status: ex.status,
+            series_completed: ex.series_completed || 0,
+            time_spent_seconds: ex.time_spent_seconds || 0
+          }));
+
           setSessionData({
-            ejercicios: progressData.exercises,
+            ejercicios: mappedExercises,
             session_id: result.session_id,
             sessionId: result.session_id,
             currentExerciseIndex: 0

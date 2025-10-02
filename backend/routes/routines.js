@@ -88,21 +88,14 @@ async function getRandomCalistheniaExercises(client, level = 'basico', limit = 6
 }
 
 
-// Utilidad: asegurar sesiones creadas a partir del plan JSON (metodología)
+// 🎯 FASE 3: Función DESHABILITADA - Las sesiones se crean bajo demanda
+// Esta función llamaba al stored procedure create_methodology_exercise_sessions
+// que ha sido reemplazado por ensureWorkoutSchedule() + creación bajo demanda
 async function ensureMethodologySessions(client, userId, methodologyPlanId, planDataJson) {
-  // ¿Existen sesiones ya?
-  const exists = await client.query(
-    'SELECT 1 FROM app.methodology_exercise_sessions WHERE user_id = $1 AND methodology_plan_id = $2 LIMIT 1',
-    [userId, methodologyPlanId]
-  );
-  if (exists.rowCount > 0) return;
-
-  const normalizedPlan = normalizePlanDays(planDataJson);
-
-  await client.query(
-    'SELECT app.create_methodology_exercise_sessions($1, $2, $3::jsonb)',
-    [userId, methodologyPlanId, JSON.stringify(normalizedPlan)]
-  );
+  console.log(`📋 [ensureMethodologySessions] DESHABILITADA (FASE 3) - sesiones se crean bajo demanda`);
+  // Las sesiones en methodology_exercise_sessions se crean cuando el usuario
+  // inicia un entrenamiento (endpoint /sessions/start)
+  return;
 }
 
 // Utilidad: asegurar programación (workout_schedule) a partir del plan JSON
@@ -1377,20 +1370,24 @@ router.post('/confirm-plan', authenticateToken, async (req, res) => {
       });
     }
 
-    // 🎯 FASE 1: Asegurar que las sesiones metodológicas estén creadas
-    console.log(`📋 [confirm-plan] Creando sesiones para plan ${methodology_plan_id}...`);
-    try {
-      await client.query(
-        'SELECT app.create_methodology_exercise_sessions($1, $2, $3::jsonb)',
-        [userId, methodology_plan_id, JSON.stringify(plan.plan_data)]
-      );
-      console.log('✅ Sesiones metodológicas creadas tras confirmación');
-    } catch (sessionError) {
-      console.warn('⚠️ Error creando sesiones tras confirmación:', sessionError.message);
-      // No fallar la confirmación por esto, las sesiones se pueden crear después
-    }
+    // 🎯 FASE 2: STORED PROCEDURE DESHABILITADO
+    // El stored procedure create_methodology_exercise_sessions tiene varios problemas:
+    // 1. Espera un formato de JSON diferente al que genera la IA
+    // 2. Crea sesiones duplicadas (ya las crea ensureWorkoutSchedule)
+    // 3. Usa nombres de día completos (Lunes) en vez de abreviaturas (Lun)
+    // 4. Calcula fechas incorrectamente (usa CURRENT_DATE en vez de plan_start_date)
+    //
+    // SOLUCIÓN: ensureWorkoutSchedule() hace todo lo que necesitamos:
+    // - Crea methodology_plan_days (con day_id correcto)
+    // - Crea workout_schedule (con sesiones programadas)
+    // - Usa el formato correcto de días (Lun, Mar, Mié)
+    // - Calcula fechas correctamente desde plan_start_date
+    //
+    // Las sesiones en methodology_exercise_sessions se crean bajo demanda
+    // cuando el usuario inicia un entrenamiento (endpoint /sessions/start)
+    console.log(`📋 [confirm-plan] Stored procedure omitido (FASE 2) - sesiones se crean bajo demanda`);
 
-    // 🎯 FASE 1: Generar programación completa (methodology_plan_days + workout_schedule)
+    // 🎯 FASE 1 & 2: Generar programación completa (methodology_plan_days + workout_schedule)
     console.log(`📅 [confirm-plan] Generando programación completa (methodology_plan_days + workout_schedule)...`);
     try {
       // Obtener la fecha de inicio del plan (usar NOW si no existe)

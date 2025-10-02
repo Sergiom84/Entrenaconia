@@ -68,21 +68,15 @@ function normalizePlanDays(planDataJson) {
 }
 
 /**
- * Asegurar sesiones creadas para metodología
+ * 🎯 FASE 3: Función DESHABILITADA - Las sesiones se crean bajo demanda
+ * Esta función llamaba al stored procedure create_methodology_exercise_sessions
+ * que ha sido reemplazado por ensureWorkoutSchedule() + creación bajo demanda
  */
 async function ensureMethodologySessions(client, userId, methodologyPlanId, planDataJson) {
-  const exists = await client.query(
-    'SELECT 1 FROM app.methodology_exercise_sessions WHERE user_id = $1 AND methodology_plan_id = $2 LIMIT 1',
-    [userId, methodologyPlanId]
-  );
-  if (exists.rowCount > 0) return;
-
-  const normalizedPlan = normalizePlanDays(planDataJson);
-
-  await client.query(
-    'SELECT app.create_methodology_exercise_sessions($1, $2, $3::jsonb)',
-    [userId, methodologyPlanId, JSON.stringify(normalizedPlan)]
-  );
+  console.log(`📋 [ensureMethodologySessions] DESHABILITADA (FASE 3) - sesiones se crean bajo demanda`);
+  // Las sesiones en methodology_exercise_sessions se crean cuando el usuario
+  // inicia un entrenamiento (endpoint /sessions/start)
+  return;
 }
 
 /**
