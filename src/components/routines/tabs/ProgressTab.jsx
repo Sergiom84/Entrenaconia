@@ -2,39 +2,54 @@ import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
 import { Progress } from '@/components/ui/progress.jsx';
-import { 
-  BarChart3, 
-  TrendingUp, 
+import {
+  BarChart3,
+  TrendingUp,
   Calendar,
   Clock,
   Target,
   Award,
   Activity,
-  CheckCircle
+  CheckCircle,
+  Flame,
+  Zap,
+  Trophy,
+  Star,
+  Dumbbell,
+  Timer
 } from 'lucide-react';
 import { getProgressData } from '../api';
 
-export default function ProgressTab({ plan, methodologyPlanId }) {
+export default function ProgressTab({ plan, methodologyPlanId, routinePlan, routinePlanId }) {
+  // Usar routinePlan si plan no está disponible (compatibilidad)
+  const effectivePlan = plan || routinePlan;
+  const effectiveMethodologyPlanId = methodologyPlanId || routinePlanId;
+
   const [progressData, setProgressData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     const loadProgressData = async () => {
-      if (!methodologyPlanId) return;
-      
+      if (!effectiveMethodologyPlanId) {
+        console.log('⚠️ ProgressTab: No hay methodologyPlanId disponible');
+        return;
+      }
+
+      console.log(`📊 ProgressTab: Cargando datos para plan ${effectiveMethodologyPlanId}`);
       setLoading(true);
       setError(null);
-      
+
       try {
-        const data = await getProgressData({ methodology_plan_id: methodologyPlanId });
+        const data = await getProgressData({ methodology_plan_id: effectiveMethodologyPlanId });
+        console.log('✅ ProgressTab: Datos cargados:', data);
         // Validar estructura de datos recibidos
         if (!data || typeof data !== 'object') {
           throw new Error('Datos de progreso inválidos');
         }
         setProgressData(data);
       } catch (err) {
-        console.error('Error cargando datos de progreso:', err);
+        console.error('❌ ProgressTab: Error cargando datos de progreso:', err);
         setError(err.message);
         // Establecer datos de progreso vacíos basados en estructura esperada
         setProgressData({
@@ -55,7 +70,7 @@ export default function ProgressTab({ plan, methodologyPlanId }) {
     };
 
     loadProgressData();
-  }, [methodologyPlanId, plan]);
+  }, [effectiveMethodologyPlanId, effectivePlan]);
 
   const calculateOverallProgress = () => {
     if (!progressData || !progressData.totalSessions || progressData.totalSessions === 0) return 0;
@@ -79,6 +94,117 @@ export default function ProgressTab({ plan, methodologyPlanId }) {
     return `${hours}h ${minutes}min`;
   };
 
+  // Calcular racha actual (días consecutivos con entrenamientos)
+  const calculateCurrentStreak = () => {
+    if (!progressData?.recentActivity || progressData.recentActivity.length === 0) return 0;
+
+    const sortedActivity = [...progressData.recentActivity].sort((a, b) =>
+      new Date(b.date) - new Date(a.date)
+    );
+
+    let streak = 0;
+    let currentDate = new Date();
+    currentDate.setHours(0, 0, 0, 0);
+
+    for (const activity of sortedActivity) {
+      const activityDate = new Date(activity.date);
+      activityDate.setHours(0, 0, 0, 0);
+
+      const diffDays = Math.floor((currentDate - activityDate) / (1000 * 60 * 60 * 24));
+
+      if (diffDays === streak) {
+        streak++;
+      } else if (diffDays > streak) {
+        break;
+      }
+    }
+
+    return streak;
+  };
+
+  // Calcular mejor racha histórica
+  const calculateBestStreak = () => {
+    if (!progressData?.recentActivity || progressData.recentActivity.length === 0) return 0;
+
+    const sortedActivity = [...progressData.recentActivity].sort((a, b) =>
+      new Date(a.date) - new Date(b.date)
+    );
+
+    let maxStreak = 0;
+    let currentStreak = 1;
+
+    for (let i = 1; i < sortedActivity.length; i++) {
+      const prevDate = new Date(sortedActivity[i - 1].date);
+      const currDate = new Date(sortedActivity[i].date);
+
+      prevDate.setHours(0, 0, 0, 0);
+      currDate.setHours(0, 0, 0, 0);
+
+      const diffDays = Math.floor((currDate - prevDate) / (1000 * 60 * 60 * 24));
+
+      if (diffDays === 1) {
+        currentStreak++;
+      } else {
+        maxStreak = Math.max(maxStreak, currentStreak);
+        currentStreak = 1;
+      }
+    }
+
+    return Math.max(maxStreak, currentStreak);
+  };
+
+  // Calcular intensidad promedio (basado en completitud de ejercicios)
+  const calculateAverageIntensity = () => {
+    if (!progressData || !progressData.totalExercises || progressData.totalExercises === 0) return 0;
+    const completed = progressData.completedExercises || 0;
+    const total = progressData.totalExercises || 0;
+    return Math.round((completed / total) * 100);
+  };
+
+  // Calcular consistencia (sesiones completadas vs totales)
+  const calculateConsistency = () => {
+    if (!progressData || !progressData.totalSessions || progressData.totalSessions === 0) return 0;
+    const completed = progressData.completedSessions || 0;
+    const total = progressData.totalSessions || 0;
+    return Math.round((completed / total) * 100);
+  };
+
+  // Obtener próximos hitos
+  const getNextMilestones = () => {
+    const sessions = progressData?.completedSessions || 0;
+    const series = progressData?.totalSeriesCompleted || 0;
+    const weeks = progressData?.weeklyProgress?.filter(w => (w.completed || 0) === (w.sessions || 0) && (w.sessions || 0) > 0).length || 0;
+
+    const milestones = [
+      {
+        title: '10 Sesiones',
+        progress: Math.min(100, Math.round((sessions / 10) * 100)),
+        achieved: sessions >= 10,
+        icon: <Dumbbell className="w-5 h-5 text-white" />
+      },
+      {
+        title: '100 Series',
+        progress: Math.min(100, Math.round((series / 100) * 100)),
+        achieved: series >= 100,
+        icon: <Target className="w-5 h-5 text-white" />
+      },
+      {
+        title: '2 Semanas Completas',
+        progress: Math.min(100, Math.round((weeks / 2) * 100)),
+        achieved: weeks >= 2,
+        icon: <Calendar className="w-5 h-5 text-white" />
+      },
+      {
+        title: '20 Sesiones',
+        progress: Math.min(100, Math.round((sessions / 20) * 100)),
+        achieved: sessions >= 20,
+        icon: <Trophy className="w-5 h-5 text-white" />
+      }
+    ];
+
+    return milestones;
+  };
+
   // Mostrar error si existe
   if (error && !loading && !progressData) {
     return (
@@ -93,7 +219,7 @@ export default function ProgressTab({ plan, methodologyPlanId }) {
             // Recargar datos
             const loadProgressData = async () => {
               try {
-                const data = await getProgressData({ methodology_plan_id: methodologyPlanId });
+                const data = await getProgressData({ methodology_plan_id: effectiveMethodologyPlanId });
                 if (!data || typeof data !== 'object') {
                   throw new Error('Datos de progreso inválidos');
                 }
@@ -116,7 +242,7 @@ export default function ProgressTab({ plan, methodologyPlanId }) {
                 setLoading(false);
               }
             };
-            if (methodologyPlanId) loadProgressData();
+            if (effectiveMethodologyPlanId) loadProgressData();
           }}
           className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
         >
@@ -126,7 +252,7 @@ export default function ProgressTab({ plan, methodologyPlanId }) {
     );
   }
 
-  if (!plan && !loading && !error) {
+  if (!effectivePlan && !loading && !error) {
     return (
       <div className="text-center py-12">
         <BarChart3 className="w-16 h-16 text-gray-500 mx-auto mb-4" />
@@ -194,7 +320,7 @@ export default function ProgressTab({ plan, methodologyPlanId }) {
           <div>
             <h2 className="text-2xl font-bold text-white mb-2">Progreso General</h2>
             <Badge variant="secondary" className="bg-yellow-400/20 text-yellow-300">
-              {plan.selected_style}
+              {effectivePlan?.selected_style || effectivePlan?.nombre || 'Metodología'}
             </Badge>
           </div>
           <div className="text-right">
@@ -367,7 +493,7 @@ export default function ProgressTab({ plan, methodologyPlanId }) {
           <Activity className="w-5 h-5 mr-2 text-yellow-400" />
           Actividad Reciente
         </h3>
-        
+
         {progressData.recentActivity?.length > 0 ? (
           <div className="space-y-3">
             {progressData.recentActivity.map((activity, index) => (
@@ -399,6 +525,157 @@ export default function ProgressTab({ plan, methodologyPlanId }) {
             <p className="text-sm">Completa tu primer entrenamiento para ver tu progreso aquí</p>
           </div>
         )}
+      </Card>
+
+      {/* Racha de entrenamiento */}
+      <Card className="bg-gradient-to-br from-orange-900/30 to-red-900/30 border-orange-600/30 p-6">
+        <h3 className="text-lg font-semibold text-white mb-4 flex items-center">
+          <Flame className="w-5 h-5 mr-2 text-orange-400" />
+          Racha de Entrenamiento
+        </h3>
+
+        <div className="grid md:grid-cols-3 gap-6">
+          <div className="text-center">
+            <div className="w-20 h-20 mx-auto mb-3 bg-orange-600/20 rounded-full flex items-center justify-center">
+              <Flame className="w-10 h-10 text-orange-400" />
+            </div>
+            <div className="text-3xl font-bold text-orange-400 mb-1">
+              {calculateCurrentStreak()}
+            </div>
+            <div className="text-sm text-gray-400">Días consecutivos</div>
+          </div>
+
+          <div className="text-center">
+            <div className="w-20 h-20 mx-auto mb-3 bg-yellow-600/20 rounded-full flex items-center justify-center">
+              <Trophy className="w-10 h-10 text-yellow-400" />
+            </div>
+            <div className="text-3xl font-bold text-yellow-400 mb-1">
+              {calculateBestStreak()}
+            </div>
+            <div className="text-sm text-gray-400">Mejor racha</div>
+          </div>
+
+          <div className="text-center">
+            <div className="w-20 h-20 mx-auto mb-3 bg-blue-600/20 rounded-full flex items-center justify-center">
+              <Star className="w-10 h-10 text-blue-400" />
+            </div>
+            <div className="text-3xl font-bold text-blue-400 mb-1">
+              {progressData.completedSessions || 0}
+            </div>
+            <div className="text-sm text-gray-400">Entrenamientos totales</div>
+          </div>
+        </div>
+
+        {calculateCurrentStreak() > 0 && (
+          <div className="mt-6 p-4 bg-orange-600/10 border border-orange-600/30 rounded-lg">
+            <p className="text-center text-orange-300 text-sm">
+              🔥 ¡Sigue así! Llevas {calculateCurrentStreak()} {calculateCurrentStreak() === 1 ? 'día' : 'días'} entrenando consecutivamente
+            </p>
+          </div>
+        )}
+      </Card>
+
+      {/* Estadísticas detalladas */}
+      <div className="grid md:grid-cols-3 gap-6">
+        {/* Intensidad promedio */}
+        <Card className="bg-gray-900/50 border-gray-700 p-6">
+          <h3 className="text-lg font-semibold text-white mb-4 flex items-center">
+            <Zap className="w-5 h-5 mr-2 text-yellow-400" />
+            Intensidad
+          </h3>
+
+          <div className="text-center">
+            <div className="text-4xl font-bold text-yellow-400 mb-2">
+              {calculateAverageIntensity()}%
+            </div>
+            <div className="text-sm text-gray-400 mb-4">Promedio</div>
+
+            <Progress
+              value={calculateAverageIntensity()}
+              className="h-2"
+            />
+          </div>
+        </Card>
+
+        {/* Volumen total */}
+        <Card className="bg-gray-900/50 border-gray-700 p-6">
+          <h3 className="text-lg font-semibold text-white mb-4 flex items-center">
+            <Dumbbell className="w-5 h-5 mr-2 text-purple-400" />
+            Volumen
+          </h3>
+
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <span className="text-gray-400 text-sm">Series totales:</span>
+              <span className="text-white font-semibold">{progressData.totalSeriesCompleted || 0}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-400 text-sm">Ejercicios:</span>
+              <span className="text-white font-semibold">{progressData.completedExercises || 0}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-400 text-sm">Por sesión:</span>
+              <span className="text-white font-semibold">
+                {(progressData.completedSessions || 0) > 0
+                  ? Math.round((progressData.totalSeriesCompleted || 0) / progressData.completedSessions)
+                  : 0
+                } series
+              </span>
+            </div>
+          </div>
+        </Card>
+
+        {/* Consistencia */}
+        <Card className="bg-gray-900/50 border-gray-700 p-6">
+          <h3 className="text-lg font-semibold text-white mb-4 flex items-center">
+            <Timer className="w-5 h-5 mr-2 text-green-400" />
+            Consistencia
+          </h3>
+
+          <div className="text-center">
+            <div className="text-4xl font-bold text-green-400 mb-2">
+              {calculateConsistency()}%
+            </div>
+            <div className="text-sm text-gray-400 mb-4">
+              {progressData.completedSessions || 0} de {progressData.totalSessions || 0} sesiones
+            </div>
+
+            <Progress
+              value={calculateConsistency()}
+              className="h-2"
+            />
+          </div>
+        </Card>
+      </div>
+
+      {/* Próximos hitos */}
+      <Card className="bg-gradient-to-br from-purple-900/30 to-blue-900/30 border-purple-600/30 p-6">
+        <h3 className="text-lg font-semibold text-white mb-4 flex items-center">
+          <Target className="w-5 h-5 mr-2 text-purple-400" />
+          Próximos Hitos
+        </h3>
+
+        <div className="grid md:grid-cols-2 gap-4">
+          {getNextMilestones().map((milestone, index) => (
+            <div key={index} className="flex items-center space-x-3 p-3 bg-black/40 rounded-lg border border-gray-700">
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${milestone.achieved ? 'bg-green-600' : 'bg-gray-600'}`}>
+                {milestone.icon}
+              </div>
+              <div className="flex-1">
+                <p className={`text-sm font-medium ${milestone.achieved ? 'text-green-400' : 'text-gray-300'}`}>
+                  {milestone.title}
+                </p>
+                <div className="flex items-center space-x-2 mt-1">
+                  <Progress
+                    value={milestone.progress}
+                    className="h-1 flex-1"
+                  />
+                  <span className="text-xs text-gray-400">{milestone.progress}%</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       </Card>
     </div>
   );
