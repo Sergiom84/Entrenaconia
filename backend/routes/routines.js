@@ -113,54 +113,92 @@ async function ensureWorkoutSchedule(client, userId, methodologyPlanId, planData
     return;
   }
 
+  // 🎯 NORMALIZAR días del plan (Lunes/Lun → formato consistente)
+  const normalizedPlan = normalizePlanDays(planData);
+
   // Limpiar programación existente del plan (idempotente)
   await client.query(
     `DELETE FROM app.workout_schedule WHERE methodology_plan_id = $1 AND user_id = $2`,
     [methodologyPlanId, userId]
   );
 
+  // Limpiar methodology_plan_days existentes
+  await client.query(
+    `DELETE FROM app.methodology_plan_days WHERE plan_id = $1`,
+    [methodologyPlanId]
+  );
+
   // Mapas de días en español
   const dayNames = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
   const dayAbbrevs = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
 
-  // Empezar desde la fecha indicada o hoy (incluir fines de semana)
-  const currentDate = new Date(startDate);
+  // 📅 Fecha de inicio real del plan
+  const planStartDate = new Date(startDate);
 
+  let day_id = 1;
   let globalSessionOrder = 1;
 
-  for (let weekIndex = 0; weekIndex < planData.semanas.length; weekIndex++) {
-    const semana = planData.semanas[weekIndex];
+  // 🔄 NUEVO ALGORITMO: Iterar por días consecutivos, no por sesiones del JSON
+  for (let weekIndex = 0; weekIndex < normalizedPlan.semanas.length; weekIndex++) {
+    const semana = normalizedPlan.semanas[weekIndex];
+    const weekNumber = weekIndex + 1;
+
     if (!semana?.sesiones?.length) continue;
 
-    for (let weekSessionOrder = 0; weekSessionOrder < semana.sesiones.length; weekSessionOrder++) {
-      const sesion = semana.sesiones[weekSessionOrder];
+    // Iterar los 7 días de esta semana
+    for (let dayInWeek = 0; dayInWeek < 7; dayInWeek++) {
+      const dayOffset = (weekIndex * 7) + dayInWeek;
 
-      // Programar en el día actual (incluye fines de semana)
+      // Calcular la fecha para este día
+      const currentDate = new Date(planStartDate);
+      currentDate.setDate(currentDate.getDate() + dayOffset);
+
+      // Determinar el día de la semana de esta fecha
       const dow = currentDate.getDay();
       const dayName = dayNames[dow];
       const dayAbbrev = dayAbbrevs[dow];
+
+      // 🎯 BUSCAR la sesión que corresponde a este día de la semana
+      const sesion = semana.sesiones.find(s => {
+        const sesionDay = normalizeDayAbbrev(s.dia);
+        return sesionDay === dayAbbrev;
+      });
+
+      // Si no hay sesión para este día, es día de descanso
+      if (!sesion) {
+        // Registrar en methodology_plan_days como día de descanso
+        await client.query(
+          `INSERT INTO app.methodology_plan_days (
+            plan_id, day_id, week_number, day_name, date_local, is_rest
+          ) VALUES ($1, $2, $3, $4, $5, $6)
+          ON CONFLICT (plan_id, day_id) DO NOTHING`,
+          [methodologyPlanId, day_id, weekNumber, dayName, currentDate.toISOString().split('T')[0], true]
+        );
+        day_id++;
+        continue;
+      }
+
       const sessionTitle = sesion?.titulo || sesion?.title || `Sesión ${globalSessionOrder}`;
 
+      // Insertar en workout_schedule
       await client.query(
         `INSERT INTO app.workout_schedule (
           methodology_plan_id,
           user_id,
           week_number,
           session_order,
-          week_session_order,
           scheduled_date,
           day_name,
           day_abbrev,
           session_title,
           exercises,
           status
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
         [
           methodologyPlanId,
           userId,
-          weekIndex + 1,
+          weekNumber,
           globalSessionOrder,
-          weekSessionOrder + 1,
           currentDate.toISOString().split('T')[0],
           dayName,
           dayAbbrev,
@@ -170,12 +208,21 @@ async function ensureWorkoutSchedule(client, userId, methodologyPlanId, planData
         ]
       );
 
-      // Avanzar al siguiente día (incluye fines de semana)
-      currentDate.setDate(currentDate.getDate() + 1);
+      // Insertar en methodology_plan_days con referencia a los ejercicios
+      await client.query(
+        `INSERT INTO app.methodology_plan_days (
+          plan_id, day_id, week_number, day_name, date_local, is_rest, planned_exercises_count
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (plan_id, day_id) DO NOTHING`,
+        [methodologyPlanId, day_id, weekNumber, dayName, currentDate.toISOString().split('T')[0], false, sesion.ejercicios?.length || 0]
+      );
 
+      day_id++;
       globalSessionOrder++;
     }
   }
+
+  console.log(`✅ Programación generada: ${globalSessionOrder - 1} sesiones, ${day_id - 1} días totales`);
 }
 
 // Utilidad: crear una sesión específica para un día que no existe en el plan
@@ -1744,7 +1791,7 @@ router.get('/active-plan', authenticateToken, async (req, res) => {
     // Buscar plan de metodología activo (fallback al método anterior)
     const activeMethodologyQuery = await pool.query(
       `SELECT id as methodology_plan_id, methodology_type, plan_data,
-              confirmed_at, created_at, 'methodology' as source, status
+              confirmed_at, created_at, plan_start_date, 'methodology' as source, status
        FROM app.methodology_plans
        WHERE user_id = $1 AND status = 'active'
        ORDER BY confirmed_at DESC
@@ -1770,7 +1817,10 @@ router.get('/active-plan', authenticateToken, async (req, res) => {
         console.log('🧩 [/active-plan] Sin todaySession; generando programación on-demand...');
         const client = await pool.connect();
         try {
-          await ensureWorkoutSchedule(client, userId, activePlan.methodology_plan_id, activePlan.plan_data);
+          // 📅 Usar plan_start_date o confirmed_at/created_at como fallback
+          const startDate = activePlan.plan_start_date || activePlan.confirmed_at || activePlan.created_at || new Date();
+          console.log(`📅 Fecha de inicio del plan: ${startDate}`);
+          await ensureWorkoutSchedule(client, userId, activePlan.methodology_plan_id, activePlan.plan_data, startDate);
         } finally {
           client.release();
         }
