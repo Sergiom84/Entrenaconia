@@ -11,18 +11,22 @@ function stripDiacritics(str = '') {
 }
 function normalizeDayAbbrev(dayName) {
   if (!dayName) return dayName;
+
+  // Normalizar primero quitando tildes
   const raw = stripDiacritics(String(dayName).trim());
   const lower = raw.toLowerCase().replace(/\.$/, '');
+
   const map = {
     'lunes': 'Lun', 'lun': 'Lun',
     'martes': 'Mar', 'mar': 'Mar',
-    'miercoles': 'Mie', 'mie': 'Mie', 'miércoles': 'Mie',
+    'miercoles': 'Mie', 'mie': 'Mie',  // Sin tilde
     'jueves': 'Jue', 'jue': 'Jue',
     'viernes': 'Vie', 'vie': 'Vie',
-    'sabado': 'Sab', 'sab': 'Sab', 'sábado': 'Sab',
+    'sabado': 'Sab', 'sab': 'Sab',     // Sin tilde
     'domingo': 'Dom', 'dom': 'Dom',
   };
-  return map[lower] || dayName; // si ya viene correcto, lo dejamos
+
+  return map[lower] || dayName; // Si ya viene correcto, lo dejamos
 }
 function normalizePlanDays(planDataJson) {
   try {
@@ -777,18 +781,63 @@ router.post('/sessions/:sessionId/finish', authenticateToken, async (req, res) =
       return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
     }
 
-    // Actualizar estado de la sesión
+    // 🎯 CALCULAR ESTADO REAL basado en progreso de ejercicios
     console.log('\ud83d\udd1c FINISH SESSION - POST /sessions/' + sessionId + '/finish');
 
-    await client.query(
-      `UPDATE app.methodology_exercise_sessions
-         SET session_status = 'completed', completed_at = NOW(),
-             total_duration_seconds = EXTRACT(EPOCH FROM (NOW() - started_at))::INTEGER
-       WHERE id = $1`,
+    const progressStats = await client.query(
+      `SELECT
+        COUNT(*) as total,
+        COUNT(*) FILTER (WHERE status = 'completed') as completed,
+        COUNT(*) FILTER (WHERE status = 'skipped') as skipped,
+        COUNT(*) FILTER (WHERE status = 'cancelled') as cancelled,
+        COUNT(*) FILTER (WHERE status = 'pending') as pending,
+        COUNT(*) FILTER (WHERE status = 'in_progress') as in_progress
+       FROM app.methodology_exercise_progress
+       WHERE methodology_session_id = $1`,
       [sessionId]
     );
 
-    console.log('\u2705 Session finished', { sessionId });
+    const stats = progressStats.rows[0];
+    const total = Number(stats.total);
+    const completed = Number(stats.completed);
+    const skipped = Number(stats.skipped);
+    const cancelled = Number(stats.cancelled);
+
+    // Determinar estado correcto
+    let finalStatus;
+    if (completed === total && total > 0) {
+      finalStatus = 'completed';  // Todos completados
+    } else if (skipped === total && total > 0) {
+      finalStatus = 'skipped';    // Todos saltados
+    } else if (cancelled === total && total > 0) {
+      finalStatus = 'cancelled';  // Todos cancelados
+    } else if (completed > 0) {
+      finalStatus = 'partial';    // Mezcla con algunos completados
+    } else {
+      finalStatus = 'incomplete'; // Sin ejercicios completados
+    }
+
+    console.log('📊 Estado calculado:', {
+      sessionId,
+      total,
+      completed,
+      skipped,
+      cancelled,
+      finalStatus
+    });
+
+    await client.query(
+      `UPDATE app.methodology_exercise_sessions
+         SET session_status = $2,
+             completed_at = NOW(),
+             total_duration_seconds = EXTRACT(EPOCH FROM (NOW() - started_at))::INTEGER,
+             exercises_completed = $3,
+             total_exercises = $4
+       WHERE id = $1`,
+      [sessionId, finalStatus, completed, total]
+    );
+
+    console.log('\u2705 Session finished', { sessionId, status: finalStatus });
 
     // Obtener todos los ejercicios de la sesión para mover al historial
     const exercisesQuery = await client.query(
@@ -997,47 +1046,28 @@ router.get('/sessions/today-status', authenticateToken, async (req, res) => {
     // Buscar la sesión del día por fecha específica (más preciso)
     const { session_date } = req.query;
 
-    let sessionQuery;
-    if (session_date) {
-      // Preferir la sesión PLANIFICADA para esta fecha (week_number + day_name)
-      const preferredDay = normalizeDayAbbrev(day_name);
-      const byPlanned = await pool.query(
-        `SELECT * FROM app.methodology_exercise_sessions
-         WHERE user_id = $1 AND methodology_plan_id = $2
-           AND week_number = $3 AND day_name = $4
-         ORDER BY COALESCE(updated_at, started_at, created_at) DESC
-         LIMIT 1`,
-        [userId, methodology_plan_id, week_number, preferredDay]
-      );
+    // 🎯 BÚSQUEDA MEJORADA: Siempre filtrar por week_number Y day_name
+    // Esto evita devolver sesiones de días incorrectos
+    const sessionQuery = await pool.query(
+      `SELECT * FROM app.methodology_exercise_sessions
+       WHERE user_id = $1
+         AND methodology_plan_id = $2
+         AND week_number = $3
+         AND day_name = $4
+       ORDER BY COALESCE(updated_at, started_at, created_at) DESC
+       LIMIT 1`,
+      [userId, methodology_plan_id, week_number, normalizedDay]
+    );
 
-      if (byPlanned.rowCount > 0) {
-        sessionQuery = byPlanned;
-      } else {
-        // Fallback: si no hay sesión planificada (p.ej., día faltante), intentar por fecha exacta
-        sessionQuery = await pool.query(
-          `SELECT * FROM app.methodology_exercise_sessions
-           WHERE user_id = $1 AND methodology_plan_id = $2
-             AND (
-               (session_date IS NOT NULL AND session_date::date = $3::date)
-               OR (started_at IS NOT NULL AND started_at::date = $3::date)
-               OR (created_at::date = $3::date)
-             )
-           ORDER BY COALESCE(updated_at, started_at, created_at) DESC
-           LIMIT 1`,
-          [userId, methodology_plan_id, session_date]
-        );
-      }
-    } else {
-      // Fallback: buscar por week_number y day_name (comportamiento anterior)
-      sessionQuery = await pool.query(
-        `SELECT * FROM app.methodology_exercise_sessions
-         WHERE user_id = $1 AND methodology_plan_id = $2
-           AND week_number = $3 AND day_name = $4
-         ORDER BY created_at DESC
-         LIMIT 1`,
-        [userId, methodology_plan_id, week_number, normalizedDay]
-      );
-    }
+    // Log detallado para debugging
+    console.log('🔍 Búsqueda de sesión:', {
+      userId,
+      methodology_plan_id,
+      week_number,
+      day_name: normalizedDay,
+      found: sessionQuery.rowCount > 0,
+      session_id: sessionQuery.rows[0]?.id
+    });
 
     if (sessionQuery.rowCount === 0) {
       return res.status(404).json({
@@ -1084,10 +1114,11 @@ router.get('/sessions/today-status', authenticateToken, async (req, res) => {
     const allCancelled = totalExercises > 0 && cancelledExercises === totalExercises;
 
     // Lógica de reanudación:
-    // - Reanudar si NO está finalizada y ya hubo algún progreso real (in_progress o completados/skipped/cancelled)
-    // - Comenzar si todo sigue pendiente
+    // - Reanudar si NO está finalizada Y (ya hubo progreso O la sesión fue iniciada)
+    // - Comenzar si todo sigue pendiente y session_started_at es null
     const hasAnyProgress = (inProgressExercises > 0) || ((completedExercises + skippedExercises + cancelledExercises) > 0);
-    const canResume = !isFinished && hasAnyProgress;
+    const sessionWasStarted = session.session_started_at != null;
+    const canResume = !isFinished && (hasAnyProgress || sessionWasStarted);
     const canRetry = (allSkipped || allCancelled);
 
     console.log(`🎯 today-status NUEVA LÓGICA INTELIGENTE:`, {
