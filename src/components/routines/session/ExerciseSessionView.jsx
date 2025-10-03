@@ -78,7 +78,8 @@ export const ExerciseSessionView = ({
   } = timerActions;
 
   const repsText = exercise?.repeticiones ?? '';
-  const currentFeedback = exerciseFeedback?.[exerciseIndex];
+  // 🔥 CORRECCIÓN: Usar originalIndex para buscar feedback en BD
+  const currentFeedback = exerciseFeedback?.[exercise?.originalIndex ?? exerciseIndex];
 
   return (
     <div className="bg-black/40 p-4 rounded-lg border border-gray-700">

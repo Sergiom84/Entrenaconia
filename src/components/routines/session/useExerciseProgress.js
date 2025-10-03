@@ -124,9 +124,13 @@ export const useExerciseProgress = (session, exercises) => {
 
   // Completar ejercicio actual
   const completeCurrentExercise = useCallback((seriesCompleted, timeSpent, onFinishExercise) => {
-    // 🔥 CORRECCIÓN: Pasar originalIndex a la API
+    // 🔥 CORRECCIÓN: Pasar originalIndex a la API con objeto completo
     const originalIdx = exercises[currentIndex]?.originalIndex ?? currentIndex;
-    onFinishExercise?.(originalIdx, seriesCompleted, timeSpent);
+    onFinishExercise?.(originalIdx, {
+      status: 'completed',
+      series_completed: seriesCompleted,
+      time_spent_seconds: timeSpent
+    });
 
     // Actualizar estado local usando índice filtrado
     setExerciseStates(prev => ({ ...prev, [currentIndex]: 'completed' }));
@@ -144,9 +148,13 @@ export const useExerciseProgress = (session, exercises) => {
 
   // Saltar ejercicio actual
   const skipCurrentExercise = useCallback((onSkipExercise) => {
-    // 🔥 CORRECCIÓN: Pasar originalIndex a la API
+    // 🔥 CORRECCIÓN: Pasar originalIndex a la API con objeto completo
     const originalIdx = exercises[currentIndex]?.originalIndex ?? currentIndex;
-    onSkipExercise?.(originalIdx);
+    onSkipExercise?.(originalIdx, {
+      status: 'skipped',
+      series_completed: 0,
+      time_spent_seconds: 0
+    });
 
     // Actualizar estado local usando índice filtrado
     setExerciseStates(prev => ({ ...prev, [currentIndex]: 'skipped' }));
@@ -164,9 +172,13 @@ export const useExerciseProgress = (session, exercises) => {
 
   // Cancelar ejercicio actual
   const cancelCurrentExercise = useCallback((onCancelExercise) => {
-    // 🔥 CORRECCIÓN: Pasar originalIndex a la API
+    // 🔥 CORRECCIÓN: Pasar originalIndex a la API con objeto completo
     const originalIdx = exercises[currentIndex]?.originalIndex ?? currentIndex;
-    onCancelExercise?.(originalIdx);
+    onCancelExercise?.(originalIdx, {
+      status: 'cancelled',
+      series_completed: 0,
+      time_spent_seconds: 0
+    });
 
     // Actualizar estado local usando índice filtrado
     setExerciseStates(prev => ({ ...prev, [currentIndex]: 'cancelled' }));

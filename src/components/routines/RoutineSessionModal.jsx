@@ -210,13 +210,25 @@ export default function RoutineSessionModal({
       if (action === 'save-as-partial') {
         // Guardar progreso parcial
         const partialSeries = Math.max(1, timerState.series - 1);
-        onFinishExercise?.(originalIdx, partialSeries, timerState.spent);
+        onFinishExercise?.(originalIdx, {
+          status: 'completed',
+          series_completed: partialSeries,
+          time_spent_seconds: timerState.spent
+        });
         progressState.actions.markAs(progressState.currentIndex, 'completed');
       } else if (action === 'skip-current') {
-        onSkipExercise?.(originalIdx);
+        onSkipExercise?.(originalIdx, {
+          status: 'skipped',
+          series_completed: 0,
+          time_spent_seconds: 0
+        });
         progressState.actions.markAs(progressState.currentIndex, 'skipped');
       } else if (action === 'cancel-current') {
-        onCancelExercise?.(originalIdx);
+        onCancelExercise?.(originalIdx, {
+          status: 'cancelled',
+          series_completed: 0,
+          time_spent_seconds: 0
+        });
         progressState.actions.markAs(progressState.currentIndex, 'cancelled');
       }
     }
