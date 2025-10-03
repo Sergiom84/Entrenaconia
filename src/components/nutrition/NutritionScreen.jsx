@@ -50,6 +50,15 @@ export default function NutritionScreen() {
         const data = await profileRes.json();
         setUserStats(data.stats);
         setNutritionPlan(data.currentPlan);
+
+        console.log('📊 Plan nutricional cargado desde BD:', {
+          hasPlan: !!data.currentPlan,
+          planId: data.currentPlan?.id,
+          createdAt: data.currentPlan?.created_at,
+          isActive: data.currentPlan?.is_active,
+          hasPlanData: !!data.currentPlan?.plan_data,
+          dailyPlansCount: data.currentPlan?.plan_data?.daily_plans?.length
+        });
       }
 
       // Estadísticas de la semana (consistencia, calorías medias)

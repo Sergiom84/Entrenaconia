@@ -33,21 +33,33 @@ export default function NutritionCalendar({ nutritionPlan, userMacros, onPlanUpd
     }
   }, [nutritionPlan]);
 
-  // Generar estructura de semana
+  // Generar estructura de semana DESDE HOY (no desde el lunes)
   const generateWeekStructure = () => {
     const days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
-    const currentDate = new Date();
-    const startOfWeek = new Date(currentDate.setDate(currentDate.getDate() - currentDate.getDay() + 1));
-    
+    const today = new Date();
+
+    // Si hay un plan nutricional con fecha de inicio, usar esa fecha
+    let startDate = today;
+    if (nutritionPlan?.created_at) {
+      const planStartDate = new Date(nutritionPlan.created_at);
+      // Solo usar la fecha del plan si es reciente (últimos 30 días)
+      const daysSinceCreation = Math.floor((today - planStartDate) / (1000 * 60 * 60 * 24));
+      if (daysSinceCreation >= 0 && daysSinceCreation < 30) {
+        startDate = planStartDate;
+      }
+    }
+
+    // Generar 7 días consecutivos desde la fecha de inicio + offset de semana
     return days.map((day, index) => {
-      const date = new Date(startOfWeek);
-      date.setDate(startOfWeek.getDate() + index + (currentWeek * 7));
-      
+      const date = new Date(startDate);
+      date.setDate(startDate.getDate() + index + (currentWeek * 7));
+
       return {
         name: day,
         date: date,
         dateString: date.toISOString().split('T')[0],
-        isToday: date.toDateString() === new Date().toDateString()
+        isToday: date.toDateString() === new Date().toDateString(),
+        dayIndex: index // Índice del día en el plan (0-6)
       };
     });
   };
@@ -101,7 +113,7 @@ export default function NutritionCalendar({ nutritionPlan, userMacros, onPlanUpd
     };
   };
 
-  const getMealPlanForDay = (dayName) => {
+  const getMealPlanForDay = (dayName, dayIndex) => {
     // Intentar obtener el plan del día desde diferentes estructuras posibles
     let dayPlan = null;
 
@@ -113,11 +125,18 @@ export default function NutritionCalendar({ nutritionPlan, userMacros, onPlanUpd
     // Estructura 2: nutritionPlan.plan_data.daily_plans (array)
     if (!dayPlan && nutritionPlan?.plan_data?.daily_plans) {
       const dailyPlans = nutritionPlan.plan_data.daily_plans;
-      const dayIndex = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
-        .indexOf(dayName);
 
-      if (dayIndex >= 0 && dailyPlans[dayIndex]) {
-        const planDay = dailyPlans[dayIndex];
+      // Usar el índice del día si está disponible, sino buscar por nombre
+      let planDayIndex = dayIndex;
+      if (planDayIndex === undefined) {
+        planDayIndex = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+          .indexOf(dayName);
+      }
+
+      if (planDayIndex >= 0 && planDayIndex < dailyPlans.length && dailyPlans[planDayIndex]) {
+        const planDay = dailyPlans[planDayIndex];
+        console.log(`📅 Mapeando día ${dayName} (índice ${planDayIndex}):`, planDay);
+
         // Convertir estructura de meals a estructura esperada
         dayPlan = {};
         (planDay.meals || []).forEach(meal => {
@@ -208,8 +227,8 @@ export default function NutritionCalendar({ nutritionPlan, userMacros, onPlanUpd
 
       {/* Vista semanal */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {weekDays.map((day, index) => {
-          const dayMeals = getMealPlanForDay(day.name);
+        {weekDays.map((day) => {
+          const dayMeals = getMealPlanForDay(day.name, day.dayIndex);
           const progress = getDayProgress(day.dateString);
           
           return (
