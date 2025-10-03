@@ -817,11 +817,15 @@ export default function MethodologiesScreen() {
             ui.hideModal('routineSession');
             setSessionData(null); // Limpiar datos de sesión al cerrar
           }}
-          onFinishExercise={(exerciseIndex, seriesCompleted, timeSpent) =>
-            updateExercise(exerciseIndex, { status: 'completed', seriesCompleted, timeSpent })
+          onFinishExercise={(exerciseIndex, progressData) =>
+            updateExercise(exerciseIndex, progressData)
           }
-          onSkipExercise={(exerciseIndex) => updateExercise(exerciseIndex, { status: 'skipped' })}
-          onCancelExercise={(exerciseIndex) => updateExercise(exerciseIndex, { status: 'cancelled' })}
+          onSkipExercise={(exerciseIndex, progressData) =>
+            updateExercise(exerciseIndex, progressData)
+          }
+          onCancelExercise={(exerciseIndex, progressData) =>
+            updateExercise(exerciseIndex, progressData)
+          }
           onEndSession={handleEndSession}
           navigateToRoutines={() => navigate('/routines')}
         />
