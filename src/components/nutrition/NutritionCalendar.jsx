@@ -26,45 +26,80 @@ export default function NutritionCalendar({ nutritionPlan, userMacros, onPlanUpd
         hasPlanData: !!nutritionPlan.plan_data,
         hasDailyPlans: !!nutritionPlan.plan_data?.daily_plans,
         dailyPlansLength: nutritionPlan.plan_data?.daily_plans?.length,
+        durationDays: nutritionPlan.duration_days || nutritionPlan.plan_data?.plan_summary?.duration_days,
+        createdAt: nutritionPlan.created_at,
         structure: Object.keys(nutritionPlan)
       });
+
+      // Log de los primeros 2 días del plan para verificar estructura
+      if (nutritionPlan.plan_data?.daily_plans) {
+        console.log('📅 Primeros 2 días del plan:',
+          nutritionPlan.plan_data.daily_plans.slice(0, 2).map((day, idx) => ({
+            dayIndex: idx,
+            mealsCount: day.meals?.length,
+            mealTypes: day.meals?.map(m => m.meal_type)
+          }))
+        );
+      }
     } else {
       console.log('📅 NutritionCalendar - Sin plan, usando valores por defecto');
     }
   }, [nutritionPlan]);
 
-  // Generar estructura de semana DESDE HOY (no desde el lunes)
+  // Generar estructura de semana DESDE LA FECHA DE INICIO DEL PLAN
   const generateWeekStructure = () => {
-    const days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+    const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
     const today = new Date();
+    today.setHours(0, 0, 0, 0); // Normalizar a medianoche
 
-    // Si hay un plan nutricional con fecha de inicio, usar esa fecha
-    let startDate = today;
+    // Determinar fecha de inicio del plan
+    let planStartDate = today;
     if (nutritionPlan?.created_at) {
-      const planStartDate = new Date(nutritionPlan.created_at);
-      // Solo usar la fecha del plan si es reciente (últimos 30 días)
-      const daysSinceCreation = Math.floor((today - planStartDate) / (1000 * 60 * 60 * 24));
-      if (daysSinceCreation >= 0 && daysSinceCreation < 30) {
-        startDate = planStartDate;
-      }
+      planStartDate = new Date(nutritionPlan.created_at);
+      planStartDate.setHours(0, 0, 0, 0);
     }
 
-    // Generar 7 días consecutivos desde la fecha de inicio + offset de semana
-    return days.map((day, index) => {
-      const date = new Date(startDate);
-      date.setDate(startDate.getDate() + index + (currentWeek * 7));
+    // Calcular duración del plan (por defecto 7 días)
+    const planDuration = nutritionPlan?.duration_days ||
+                        nutritionPlan?.plan_data?.plan_summary?.duration_days ||
+                        7;
 
-      return {
-        name: day,
+    // Generar 7 días consecutivos desde la fecha de inicio + offset de semana
+    const weekDays = [];
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(planStartDate);
+      date.setDate(planStartDate.getDate() + i + (currentWeek * 7));
+
+      // Calcular el índice del día dentro del plan (0 a planDuration-1)
+      const daysSinceStart = Math.floor((date - planStartDate) / (1000 * 60 * 60 * 24));
+      const dayIndexInPlan = daysSinceStart % planDuration; // Ciclar si el plan es más corto
+
+      // Verificar si este día está dentro del rango del plan
+      const isWithinPlan = daysSinceStart >= 0 && daysSinceStart < planDuration;
+
+      weekDays.push({
+        name: dayNames[date.getDay()], // ✅ Nombre real del día según la fecha
         date: date,
         dateString: date.toISOString().split('T')[0],
-        isToday: date.toDateString() === new Date().toDateString(),
-        dayIndex: index // Índice del día en el plan (0-6)
-      };
-    });
+        isToday: date.toDateString() === today.toDateString(),
+        dayIndex: dayIndexInPlan, // Índice dentro del plan (con ciclo)
+        daysSinceStart: daysSinceStart,
+        isWithinPlan: isWithinPlan
+      });
+    }
+
+    return weekDays;
   };
 
   const weekDays = generateWeekStructure();
+
+  // Calcular límites de navegación
+  const planDuration = nutritionPlan?.duration_days ||
+                      nutritionPlan?.plan_data?.plan_summary?.duration_days ||
+                      7;
+  const maxWeeks = Math.ceil(planDuration / 7);
+  const canGoBack = currentWeek > 0;
+  const canGoForward = currentWeek < maxWeeks - 1;
 
   // Plan de comidas por defecto si no hay plan personalizado
   const getDefaultMealPlan = (dayName) => {
@@ -201,22 +236,32 @@ export default function NutritionCalendar({ nutritionPlan, userMacros, onPlanUpd
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setCurrentWeek(prev => prev - 1)}
-                className="border-gray-600 text-white hover:bg-gray-700"
+                onClick={() => setCurrentWeek(prev => Math.max(0, prev - 1))}
+                disabled={!canGoBack}
+                className="border-gray-600 text-white hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 <ChevronLeft size={16} />
               </Button>
-              <span className="text-white font-semibold px-4">
-                Semana del {weekDays[0]?.date.toLocaleDateString('es-ES', { 
-                  day: 'numeric', 
-                  month: 'short' 
-                })}
-              </span>
+              <div className="text-center">
+                <div className="text-white font-semibold">
+                  Semana {currentWeek + 1} de {maxWeeks}
+                </div>
+                <div className="text-gray-400 text-xs">
+                  {weekDays[0]?.date.toLocaleDateString('es-ES', {
+                    day: 'numeric',
+                    month: 'short'
+                  })} - {weekDays[6]?.date.toLocaleDateString('es-ES', {
+                    day: 'numeric',
+                    month: 'short'
+                  })}
+                </div>
+              </div>
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setCurrentWeek(prev => prev + 1)}
-                className="border-gray-600 text-white hover:bg-gray-700"
+                onClick={() => setCurrentWeek(prev => Math.min(maxWeeks - 1, prev + 1))}
+                disabled={!canGoForward}
+                className="border-gray-600 text-white hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 <ChevronRight size={16} />
               </Button>
@@ -232,9 +277,11 @@ export default function NutritionCalendar({ nutritionPlan, userMacros, onPlanUpd
           const progress = getDayProgress(day.dateString);
           
           return (
-            <Card 
+            <Card
               key={day.dateString}
-              className={`bg-gray-800/70 border-gray-600 cursor-pointer transition-all duration-200 hover:bg-gray-700/70 ${
+              className={`border-gray-600 cursor-pointer transition-all duration-200 ${
+                !day.isWithinPlan ? 'bg-gray-900/50 opacity-50' : 'bg-gray-800/70 hover:bg-gray-700/70'
+              } ${
                 day.isToday ? 'ring-2 ring-yellow-400' : ''
               } ${
                 selectedDay === day.dateString ? 'ring-2 ring-blue-400' : ''
@@ -248,6 +295,9 @@ export default function NutritionCalendar({ nutritionPlan, userMacros, onPlanUpd
                     <p className="text-gray-300 text-sm">
                       {day.date.getDate()} {day.date.toLocaleDateString('es-ES', { month: 'short' })}
                     </p>
+                    {!day.isWithinPlan && (
+                      <p className="text-xs text-gray-500 mt-1">Fuera del plan</p>
+                    )}
                   </div>
                   <div className="text-right">
                     <div className="text-lg font-bold text-yellow-400">
