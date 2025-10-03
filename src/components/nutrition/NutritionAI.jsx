@@ -121,7 +121,7 @@ El plan debe ser práctico, realista y adaptado específicamente a los objetivos
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Header con resumen de macros */}
       <Card className="bg-gray-800/70 border-gray-600">
         <CardHeader>
           <CardTitle className="text-white flex items-center gap-2">
@@ -131,9 +131,9 @@ El plan debe ser práctico, realista y adaptado específicamente a los objetivos
         </CardHeader>
         <CardContent>
           <p className="text-gray-300 mb-4">
-            Genera un plan nutricional personalizado basado en tu perfil, rutina de entrenamiento y objetivos específicos.
+            Configura las opciones del plan y genera un plan nutricional personalizado basado en tu perfil, rutina de entrenamiento y objetivos específicos.
           </p>
-          
+
           {userData && userMacros && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-gray-700/50 rounded-lg">
               <div className="text-center">
@@ -157,13 +157,16 @@ El plan debe ser práctico, realista y adaptado específicamente a los objetivos
         </CardContent>
       </Card>
 
-      {/* Opciones de configuración */}
+      {/* Opciones de configuración - AHORA VISIBLE SIEMPRE */}
       <Card className="bg-gray-800/70 border-gray-600">
         <CardHeader>
           <CardTitle className="text-white flex items-center gap-2">
             <Target className="text-yellow-400" size={20} />
             Configuración del Plan
           </CardTitle>
+          <p className="text-sm text-gray-400 mt-2">
+            Personaliza las opciones antes de generar tu plan nutricional
+          </p>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -285,11 +288,14 @@ El plan debe ser práctico, realista y adaptado específicamente a los objetivos
         </CardContent>
       </Card>
 
-      {/* Prompt generado (para desarrollo/debug) */}
-      {import.meta.env.DEV && (
+      {/* Prompt generado (para desarrollo/debug) - Solo si userData está cargado */}
+      {import.meta.env.DEV && userData && userData.peso && userData.altura && (
         <Card className="bg-gray-800/70 border-gray-600">
           <CardHeader>
-            <CardTitle className="text-white text-sm">Prompt Generado (Debug)</CardTitle>
+            <CardTitle className="text-white text-sm flex items-center gap-2">
+              <AlertCircle size={16} className="text-blue-400" />
+              Prompt Generado (Debug - Solo Desarrollo)
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <pre className="text-xs text-gray-300 whitespace-pre-wrap bg-gray-900 p-3 rounded overflow-auto max-h-64">

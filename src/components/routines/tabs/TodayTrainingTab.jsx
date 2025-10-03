@@ -165,7 +165,7 @@ export default function TodayTrainingTab({
 
   const fetchTodayStatus = useCallback(async () => {
     const currentMethodologyPlanId = methodologyPlanId || plan.methodologyPlanId;
-    if (!hasActivePlan || !currentMethodologyPlanId) return;
+    if (!hasActivePlan || !currentMethodologyPlanId) return null;
 
     setLoadingTodayStatus(true);
     try {
@@ -173,10 +173,17 @@ export default function TodayTrainingTab({
       const dayId = computeDayId(startISO, 'Europe/Madrid');
       const data = await getTodayStatusCached({ methodologyPlanId: currentMethodologyPlanId, dayId });
       if (data?.success) {
-        setTodayStatus({ session: data.session, exercises: data.exercises, summary: data.summary });
+        const normalized = { session: data.session, exercises: data.exercises, summary: data.summary };
+        setTodayStatus(normalized);
+        return normalized;
       }
+
+      setTodayStatus(null);
+      return null;
     } catch (e) {
       console.error('Error obteniendo estado del día:', e);
+      setTodayStatus(null);
+      return null;
     } finally {
       setLoadingTodayStatus(false);
     }
@@ -184,6 +191,7 @@ export default function TodayTrainingTab({
 
 
   const mountedRef = useRef(true);
+  const warmupShownSessionsRef = useRef(new Set());
 
   const updateLocalState = (updates) => {
     setLocalState(prev => ({ ...prev, ...updates }));
@@ -352,15 +360,36 @@ export default function TodayTrainingTab({
     // ✅ Pre-check robusto: si existe sesión hoy y NO debemos reanudar, abrir Warmup y evitar /start
     {
       const existingSid = todayStatus?.session?.id;
-      const neverStarted = todayStatus?.session?.session_started_at == null;
-      const shouldOpenWarmup = (!!existingSid) || neverStarted;
-      if (shouldOpenWarmup && existingSid) {
+      const sessionKey = existingSid != null ? String(existingSid) : null;
+      const sessionAlreadyStarted = Boolean(todayStatus?.session?.session_started_at);
+      const warmupAlreadyShown = sessionKey ? warmupShownSessionsRef.current.has(sessionKey) : false;
+
+      if (existingSid && (!warmupAlreadyShown && !sessionAlreadyStarted)) {
+        if (sessionKey) {
+          warmupShownSessionsRef.current.add(sessionKey);
+        }
         updateLocalState({
           pendingSessionData: {
             session: { ...todaySessionData, sessionId: existingSid },
             sessionId: existingSid
           },
-          showWarmupModal: true
+          showWarmupModal: true,
+          showSessionModal: false
+        });
+        return;
+      }
+
+      if (existingSid) {
+        if (sessionKey) {
+          warmupShownSessionsRef.current.add(sessionKey);
+        }
+        updateLocalState({
+          pendingSessionData: {
+            session: null,
+            sessionId: existingSid
+          },
+          showWarmupModal: false,
+          showSessionModal: true
         });
         return;
       }
@@ -396,12 +425,19 @@ export default function TodayTrainingTab({
         };
 
         // Guardar datos de sesión para después del calentamiento
+        const createdSessionId = result.sessionId || result.session_id || session.sessionId;
+        const createdSessionKey = createdSessionId != null ? String(createdSessionId) : null;
+        if (createdSessionKey) {
+          warmupShownSessionsRef.current.add(createdSessionKey);
+        }
+
         updateLocalState({
           pendingSessionData: {
             session: enrichedSession,
-            sessionId: result.sessionId || result.session_id || session.sessionId
+            sessionId: createdSessionId
           },
-          showWarmupModal: true
+          showWarmupModal: true,
+          showSessionModal: false
         });
 
         track('SESSION_START', {
@@ -412,7 +448,12 @@ export default function TodayTrainingTab({
 
         // Opcional: Callback para notificar al componente padre
         if (onStartTraining) {
-          onStartTraining();
+          onStartTraining({
+            source: 'today-training-tab',
+            sessionResult: result,
+            dayId,
+            exerciseIndex
+          });
         }
       } else {
         throw new Error(result.error || 'Error iniciando la sesión');
@@ -426,14 +467,19 @@ export default function TodayTrainingTab({
         const existingSid = todayStatus?.session?.id;
         const sid = error?.data?.session_id || existingSid;
         const msg = String(error?.message || '').toLowerCase();
-        if ((error?.status === 400 && sid) || (msg.includes('ya existe una sesión activa') && sid)) {
-          console.log('🔄 Sesión existente detectada, usando session_id y mostrando WarmupModal...');
+        if ((error?.status === 400 && sid) || (msg.includes('ya existe una sesion activa') && sid)) {
+          console.log('[TodayTrainingTab] Existing session detected, showing warmup modal');
+          const sessionKey = sid != null ? String(sid) : null;
+          if (sessionKey) {
+            warmupShownSessionsRef.current.add(sessionKey);
+          }
           updateLocalState({
             pendingSessionData: {
               session: { ...todaySessionData, sessionId: sid },
               sessionId: sid
             },
-            showWarmupModal: true
+            showWarmupModal: true,
+            showSessionModal: false
           });
           return;
         }
@@ -445,40 +491,43 @@ export default function TodayTrainingTab({
       setIsLoadingSession(false);
       setIsStarting(false); // 🔓 Desbloquear
     }
-  }, [todaySessionData, hasActiveSession, startSession, methodologyPlanId, currentTodayName, session.sessionId, track, onStartTraining, setError, isStarting, isLoadingSession]);
+  }, [todaySessionData, hasActiveSession, startSession, methodologyPlanId, currentTodayName, session.sessionId, todayStatus, track, onStartTraining, setError, isStarting, isLoadingSession]);
 
   const handleResumeSession = useCallback(async () => {
     track('BUTTON_CLICK', { id: 'resume_session' }, { component: 'TodayTrainingTab' });
 
-    // 🎯 PASO 1: Refrescar estado desde BD ANTES de abrir modal
     console.log('🔄 Refrescando estado desde BD antes de reanudar...');
-    await fetchTodayStatus();
+    const latestStatus = await fetchTodayStatus();
+    const statusSource = latestStatus || todayStatus;
 
-    // 🔥 PASO 2: Verificar sesión desde BD (todayStatus) en lugar de solo el contexto
-    const existingSessionId = todayStatus?.session?.id || session.sessionId || localState.pendingSessionData?.sessionId;
-    const sessionStarted = todayStatus?.session?.session_started_at != null;
+    const existingSessionId = statusSource?.session?.id || session.sessionId || localState.pendingSessionData?.sessionId;
+    const sessionKey = existingSessionId != null ? String(existingSessionId) : null;
+    const sessionStarted = Boolean(statusSource?.session?.session_started_at);
+    const warmupAlreadyShown = sessionKey ? warmupShownSessionsRef.current.has(sessionKey) : false;
 
-    console.log('🔍 DEBUG handleResumeSession:', {
+    console.log('[TodayTrainingTab] handleResumeSession', {
       existingSessionId,
       sessionStarted,
+      warmupAlreadyShown,
       hasActiveSession,
-      'todayStatus.session': todayStatus?.session,
-      'session.sessionId': session.sessionId
+      todayStatusSession: statusSource?.session,
+      contextSessionId: session.sessionId
     });
 
-    // Si no hay sesión en BD, iniciar nueva sesión (con warmup)
     if (!existingSessionId) {
-      console.log('⚠️ No hay sesión existente, iniciando nueva con warmup');
+      console.log('[TodayTrainingTab] No existing session found, starting new with warmup');
       handleStartSession(currentExerciseIndex || 0);
       return;
     }
 
-    // Si hay sesión pero NO se ha iniciado (sin warmup), abrir warmup
-    if (existingSessionId && !sessionStarted) {
-      console.log('🔥 Sesión existe pero sin warmup, abriendo warmup');
+    if (!warmupAlreadyShown && !sessionStarted) {
+      console.log('[TodayTrainingTab] Existing session without warmup, showing warmup modal');
+      if (sessionKey) {
+        warmupShownSessionsRef.current.add(sessionKey);
+      }
       updateLocalState({
         pendingSessionData: {
-          session: null,
+          session: todaySessionData ? { ...todaySessionData, sessionId: existingSessionId } : null,
           sessionId: existingSessionId
         },
         showWarmupModal: true,
@@ -487,22 +536,23 @@ export default function TodayTrainingTab({
       return;
     }
 
-    // Si la sesión YA está iniciada (warmup hecho), abrir directamente el modal de ejercicios
-    console.log('✅ Sesión iniciada, abriendo modal de ejercicios directamente (sin warmup)');
+    console.log('[TodayTrainingTab] Warmup already handled, opening session modal');
 
-    // 🔥 IMPORTANTE: NO asignar session aquí, dejar que effectiveSession use filteredSessionData
-    // De esta forma, el modal recibirá solo los ejercicios NO completados
+    if (sessionKey) {
+      warmupShownSessionsRef.current.add(sessionKey);
+    }
+
     updateLocalState({
       pendingSessionData: {
-        session: null, // No asignar sesión aquí, usar effectiveSession del render
+        session: null,
         sessionId: existingSessionId
       },
       showWarmupModal: false,
       showSessionModal: true
     });
 
-    console.log('🔄 Reanudando sesión - effectiveSession usará filteredSessionData');
-  }, [hasActiveSession, handleStartSession, currentExerciseIndex, session.sessionId, localState.pendingSessionData?.sessionId, todayStatus, setError, track, fetchTodayStatus]);
+    console.log('[TodayTrainingTab] Resuming session with pending exercises');
+  }, [todaySessionData, hasActiveSession, handleStartSession, currentExerciseIndex, session.sessionId, localState.pendingSessionData?.sessionId, todayStatus, track, fetchTodayStatus]);
 
   const handleCompleteSession = useCallback(async () => {
     const sid = localState.pendingSessionData?.sessionId || session.sessionId;
@@ -526,6 +576,9 @@ export default function TodayTrainingTab({
         setSessionStartTime(null);
         setCurrentExerciseIndex(0);
         setExerciseProgress({});
+        if (sid != null) {
+          warmupShownSessionsRef.current.delete(String(sid));
+        }
 
         // Limpiar estado del modal
         updateLocalState({
@@ -557,7 +610,16 @@ export default function TodayTrainingTab({
   const handleExerciseUpdate = useCallback(async (exerciseIndex, progressData) => {
     // 🎯 MAPEAR ÍNDICE FILTRADO A ÍNDICE ORIGINAL
     // El modal trabaja con índices filtrados, pero la API necesita índices originales
-    const originalIndex = filteredSessionData?.originalIndexMapping?.[exerciseIndex] ?? exerciseIndex;
+    const mapping = filteredSessionData?.originalIndexMapping;
+    let originalIndex = exerciseIndex;
+
+    if (Array.isArray(mapping) && mapping.length > 0) {
+      if (mapping[exerciseIndex] != null) {
+        originalIndex = mapping[exerciseIndex];
+      } else if (mapping.includes(exerciseIndex)) {
+        originalIndex = exerciseIndex;
+      }
+    }
 
     console.log('🔍 DEBUG handleExerciseUpdate:', {
       exerciseIndexFromModal: exerciseIndex,

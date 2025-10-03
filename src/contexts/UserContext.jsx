@@ -257,7 +257,10 @@ export const UserProvider = ({ children }) => {
       });
 
       if (response && response.ok) {
-        const profileData = await response.json();
+        const responseData = await response.json();
+
+        // El backend devuelve { user: {...} }, extraer el objeto user
+        const profileData = responseData.user || responseData;
 
         // 4. GUARDAR EN CACHE
         cacheManager.current.setCache(userId, profileData);
@@ -265,7 +268,12 @@ export const UserProvider = ({ children }) => {
         // 5. ACTUALIZAR ESTADO
         setUserData(profileData);
 
-        console.log('Profile loaded successfully:', userId);
+        console.log('✅ Profile loaded successfully:', userId, {
+          peso: profileData.peso,
+          altura: profileData.altura,
+          edad: profileData.edad,
+          sexo: profileData.sexo
+        });
         return profileData;
       } else {
         throw new Error('Failed to load user profile');

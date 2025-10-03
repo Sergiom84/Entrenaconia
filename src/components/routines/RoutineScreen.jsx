@@ -207,7 +207,27 @@ const RoutineScreen = () => {
     }
   };
 
-  const handleStartTraining = async () => {
+  const handleStartTraining = async (startContext = {}) => {
+    const context = startContext || {};
+    const preStartedResult = context.sessionResult;
+    const skipSessionStart = context.skipSessionStart || !!preStartedResult;
+
+    if (skipSessionStart) {
+      if (preStartedResult?.success) {
+        console.log('✅ Sesión ya iniciada desde', context.source || 'origen externo');
+        updateLocalState({ activeTab: 'today' });
+        return preStartedResult;
+      }
+
+      if (preStartedResult && !preStartedResult.success) {
+        ui.setError(preStartedResult.error || 'Error iniciando el entrenamiento');
+        return preStartedResult;
+      }
+
+      updateLocalState({ activeTab: 'today' });
+      return { success: true };
+    }
+
     try {
       try { track('BUTTON_CLICK', { id: 'start_training' }, { component: 'RoutineScreen' }); } catch (e) { void e; }
       console.log('🚀 Iniciando entrenamiento del día...');
@@ -216,7 +236,6 @@ const RoutineScreen = () => {
         throw new Error('No hay plan activo para entrenar');
       }
 
-      // Usar startSession del WorkoutContext
       const result = await startSession({
         methodologyPlanId: effectiveMethodologyPlanId,
         dayName: todayName
@@ -226,13 +245,15 @@ const RoutineScreen = () => {
         console.log('✅ Sesión de entrenamiento iniciada');
         try { track('SESSION_START', { methodologyPlanId: effectiveMethodologyPlanId, dayName: todayName }, { component: 'RoutineScreen' }); } catch (e) { void e; }
         updateLocalState({ activeTab: 'today' });
-      } else {
-        throw new Error(result.error || 'Error iniciando el entrenamiento');
+        return result;
       }
+
+      throw new Error(result.error || 'Error iniciando el entrenamiento');
 
     } catch (error) {
       console.error('❌ Error iniciando entrenamiento:', error);
       ui.setError(error.message || 'Error iniciando el entrenamiento');
+      return { success: false, error: error.message };
     }
   };
 

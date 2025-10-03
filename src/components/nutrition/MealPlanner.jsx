@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,10 +15,51 @@ import {
   Search
 } from 'lucide-react';
 
-// NO templates hardcodeados - deben generarse por IA basado en perfil del usuario
-const mealTemplates = [];
+export default function MealPlanner({ userMacros, userData, onPlanCreated, initialPlan }) {
+  // Templates generados por IA desde el plan (si existe)
+  const [mealTemplates, setMealTemplates] = useState([]);
 
-export default function MealPlanner({ userMacros, userData, onPlanCreated }) {
+  useEffect(() => {
+    if (!initialPlan?.daily_plans) return;
+    try {
+      const allMeals = [];
+      initialPlan.daily_plans.forEach((day) => {
+        (day.meals || []).forEach((meal) => {
+          const name = meal.name || meal.title || meal.meal_name || 'Comida';
+          const nutrition = meal.nutrition || {};
+          const template = {
+            id: `${name}-${Math.random().toString(36).slice(2, 8)}`,
+            name,
+            category: (meal.meal_type || 'almuerzo').toLowerCase(),
+            calories: Math.round(nutrition.calories || 0),
+            protein: Math.round(nutrition.protein || 0),
+            carbs: Math.round(nutrition.carbs || 0),
+            fat: Math.round(nutrition.fat || 0),
+            ingredients: (meal.ingredients || [])
+              .map((i) => (typeof i === 'string' ? i : [i?.food, i?.amount].filter(Boolean).join(' ')))
+              .filter(Boolean),
+            preparation: meal.time_minutes ? `${meal.time_minutes} min` : (meal.preparation || 'Preparación'),
+            difficulty: meal.difficulty || 'Media',
+          };
+          allMeals.push(template);
+        });
+      });
+
+      const unique = [];
+      const seen = new Set();
+      for (const m of allMeals) {
+        const key = `${m.name}|${m.calories}|${m.protein}|${m.carbs}|${m.fat}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          unique.push(m);
+        }
+      }
+      setMealTemplates(unique);
+    } catch (e) {
+      console.error('Error generando templates desde initialPlan', e);
+    }
+  }, [initialPlan]);
+
   const [selectedDay, setSelectedDay] = useState('lunes');
   const [dayMeals, setDayMeals] = useState({
     desayuno: null,
