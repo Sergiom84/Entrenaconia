@@ -67,25 +67,28 @@ export const formatExerciseName = (exerciseName) => {
 export const getSentimentIcon = (sentiment) => {
   switch (sentiment) {
     case 'like':
-      return { 
-        icon: Heart, 
-        color: 'text-pink-400', 
-        bg: 'bg-pink-900/30', 
-        border: 'border-pink-500/30' 
+      return {
+        Icon: Heart,
+        color: 'text-pink-400',
+        bg: 'bg-pink-900/30',
+        border: 'border-pink-500/30',
+        label: 'Me gusta'
       };
     case 'dislike':
-      return { 
-        icon: Frown, 
-        color: 'text-orange-400', 
-        bg: 'bg-orange-900/30', 
-        border: 'border-orange-500/30' 
+      return {
+        Icon: Frown,
+        color: 'text-orange-400',
+        bg: 'bg-orange-900/30',
+        border: 'border-orange-500/30',
+        label: 'No me gusta'
       };
     case 'hard':
-      return { 
-        icon: AlertOctagon, 
-        color: 'text-red-400', 
-        bg: 'bg-red-900/30', 
-        border: 'border-red-500/30' 
+      return {
+        Icon: AlertOctagon,
+        color: 'text-red-400',
+        bg: 'bg-red-900/30',
+        border: 'border-red-500/30',
+        label: 'Muy difícil'
       };
     default:
       return null;

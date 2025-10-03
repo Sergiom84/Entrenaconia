@@ -61,7 +61,7 @@ export const CalendarExerciseCard = ({
         <div className="flex items-center gap-2 mt-1">
           {sentimentData && (
             <span className={`inline-flex items-center px-1.5 py-0.5 rounded-md border ${sentimentData.bg} ${sentimentData.border}`}>
-              <sentimentData.icon className={`w-3 h-3 mr-1 ${sentimentData.color}`} />
+              <sentimentData.Icon className={`w-3 h-3 mr-1 ${sentimentData.color}`} />
               <span className={`text-[10px] ${sentimentData.color}`}>{sentimentData.label}</span>
             </span>
           )}
