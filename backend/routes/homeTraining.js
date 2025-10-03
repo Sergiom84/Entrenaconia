@@ -1,7 +1,9 @@
 import express from 'express';
 import { pool } from '../db.js';
 import authenticateToken from '../middleware/auth.js';
-import { getOpenAIClient } from '../lib/openaiClient.js';
+import { getOpenAIClient, getModuleOpenAI } from '../lib/openaiClient.js';
+import { AI_MODULES } from '../config/aiConfigs.js';
+import { getPrompt, FeatureKey } from '../lib/promptRegistry.js';
 
 // TODO: Integrar endpoint IA de generación de plan usando módulo HOME_TRAINING (promptId, temperature 1.0)
 // Ejemplo futuro: POST /plans/ai/generate
@@ -39,6 +41,494 @@ function toExerciseKey(name) {
   const s = String(name || '').toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu,'');
   return s.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 100) || 'ejercicio';
 }
+
+const EQUIPMENT_PRESETS = {
+  minimo: ['Peso corporal', 'Toalla resistente', 'Silla estable', 'Pared o sofa'],
+  basico: ['Esterilla', 'Bandas elasticas', 'Mancuernas ajustables', 'Banco o step'],
+  avanzado: ['TRX', 'Barra de dominadas', 'Kettlebells', 'Discos y barra']
+};
+
+function normalizeArrayField(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.filter(Boolean);
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        return parsed.filter(Boolean);
+      }
+    } catch (_) {
+      // ignore JSON parse failures
+    }
+    return value
+      .split(/[;,]/)
+      .map(item => item.trim())
+      .filter(Boolean);
+  }
+  return [value].filter(Boolean);
+}
+
+function computeBMI(weightKg, heightCm) {
+  const weight = Number(weightKg);
+  const height = Number(heightCm);
+  if (!weight || !height) return null;
+  const meters = height / 100;
+  if (!meters) return null;
+  const bmi = weight / (meters * meters);
+  return Number.isFinite(bmi) ? Number(bmi.toFixed(1)) : null;
+}
+
+async function getUserProfileForHomeTraining(userId) {
+  const { rows } = await pool.query(
+    `SELECT
+        u.id,
+        u.nombre,
+        u.apellido,
+        u.edad,
+        u.sexo,
+        u.peso,
+        u.altura,
+        u.anos_entrenando,
+        u.nivel_entrenamiento,
+        u.nivel_actividad,
+        u.objetivo_principal,
+        u.frecuencia_semanal,
+        u.grasa_corporal,
+        u.masa_muscular,
+        u.alergias,
+        u.medicamentos,
+        u.suplementacion,
+        p.limitaciones_fisicas,
+        p.metodologia_preferida,
+        p.objetivo_principal AS perfil_objetivo
+     FROM app.users u
+     LEFT JOIN app.user_profiles p ON u.id = p.user_id
+     WHERE u.id = $1`,
+    [userId]
+  );
+
+  if (rows.length === 0) {
+    throw new Error('Usuario no encontrado');
+  }
+
+  const profile = rows[0];
+  if (!profile.objetivo_principal && profile.perfil_objetivo) {
+    profile.objetivo_principal = profile.perfil_objetivo;
+  }
+
+  return profile;
+}
+
+function buildUserProfileSummary(profile) {
+  return {
+    id: profile.id,
+    nombre: profile.nombre,
+    apellido: profile.apellido,
+    edad: profile.edad != null ? Number(profile.edad) : null,
+    sexo: profile.sexo || null,
+    peso_kg: profile.peso != null ? Number(profile.peso) : null,
+    altura_cm: profile.altura != null ? Number(profile.altura) : null,
+    imc: computeBMI(profile.peso, profile.altura),
+    anos_entrenando: profile.anos_entrenando != null ? Number(profile.anos_entrenando) : null,
+    nivel_entrenamiento: profile.nivel_entrenamiento || 'intermedio',
+    nivel_actividad: profile.nivel_actividad || 'moderado',
+    objetivo_principal: profile.objetivo_principal || 'general',
+    metodologia_preferida: profile.metodologia_preferida || null,
+    frecuencia_semanal: profile.frecuencia_semanal != null ? Number(profile.frecuencia_semanal) : null,
+    grasa_corporal: profile.grasa_corporal != null ? Number(profile.grasa_corporal) : null,
+    masa_muscular: profile.masa_muscular != null ? Number(profile.masa_muscular) : null,
+    alergias: normalizeArrayField(profile.alergias),
+    medicamentos: normalizeArrayField(profile.medicamentos),
+    suplementacion: normalizeArrayField(profile.suplementacion),
+    limitaciones_fisicas: normalizeArrayField(profile.limitaciones_fisicas)
+  };
+}
+
+async function getUserEquipmentInventory(userId) {
+  try {
+    const [curatedRes, customRes] = await Promise.all([
+      pool.query(
+        `SELECT
+            ue.equipment_type AS key,
+            COALESCE(et.equipment_type_es, ue.equipment_type) AS label,
+            COALESCE(et.category_es, et.category_en, 'general') AS category
+         FROM app.user_equipment ue
+         LEFT JOIN app.equipment_translations et ON et.equipment_type_en = ue.equipment_type
+         WHERE ue.user_id = $1 AND ue.has_equipment = true
+         ORDER BY label`,
+        [userId]
+      ),
+      pool.query(
+        `SELECT equipment_name AS name
+           FROM app.user_custom_equipment
+          WHERE user_id = $1
+          ORDER BY created_at DESC
+          LIMIT 25`,
+        [userId]
+      )
+    ]);
+
+    return {
+      curated: curatedRes.rows.map(row => ({
+        key: row.key,
+        label: row.label,
+        category: row.category
+      })),
+      custom: customRes.rows.map(row => row.name)
+    };
+  } catch (error) {
+    console.warn('No se pudo obtener equipamiento del usuario:', error.message);
+    return { curated: [], custom: [] };
+  }
+}
+
+async function getCombinationHistory(userId, equipmentType, trainingType) {
+  try {
+    const { rows } = await pool.query(
+      `SELECT plan_data, created_at
+         FROM app.home_training_plans
+        WHERE user_id = $1 AND equipment_type = $2 AND training_type = $3
+        ORDER BY created_at DESC
+        LIMIT 10`,
+      [userId, equipmentType, trainingType]
+    );
+
+    const exercises = new Set();
+    const summaries = [];
+
+    for (const row of rows) {
+      let planData = row.plan_data;
+      if (typeof planData === 'string') {
+        try {
+          planData = JSON.parse(planData);
+        } catch (parseError) {
+          console.warn('Plan guardado con JSON invalido para combinacion, se omite:', parseError.message);
+          continue;
+        }
+      }
+
+      const workout = planData?.plan_entrenamiento;
+      const exercisesList = Array.isArray(workout?.ejercicios) ? workout.ejercicios : [];
+
+      exercisesList.forEach(exercise => {
+        if (exercise?.nombre) {
+          exercises.add(exercise.nombre);
+        }
+      });
+
+      if (summaries.length < 3 && workout) {
+        summaries.push({
+          titulo: workout.titulo || null,
+          fecha: workout.fecha || row.created_at,
+          total_ejercicios: exercisesList.length,
+          primeros_ejercicios: exercisesList.slice(0, 5).map(ex => ex.nombre)
+        });
+      }
+    }
+
+    return {
+      total_planes: rows.length,
+      ejercicios_usados: Array.from(exercises).slice(0, 25),
+      ultimos_planes: summaries
+    };
+  } catch (error) {
+    console.warn('No se pudo obtener historico de combinacion:', error.message);
+    return {
+      total_planes: 0,
+      ejercicios_usados: [],
+      ultimos_planes: []
+    };
+  }
+}
+
+async function getRecentExerciseHistory(userId, limit = 20) {
+  try {
+    const { rows } = await pool.query(
+      `SELECT exercise_name
+         FROM app.home_exercise_history
+        WHERE user_id = $1
+        ORDER BY session_date DESC NULLS LAST, created_at DESC NULLS LAST
+        LIMIT $2`,
+      [userId, limit]
+    );
+
+    const seen = new Set();
+    const ordered = [];
+
+    for (const row of rows) {
+      const name = row.exercise_name;
+      if (name && !seen.has(name)) {
+        seen.add(name);
+        ordered.push(name);
+      }
+    }
+
+    return ordered;
+  } catch (error) {
+    console.warn('No se pudo obtener historial general de ejercicios:', error.message);
+    return [];
+  }
+}
+
+async function getUserFeedbackSummary(userId) {
+  try {
+    const { rows } = await pool.query(
+      `SELECT exercise_name, sentiment, feedback_type, comment, avoidance_duration_days, expires_at
+         FROM app.user_exercise_feedback
+        WHERE user_id = $1
+        ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST
+        LIMIT 40`,
+      [userId]
+    );
+
+    const liked = new Set();
+    const challenging = new Set();
+    const disliked = new Set();
+    const avoid = [];
+    const comments = [];
+
+    for (const row of rows) {
+      const name = row.exercise_name;
+      const sentiment = (row.sentiment || '').toLowerCase();
+      const feedbackType = (row.feedback_type || '').toLowerCase();
+      const flag = feedbackType || sentiment;
+
+      if (['like', 'favorite', 'love'].includes(flag)) {
+        liked.add(name);
+      } else if (['hard', 'challenging', 'difficult', 'too_difficult'].includes(flag)) {
+        challenging.add(name);
+      } else if (['dislike', 'dont_like', 'no_equipment'].includes(flag)) {
+        disliked.add(name);
+      }
+
+      if (['too_difficult', 'no_equipment', 'change_focus', 'dont_like'].includes(feedbackType)) {
+        avoid.push({
+          exercise: name,
+          reason: feedbackType,
+          comment: row.comment || null,
+          expires_at: row.expires_at,
+          avoidance_days: row.avoidance_duration_days || null
+        });
+      } else if (row.comment) {
+        comments.push({ exercise: name, comment: row.comment });
+      }
+    }
+
+    return {
+      liked: Array.from(liked).slice(0, 10),
+      challenging: Array.from(challenging).slice(0, 10),
+      disliked: Array.from(disliked).slice(0, 10),
+      avoid: avoid.slice(0, 10),
+      comments: comments.slice(0, 10)
+    };
+  } catch (error) {
+    console.warn('No se pudo obtener feedback del usuario:', error.message);
+    return {
+      liked: [],
+      challenging: [],
+      disliked: [],
+      avoid: [],
+      comments: []
+    };
+  }
+}
+
+async function getActiveRejectionsSummary(userId, equipmentType, trainingType) {
+  try {
+    const { rows } = await pool.query(
+      `SELECT exercise_name, rejection_category, rejection_reason, expires_at
+         FROM app.get_rejected_exercises_for_combination($1, $2, $3)`,
+      [userId, equipmentType, trainingType]
+    );
+
+    return rows.slice(0, 15).map(row => ({
+      exercise: row.exercise_name,
+      category: row.rejection_category,
+      reason: row.rejection_reason,
+      expires_at: row.expires_at
+    }));
+  } catch (error) {
+    console.warn('No se pudo obtener rechazos activos:', error.message);
+    return [];
+  }
+}
+
+function buildEquipmentContext(equipmentType, inventory) {
+  const context = {
+    modo: equipmentType,
+    curated: inventory.curated,
+    custom: inventory.custom
+  };
+
+  if (EQUIPMENT_PRESETS[equipmentType]) {
+    context.preset_toolkit = EQUIPMENT_PRESETS[equipmentType];
+  }
+
+  if ((equipmentType === 'personalizado' || equipmentType === 'usar_este_equipamiento') && context.curated.length === 0 && context.custom.length === 0) {
+    context.notice = 'El usuario selecciono equipamiento personalizado pero no tiene elementos registrados.';
+  }
+
+  return context;
+}
+
+function parseAIPlanResponse(rawContent) {
+  if (!rawContent || typeof rawContent !== 'string') {
+    throw new Error('Respuesta de IA vacia');
+  }
+
+  let content = rawContent.trim();
+  const blockMatch = content.match(/```json\s*([\s\S]*?)```/i) || content.match(/```\s*([\s\S]*?)```/i);
+  if (blockMatch && blockMatch[1]) {
+    content = blockMatch[1].trim();
+  }
+
+  const firstBrace = content.indexOf('{');
+  const lastBrace = content.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace !== -1) {
+    content = content.slice(firstBrace, lastBrace + 1);
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(content);
+  } catch (error) {
+    console.error('Respuesta de IA no es JSON valido:', error.message);
+    console.error('Fragmento recibido:', content.slice(0, 200));
+    throw new Error('La IA devolvio un JSON invalido');
+  }
+
+  if (!parsed.plan_entrenamiento || !Array.isArray(parsed.plan_entrenamiento.ejercicios)) {
+    throw new Error('La IA no devolvio ejercicios validos');
+  }
+
+  return parsed;
+}
+
+router.post('/generate', authenticateToken, async (req, res) => {
+  const user_id = req.user.userId || req.user.id;
+  const { equipment_type, training_type } = req.body || {};
+
+  if (!equipment_type || !training_type) {
+    return res.status(400).json({
+      success: false,
+      error: 'Se requieren equipment_type y training_type'
+    });
+  }
+
+  const normalizedEquipment = normalizeEquipmentType(equipment_type);
+  const normalizedTraining = normalizeTrainingType(training_type);
+
+  console.log(`[HomeTraining] Generando plan IA para usuario ${user_id} (${normalizedEquipment}/${normalizedTraining})`);
+
+  const moduleConfig = AI_MODULES.HOME_TRAINING;
+  let client;
+  try {
+    client = getModuleOpenAI(moduleConfig);
+  } catch (clientError) {
+    console.error('No se pudo inicializar cliente OpenAI (home training):', clientError);
+    return res.status(503).json({
+      success: false,
+      error: 'Servicio de IA temporalmente no disponible',
+      details: process.env.NODE_ENV === 'development' ? clientError.message : undefined
+    });
+  }
+
+  if (!client) {
+    return res.status(503).json({
+      success: false,
+      error: 'Cliente de IA no disponible'
+    });
+  }
+
+  let systemPrompt;
+  try {
+    systemPrompt = await getPrompt(FeatureKey.HOME);
+  } catch (promptError) {
+    console.error('Error cargando prompt HOME:', promptError);
+    return res.status(500).json({
+      success: false,
+      error: 'No se pudo preparar el prompt de IA'
+    });
+  }
+
+  try {
+    const rawProfile = await getUserProfileForHomeTraining(user_id);
+    const profileSummary = buildUserProfileSummary(rawProfile);
+
+    const [equipmentInventory, combinationHistory, recentExercises, rejectionList, feedbackSummary] = await Promise.all([
+      getUserEquipmentInventory(user_id),
+      getCombinationHistory(user_id, normalizedEquipment, normalizedTraining),
+      getRecentExerciseHistory(user_id),
+      getActiveRejectionsSummary(user_id, normalizedEquipment, normalizedTraining),
+      getUserFeedbackSummary(user_id)
+    ]);
+
+    const equipmentContext = buildEquipmentContext(normalizedEquipment, equipmentInventory);
+
+    const aiPayload = {
+      timestamp: new Date().toISOString(),
+      parametros: {
+        equipment_type: normalizedEquipment,
+        training_type: normalizedTraining
+      },
+      usuario: profileSummary,
+      equipamiento: equipmentContext,
+      historial: {
+        combinacion: combinationHistory,
+        recientes: recentExercises
+      },
+      feedback_usuario: feedbackSummary,
+      rechazos_activos: rejectionList
+    };
+
+    const userMessage = [
+      'Genera un plan de entrenamiento en casa completamente personalizado, siguiendo al pie de la letra el prompt del sistema.',
+      'Evita repetir ejercicios listados en historial.combinacion.ejercicios_usados salvo que sean imprescindibles.',
+      'Responde UNICAMENTE con un objeto JSON valido.',
+      JSON.stringify(aiPayload, null, 2)
+    ].join('\n\n');
+
+    const completion = await client.chat.completions.create({
+      model: moduleConfig.model,
+      temperature: moduleConfig.temperature,
+      max_tokens: moduleConfig.max_output_tokens,
+      top_p: moduleConfig.top_p,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage }
+      ],
+      response_format: { type: 'json_object' }
+    });
+
+    const aiContent = completion?.choices?.[0]?.message?.content;
+    if (!aiContent) {
+      throw new Error('La IA no devolvio contenido');
+    }
+
+    const plan = parseAIPlanResponse(aiContent);
+
+    console.log(`[HomeTraining] Plan IA generado (${plan.plan_entrenamiento?.ejercicios?.length || 0} ejercicios)`);
+
+    return res.json({
+      success: true,
+      plan,
+      metadata: {
+        equipment_type: normalizedEquipment,
+        training_type: normalizedTraining,
+        tokens: completion?.usage || null,
+        model: moduleConfig.model,
+        generation_id: completion?.id || null
+      }
+    });
+  } catch (error) {
+    console.error('Error generando plan de home training:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Error al generar el plan de entrenamiento',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
 
 // Crear un nuevo plan de entrenamiento en casa
 router.post('/plans', authenticateToken, async (req, res) => {
@@ -1258,3 +1748,5 @@ router.put('/exercise-info/:exerciseId/verify', authenticateToken, async (req, r
 });
 
 export default router;
+
+
