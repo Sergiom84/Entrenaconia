@@ -608,23 +608,13 @@ export default function TodayTrainingTab({
   }, [hasActiveSession, completeSession, session.sessionId, sessionStartTime, exerciseProgress, track, onProgressUpdate, showSuccess, setError, localState.pendingSessionData?.sessionId]);
 
   const handleExerciseUpdate = useCallback(async (exerciseIndex, progressData) => {
-    // 🎯 MAPEAR ÍNDICE FILTRADO A ÍNDICE ORIGINAL
-    // El modal trabaja con índices filtrados, pero la API necesita índices originales
-    const mapping = filteredSessionData?.originalIndexMapping;
-    let originalIndex = exerciseIndex;
-
-    if (Array.isArray(mapping) && mapping.length > 0) {
-      if (mapping[exerciseIndex] != null) {
-        originalIndex = mapping[exerciseIndex];
-      } else if (mapping.includes(exerciseIndex)) {
-        originalIndex = exerciseIndex;
-      }
-    }
+    // 🎯 CORRECCIÓN: exerciseIndex YA ES el originalIndex (viene desde useExerciseProgress)
+    // NO aplicar mapping nuevamente para evitar doble conversión
+    const originalIndex = exerciseIndex;
 
     console.log('🔍 DEBUG handleExerciseUpdate:', {
-      exerciseIndexFromModal: exerciseIndex,
+      receivedIndex: exerciseIndex,
       originalIndexForAPI: originalIndex,
-      hasMapping: !!filteredSessionData?.originalIndexMapping,
       progressData
     });
 
@@ -670,7 +660,7 @@ export default function TodayTrainingTab({
       console.error('❌ Error actualizando ejercicio:', error);
       setError(`Error actualizando ejercicio: ${error.message}`);
     }
-  }, [filteredSessionData?.originalIndexMapping, updateExercise, setError, onProgressUpdate, session.sessionId, localState.pendingSessionData?.sessionId]);
+  }, [updateExercise, setError, onProgressUpdate, session.sessionId, localState.pendingSessionData?.sessionId]);
 
   // Handlers de calentamiento
   const handleWarmupComplete = async () => {
