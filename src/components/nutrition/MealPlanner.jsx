@@ -100,9 +100,20 @@ export default function MealPlanner({ userMacros, userData, onPlanCreated, initi
   });
 
   const addMealToDay = (mealType, meal) => {
+    // Asegurar que preparation y difficulty sean strings
+    const sanitizedMeal = {
+      ...meal,
+      preparation: typeof meal.preparation === 'string'
+        ? meal.preparation
+        : (meal.preparation?.steps ? `${meal.preparation.steps.length} pasos` : 'Preparación'),
+      difficulty: typeof meal.difficulty === 'string'
+        ? meal.difficulty
+        : (meal.difficulty?.level || 'Media')
+    };
+
     setDayMeals(prev => ({
       ...prev,
-      [mealType]: meal
+      [mealType]: sanitizedMeal
     }));
   };
 

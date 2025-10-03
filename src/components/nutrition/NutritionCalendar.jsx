@@ -18,6 +18,21 @@ export default function NutritionCalendar({ nutritionPlan, userMacros, onPlanUpd
   const [selectedDay, setSelectedDay] = useState(null);
   const [mealProgress, setMealProgress] = useState({});
 
+  // Debug: Log de la estructura del plan
+  useEffect(() => {
+    if (nutritionPlan) {
+      console.log('📅 NutritionCalendar - Plan recibido:', {
+        hasDirectDays: !!nutritionPlan.Lunes,
+        hasPlanData: !!nutritionPlan.plan_data,
+        hasDailyPlans: !!nutritionPlan.plan_data?.daily_plans,
+        dailyPlansLength: nutritionPlan.plan_data?.daily_plans?.length,
+        structure: Object.keys(nutritionPlan)
+      });
+    } else {
+      console.log('📅 NutritionCalendar - Sin plan, usando valores por defecto');
+    }
+  }, [nutritionPlan]);
+
   // Generar estructura de semana
   const generateWeekStructure = () => {
     const days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
@@ -87,10 +102,42 @@ export default function NutritionCalendar({ nutritionPlan, userMacros, onPlanUpd
   };
 
   const getMealPlanForDay = (dayName) => {
+    // Intentar obtener el plan del día desde diferentes estructuras posibles
+    let dayPlan = null;
+
+    // Estructura 1: nutritionPlan[dayName] (directo)
     if (nutritionPlan && nutritionPlan[dayName]) {
-      return nutritionPlan[dayName];
+      dayPlan = nutritionPlan[dayName];
     }
-    return getDefaultMealPlan(dayName);
+
+    // Estructura 2: nutritionPlan.plan_data.daily_plans (array)
+    if (!dayPlan && nutritionPlan?.plan_data?.daily_plans) {
+      const dailyPlans = nutritionPlan.plan_data.daily_plans;
+      const dayIndex = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+        .indexOf(dayName);
+
+      if (dayIndex >= 0 && dailyPlans[dayIndex]) {
+        const planDay = dailyPlans[dayIndex];
+        // Convertir estructura de meals a estructura esperada
+        dayPlan = {};
+        (planDay.meals || []).forEach(meal => {
+          const mealType = (meal.meal_type || 'almuerzo').toLowerCase();
+          const nutrition = meal.nutrition || {};
+          dayPlan[mealType] = {
+            name: meal.name || meal.title || meal.meal_name || mealType,
+            time: meal.time || '12:00',
+            calories: Math.round(nutrition.calories || 0),
+            protein: Math.round(nutrition.protein || 0),
+            carbs: Math.round(nutrition.carbs || 0),
+            fat: Math.round(nutrition.fat || 0),
+            foods: meal.ingredients || []
+          };
+        });
+      }
+    }
+
+    // Si no hay plan, usar el plan por defecto
+    return dayPlan || getDefaultMealPlan(dayName);
   };
 
   const handleMealComplete = (dayString, mealId) => {
