@@ -247,7 +247,7 @@ async function getRecentExerciseHistory(userId, limit = 20) {
       `SELECT exercise_name
          FROM app.home_exercise_history
         WHERE user_id = $1
-        ORDER BY session_date DESC NULLS LAST, created_at DESC NULLS LAST
+        ORDER BY created_at DESC NULLS LAST
         LIMIT $2`,
       [userId, limit]
     );
@@ -1212,7 +1212,7 @@ router.get('/preferences-history', authenticateToken, async (req, res) => {
       SELECT DISTINCT
         eh.exercise_name,
         COUNT(*) as times_completed,
-        MAX(eh.session_date) as last_completed
+        MAX(eh.created_at) as last_completed
       FROM app.home_exercise_history eh
       LEFT JOIN app.user_exercise_feedback uef ON (
         uef.user_id = eh.user_id 
@@ -1231,7 +1231,7 @@ router.get('/preferences-history', authenticateToken, async (req, res) => {
       SELECT DISTINCT
         eh.exercise_name,
         COUNT(*) as times_completed,
-        MAX(eh.session_date) as last_completed
+        MAX(eh.created_at) as last_completed
       FROM app.home_exercise_history eh
       LEFT JOIN app.user_exercise_feedback uef ON (
         uef.user_id = eh.user_id 
@@ -1292,7 +1292,7 @@ router.get('/preferences-history', authenticateToken, async (req, res) => {
       SELECT 
         exercise_name,
         COUNT(*) as times_completed,
-        MAX(session_date) as last_completed
+        MAX(created_at) as last_completed
       FROM app.home_exercise_history 
       WHERE user_id = $1
       GROUP BY exercise_name
@@ -1748,5 +1748,6 @@ router.put('/exercise-info/:exerciseId/verify', authenticateToken, async (req, r
 });
 
 export default router;
+
 
 

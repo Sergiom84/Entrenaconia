@@ -6,6 +6,7 @@ import HomeTrainingProgress from './HomeTrainingProgress';
 import HomeTrainingPlanModal from './HomeTrainingPlanModal';
 import HomeTrainingRejectionModal from './HomeTrainingRejectionModal';
 import HomeTrainingPreferencesHistory from './HomeTrainingPreferencesHistory';
+import HomeTrainingWarmupModal from './HomeTrainingWarmupModal';
 import UserEquipmentSummaryCard from './UserEquipmentSummaryCard';
 import logger from '../../utils/logger';
 import { useTrace } from '../../contexts/TraceContext';
@@ -34,6 +35,7 @@ const HomeTrainingSection = () => {
   // Estados para el sistema de entrenamiento
   const [currentSession, setCurrentSession] = useState(null);
   const [showExerciseModal, setShowExerciseModal] = useState(false);
+  const [showWarmupModal, setShowWarmupModal] = useState(false);
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
   const [sessionProgress, setSessionProgress] = useState({
     currentExercise: 0,
@@ -98,6 +100,7 @@ const HomeTrainingSection = () => {
     setGeneratedPlan(null);
     setCurrentSession(null);
     setShowExerciseModal(false);
+    setShowWarmupModal(false);
     setCurrentExerciseIndex(0);
     setSessionProgress({
       currentExercise: 0,
@@ -486,6 +489,7 @@ const HomeTrainingSection = () => {
       setExercisesProgress([]);
       setShowProgress(false);
       setShowExerciseModal(false);
+      setShowWarmupModal(false);
       setGeneratedPlan(null); // ← LIMPIAR PLAN ANTERIOR ANTES DE REGENERAR
       setPersonalizedMessage('');
       setShowPersonalizedMessage(false);
@@ -531,6 +535,7 @@ const HomeTrainingSection = () => {
       setExercisesProgress([]);
       setShowProgress(false);
       setShowExerciseModal(false);
+      setShowWarmupModal(false);
 
       // Cerrar sesiones activas
       const token = localStorage.getItem('token');
@@ -674,7 +679,8 @@ const HomeTrainingSection = () => {
         setCurrentExerciseIndex(0);
         setShowProgress(true);
         setShowPersonalizedMessage(false);
-        setShowExerciseModal(true);
+        setShowWarmupModal(true);
+        setShowExerciseModal(false);
         // Cargar progreso de la sesión recién creada (para obtener total_series por ejercicio)
         await loadSessionProgress(sessionData.session.id);
       }
@@ -717,9 +723,10 @@ const HomeTrainingSection = () => {
 
       // Verificar si todos los ejercicios están completados
       if (sessionProgress && sessionProgress.allCompleted) {
-        alert('¡Felicitaciones! Has completado todos los ejercicios de este entrenamiento.');
+        alert('Felicitaciones! Has completado todos los ejercicios de este entrenamiento.');
         setShowProgress(false);
         setShowExerciseModal(false);
+        setShowWarmupModal(false);
         await loadUserStats();
         return;
       }
@@ -735,6 +742,7 @@ const HomeTrainingSection = () => {
       }
 
       setShowPersonalizedMessage(false);
+      setShowWarmupModal(false);
       setShowExerciseModal(true);
     } catch (error) {
       console.error('Error en continueTraining:', error);
@@ -742,7 +750,16 @@ const HomeTrainingSection = () => {
     }
   };
 
-  // Función para completar un ejercicio
+  const handleWarmupComplete = useCallback(() => {
+    setShowWarmupModal(false);
+    setShowExerciseModal(true);
+  }, []);
+
+  const handleWarmupSkip = useCallback(() => {
+    setShowWarmupModal(false);
+    setShowExerciseModal(true);
+  }, []);
+
   const handleExerciseComplete = async (durationSeconds) => {
     if (sending) return;
     setSending(true);
@@ -815,6 +832,7 @@ const HomeTrainingSection = () => {
         setCurrentExerciseIndex(currentExerciseIndex + 1);
       } else {
         setShowExerciseModal(false);
+        setShowWarmupModal(false);
         setShowPersonalizedMessage(false);
         await loadUserStats();
         setTimeout(() => {
@@ -858,6 +876,7 @@ const HomeTrainingSection = () => {
         setCurrentExerciseIndex(currentExerciseIndex + 1);
       } else {
         setShowExerciseModal(false);
+        setShowWarmupModal(false);
         setShowPersonalizedMessage(false);
         alert('Entrenamiento finalizado. Algunos ejercicios fueron saltados.');
       }
@@ -899,6 +918,7 @@ const HomeTrainingSection = () => {
         setCurrentExerciseIndex(currentExerciseIndex + 1);
       } else {
         setShowExerciseModal(false);
+        setShowWarmupModal(false);
         setShowPersonalizedMessage(false);
         alert('Entrenamiento finalizado. Algunos ejercicios fueron cancelados.');
       }
@@ -1290,6 +1310,17 @@ const HomeTrainingSection = () => {
             onGenerateAnother={regenerateWithRejectionModal}
             onClose={resetToInitialState}
             onCancel={cancelRoutineCompletely}
+          />
+        )}
+
+        {showWarmupModal && (
+          <HomeTrainingWarmupModal
+            isOpen={showWarmupModal}
+            trainingType={selectedTrainingType || generatedPlan?.plan_entrenamiento?.tipoEntrenamiento || 'funcional'}
+            level={userStats?.training_level || userStats?.nivel_entrenamiento || userStats?.level || 'intermedio'}
+            onSkip={handleWarmupSkip}
+            onComplete={handleWarmupComplete}
+            onClose={handleWarmupSkip}
           />
         )}
 
