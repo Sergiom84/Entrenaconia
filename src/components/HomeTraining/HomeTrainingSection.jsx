@@ -932,7 +932,7 @@ const HomeTrainingSection = () => {
   };
 
   // Función para actualizar progreso durante el ejercicio
-  const handleUpdateProgress = async (exerciseIndex, seriesCompleted, totalSeries) => {
+  const handleUpdateProgress = async (exerciseIndex, seriesCompleted, totalSeries, durationSeconds) => {
     if (sendingProgress) return;
     setSendingProgress(true);
     try {
@@ -940,12 +940,16 @@ const HomeTrainingSection = () => {
       const status = seriesCompleted === totalSeries ? 'completed' : 'in_progress';
       const exerciseName = generatedPlan?.plan_entrenamiento?.ejercicios?.[exerciseIndex]?.nombre || `Ejercicio ${exerciseIndex + 1}`;
 
-      console.log(`📈 Actualizando progreso: ${exerciseName} - ${seriesCompleted}/${totalSeries} series (${status})`);
+      console.log(`📈 Actualizando progreso: ${exerciseName} - ${seriesCompleted}/${totalSeries} series (${status})${durationSeconds ? ` - ${durationSeconds}s` : ''}`);
 
-      await fetch(`/api/home-training/sessions/${currentSession.id}/exercise/${exerciseIndex + 1}`, {
+      await fetch(`/api/home-training/sessions/${currentSession.id}/exercise/${exerciseIndex}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ series_completed: seriesCompleted, status })
+        body: JSON.stringify({
+          series_completed: seriesCompleted,
+          status,
+          ...(durationSeconds && { duration_seconds: durationSeconds })
+        })
       });
 
       // Refrescar stats tras cada ejercicio actualizado

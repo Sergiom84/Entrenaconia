@@ -767,12 +767,18 @@ router.put('/sessions/:sessionId/exercise/:exerciseOrder', authenticateToken, as
         progress_percentage    = ROUND(100.0 * (SELECT COUNT(*) FROM app.home_exercise_progress
                                   WHERE home_training_session_id = $1 AND status = 'completed')
                                   / NULLIF(total_exercises,0), 1),
-        completed_at           = CASE WHEN (SELECT COUNT(*) FROM app.home_exercise_progress
-                                  WHERE home_training_session_id = $1 AND status <> 'completed') = 0
-                                  THEN NOW() ELSE completed_at END,
-        status                 = CASE WHEN (SELECT COUNT(*) FROM app.home_exercise_progress
-                                  WHERE home_training_session_id = $1 AND status <> 'completed') = 0
-                                  THEN 'completed' ELSE status END
+        completed_at           = CASE
+                                  WHEN (SELECT COUNT(*) FROM app.home_exercise_progress
+                                        WHERE home_training_session_id = $1 AND status <> 'completed') = 0
+                                  THEN COALESCE(completed_at, NOW())
+                                  ELSE NULL
+                                END,
+        status                 = CASE
+                                  WHEN (SELECT COUNT(*) FROM app.home_exercise_progress
+                                        WHERE home_training_session_id = $1 AND status <> 'completed') = 0
+                                  THEN 'completed'
+                                  ELSE 'in_progress'
+                                END
       WHERE id = $1
     `, [sessionId]);
 
@@ -1778,6 +1784,7 @@ router.put('/exercise-info/:exerciseId/verify', authenticateToken, async (req, r
 });
 
 export default router;
+
 
 
 

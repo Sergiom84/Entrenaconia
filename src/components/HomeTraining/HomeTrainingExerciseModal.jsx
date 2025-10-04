@@ -29,6 +29,7 @@ const HomeTrainingExerciseModal = ({
   const [showRepeatConfirm, setShowRepeatConfirm] = useState(false);
   const [exerciseFeedback, setExerciseFeedback] = useState({});
   const [customTimePerSeries, setCustomTimePerSeries] = useState(45); // Tiempo por defecto: 45s
+  const [modalStartTime, setModalStartTime] = useState(null); // Tracking del tiempo total del modal
 
   // Pausar el temporizador cuando se abre un modal superpuesto (feedback / info / confirm repeat)
   const prevRunningRef = useRef(false);
@@ -52,6 +53,7 @@ const HomeTrainingExerciseModal = ({
     setCurrentSeries(1);
     setIsRunning(false);
     setTotalTimeSpent(0);
+    setModalStartTime(Date.now()); // 🔥 Iniciar tracking del tiempo total del modal
     lastPhaseHandledRef.current = '';
     lastReportedSeriesRef.current = '';
     const durValueInit = Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos);
@@ -178,7 +180,9 @@ const HomeTrainingExerciseModal = ({
       const reportSig = `${exerciseIndex}-${currentSeries}`;
       if (lastReportedSeriesRef.current !== reportSig) {
         lastReportedSeriesRef.current = reportSig;
-        onUpdateProgress(exerciseIndex, currentSeries, seriesTotal);
+        // 🔥 Enviar duration_seconds al backend
+        const totalModalTime = modalStartTime ? Math.floor((Date.now() - modalStartTime) / 1000) : totalTimeSpent;
+        onUpdateProgress(exerciseIndex, currentSeries, seriesTotal, totalModalTime);
       }
 
       if (currentSeries < seriesTotal) {
@@ -247,14 +251,14 @@ const HomeTrainingExerciseModal = ({
   };
 
   const handleResume = () => {
-    if (!isTimeBasedExercise && customTimePerSeries === 0) {
+    if (!isTimeBasedExercise && customTimePerSeries === 0 && currentPhase !== 'rest') {
       return;
     }
     setIsRunning(true);
   };
 
   const handleForceNext = () => {
-    console.log('🔄 [HomeTraining] Force next phase triggered');
+    console.log('dY", [HomeTraining] Force next phase triggered');
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
@@ -270,6 +274,7 @@ const HomeTrainingExerciseModal = ({
       const isTimeBased = Number.isFinite(durValue) && durValue > 0;
       const exerciseTime = isTimeBased ? durValue : (customTimePerSeries ?? 45);
       setTimeLeft(exerciseTime);
+      setIsRunning(isTimeBased || customTimePerSeries !== 0);
       lastPhaseHandledRef.current = '';
       console.log(`🏃‍♂️ [HomeTraining] Forced advance to series ${nextSeries}/${seriesTotal}`);
     } else if (currentPhase === 'exercise') {
@@ -277,13 +282,16 @@ const HomeTrainingExerciseModal = ({
       const reportSig = `${exerciseIndex}-${currentSeries}`;
       if (lastReportedSeriesRef.current !== reportSig) {
         lastReportedSeriesRef.current = reportSig;
-        onUpdateProgress(exerciseIndex, currentSeries, seriesTotal);
+        // 🔥 Enviar duration_seconds al backend
+        const totalModalTime = modalStartTime ? Math.floor((Date.now() - modalStartTime) / 1000) : totalTimeSpent;
+        onUpdateProgress(exerciseIndex, currentSeries, seriesTotal, totalModalTime);
       }
 
       if (currentSeries < seriesTotal) {
         setCurrentPhase('rest');
         const restTime = Math.min(60, Math.max(45, Number(exercise.descanso_seg) || 60));
         setTimeLeft(restTime);
+        setIsRunning(true);
         lastPhaseHandledRef.current = '';
         console.log(`⏰ [HomeTraining] Forced advance to rest, series ${currentSeries}/${seriesTotal}`);
       } else {
@@ -672,22 +680,36 @@ const HomeTrainingExerciseModal = ({
 
             {(currentPhase === 'exercise' || currentPhase === 'rest') && (
               <>
-                {isRunning ? (
+                {/* 🔥 Botón AVANZAR para modo Off (customTimePerSeries === 0) */}
+                {currentPhase === 'exercise' && customTimePerSeries === 0 ? (
                   <button
-                    onClick={handlePause}
-                    className="flex items-center gap-2 bg-yellow-600 hover:bg-yellow-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+                    onClick={handleForceNext}
+                    className="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+                    title="Avanzar a la siguiente serie (modo Off)"
                   >
-                    <Pause size={20} />
-                    Pausar
+                    <SkipForward size={20} />
+                    Avanzar
                   </button>
                 ) : (
-                  <button
-                    onClick={handleResume}
-                    className="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
-                  >
-                    <Play size={20} />
-                    Reanudar
-                  </button>
+                  <>
+                    {isRunning ? (
+                      <button
+                        onClick={handlePause}
+                        className="flex items-center gap-2 bg-yellow-600 hover:bg-yellow-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+                      >
+                        <Pause size={20} />
+                        Pausar
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleResume}
+                        className="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+                      >
+                        <Play size={20} />
+                        Reanudar
+                      </button>
+                    )}
+                  </>
                 )}
 
                 <button
@@ -699,7 +721,7 @@ const HomeTrainingExerciseModal = ({
                 </button>
 
                 {/* Botón para forzar avance solo cuando hay problemas */}
-                {(timeLeft === 0 && !isRunning) && (
+                {(timeLeft === 0 && !isRunning && customTimePerSeries !== 0) && (
                   <button
                     onClick={handleForceNext}
                     className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors animate-pulse"
@@ -890,4 +912,3 @@ const HomeTrainingExerciseModal = ({
 };
 
 export default HomeTrainingExerciseModal;
-

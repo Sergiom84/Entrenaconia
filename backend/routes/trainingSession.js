@@ -535,16 +535,21 @@ router.put('/progress/home/:sessionId/:exerciseOrder', authenticateToken, async 
         progress_percentage    = ROUND(100.0 * (SELECT COUNT(*) FROM app.home_exercise_progress
                                   WHERE home_training_session_id = $1 AND status = 'completed')
                                   / NULLIF(total_exercises,0), 1),
-        completed_at           = CASE WHEN (SELECT COUNT(*) FROM app.home_exercise_progress
-                                  WHERE home_training_session_id = $1 AND status <> 'completed') = 0
-                                  THEN NOW() ELSE completed_at END,
-        status                 = CASE WHEN (SELECT COUNT(*) FROM app.home_exercise_progress
-                                  WHERE home_training_session_id = $1 AND status <> 'completed') = 0
-                                  THEN 'completed' ELSE status END
+        completed_at           = CASE
+                                  WHEN (SELECT COUNT(*) FROM app.home_exercise_progress
+                                        WHERE home_training_session_id = $1 AND status <> 'completed') = 0
+                                  THEN COALESCE(completed_at, NOW())
+                                  ELSE NULL
+                                END,
+        status                 = CASE
+                                  WHEN (SELECT COUNT(*) FROM app.home_exercise_progress
+                                        WHERE home_training_session_id = $1 AND status <> 'completed') = 0
+                                  THEN 'completed'
+                                  ELSE 'in_progress'
+                                END
       WHERE id = $1
     `, [sessionId]);
-
-    // Si el ejercicio se completÃ³, actualizar estadÃ­sticas e historial
+    // Si el ejercicio se completó, actualizar estadísticas e historial
     if (status === 'completed') {
       if (progressPercentage >= 100) {
         await client.query(
