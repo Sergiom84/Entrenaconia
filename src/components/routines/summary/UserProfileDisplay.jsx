@@ -14,7 +14,7 @@ import { useProfileState } from '../../../hooks/useProfileState';
  * - Autenticación JWT para seguridad
  */
 export const UserProfileDisplay = () => {
-  const { userProfile, calculateIMC, getIMCCategory } = useProfileState();
+  const { userProfile, calculateIMC, getIMCCategory, getObjetivoLabel } = useProfileState();
 
   // Procesar datos de perfil de forma segura desde useProfileState
   const profileData = useMemo(() => {
@@ -25,7 +25,8 @@ export const UserProfileDisplay = () => {
         altura: '—',
         nivel: '—',
         imc: '—',
-        imcCategoria: 'No disponible'
+        imcCategoria: 'No disponible',
+        objetivo: '—'
       };
     }
 
@@ -39,9 +40,10 @@ export const UserProfileDisplay = () => {
       altura: userProfile.altura ? `${userProfile.altura} cm` : '—',
       nivel: userProfile.nivel || '—',
       imc: imc ? `${imc}` : '—',
-      imcCategoria: imcCategoria || 'No disponible'
+      imcCategoria: imcCategoria || 'No disponible',
+      objetivo: userProfile.objetivo_principal ? getObjetivoLabel(userProfile.objetivo_principal) : '—'
     };
-  }, [userProfile, calculateIMC, getIMCCategory]);
+  }, [userProfile, calculateIMC, getIMCCategory, getObjetivoLabel]);
 
   // Estados de carga - useProfileState carga inmediatamente desde localStorage
   // Si no hay userProfile, significa que no está logueado o no tiene perfil
@@ -54,66 +56,63 @@ export const UserProfileDisplay = () => {
     );
   }
 
-  const { edad, peso, altura, nivel, imc, imcCategoria } = profileData;
+  const { edad, peso, altura, nivel, imc, imcCategoria, objetivo } = profileData;
 
   return (
-    <div className="mb-4">
+    <div className="mb-3">
       {/* Header del perfil */}
-      <div className="flex items-center gap-2 mb-2">
+      <div className="flex items-center gap-2 mb-3">
         <User className="w-4 h-4 text-gray-400" />
         <h3 className="text-sm font-medium text-gray-300">Perfil del Usuario</h3>
       </div>
 
-      {/* Grid de información del perfil */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
+      {/* Fila horizontal compacta con todos los datos */}
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs">
         {/* Edad */}
-        <div className="flex items-center gap-1 text-gray-400">
-          <Target className="w-3 h-3 flex-shrink-0" />
-          <div>
-            <div className="text-gray-500">Edad</div>
-            <div className="text-gray-300 font-medium">{edad}</div>
-          </div>
+        <div className="flex items-center gap-1.5 text-gray-400">
+          <Target className="w-3.5 h-3.5 flex-shrink-0" />
+          <span className="text-gray-500">Edad:</span>
+          <span className="text-gray-300 font-medium">{edad}</span>
         </div>
 
         {/* Peso */}
-        <div className="flex items-center gap-1 text-gray-400">
-          <Scale className="w-3 h-3 flex-shrink-0" />
-          <div>
-            <div className="text-gray-500">Peso</div>
-            <div className="text-gray-300 font-medium">{peso}</div>
-          </div>
+        <div className="flex items-center gap-1.5 text-gray-400">
+          <Scale className="w-3.5 h-3.5 flex-shrink-0" />
+          <span className="text-gray-500">Peso:</span>
+          <span className="text-gray-300 font-medium">{peso}</span>
         </div>
 
         {/* Altura */}
-        <div className="flex items-center gap-1 text-gray-400">
-          <Ruler className="w-3 h-3 flex-shrink-0" />
-          <div>
-            <div className="text-gray-500">Altura</div>
-            <div className="text-gray-300 font-medium">{altura}</div>
-          </div>
-        </div>
-
-        {/* Nivel */}
-        <div className="flex items-center gap-1 text-gray-400">
-          <Activity className="w-3 h-3 flex-shrink-0" />
-          <div>
-            <div className="text-gray-500">Nivel</div>
-            <div className="text-gray-300 font-medium">{nivel}</div>
-          </div>
+        <div className="flex items-center gap-1.5 text-gray-400">
+          <Ruler className="w-3.5 h-3.5 flex-shrink-0" />
+          <span className="text-gray-500">Altura:</span>
+          <span className="text-gray-300 font-medium">{altura}</span>
         </div>
 
         {/* IMC */}
-        <div className="flex items-center gap-1 text-gray-400 col-span-2 md:col-span-1">
-          <div className="w-3 h-3 rounded-full bg-blue-500 flex-shrink-0" />
-          <div>
-            <div className="text-gray-500">IMC</div>
-            <div className="text-gray-300 font-medium">
-              {imc}
-              {imc !== '—' && (
-                <span className="text-gray-500 ml-1 text-xs">({imcCategoria})</span>
-              )}
-            </div>
-          </div>
+        <div className="flex items-center gap-1.5 text-gray-400">
+          <div className="w-3.5 h-3.5 rounded-full bg-blue-500 flex-shrink-0" />
+          <span className="text-gray-500">IMC:</span>
+          <span className="text-gray-300 font-medium">
+            {imc}
+            {imc !== '—' && (
+              <span className="text-gray-500 ml-1">({imcCategoria})</span>
+            )}
+          </span>
+        </div>
+
+        {/* Nivel */}
+        <div className="flex items-center gap-1.5 text-gray-400">
+          <Activity className="w-3.5 h-3.5 flex-shrink-0" />
+          <span className="text-gray-500">Nivel:</span>
+          <span className="text-gray-300 font-medium">{nivel}</span>
+        </div>
+
+        {/* Objetivo */}
+        <div className="flex items-center gap-1.5 text-gray-400">
+          <Target className="w-3.5 h-3.5 flex-shrink-0 text-yellow-400" />
+          <span className="text-gray-500">Objetivo:</span>
+          <span className="text-gray-300 font-medium">{objetivo}</span>
         </div>
       </div>
     </div>

@@ -1,6 +1,7 @@
 import React from 'react';
 import { TrendingUp, Clock, Target, Calendar } from 'lucide-react';
 import HomeTrainingUserProgressCard from './HomeTrainingUserProgressCard';
+import { UserProfileDisplay } from '../routines/summary/UserProfileDisplay';
 
 const HomeTrainingProgress = ({
   currentPlan,
@@ -75,9 +76,11 @@ const HomeTrainingProgress = ({
           <p className="text-gray-300">
             <span className="font-semibold">Fuente del plan:</span> {currentPlan.plan_source?.label || 'OpenAI'}{currentPlan.plan_source?.detail ? ` (${currentPlan.plan_source.detail})` : ''}
           </p>
-          <p className="text-gray-300">
-            <span className="font-semibold">Perfil:</span> {currentPlan.user_profile}
-          </p>
+
+          {/* Perfil del usuario con detalles completos */}
+          <div className="mt-4 bg-gray-700/30 rounded-lg p-4">
+            <UserProfileDisplay />
+          </div>
         </div>
 
         {/* Barra de progreso */}
