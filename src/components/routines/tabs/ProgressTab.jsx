@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { getProgressData } from '../api';
 
-export default function ProgressTab({ plan, methodologyPlanId, routinePlan, routinePlanId }) {
+export default function ProgressTab({ plan, methodologyPlanId, routinePlan, routinePlanId, progressUpdatedAt }) {
   // Usar routinePlan si plan no está disponible (compatibilidad)
   const effectivePlan = plan || routinePlan;
   const effectiveMethodologyPlanId = methodologyPlanId || routinePlanId;
@@ -70,7 +70,7 @@ export default function ProgressTab({ plan, methodologyPlanId, routinePlan, rout
     };
 
     loadProgressData();
-  }, [effectiveMethodologyPlanId, effectivePlan]);
+  }, [effectiveMethodologyPlanId, effectivePlan, progressUpdatedAt]);
 
   const calculateOverallProgress = () => {
     if (!progressData || !progressData.totalSessions || progressData.totalSessions === 0) return 0;
