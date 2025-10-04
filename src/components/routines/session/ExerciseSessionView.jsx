@@ -183,71 +183,71 @@ export const ExerciseSessionView = ({
         </div>
       )}
 
-      {/* Información adicional */}
+      {/* Sección de valoración y feedback - Siempre visible */}
       <div className="bg-gray-700/30 rounded-lg p-3 mb-6">
-        <div className="flex flex-wrap gap-4 text-sm">
-          {exercise?.patron && (
-            <div className="flex items-center">
-              <span className="w-2 h-2 bg-green-400 rounded-full mr-2"></span>
-              <span className="text-gray-300">Patrón:</span>
-              <span className="text-white font-medium ml-1 capitalize">
-                {String(exercise.patron).replaceAll('_', ' ')}
-              </span>
-            </div>
-          )}
-          {exercise?.implemento && (
-            <div className="flex items-center">
-              <span className="w-2 h-2 bg-blue-400 rounded-full mr-2"></span>
-              <span className="text-gray-300">Implemento:</span>
-              <span className="text-white font-medium ml-1 capitalize">
-                {String(exercise.implemento).replaceAll('_', ' ')}
-              </span>
-            </div>
-          )}
-
-          {/* Botón de feedback */}
+        {/* Botón para valorar */}
+        <div className="flex justify-end mb-3">
           <button
             onClick={onShowFeedback}
-            className={`ml-auto flex items-center gap-2 border px-3 py-1 rounded-md transition-colors ${
+            className={`flex items-center gap-2 border px-3 py-1.5 rounded-md transition-colors ${
               currentFeedback
-                ? 'text-green-300 border-green-400/50 bg-green-400/10 hover:text-green-200'
-                : 'text-yellow-300 hover:text-yellow-200 border-yellow-400/30 hover:bg-yellow-400/10'
+                ? 'text-green-300 hover:text-green-200 border-green-400/30 bg-green-900/20'
+                : 'text-yellow-300 hover:text-yellow-200 border-yellow-400/30'
             }`}
-            title={currentFeedback ? 'Feedback guardado - Editar valoración' : 'Cómo has sentido este ejercicio?'}
+            title={currentFeedback ? 'Editar valoración' : 'Cómo has sentido este ejercicio?'}
           >
             <Star className={`w-4 h-4 ${currentFeedback ? 'fill-current' : ''}`} />
-            {currentFeedback ? 'Valorado' : 'Valorar'}
+            {currentFeedback ? 'Editado' : 'Valorar'}
           </button>
         </div>
-      </div>
 
-      {/* Mostrar feedback guardado */}
-      {currentFeedback && (
-        <div className="bg-green-900/20 border border-green-600/40 rounded-lg p-4 mb-6">
-          <div className="flex items-start mb-3">
-            <Star className="w-4 h-4 text-green-400 mr-2 mt-1 flex-shrink-0 fill-current" />
-            <h4 className="text-green-200 font-semibold text-sm">Tu valoración guardada</h4>
+        {/* Mostrar comentario del usuario si existe */}
+        {currentFeedback?.comment && currentFeedback.comment.trim() && (
+          <div className="p-3 bg-yellow-400/10 border border-yellow-400/20 rounded-md mb-3">
+            <div className="flex items-start gap-2">
+              <Star className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5 fill-current" />
+              <div>
+                <div className="text-yellow-400 font-medium text-sm mb-1">Mi comentario:</div>
+                <div className="text-yellow-200 text-sm leading-relaxed">{currentFeedback.comment}</div>
+              </div>
+            </div>
           </div>
+        )}
 
-          <div className="mb-2">
-            <span className="text-sm text-green-200">Sensación: </span>
-            <span className={`text-sm font-medium ${
-              currentFeedback.sentiment === 'like' ? 'text-green-400' :
-              currentFeedback.sentiment === 'hard' ? 'text-red-400' :
-              'text-orange-400'
-            }`}>
-              {currentFeedback.sentiment === 'like' ? '😍 Me gusta' :
-               currentFeedback.sentiment === 'hard' ? '😰 Es difícil' :
-               '😞 No me gusta'}
+        {/* Mostrar valoración si existe */}
+        {currentFeedback?.sentiment && (
+          <div className="p-2 bg-yellow-400/10 border border-yellow-400/20 rounded-md flex items-center gap-2">
+            <Star className="w-4 h-4 text-yellow-400 fill-current" />
+            <span className="text-yellow-400 font-medium text-sm">
+              Valoración: {currentFeedback.sentiment === 'like' ? '👍 Me gusta' : currentFeedback.sentiment === 'hard' ? '⚠️ Es difícil' : '👎 No me gusta'}
             </span>
           </div>
+        )}
+      </div>
 
-          {currentFeedback.comment && (
-            <div>
-              <span className="text-sm text-green-200">Comentario: </span>
-              <p className="text-sm text-green-100 mt-1 italic">"{currentFeedback.comment}"</p>
-            </div>
-          )}
+      {/* Información adicional */}
+      {(exercise?.patron || exercise?.implemento) && (
+        <div className="bg-gray-700/30 rounded-lg p-3 mb-6">
+          <div className="flex flex-wrap gap-4 text-sm">
+            {exercise?.patron && (
+              <div className="flex items-center">
+                <span className="w-2 h-2 bg-green-400 rounded-full mr-2"></span>
+                <span className="text-gray-300">Patrón:</span>
+                <span className="text-white font-medium ml-1 capitalize">
+                  {String(exercise.patron).replaceAll('_', ' ')}
+                </span>
+              </div>
+            )}
+            {exercise?.implemento && (
+              <div className="flex items-center">
+                <span className="w-2 h-2 bg-blue-400 rounded-full mr-2"></span>
+                <span className="text-gray-300">Implemento:</span>
+                <span className="text-white font-medium ml-1 capitalize">
+                  {String(exercise.implemento).replaceAll('_', ' ')}
+                </span>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

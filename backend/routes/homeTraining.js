@@ -959,6 +959,27 @@ router.get('/sessions/:sessionId/progress', authenticateToken, async (req, res) 
 });
 
 
+// Obtener feedback de una sesión
+router.get('/sessions/:sessionId/feedback', authenticateToken, async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const user_id = req.user.userId || req.user.id;
+
+    const result = await pool.query(
+      `SELECT exercise_order, exercise_name, sentiment, comment
+       FROM app.user_exercise_feedback
+       WHERE user_id = $1 AND session_id = $2
+       ORDER BY exercise_order`,
+      [user_id, sessionId]
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error obteniendo feedback de sesión:', error);
+    res.status(500).json({ success: false, message: 'Error obteniendo feedback' });
+  }
+});
+
 // Crear feedback de ejercicio
 router.post('/sessions/:sessionId/exercise/:exerciseOrder/feedback', authenticateToken, async (req, res) => {
   try {
@@ -990,11 +1011,22 @@ router.post('/sessions/:sessionId/exercise/:exerciseOrder/feedback', authenticat
     }
     exKey = (exName || '').toLowerCase().replace(/[^a-z0-9]+/g, '_');
 
+    const methodologyType = 'home_training';
+    const feedbackType = 'exercise_rating';
+    const normalizedComment = comment && String(comment).trim() !== '' ? String(comment).trim() : null;
+
     await pool.query(
       `INSERT INTO app.user_exercise_feedback
-         (user_id, session_id, exercise_order, exercise_name, exercise_key, sentiment, comment)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-      [user_id, sessionId, exerciseOrder, exName, exKey, sentiment, comment || null]
+         (user_id, session_id, exercise_order, exercise_name, exercise_key, sentiment, comment, methodology_type, feedback_type)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       ON CONFLICT (user_id, session_id, exercise_order) DO UPDATE
+         SET sentiment = EXCLUDED.sentiment,
+             comment = EXCLUDED.comment,
+             methodology_type = EXCLUDED.methodology_type,
+             feedback_type = EXCLUDED.feedback_type,
+             updated_at = NOW()`
+      ,
+      [user_id, sessionId, exerciseOrder, exName, exKey, sentiment || null, normalizedComment, methodologyType, feedbackType]
     );
 
     res.json({ success: true });

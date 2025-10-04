@@ -27,6 +27,8 @@ const HomeTrainingExerciseModal = ({
   const [showFeedback, setShowFeedback] = useState(false);
   const [showExerciseInfo, setShowExerciseInfo] = useState(false);
   const [showRepeatConfirm, setShowRepeatConfirm] = useState(false);
+  const [exerciseFeedback, setExerciseFeedback] = useState({});
+  const [customTimePerSeries, setCustomTimePerSeries] = useState(45); // Tiempo por defecto: 45s
 
   // Pausar el temporizador cuando se abre un modal superpuesto (feedback / info / confirm repeat)
   const prevRunningRef = useRef(false);
@@ -53,17 +55,64 @@ const HomeTrainingExerciseModal = ({
     lastPhaseHandledRef.current = '';
     lastReportedSeriesRef.current = '';
     const durValueInit = Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos);
-    if (Number.isFinite(durValueInit) && durValueInit > 0) {
+    const isTimeBased = Number.isFinite(durValueInit) && durValueInit > 0;
+
+    if (isTimeBased) {
       setTimeLeft(durValueInit);
+      setCustomTimePerSeries(durValueInit);
     } else {
-      setTimeLeft(45);
+      // Para ejercicios basados en repeticiones, usar tiempo personalizado
+      setTimeLeft(customTimePerSeries || 45);
     }
+
     if (exercise?.gif_url) {
       setExerciseGif(exercise.gif_url);
     } else {
       setExerciseGif(getExerciseGifUrl(exercise?.nombre));
     }
   }, [exercise]);
+
+  // Cargar feedback existente al abrir modal
+  useEffect(() => {
+    if (!sessionId) return;
+    let cancelled = false;
+
+    const loadExistingFeedback = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const response = await fetch(`/api/home-training/sessions/${sessionId}/feedback`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error('Error cargando feedback');
+        }
+
+        const feedbackData = await response.json();
+        if (cancelled) return;
+
+        const feedbackMap = {};
+        feedbackData.forEach(fb => {
+          feedbackMap[fb.exercise_order] = {
+            sentiment: fb.sentiment,
+            comment: fb.comment
+          };
+        });
+
+        setExerciseFeedback(feedbackMap);
+        console.log('📝 Feedback cargado:', feedbackMap);
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Error cargando feedback existente:', error);
+        }
+      }
+    };
+
+    loadExistingFeedback();
+    return () => { cancelled = true; };
+  }, [sessionId]);
 
   // Timer principal con guardas mejoradas para evitar dobles disparos
   useEffect(() => {
@@ -162,15 +211,17 @@ const HomeTrainingExerciseModal = ({
         const nextSeries = Math.min(currentSeries + 1, seriesTotal);
         setCurrentSeries(nextSeries);
         setCurrentPhase('exercise');
-        
+
         // Configurar tiempo del próximo ejercicio
-        const exerciseTime = Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos) || 45;
+        const durValue = Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos);
+        const isTimeBased = Number.isFinite(durValue) && durValue > 0;
+        const exerciseTime = isTimeBased ? durValue : (customTimePerSeries || 45);
         setTimeLeft(exerciseTime);
-        
+
         // Reset signature y auto-start
-        setTimeout(() => { 
+        setTimeout(() => {
           lastPhaseHandledRef.current = '';
-          setIsRunning(true); 
+          setIsRunning(true);
           console.log(`🏃‍♂️ [HomeTraining] Starting series ${nextSeries}/${seriesTotal} automatically`);
         }, 200);
       }, 100);
@@ -205,7 +256,9 @@ const HomeTrainingExerciseModal = ({
       const nextSeries = Math.min(currentSeries + 1, seriesTotal);
       setCurrentSeries(nextSeries);
       setCurrentPhase('exercise');
-      const exerciseTime = Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos) || 45;
+      const durValue = Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos);
+      const isTimeBased = Number.isFinite(durValue) && durValue > 0;
+      const exerciseTime = isTimeBased ? durValue : (customTimePerSeries || 45);
       setTimeLeft(exerciseTime);
       lastPhaseHandledRef.current = '';
       console.log(`🏃‍♂️ [HomeTraining] Forced advance to series ${nextSeries}/${seriesTotal}`);
@@ -235,7 +288,9 @@ const HomeTrainingExerciseModal = ({
     setCurrentPhase('ready');
     setCurrentSeries(1);
     setTotalTimeSpent(0);
-    setTimeLeft((Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos) || 45));
+    const durValue = Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos);
+    const isTimeBased = Number.isFinite(durValue) && durValue > 0;
+    setTimeLeft(isTimeBased ? durValue : (customTimePerSeries || 45));
   };
 
   const handleCancelExercise = () => {
@@ -258,16 +313,18 @@ const HomeTrainingExerciseModal = ({
     setCurrentSeries(1);
     setIsRunning(false);
     setTotalTimeSpent(0);
-    setTimeLeft((Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos) || 45));
+    const durValue = Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos);
+    const isTimeBased = Number.isFinite(durValue) && durValue > 0;
+    setTimeLeft(isTimeBased ? durValue : (customTimePerSeries || 45));
     lastPhaseHandledRef.current = '';
     lastReportedSeriesRef.current = '';
-    
+
     // Limpiar el intervalo si existe
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
-    
+
     setShowRepeatConfirm(false);
   };
 
@@ -375,8 +432,14 @@ const HomeTrainingExerciseModal = ({
                 }}
               ></div>
               <div className="absolute inset-0 flex items-center justify-center flex-col">
-                <span className={`text-3xl font-bold ${timeLeft === 0 ? 'text-green-400 animate-pulse' : 'text-white'}`}>
-                  {timeLeft === 0 ? '¡Listo!' : formatTime(timeLeft)}
+                <span className={`text-3xl font-bold ${
+                  customTimePerSeries === 0 && currentPhase === 'exercise' ? 'text-white' :
+                  timeLeft === 0 ? 'text-green-400 animate-pulse' :
+                  'text-white'
+                }`}>
+                  {customTimePerSeries === 0 && currentPhase === 'exercise' ? '--:--' :
+                   timeLeft === 0 ? '¡Listo!' :
+                   formatTime(timeLeft)}
                 </span>
                 {!isRunning && (currentPhase === 'exercise' || currentPhase === 'rest') && timeLeft > 0 && (
                   <div className="text-xs text-gray-400 mt-1">Pausado</div>
@@ -384,7 +447,7 @@ const HomeTrainingExerciseModal = ({
                 {timeLeft === 0 && currentPhase === 'rest' && (
                   <div className="text-xs text-green-400 mt-1 animate-pulse">Descanso terminado</div>
                 )}
-                {timeLeft === 0 && currentPhase === 'exercise' && (
+                {timeLeft === 0 && currentPhase === 'exercise' && customTimePerSeries !== 0 && (
                   <div className="text-xs text-green-400 mt-1 animate-pulse">Serie completada</div>
                 )}
               </div>
@@ -448,6 +511,48 @@ const HomeTrainingExerciseModal = ({
             </div>
           )}
 
+          {/* Sección de valoración y feedback - Siempre visible */}
+          <div className="bg-gray-700/30 rounded-lg p-3 mb-6">
+            {/* Botón para valorar */}
+            <div className="flex justify-end mb-3">
+              <button
+                onClick={() => setShowFeedback(true)}
+                className={`flex items-center gap-2 border px-3 py-1.5 rounded-md transition-colors ${
+                  exerciseFeedback[exerciseIndex]
+                    ? 'text-green-300 hover:text-green-200 border-green-400/30 bg-green-900/20'
+                    : 'text-yellow-300 hover:text-yellow-200 border-yellow-400/30'
+                }`}
+                title={exerciseFeedback[exerciseIndex] ? 'Editar valoración' : 'Cómo has sentido este ejercicio?'}
+              >
+                <Star size={16} className={exerciseFeedback[exerciseIndex] ? 'fill-current' : ''} />
+                {exerciseFeedback[exerciseIndex] ? 'Editado' : 'Valorar'}
+              </button>
+            </div>
+
+            {/* Mostrar comentario del usuario si existe */}
+            {exerciseFeedback[exerciseIndex]?.comment && exerciseFeedback[exerciseIndex].comment.trim() && (
+              <div className="p-3 bg-yellow-400/10 border border-yellow-400/20 rounded-md mb-3">
+                <div className="flex items-start gap-2">
+                  <Star size={14} className="text-yellow-400 flex-shrink-0 mt-0.5 fill-current" />
+                  <div>
+                    <div className="text-yellow-400 font-medium text-sm mb-1">Mi comentario:</div>
+                    <div className="text-yellow-200 text-sm leading-relaxed">{exerciseFeedback[exerciseIndex].comment}</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Mostrar valoración si existe */}
+            {exerciseFeedback[exerciseIndex]?.sentiment && (
+              <div className="p-2 bg-yellow-400/10 border border-yellow-400/20 rounded-md flex items-center gap-2">
+                <Star size={14} className="text-yellow-400 fill-current" />
+                <span className="text-yellow-400 font-medium text-sm">
+                  Valoración: {exerciseFeedback[exerciseIndex].sentiment === 'like' ? '👍 Me gusta' : exerciseFeedback[exerciseIndex].sentiment === 'hard' ? '⚠️ Es difícil' : '👎 No me gusta'}
+                </span>
+              </div>
+            )}
+          </div>
+
           {/* Información adicional */}
           {(exercise.patron || exercise.implemento) && (
             <div className="bg-gray-700/30 rounded-lg p-3 mb-6">
@@ -466,15 +571,6 @@ const HomeTrainingExerciseModal = ({
                     <span className="text-white font-medium ml-1 capitalize">{String(exercise.implemento).replaceAll('_',' ')}</span>
                   </div>
                 )}
-                {/* Botón de feedback */}
-                <button
-                  onClick={() => setShowFeedback(true)}
-                  className="ml-auto flex items-center gap-2 text-yellow-300 hover:text-yellow-200 border border-yellow-400/30 px-3 py-1 rounded-md"
-                  title="Cómo has sentido este ejercicio?"
-                >
-                  <Star size={16} />
-                  Valorar
-                </button>
               </div>
             </div>
           )}
@@ -618,6 +714,41 @@ const HomeTrainingExerciseModal = ({
             )}
           </div>
 
+          {/* Selector de tiempo por serie - solo para ejercicios basados en repeticiones */}
+          {(() => {
+            const durValue = Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos);
+            const isTimeBased = Number.isFinite(durValue) && durValue > 0;
+            return !isTimeBased && currentPhase !== 'completed' && (
+              <div className="flex items-center gap-2 justify-center text-sm text-gray-400 mt-4">
+                <span>Tiempo por serie:</span>
+                {[
+                  { label: '30s', value: 30 },
+                  { label: '45s', value: 45 },
+                  { label: '60s', value: 60 },
+                  { label: 'Off', value: 0 }
+                ].map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => {
+                      setCustomTimePerSeries(opt.value);
+                      // Si está en fase de ejercicio, actualizar el timeLeft
+                      if (currentPhase === 'exercise' && opt.value > 0) {
+                        setTimeLeft(opt.value);
+                      }
+                    }}
+                    className={`px-3 py-1.5 border rounded transition-colors ${
+                      customTimePerSeries === opt.value
+                        ? 'border-yellow-400 text-yellow-300 bg-yellow-400/10'
+                        : 'border-gray-600 hover:border-gray-500'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            );
+          })()}
+
           {/* Botón para repetir entrenamiento - solo visible al completar el ÚLTIMO ejercicio */}
           {currentPhase === 'completed' && isLastExercise && (
             <div className="mt-6 pt-4 border-t border-gray-700">
@@ -641,6 +772,7 @@ const HomeTrainingExerciseModal = ({
           <ExerciseFeedbackModal
             show={showFeedback}
             exerciseName={exercise?.nombre}
+            initialFeedback={exerciseFeedback[exerciseIndex]}
             onClose={() => setShowFeedback(false)}
             onSubmit={async (payload) => {
               try {
@@ -653,12 +785,23 @@ const HomeTrainingExerciseModal = ({
                       'Content-Type': 'application/json',
                       'Authorization': `Bearer ${token}`
                     },
-                    body: JSON.stringify({ 
-                      sentiment: payload.sentiment, 
-                      comment: payload.comment, 
-                      exercise_name: exercise?.nombre 
+                    body: JSON.stringify({
+                      sentiment: payload.sentiment,
+                      comment: payload.comment,
+                      exercise_name: exercise?.nombre
                     })
                   });
+
+                  // Actualizar estado local de feedback
+                  setExerciseFeedback(prev => ({
+                    ...prev,
+                    [exerciseIndex]: {
+                      sentiment: payload.sentiment,
+                      comment: payload.comment
+                    }
+                  }));
+
+                  console.log('✅ Feedback guardado y actualizado en UI');
                   onFeedbackSubmitted?.();
                 }
               } catch (error) {
