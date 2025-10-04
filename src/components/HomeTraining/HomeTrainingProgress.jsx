@@ -198,47 +198,87 @@ const HomeTrainingProgress = ({
 
         {/* Botones de acción */}
         <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
-          <div className="flex gap-3 sm:gap-4 flex-1">
-            {progress.percentage < 100 && (
-              <button
-                onClick={onGenerateNewPlan}
-                className="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
-              >
-                Generar Otro Plan
-              </button>
-            )}
-
-            {progress.percentage < 100 ? (
-              <button
-                onClick={onContinueTraining}
-                className="flex-1 bg-yellow-400 hover:bg-yellow-500 text-black font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
-              >
-                {progress.percentage === 0 ? 'Comenzar Entrenamiento' : 'Continuar Entrenamiento'}
-              </button>
-            ) : (
-              <>
+          {progress.percentage < 100 ? (
+            <>
+              <div className="flex gap-3 sm:gap-4 flex-1">
                 <button
-                  onClick={onGenerateNewAfterCompleted}
-                  className="flex-1 bg-green-600 hover:bg-green-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+                  onClick={onGenerateNewPlan}
+                  className="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
                 >
-                  ¡Entrenamiento Completado! Generar Nuevo
+                  Generar Otro Plan
                 </button>
                 <button
                   onClick={onContinueTraining}
-                  className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+                  className="flex-1 bg-yellow-400 hover:bg-yellow-500 text-black font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
                 >
-                  Reanudar ejercicios
+                  {progress.percentage === 0 ? 'Comenzar Entrenamiento' : 'Continuar Entrenamiento'}
                 </button>
-              </>
-            )}
-          </div>
-          {/* Botón para cancelar todo y reiniciar */}
-          <button
-            onClick={onCancelAll}
-            className="bg-red-600 hover:bg-red-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
-          >
-            Cancelar todo
-          </button>
+              </div>
+              {/* Botón para cancelar todo y reiniciar - SOLO si no está completado */}
+              <button
+                onClick={onCancelAll}
+                className="bg-red-600 hover:bg-red-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
+              >
+                Cancelar todo
+              </button>
+            </>
+          ) : (
+            /* 🎉 ENTRENAMIENTO COMPLETADO */
+            <div className="w-full space-y-4">
+              {/* Mensaje de completado con tiempo y fecha */}
+              <div className="bg-green-900/30 border-2 border-green-500 rounded-lg p-4">
+                <div className="text-center">
+                  <p className="text-green-400 font-bold text-lg mb-2">
+                    🎉 ¡Has completado el entrenamiento!
+                  </p>
+                  <p className="text-green-300 text-sm">
+                    Tiempo total: <span className="font-semibold">
+                      {(() => {
+                        // Calcular tiempo total sumando duration_seconds de todos los ejercicios
+                        const totalSeconds = sessionExercises?.reduce((acc, ex) => {
+                          return acc + (ex.duration_seconds || 0);
+                        }, 0) || 0;
+
+                        if (totalSeconds === 0) return 'N/A';
+
+                        const hours = Math.floor(totalSeconds / 3600);
+                        const minutes = Math.floor((totalSeconds % 3600) / 60);
+                        const seconds = totalSeconds % 60;
+
+                        if (hours > 0) {
+                          return `${hours}h ${minutes}m ${seconds}s`;
+                        } else if (minutes > 0) {
+                          return `${minutes}m ${seconds}s`;
+                        } else {
+                          return `${seconds}s`;
+                        }
+                      })()}
+                    </span>
+                  </p>
+                  <p className="text-green-300 text-sm">
+                    Fecha: <span className="font-semibold">
+                      {new Date().toLocaleDateString('es-ES', {
+                        day: '2-digit',
+                        month: '2-digit'
+                      })} {new Date().toLocaleTimeString('es-ES', {
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </span>
+                  </p>
+                </div>
+              </div>
+
+              {/* Botón para generar nuevo entrenamiento */}
+              <button
+                onClick={onGenerateNewAfterCompleted}
+                className="w-full bg-yellow-400 hover:bg-yellow-500 text-black font-semibold py-3 px-6 rounded-lg transition-colors duration-200 flex items-center justify-center gap-2"
+              >
+                <Target size={20} />
+                Generar otro entrenamiento
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
