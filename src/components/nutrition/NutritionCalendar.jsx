@@ -17,6 +17,8 @@ export default function NutritionCalendar({ nutritionPlan, userMacros, onPlanUpd
   const [currentWeek, setCurrentWeek] = useState(0);
   const [selectedDay, setSelectedDay] = useState(null);
   const [mealProgress, setMealProgress] = useState({});
+  const [isSaving, setIsSaving] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Debug: Log de la estructura del plan
   useEffect(() => {
@@ -33,9 +35,10 @@ export default function NutritionCalendar({ nutritionPlan, userMacros, onPlanUpd
 
       // Log de los primeros 2 días del plan para verificar estructura
       if (nutritionPlan.plan_data?.daily_plans) {
+        const dailyPlansObj = nutritionPlan.plan_data.daily_plans;
         console.log('📅 Primeros 2 días del plan:',
-          nutritionPlan.plan_data.daily_plans.slice(0, 2).map((day, idx) => ({
-            dayIndex: idx,
+          Object.entries(dailyPlansObj).slice(0, 2).map(([key, day]) => ({
+            dayIndex: key,
             mealsCount: day.meals?.length,
             mealTypes: day.meals?.map(m => m.meal_type)
           }))
@@ -46,7 +49,81 @@ export default function NutritionCalendar({ nutritionPlan, userMacros, onPlanUpd
     }
   }, [nutritionPlan]);
 
-  // Generar estructura de semana DESDE LA FECHA DE INICIO DEL PLAN
+  // Cargar progreso guardado de la semana actual
+  useEffect(() => {
+    const loadWeekProgress = async () => {
+      if (!nutritionPlan) {
+        setIsLoading(false);
+        return;
+      }
+
+      setIsLoading(true);
+      try {
+        const token = localStorage.getItem('authToken') || localStorage.getItem('token');
+
+        // Generar las fechas de la semana actual
+        const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        let planStartDate = today;
+        if (nutritionPlan?.created_at) {
+          planStartDate = new Date(nutritionPlan.created_at);
+          planStartDate.setHours(0, 0, 0, 0);
+        }
+
+        // Generar fechas de la semana actual
+        const weekDates = [];
+        for (let i = 0; i < 7; i++) {
+          const date = new Date(planStartDate);
+          date.setDate(planStartDate.getDate() + i + (currentWeek * 7));
+          weekDates.push(date.toISOString().split('T')[0]);
+        }
+
+        // Cargar progreso de todos los días de la semana
+        const progressPromises = weekDates.map(dateString =>
+          fetch(`/api/nutrition/daily/${dateString}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          })
+          .then(r => r.ok ? r.json() : null)
+          .catch(() => null)
+        );
+
+        const results = await Promise.all(progressPromises);
+
+        // Construir objeto de progreso
+        const loadedProgress = {};
+        results.forEach((data, idx) => {
+          const dateString = weekDates[idx];
+          console.log(`📥 Datos recibidos para ${dateString}:`, data);
+
+          if (data?.success && data?.dailyLog?.mealProgress) {
+            console.log(`  ✅ mealProgress encontrado:`, data.dailyLog.mealProgress);
+            Object.entries(data.dailyLog.mealProgress).forEach(([mealId, completed]) => {
+              if (completed) {
+                const key = `${dateString}-${mealId}`;
+                console.log(`    📌 Cargando: ${key} = ${completed}`);
+                loadedProgress[key] = true;
+              }
+            });
+          } else {
+            console.log(`  ⚠️ No hay mealProgress para ${dateString}`);
+          }
+        });
+
+        console.log('📥 Progreso total cargado:', loadedProgress);
+        setMealProgress(loadedProgress);
+      } catch (error) {
+        console.error('❌ Error cargando progreso:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadWeekProgress();
+  }, [currentWeek, nutritionPlan]);
+
+  // Generar estructura de semana con mapeo correcto a la estructura del plan
   const generateWeekStructure = () => {
     const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
     const today = new Date();
@@ -64,25 +141,40 @@ export default function NutritionCalendar({ nutritionPlan, userMacros, onPlanUpd
                         nutritionPlan?.plan_data?.plan_summary?.duration_days ||
                         7;
 
-    // Generar 7 días consecutivos desde la fecha de inicio + offset de semana
+    // Generar 7 días consecutivos desde el inicio de la semana actual + offset
     const weekDays = [];
     for (let i = 0; i < 7; i++) {
       const date = new Date(planStartDate);
       date.setDate(planStartDate.getDate() + i + (currentWeek * 7));
 
-      // Calcular el índice del día dentro del plan (0 a planDuration-1)
-      const daysSinceStart = Math.floor((date - planStartDate) / (1000 * 60 * 60 * 24));
-      const dayIndexInPlan = daysSinceStart % planDuration; // Ciclar si el plan es más corto
+      const dayOfWeek = date.getDay(); // 0=Domingo, 1=Lunes, ..., 6=Sábado
+      const dayName = dayNames[dayOfWeek];
 
-      // Verificar si este día está dentro del rango del plan
+      // MAPEO CORRECTO: El plan en BD siempre sigue la estructura:
+      // 0=Lunes, 1=Martes, 2=Miércoles, 3=Jueves, 4=Viernes, 5=Sábado, 6=Domingo
+      // Convertir de dayOfWeek (0=Dom) a índice del plan (0=Lun)
+      const planDayMapping = {
+        0: 6, // Domingo -> índice 6 en el plan
+        1: 0, // Lunes -> índice 0 en el plan
+        2: 1, // Martes -> índice 1 en el plan
+        3: 2, // Miércoles -> índice 2 en el plan
+        4: 3, // Jueves -> índice 3 en el plan
+        5: 4, // Viernes -> índice 4 en el plan
+        6: 5  // Sábado -> índice 5 en el plan
+      };
+
+      const dayIndexInPlan = planDayMapping[dayOfWeek];
+
+      // Calcular días desde el inicio del plan
+      const daysSinceStart = Math.floor((date - planStartDate) / (1000 * 60 * 60 * 24));
       const isWithinPlan = daysSinceStart >= 0 && daysSinceStart < planDuration;
 
       weekDays.push({
-        name: dayNames[date.getDay()], // ✅ Nombre real del día según la fecha
+        name: dayName,
         date: date,
         dateString: date.toISOString().split('T')[0],
         isToday: date.toDateString() === today.toDateString(),
-        dayIndex: dayIndexInPlan, // Índice dentro del plan (con ciclo)
+        dayIndex: dayIndexInPlan, // Índice correcto según estructura del plan
         daysSinceStart: daysSinceStart,
         isWithinPlan: isWithinPlan
       });
@@ -168,8 +260,10 @@ export default function NutritionCalendar({ nutritionPlan, userMacros, onPlanUpd
           .indexOf(dayName);
       }
 
-      if (planDayIndex >= 0 && planDayIndex < dailyPlans.length && dailyPlans[planDayIndex]) {
-        const planDay = dailyPlans[planDayIndex];
+      // Acceder como objeto usando la clave como string (ej: "0", "1", "2", ...)
+      const dayKey = planDayIndex.toString();
+      if (dailyPlans[dayKey]) {
+        const planDay = dailyPlans[dayKey];
         console.log(`📅 Mapeando día ${dayName} (índice ${planDayIndex}):`, planDay);
 
         // Convertir estructura de meals a estructura esperada
@@ -184,7 +278,9 @@ export default function NutritionCalendar({ nutritionPlan, userMacros, onPlanUpd
             protein: Math.round(nutrition.protein || 0),
             carbs: Math.round(nutrition.carbs || 0),
             fat: Math.round(nutrition.fat || 0),
-            foods: meal.ingredients || []
+            foods: (meal.ingredients || []).map(ing =>
+              `${ing.food || ing.name || 'Alimento'} (${ing.amount || 'cantidad no especificada'})`
+            )
           };
         });
       }
@@ -194,31 +290,84 @@ export default function NutritionCalendar({ nutritionPlan, userMacros, onPlanUpd
     return dayPlan || getDefaultMealPlan(dayName);
   };
 
-  const handleMealComplete = (dayString, mealId) => {
+  const handleMealComplete = async (dayString, mealId) => {
+    console.log(`🍽️ handleMealComplete llamado:`, { dayString, mealId, type: typeof mealId });
+
+    // 1. Actualizar estado local inmediatamente (UX optimista)
+    const newValue = !mealProgress[`${dayString}-${mealId}`];
     setMealProgress(prev => ({
       ...prev,
-      [`${dayString}-${mealId}`]: !prev[`${dayString}-${mealId}`]
+      [`${dayString}-${mealId}`]: newValue
     }));
+
+    // 2. Guardar en BD
+    setIsSaving(true);
+    try {
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token');
+
+      // Construir el objeto de progreso del día
+      const dayMealsProgress = {};
+      Object.entries({...mealProgress, [`${dayString}-${mealId}`]: newValue})
+        .filter(([key]) => key.startsWith(dayString))
+        .forEach(([key, completed]) => {
+          // Extraer mealId desde el final (después del último guion)
+          // Ejemplo: "2025-10-03-cena" -> "cena"
+          const parts = key.split('-');
+          const mealKey = parts[parts.length - 1];
+          dayMealsProgress[mealKey] = completed;
+        });
+
+      console.log(`📤 Enviando a BD:`, { date: dayString, mealProgress: dayMealsProgress });
+
+      const response = await fetch('/api/nutrition/daily', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          date: dayString,
+          mealProgress: dayMealsProgress
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Error al guardar progreso');
+      }
+
+      console.log('✅ Progreso guardado:', { date: dayString, meal: mealId, completed: newValue });
+    } catch (error) {
+      console.error('❌ Error guardando progreso de comida:', error);
+      // Revertir cambio en UI si falla
+      setMealProgress(prev => ({
+        ...prev,
+        [`${dayString}-${mealId}`]: !newValue
+      }));
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const isMealCompleted = (dayString, mealId) => {
     return mealProgress[`${dayString}-${mealId}`] || false;
   };
 
-  const getDayProgress = (dayString) => {
-    const dayMeals = Object.keys(getDefaultMealPlan()).length;
+  const getDayProgress = (dayString, dayMeals) => {
+    // Usar las comidas REALES del plan, no el default hardcodeado
+    const mealIds = Object.keys(dayMeals);
+    const totalMeals = mealIds.length;
     let completed = 0;
-    
-    Object.keys(getDefaultMealPlan()).forEach(mealId => {
+
+    mealIds.forEach(mealId => {
       if (isMealCompleted(dayString, mealId)) {
         completed++;
       }
     });
-    
+
     return {
       completed,
-      total: dayMeals,
-      percentage: Math.round((completed / dayMeals) * 100)
+      total: totalMeals,
+      percentage: totalMeals > 0 ? Math.round((completed / totalMeals) * 100) : 0
     };
   };
 
@@ -274,7 +423,8 @@ export default function NutritionCalendar({ nutritionPlan, userMacros, onPlanUpd
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {weekDays.map((day) => {
           const dayMeals = getMealPlanForDay(day.name, day.dayIndex);
-          const progress = getDayProgress(day.dateString);
+          console.log(`🗓️ Comidas del día ${day.dateString} (${day.name}):`, Object.keys(dayMeals));
+          const progress = getDayProgress(day.dateString, dayMeals);
           
           return (
             <Card
@@ -368,26 +518,30 @@ export default function NutritionCalendar({ nutritionPlan, userMacros, onPlanUpd
       </div>
 
       {/* Detalle del día seleccionado */}
-      {selectedDay && (
-        <Card className="bg-gray-800/70 border-gray-600">
-          <CardHeader>
-            <CardTitle className="text-white flex items-center justify-between">
-              <span>
-                Detalle del {weekDays.find(d => d.dateString === selectedDay)?.name}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                className="border-gray-600 text-white hover:bg-gray-700"
-              >
-                <Plus size={16} className="mr-1" />
-                Editar Plan
-              </Button>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {Object.entries(getMealPlanForDay(weekDays.find(d => d.dateString === selectedDay)?.name)).map(([mealId, meal]) => (
+      {selectedDay && (() => {
+        const selectedDayData = weekDays.find(d => d.dateString === selectedDay);
+        const selectedDayMeals = getMealPlanForDay(selectedDayData?.name, selectedDayData?.dayIndex);
+
+        return (
+          <Card className="bg-gray-800/70 border-gray-600">
+            <CardHeader>
+              <CardTitle className="text-white flex items-center justify-between">
+                <span>
+                  Detalle del {selectedDayData?.name} ({selectedDayData?.date.getDate()} de {selectedDayData?.date.toLocaleDateString('es-ES', { month: 'long' })})
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-gray-600 text-white hover:bg-gray-700"
+                >
+                  <Plus size={16} className="mr-1" />
+                  Editar Plan
+                </Button>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {Object.entries(selectedDayMeals).map(([mealId, meal]) => (
                 <div key={mealId} className="space-y-3">
                   <div className="flex items-center justify-between">
                     <h4 className="text-lg font-semibold text-white flex items-center gap-2">
@@ -449,7 +603,8 @@ export default function NutritionCalendar({ nutritionPlan, userMacros, onPlanUpd
             </div>
           </CardContent>
         </Card>
-      )}
+        );
+      })()}
     </div>
   );
 }
