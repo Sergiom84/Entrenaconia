@@ -62,7 +62,7 @@ const HomeTrainingExerciseModal = ({
       setCustomTimePerSeries(durValueInit);
     } else {
       // Para ejercicios basados en repeticiones, usar tiempo personalizado
-      setTimeLeft(customTimePerSeries || 45);
+      setTimeLeft(customTimePerSeries ?? 45);
     }
 
     if (exercise?.gif_url) {
@@ -193,7 +193,7 @@ const HomeTrainingExerciseModal = ({
           // Reset signature y auto-start después de un pequeño delay
           setTimeout(() => { 
             lastPhaseHandledRef.current = '';
-            setIsRunning(true); 
+            setIsRunning(true);
           }, 200);
         }, 100);
       } else {
@@ -215,13 +215,13 @@ const HomeTrainingExerciseModal = ({
         // Configurar tiempo del próximo ejercicio
         const durValue = Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos);
         const isTimeBased = Number.isFinite(durValue) && durValue > 0;
-        const exerciseTime = isTimeBased ? durValue : (customTimePerSeries || 45);
+        const exerciseTime = isTimeBased ? durValue : (customTimePerSeries ?? 45);
         setTimeLeft(exerciseTime);
 
         // Reset signature y auto-start
         setTimeout(() => {
           lastPhaseHandledRef.current = '';
-          setIsRunning(true);
+          setIsRunning(isTimeBased || customTimePerSeries !== 0);
           console.log(`🏃‍♂️ [HomeTraining] Starting series ${nextSeries}/${seriesTotal} automatically`);
         }, 200);
       }, 100);
@@ -232,6 +232,13 @@ const HomeTrainingExerciseModal = ({
     if (currentPhase === 'ready') {
       setCurrentPhase('exercise');
     }
+
+    if (!isTimeBasedExercise && customTimePerSeries === 0) {
+      setTimeLeft(0);
+      setIsRunning(false);
+      return;
+    }
+
     setIsRunning(true);
   };
 
@@ -240,6 +247,9 @@ const HomeTrainingExerciseModal = ({
   };
 
   const handleResume = () => {
+    if (!isTimeBasedExercise && customTimePerSeries === 0) {
+      return;
+    }
     setIsRunning(true);
   };
 
@@ -258,7 +268,7 @@ const HomeTrainingExerciseModal = ({
       setCurrentPhase('exercise');
       const durValue = Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos);
       const isTimeBased = Number.isFinite(durValue) && durValue > 0;
-      const exerciseTime = isTimeBased ? durValue : (customTimePerSeries || 45);
+      const exerciseTime = isTimeBased ? durValue : (customTimePerSeries ?? 45);
       setTimeLeft(exerciseTime);
       lastPhaseHandledRef.current = '';
       console.log(`🏃‍♂️ [HomeTraining] Forced advance to series ${nextSeries}/${seriesTotal}`);
@@ -290,7 +300,7 @@ const HomeTrainingExerciseModal = ({
     setTotalTimeSpent(0);
     const durValue = Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos);
     const isTimeBased = Number.isFinite(durValue) && durValue > 0;
-    setTimeLeft(isTimeBased ? durValue : (customTimePerSeries || 45));
+    setTimeLeft(isTimeBased ? durValue : (customTimePerSeries ?? 45));
   };
 
   const handleCancelExercise = () => {
@@ -315,7 +325,7 @@ const HomeTrainingExerciseModal = ({
     setTotalTimeSpent(0);
     const durValue = Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos);
     const isTimeBased = Number.isFinite(durValue) && durValue > 0;
-    setTimeLeft(isTimeBased ? durValue : (customTimePerSeries || 45));
+    setTimeLeft(isTimeBased ? durValue : (customTimePerSeries ?? 45));
     lastPhaseHandledRef.current = '';
     lastReportedSeriesRef.current = '';
 
@@ -365,7 +375,15 @@ const HomeTrainingExerciseModal = ({
   // helpers para pintar métricas
   const repsValue = Number(exercise?.repeticiones ?? exercise?.reps ?? exercise?.repeticiones_por_serie);
   const durValue  = Number(exercise?.duracion_seg ?? exercise?.duracion ?? exercise?.tiempo_segundos);
-  const baseDuration = Math.max(1, (durValue || 45));
+  const isTimeBasedExercise = Number.isFinite(durValue) && durValue > 0;
+  const resolvedSeriesDuration = isTimeBasedExercise ? durValue : (customTimePerSeries ?? 45);
+  const safeSeriesDuration = Math.max(0, resolvedSeriesDuration || 0);
+  const restDuration = Math.min(60, Math.max(45, Number(exercise?.descanso_seg) || 60));
+  const baseDurationForPhase = currentPhase === 'rest' ? restDuration : safeSeriesDuration;
+  const safeBaseDuration = Math.max(1, baseDurationForPhase);
+  const progressAngle = (currentPhase === 'exercise' && !isTimeBasedExercise && customTimePerSeries === 0)
+    ? 0
+    : ((safeBaseDuration - Math.min(timeLeft, safeBaseDuration)) / safeBaseDuration) * 360;
   const rawSeries = Number(exercise?.series ?? exercise?.total_series ?? exercise?.totalSeries ?? exercise?.series_totales);
   const seriesTotal = Number.isFinite(Number(overrideSeriesTotal)) && Number(overrideSeriesTotal) > 0
     ? Number(overrideSeriesTotal)
@@ -428,16 +446,16 @@ const HomeTrainingExerciseModal = ({
                   currentPhase === 'rest' ? 'border-yellow-400' : 'border-blue-400'
                 }`}
                 style={{
-                  transform: `rotate(${(((baseDuration) - timeLeft) / (baseDuration)) * 360}deg)`
+                  transform: `rotate(${progressAngle}deg)`
                 }}
               ></div>
               <div className="absolute inset-0 flex items-center justify-center flex-col">
                 <span className={`text-3xl font-bold ${
-                  customTimePerSeries === 0 && currentPhase === 'exercise' ? 'text-white' :
+                  customTimePerSeries === 0 && currentPhase !== 'rest' ? 'text-white' :
                   timeLeft === 0 ? 'text-green-400 animate-pulse' :
                   'text-white'
                 }`}>
-                  {customTimePerSeries === 0 && currentPhase === 'exercise' ? '--:--' :
+                  {customTimePerSeries === 0 && currentPhase !== 'rest' ? '--:--' :
                    timeLeft === 0 ? '¡Listo!' :
                    formatTime(timeLeft)}
                 </span>
@@ -731,8 +749,17 @@ const HomeTrainingExerciseModal = ({
                     key={opt.value}
                     onClick={() => {
                       setCustomTimePerSeries(opt.value);
-                      // Si está en fase de ejercicio, actualizar el timeLeft
-                      if (currentPhase === 'exercise' && opt.value > 0) {
+                      if (opt.value === 0) {
+                        if (currentPhase !== 'rest') {
+                          setTimeLeft(0);
+                        }
+                        if (currentPhase === 'exercise') {
+                          setIsRunning(false);
+                        }
+                        return;
+                      }
+
+                      if (currentPhase === 'exercise' || currentPhase === 'ready') {
                         setTimeLeft(opt.value);
                       }
                     }}
@@ -863,3 +890,4 @@ const HomeTrainingExerciseModal = ({
 };
 
 export default HomeTrainingExerciseModal;
+
