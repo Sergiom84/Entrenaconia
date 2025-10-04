@@ -758,7 +758,7 @@ router.put('/sessions/:sessionId/exercise/:exerciseOrder', authenticateToken, as
       ? Math.round((progress.completed_exercises / progress.total_exercises) * 100)
       : 0;
 
-    // Actualizar la sesión (usando nombres de columna reales y acumulando duración)
+    // Actualizar la sesión
     await client.query(`
       UPDATE app.home_training_sessions
       SET
@@ -767,7 +767,6 @@ router.put('/sessions/:sessionId/exercise/:exerciseOrder', authenticateToken, as
         progress_percentage    = ROUND(100.0 * (SELECT COUNT(*) FROM app.home_exercise_progress
                                   WHERE home_training_session_id = $1 AND status = 'completed')
                                   / NULLIF(total_exercises,0), 1),
-        total_duration_seconds = COALESCE(total_duration_seconds, 0) + COALESCE($2, 0),
         completed_at           = CASE WHEN (SELECT COUNT(*) FROM app.home_exercise_progress
                                   WHERE home_training_session_id = $1 AND status <> 'completed') = 0
                                   THEN NOW() ELSE completed_at END,
@@ -775,7 +774,7 @@ router.put('/sessions/:sessionId/exercise/:exerciseOrder', authenticateToken, as
                                   WHERE home_training_session_id = $1 AND status <> 'completed') = 0
                                   THEN 'completed' ELSE status END
       WHERE id = $1
-    `, [sessionId, duration_seconds ?? 0]);
+    `, [sessionId]);
 
     // Si el ejercicio se completó, actualizar estadísticas e historial
     if (status === 'completed') {
@@ -783,11 +782,10 @@ router.put('/sessions/:sessionId/exercise/:exerciseOrder', authenticateToken, as
         await client.query(
           `UPDATE app.user_home_training_stats
            SET total_sessions = total_sessions + 1,
-               total_duration_seconds = total_duration_seconds + COALESCE($1, 0),
                last_training_date = CURRENT_DATE,
                updated_at = NOW()
-           WHERE user_id = $2`,
-          [progress.total_duration, user_id]
+           WHERE user_id = $1`,
+          [user_id]
         );
       }
 
