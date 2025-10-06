@@ -505,6 +505,403 @@ router.post('/specialist/calistenia/generate', authenticateToken, async (req, re
 });
 
 // =========================================
+// SPECIALIST: HEAVY DUTY
+// =========================================
+
+/**
+ * POST /api/routine-generation/specialist/heavy-duty/evaluate
+ * Evaluación de perfil para Heavy Duty con IA
+ */
+router.post('/specialist/heavy-duty/evaluate', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+
+    logSeparator('HEAVY DUTY PROFILE EVALUATION');
+    logAPICall('/specialist/heavy-duty/evaluate', 'POST', userId);
+
+    const userProfile = await getUserFullProfile(userId);
+    const normalizedProfile = normalizeUserProfile(userProfile);
+
+    logUserProfile(normalizedProfile, userId);
+
+    // Verificar ejercicios disponibles en tabla Heavy Duty
+    // Niveles reales en BD: Principiante (11), Básico (38), Intermedio (14) = 63 total
+    const exerciseCountResult = await pool.query(`
+      SELECT COUNT(*) as total
+      FROM app."Ejercicios_Heavy_Duty"
+    `);
+
+    const exerciseCount = parseInt(exerciseCountResult.rows[0]?.total) || 0;
+    if (exerciseCount === 0) {
+      throw new Error('No se encontraron ejercicios de Heavy Duty en la base de datos');
+    }
+
+    // Obtener historial de ejercicios
+    const recentExercisesResult = await pool.query(`
+      SELECT DISTINCT exercise_name, used_at
+      FROM app.exercise_history
+      WHERE user_id = $1
+      ORDER BY used_at DESC
+      LIMIT 20
+    `, [userId]);
+
+    const recentExercises = recentExercisesResult.rows.map(row => row.exercise_name);
+
+    // Preparar payload para IA
+    const aiPayload = {
+      task: 'evaluate_heavy_duty_level',
+      user_profile: {
+        ...normalizedProfile,
+        recent_exercises: recentExercises
+      },
+      evaluation_criteria: [
+        'Años de entrenamiento con pesas',
+        'Experiencia con fallo muscular absoluto',
+        'Nivel de intensidad y tolerancia al dolor',
+        'Capacidad de recuperación (edad, descanso)',
+        'Experiencia con ejercicios compuestos pesados',
+        'Limitaciones físicas o lesiones',
+        'Mentalidad de entrenamiento (intensidad vs volumen)'
+      ],
+      level_descriptions: {
+        novato: 'Principiantes: 0-1 años con pesas, introducción al fallo muscular',
+        intermedio: 'Experiencia: 1-3 años, domina fallo muscular controlado',
+        avanzado: 'Expertos: +3 años, maestría del fallo absoluto y descansos prolongados'
+      },
+      heavy_duty_principles: [
+        'Máxima intensidad: 1-2 series al fallo absoluto',
+        'Mínimo volumen: Menos es más',
+        'Descansos prolongados: 4-7 días entre grupos musculares',
+        'Alta carga: 80-95% 1RM según nivel'
+      ]
+    };
+
+    logAIPayload('HEAVY_DUTY_EVALUATION', aiPayload);
+
+    // Llamar a IA
+    const client = getModuleOpenAI(AI_MODULES.HEAVY_DUTY_SPECIALIST);
+    const config = AI_MODULES.HEAVY_DUTY_SPECIALIST;
+
+    const completion = await client.chat.completions.create({
+      model: config.model,
+      messages: [
+        {
+          role: 'system',
+          content: `Eres un especialista en Heavy Duty (Mike Mentzer) que evalúa perfiles de usuarios.
+
+INSTRUCCIONES:
+- Evalúa objetivamente la experiencia con fallo muscular y alta intensidad
+- Sé conservador con niveles avanzados (requieren años de experiencia)
+- RESPONDE SOLO EN JSON PURO, SIN MARKDOWN
+
+FORMATO DE RESPUESTA:
+{
+  "recommended_level": "novato|intermedio|avanzado",
+  "confidence": 0.75,
+  "reasoning": "Explicación detallada",
+  "key_indicators": ["Factor 1", "Factor 2"],
+  "suggested_focus_areas": ["Press de banca", "Sentadilla"],
+  "safety_considerations": ["Advertencia 1", "Advertencia 2"]
+}`
+        },
+        {
+          role: 'user',
+          content: JSON.stringify(aiPayload)
+        }
+      ],
+      temperature: 0.3,
+      max_tokens: 800
+    });
+
+    const aiResponse = completion.choices[0].message.content;
+    logAIResponse(aiResponse);
+    logTokens(completion.usage);
+
+    // Parsear respuesta
+    let evaluation;
+    try {
+      evaluation = JSON.parse(parseAIResponse(aiResponse));
+    } catch (parseError) {
+      console.error('Error parseando respuesta IA:', parseError);
+      throw new Error('Respuesta de IA inválida');
+    }
+
+    // Validar respuesta
+    const normalizedLevel = evaluation.recommended_level.toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+    res.json({
+      success: true,
+      evaluation: {
+        recommended_level: normalizedLevel,
+        confidence: evaluation.confidence,
+        reasoning: evaluation.reasoning,
+        key_indicators: evaluation.key_indicators || [],
+        suggested_focus_areas: evaluation.suggested_focus_areas || [],
+        safety_considerations: evaluation.safety_considerations || []
+      },
+      metadata: {
+        model_used: config.model,
+        evaluation_timestamp: new Date().toISOString()
+      }
+    });
+
+  } catch (error) {
+    console.error('Error en evaluación de Heavy Duty:', error);
+    logError('HEAVY_DUTY_SPECIALIST', error);
+
+    res.status(500).json({
+      success: false,
+      error: 'Error evaluando perfil',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/routine-generation/specialist/heavy-duty/generate
+ * Generación de plan especializado de Heavy Duty con IA
+ */
+router.post('/specialist/heavy-duty/generate', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+
+    // ✅ EXTRACCIÓN FLEXIBLE: Soporte para heavyDutyData (anidado) o datos en root
+    const heavyDutyData = req.body.heavyDutyData || req.body;
+    const {
+      userProfile,
+      level,              // Heavy Duty envía "level"
+      selectedLevel,      // Fallback por si viene selectedLevel
+      goals,
+      selectedMuscleGroups,
+      previousPlan,
+      regenerationReason,
+      additionalInstructions,
+      versionConfig
+    } = heavyDutyData;
+
+    // Mapear level → selectedLevel (Heavy Duty usa "level" en lugar de "selectedLevel")
+    const actualLevel = selectedLevel || level;
+
+    const isRegeneration = !!(previousPlan || regenerationReason || additionalInstructions);
+
+    logSeparator('HEAVY DUTY PLAN GENERATION');
+    console.log('Generando plan de Heavy Duty...', {
+      selectedLevel: actualLevel,
+      selectedMuscleGroups,
+      isRegeneration,
+      goals: goals?.substring(0, 50)
+    });
+
+    // Obtener perfil completo si solo se envió ID
+    let fullUserProfile = userProfile;
+    if (userProfile && Object.keys(userProfile).length === 1 && userProfile.id) {
+      fullUserProfile = await getUserFullProfile(userId);
+      fullUserProfile = normalizeUserProfile(fullUserProfile);
+    }
+
+    logUserProfile(fullUserProfile, userId);
+
+    // Validar que tenemos nivel
+    if (!actualLevel) {
+      return res.status(400).json({
+        success: false,
+        error: 'Nivel no especificado (level o selectedLevel requerido)'
+      });
+    }
+
+    // Mapear nivel - Corregido según niveles reales en BD
+    const levelMapping = {
+      'novato': 'Principiante',      // 11 ejercicios
+      'principiante': 'Principiante', // Alias
+      'intermedio': 'Intermedio',     // 14 ejercicios
+      'avanzado': 'Intermedio'        // Avanzados usan ejercicios Intermedios + Básicos
+    };
+    const dbLevel = levelMapping[actualLevel.toLowerCase()] || 'Principiante';
+
+    // Obtener ejercicios disponibles - Corregido según niveles reales en BD
+    // Niveles en BD: Principiante (11), Básico (38), Intermedio (14) = 63 total
+    let levelCondition;
+    if (dbLevel === 'Intermedio') {
+      // Intermedio y Avanzado: Acceso a TODOS los ejercicios (63)
+      levelCondition = "nivel IN ('Principiante', 'Básico', 'Intermedio')";
+    } else if (dbLevel === 'Principiante') {
+      // Principiantes: Solo Principiante + Básico (11 + 38 = 49 ejercicios)
+      levelCondition = "nivel IN ('Principiante', 'Básico')";
+    } else {
+      // Fallback: Principiante
+      levelCondition = "nivel IN ('Principiante', 'Básico')";
+    }
+
+    const exercisesResult = await pool.query(`
+      SELECT exercise_id, nombre, nivel, categoria, patron, equipamiento,
+             series_reps_objetivo, criterio_de_progreso, progresion_desde,
+             progresion_hacia, notas
+      FROM app."Ejercicios_Heavy_Duty"
+      WHERE ${levelCondition}
+      ORDER BY RANDOM()
+    `);
+
+    const availableExercises = exercisesResult.rows;
+
+    if (availableExercises.length === 0) {
+      throw new Error(`No hay ejercicios disponibles para el nivel ${dbLevel}`);
+    }
+
+    console.log(`✅ Ejercicios Heavy Duty cargados: ${availableExercises.length} para nivel ${dbLevel}`);
+
+    // Llamar a IA con prompt especializado
+    const client = getModuleOpenAI(AI_MODULES.HEAVY_DUTY_SPECIALIST);
+    const config = AI_MODULES.HEAVY_DUTY_SPECIALIST;
+
+    // Construir mensaje para IA
+    const userMessage = `GENERACIÓN DE PLAN HEAVY DUTY (Mike Mentzer)
+
+NIVEL: ${actualLevel}
+GRUPOS MUSCULARES: ${selectedMuscleGroups?.join(', ') || 'No especificado'}
+OBJETIVOS: ${goals || 'No especificado'}
+
+EJERCICIOS DISPONIBLES (${availableExercises.length}):
+${availableExercises.map(ex =>
+  `- ${ex.nombre} (${ex.categoria}) - Nivel: ${ex.nivel}, Equipamiento: ${ex.equipamiento}`
+).join('\n')}
+
+VERSIÓN: ${versionConfig?.version === 'strict' ? 'ESTRICTA (Mike Mentzer puro)' : 'ADAPTADA (4 semanas)'}
+DURACIÓN: ${versionConfig?.customWeeks || 4} semanas
+
+PRINCIPIOS HEAVY DUTY OBLIGATORIOS:
+1. Máxima intensidad: 1-2 series al fallo absoluto por ejercicio
+2. Mínimo volumen: NO más de 4-6 ejercicios por sesión
+3. Descansos prolongados: 4-7 días entre mismo grupo muscular
+4. RPE 10/10: Cada serie es al límite absoluto
+5. Tempo lento: Énfasis en negativas (4-6 segundos)
+
+GENERA un plan completo siguiendo el formato JSON de metodología.`;
+
+    const completion = await client.chat.completions.create({
+      model: config.model,
+      messages: [
+        {
+          role: 'system',
+          content: `Eres un especialista en Heavy Duty de Mike Mentzer. Generas planes de entrenamiento de alta intensidad y bajo volumen.
+
+RESPONDE SOLO EN JSON PURO, SIN MARKDOWN.
+
+El plan DEBE incluir:
+- semanas: array de semanas
+- cada semana tiene sesiones (días de entrenamiento)
+- cada sesión tiene ejercicios con: nombre, series (1-2), repeticiones, intensidad (RPE 10), descanso_seg (180-300), tempo, notas
+
+FORMATO EXACTO:
+{
+  "metodologia": "Heavy Duty",
+  "nivel": "${selectedLevel}",
+  "semanas": [
+    {
+      "numero": 1,
+      "sesiones": [
+        {
+          "dia": "Lunes",
+          "grupos_musculares": ["Pecho", "Tríceps"],
+          "ejercicios": [
+            {
+              "nombre": "Press de banca",
+              "series": 1,
+              "repeticiones": "6-10",
+              "intensidad": "RPE 10 - Fallo absoluto",
+              "descanso_seg": 300,
+              "tempo": "4-1-2",
+              "notas": "Serie única al fallo absoluto"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}`
+        },
+        {
+          role: 'user',
+          content: userMessage
+        }
+      ],
+      temperature: 0.4,
+      max_tokens: 4000
+    });
+
+    const aiResponse = completion.choices[0].message.content;
+    logAIResponse(aiResponse);
+    logTokens(completion.usage);
+
+    // Parsear respuesta
+    let generatedPlan;
+    try {
+      generatedPlan = JSON.parse(parseAIResponse(aiResponse));
+    } catch (parseError) {
+      console.error('Error parseando plan:', parseError);
+      throw new Error('Plan generado con formato inválido');
+    }
+
+    // Validar estructura del plan
+    if (!generatedPlan.semanas || !Array.isArray(generatedPlan.semanas)) {
+      throw new Error('Plan sin semanas válidas');
+    }
+
+    // Guardar plan en BD
+    const client_db = await pool.connect();
+    try {
+      await client_db.query('BEGIN');
+
+      // Limpiar drafts anteriores
+      await cleanUserDrafts(userId, client_db);
+
+      // Insertar plan - Estructura corregida igual que Calistenia
+      const planResult = await client_db.query(`
+        INSERT INTO app.methodology_plans (
+          user_id, methodology_type, plan_data, generation_mode, status, created_at
+        )
+        VALUES ($1, $2, $3, $4, $5, NOW())
+        RETURNING id
+      `, [userId, 'Heavy Duty', JSON.stringify(generatedPlan), 'manual', 'draft']);
+
+      const methodologyPlanId = planResult.rows[0].id;
+
+      await client_db.query('COMMIT');
+
+      console.log(`✅ Plan Heavy Duty guardado con ID: ${methodologyPlanId}`);
+
+      res.json({
+        success: true,
+        plan: generatedPlan,
+        methodologyPlanId,
+        planId: methodologyPlanId,
+        metadata: {
+          model_used: config.model,
+          generation_timestamp: new Date().toISOString()
+        }
+      });
+
+    } catch (dbError) {
+      await client_db.query('ROLLBACK');
+      throw dbError;
+    } finally {
+      client_db.release();
+    }
+
+  } catch (error) {
+    console.error('Error generando plan de Heavy Duty:', error);
+    logError('HEAVY_DUTY_SPECIALIST', error);
+
+    res.status(500).json({
+      success: false,
+      error: 'Error generando plan',
+      message: error.message
+    });
+  }
+});
+
+// =========================================
 // METODOLOGÍAS AUTOMÁTICAS (IA)
 // =========================================
 

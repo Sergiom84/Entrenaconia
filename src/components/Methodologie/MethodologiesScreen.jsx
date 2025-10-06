@@ -16,6 +16,7 @@ import RoutineSessionModal from '../routines/RoutineSessionModal.jsx';
 import WarmupModal from '../routines/WarmupModal.jsx';
 import MethodologyVersionSelectionModal from './shared/MethodologyVersionSelectionModal.jsx';
 import CalisteniaManualCard from './methodologies/CalisteniaManual/CalisteniaManualCard.jsx';
+import HeavyDutyManualCard from './methodologies/HeavyDuty/HeavyDutyManualCard.jsx';
 import { useTrace } from '@/contexts/TraceContext';
 import { useNavigate } from 'react-router-dom';
 
@@ -299,6 +300,12 @@ export default function MethodologiesScreen() {
         return;
       }
 
+      // Si es Heavy Duty, mostrar el modal específico
+      if (methodology.name === 'Heavy Duty') {
+        ui.showModal('heavyDutyManual');
+        return;
+      }
+
       updateLocalState({
         pendingMethodology: methodology,
         versionSelectionData: {
@@ -409,6 +416,49 @@ export default function MethodologiesScreen() {
     } catch (error) {
       console.error('❌ Error generando plan de calistenia:', error);
       ui.setError(error.message || 'Error al generar el plan de calistenia');
+    }
+  };
+
+  const handleHeavyDutyManualGenerate = async (heavyDutyData) => {
+    try { track('ACTION', { id: 'generate_heavy_duty' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
+
+    // 🎯 FLUJO SIMPLIFICADO - SUPABASE FIRST
+    const hasActivePlanInDB = await hasActivePlanFromDB();
+    if (hasActivePlanInDB) {
+      console.log('🔄 Plan activo detectado en BD, limpiando para generar nuevo...');
+      await cancelPlan();
+      await syncWithDatabase();
+    }
+
+    try {
+      console.log('💪 Generando plan de Heavy Duty...');
+
+      // Usar generatePlan del WorkoutContext
+      const result = await generatePlan({
+        mode: 'manual',
+        methodology: 'heavy-duty',
+        heavyDutyData
+      });
+
+      if (result.success) {
+        console.log('✅ Plan de Heavy Duty generado exitosamente');
+        ui.hideModal('heavyDutyManual');
+
+        // 🛡️ VALIDAR DATOS ANTES DE MOSTRAR MODAL
+        const validation = validatePlanData(result.plan);
+        if (validation.isValid) {
+          ui.showModal('planConfirmation');
+        } else {
+          console.error('❌ Plan inválido:', validation.error);
+          ui.setError(`Plan generado incorrectamente: ${validation.error}`);
+        }
+      } else {
+        throw new Error(result.error || 'Error al generar el plan de Heavy Duty');
+      }
+
+    } catch (error) {
+      console.error('❌ Error generando plan de Heavy Duty:', error);
+      ui.setError(error.message || 'Error al generar el plan de Heavy Duty');
     }
   };
 
@@ -776,6 +826,22 @@ export default function MethodologiesScreen() {
             </DialogHeader>
             <CalisteniaManualCard
               onGenerate={handleCalisteniaManualGenerate}
+              isLoading={ui.isLoading}
+              error={ui.error}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Modal de Heavy Duty Manual */}
+      {ui.showHeavyDutyManual && (
+        <Dialog open={ui.showHeavyDutyManual} onOpenChange={() => ui.hideModal('heavyDutyManual')}>
+          <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader className="sr-only">
+              <DialogTitle>Heavy Duty Manual</DialogTitle>
+            </DialogHeader>
+            <HeavyDutyManualCard
+              onGenerate={handleHeavyDutyManualGenerate}
               isLoading={ui.isLoading}
               error={ui.error}
             />

@@ -28,6 +28,27 @@ function normalizeDayAbbrev(dayName) {
 
   return map[lower] || dayName; // Si ya viene correcto, lo dejamos
 }
+
+/**
+ * Helper para buscar una semana en el array de semanas del plan
+ * Funciona con TODAS las metodologías (Calistenia, Heavy Duty, etc.)
+ * Soporta diferentes formatos: semana, numero, week, week_number
+ * @param {Array} semanas - Array de semanas del plan
+ * @param {Number} weekNumber - Número de semana a buscar
+ * @returns {Object|undefined} - Semana encontrada o undefined
+ */
+function findWeekInPlan(semanas, weekNumber) {
+  if (!Array.isArray(semanas) || !weekNumber) return undefined;
+
+  const targetWeek = Number(weekNumber);
+  if (isNaN(targetWeek)) return undefined;
+
+  return semanas.find(s => {
+    // Intentar múltiples campos para máxima compatibilidad
+    const weekValue = s.semana || s.numero || s.week || s.week_number;
+    return Number(weekValue) === targetWeek;
+  });
+}
 function normalizePlanDays(planDataJson) {
   try {
     if (!planDataJson || !Array.isArray(planDataJson.semanas)) return planDataJson;
@@ -258,7 +279,7 @@ async function createMissingDaySession(client, userId, methodologyPlanId, planDa
 
   // Si el plan no contiene una sesión para el día solicitado, usar la primera sesión disponible
   const semanas = normalizedPlan?.semanas || [];
-  const firstWeek = semanas.find(s => Number(s.semana) === weekNumber) || semanas[0];
+  const firstWeek = findWeekInPlan(semanas, weekNumber) || semanas[0];
   const sesiones = firstWeek?.sesiones || [];
 
   if (sesiones.length === 0) {
@@ -527,7 +548,7 @@ router.post('/sessions/start', authenticateToken, async (req, res) => {
     }
 
     // 2) Si no hay programación, usar definición de ejercicios del plan JSON
-    const semana = (planData.semanas || []).find(s => Number(s.semana) === Number(week_number));
+    const semana = findWeekInPlan(planData.semanas || [], week_number);
     let sesionDef = semana ? (semana.sesiones || []).find(s => normalizeDayAbbrev(s.dia) === normalizedDay) : null;
 
     // 2b) Solo si no existe sesión para este día en el plan, usar la primera sesión disponible como template
@@ -1566,8 +1587,9 @@ router.get('/progress-data', authenticateToken, async (req, res) => {
     const weeklyProgressData = [];
     for (let week = 1; week <= totalWeeks; week++) {
       const weekData = weeklyProgress.find(w => w.week_number === week);
-      const weekSessions = planData?.semanas?.find(s => s.semana === week)?.sesiones?.length || 0;
-      const weekExercises = planData?.semanas?.find(s => s.semana === week)?.sesiones?.reduce(
+      const weekInPlan = findWeekInPlan(planData?.semanas, week);
+      const weekSessions = weekInPlan?.sesiones?.length || 0;
+      const weekExercises = weekInPlan?.sesiones?.reduce(
         (acc, ses) => acc + (ses.ejercicios?.length || 0), 0) || 0;
 
       weeklyProgressData.push({
@@ -1807,6 +1829,7 @@ router.get('/active-plan', authenticateToken, async (req, res) => {
          AND ws.scheduled_date = CURRENT_DATE
          AND ws.status = 'scheduled'
          AND mp.status IN ('active', 'confirmed')
+         AND mp.cancelled_at IS NULL
        LIMIT 1`,
       [userId]
     );
@@ -1841,7 +1864,9 @@ router.get('/active-plan', authenticateToken, async (req, res) => {
       `SELECT id as methodology_plan_id, methodology_type, plan_data,
               confirmed_at, created_at, plan_start_date, 'methodology' as source, status
        FROM app.methodology_plans
-       WHERE user_id = $1 AND status = 'active'
+       WHERE user_id = $1
+         AND status = 'active'
+         AND cancelled_at IS NULL
        ORDER BY confirmed_at DESC
        LIMIT 1`,
       [userId]
@@ -1860,7 +1885,8 @@ router.get('/active-plan', authenticateToken, async (req, res) => {
 
     // 🆕 Fallback automático: si no hay sesión de hoy en workout_schedule pero sí hay plan activo,
     // generamos la programación y reintentamos para devolver todaySession inmediatamente.
-    if (todayWorkoutQuery.rowCount === 0 && activePlan && ['active', 'confirmed'].includes(String(activePlan.status))) {
+    // ✅ Validación adicional: asegurar que el plan NO esté cancelado
+    if (todayWorkoutQuery.rowCount === 0 && activePlan && ['active', 'confirmed'].includes(String(activePlan.status)) && !activePlan.cancelled_at) {
       try {
         console.log('🧩 [/active-plan] Sin todaySession; generando programación on-demand...');
         const client = await pool.connect();
@@ -1894,6 +1920,7 @@ router.get('/active-plan', authenticateToken, async (req, res) => {
              AND ws.scheduled_date = CURRENT_DATE
              AND ws.status = 'scheduled'
              AND mp.status IN ('active', 'confirmed')
+             AND mp.cancelled_at IS NULL
            LIMIT 1`,
           [userId]
         );
@@ -2224,9 +2251,10 @@ router.post('/cancel-routine', authenticateToken, async (req, res) => {
     }
 
     // Actualizar estado del plan de metodología a 'cancelled'
+    // ✅ CRÍTICO: Actualizar cancelled_at para que el filtro en /active-plan funcione
     await client.query(
       `UPDATE app.methodology_plans
-       SET status = 'cancelled', updated_at = NOW()
+       SET status = 'cancelled', cancelled_at = NOW(), updated_at = NOW()
        WHERE id = $1 AND user_id = $2
        RETURNING methodology_type`,
       [methodology_plan_id, userId]
@@ -2235,9 +2263,10 @@ router.post('/cancel-routine', authenticateToken, async (req, res) => {
     console.log(`✅ Plan de metodología ${methodology_plan_id} cancelado exitosamente`);
 
     // También cancelar las sesiones activas/pendientes
+    // ✅ CRÍTICO: Actualizar cancelled_at y is_current_session para consistencia
     await client.query(
       `UPDATE app.methodology_exercise_sessions
-       SET session_status = 'cancelled', updated_at = NOW()
+       SET session_status = 'cancelled', cancelled_at = NOW(), is_current_session = false, updated_at = NOW()
        WHERE methodology_plan_id = $1 AND user_id = $2
          AND session_status IN ('active', 'pending', 'in_progress')`,
       [methodology_plan_id, userId]

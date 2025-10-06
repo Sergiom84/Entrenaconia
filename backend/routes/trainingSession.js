@@ -44,6 +44,27 @@ function normalizeDayAbbrev(dayName) {
 }
 
 /**
+ * Helper para buscar una semana en el array de semanas del plan
+ * Funciona con TODAS las metodologías (Calistenia, Heavy Duty, etc.)
+ * Soporta diferentes formatos: semana, numero, week, week_number
+ * @param {Array} semanas - Array de semanas del plan
+ * @param {Number} weekNumber - Número de semana a buscar
+ * @returns {Object|undefined} - Semana encontrada o undefined
+ */
+function findWeekInPlan(semanas, weekNumber) {
+  if (!Array.isArray(semanas) || !weekNumber) return undefined;
+
+  const targetWeek = Number(weekNumber);
+  if (isNaN(targetWeek)) return undefined;
+
+  return semanas.find(s => {
+    // Intentar múltiples campos para máxima compatibilidad
+    const weekValue = s.semana || s.numero || s.week || s.week_number;
+    return Number(weekValue) === targetWeek;
+  });
+}
+
+/**
  * Normalizar días en estructura de plan
  */
 function normalizePlanDays(planDataJson) {
@@ -96,7 +117,7 @@ async function createMissingDaySession(client, userId, methodologyPlanId, planDa
   }
 
   const semanas = normalizedPlan?.semanas || [];
-  const firstWeek = semanas.find(s => Number(s.semana) === weekNumber) || semanas[0];
+  const firstWeek = findWeekInPlan(semanas, weekNumber) || semanas[0];
   const sesiones = firstWeek?.sesiones || [];
 
   if (sesiones.length === 0) {
@@ -198,7 +219,7 @@ router.post('/start/methodology', authenticateToken, async (req, res) => {
     const session = ses.rows[0];
 
     // Precrear progreso por ejercicio
-    const semana = (planData.semanas || []).find(s => Number(s.semana) === Number(week_number));
+    const semana = findWeekInPlan(planData.semanas || [], week_number);
     let sesionDef = semana ? (semana.sesiones || []).find(s => normalizeDayAbbrev(s.dia) === normalizedDay) : null;
 
     if (!sesionDef && semana && semana.sesiones && semana.sesiones.length > 0) {
@@ -549,7 +570,7 @@ router.put('/progress/home/:sessionId/:exerciseOrder', authenticateToken, async 
                                 END
       WHERE id = $1
     `, [sessionId]);
-    // Si el ejercicio se complet�, actualizar estad�sticas e historial
+    // Si el ejercicio se complet�, actualizar estad�sticas e historial
     if (status === 'completed') {
       if (progressPercentage >= 100) {
         await client.query(
@@ -1206,8 +1227,9 @@ router.get('/stats/progress-data', authenticateToken, async (req, res) => {
       const weeklyProgressData = [];
       for (let week = 1; week <= totalWeeks; week++) {
         const weekData = weeklyProgress.find(w => w.week_number === week);
-        const weekSessions = planData?.semanas?.find(s => s.semana === week)?.sesiones?.length || 0;
-        const weekExercises = planData?.semanas?.find(s => s.semana === week)?.sesiones?.reduce(
+        const weekInPlan = findWeekInPlan(planData?.semanas, week);
+        const weekSessions = weekInPlan?.sesiones?.length || 0;
+        const weekExercises = weekInPlan?.sesiones?.reduce(
           (acc, ses) => acc + (ses.ejercicios?.length || 0), 0) || 0;
 
         weeklyProgressData.push({
@@ -1645,16 +1667,60 @@ router.post('/handle-abandon/:sessionId', authenticateToken, async (req, res) =>
         }
       }
 
-      // Marcar momento de abandono
+      // Verificar progreso para determinar el status final
+      const progressCheck = await pool.query(`
+        SELECT
+          COUNT(*) as total_exercises,
+          COUNT(*) FILTER (WHERE status IN ('completed', 'skipped')) as finished_exercises,
+          COUNT(*) FILTER (WHERE series_completed > 0 OR status IN ('completed', 'skipped', 'in_progress')) as exercises_with_progress
+        FROM app.home_exercise_progress
+        WHERE home_training_session_id = $1
+      `, [sessionId]);
+
+      const { total_exercises, finished_exercises, exercises_with_progress } = progressCheck.rows[0];
+      const allFinished = parseInt(finished_exercises) === parseInt(total_exercises) && parseInt(total_exercises) > 0;
+      const hasProgress = parseInt(exercises_with_progress) > 0;
+
+      // Determinar status final:
+      // - Todos finalizados → 'completed'
+      // - Hay progreso pero no todos finalizados → 'in_progress' (permitir reanudar)
+      // - Sin progreso → 'cancelled'
+      let finalStatus;
+      if (allFinished) {
+        finalStatus = 'completed';
+      } else if (hasProgress) {
+        finalStatus = 'in_progress';
+      } else {
+        finalStatus = 'cancelled';
+      }
+
+      // Marcar abandono y actualizar status
       await pool.query(`
         UPDATE app.home_training_sessions
         SET
           abandoned_at = NOW(),
-          abandon_reason = $2
+          abandon_reason = $2,
+          status = $3,
+          completed_at = CASE
+            WHEN $3 = 'completed' THEN NOW()
+            ELSE completed_at
+          END
         WHERE id = $1
-      `, [sessionId, reason]);
+      `, [sessionId, reason, finalStatus]);
 
       console.log(`✅ Sesión ${sessionId} marcada como abandonada (${reason})`);
+      console.log(`   Status final: ${finalStatus} (${finished_exercises}/${total_exercises} ejercicios finalizados)`);
+
+      return res.json({
+        success: true,
+        message: 'Progreso guardado antes de abandono',
+        finalStatus: finalStatus,
+        progress: {
+          total: parseInt(total_exercises),
+          finished: parseInt(finished_exercises),
+          canResume: finalStatus === 'in_progress'
+        }
+      });
     }
 
     res.json({ success: true, message: 'Progreso guardado antes de abandono' });

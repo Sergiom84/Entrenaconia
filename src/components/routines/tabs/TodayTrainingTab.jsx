@@ -187,7 +187,7 @@ export default function TodayTrainingTab({
     } finally {
       setLoadingTodayStatus(false);
     }
-  }, [methodologyPlanId, plan.planId, plan.planStartDate, planStartDate, hasActivePlan, getTodayStatusCached]);
+  }, [methodologyPlanId, plan.methodologyPlanId, plan.planStartDate, planStartDate, hasActivePlan, getTodayStatusCached]);
 
 
   const mountedRef = useRef(true);
