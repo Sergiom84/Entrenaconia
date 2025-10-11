@@ -1,0 +1,283 @@
+import React, { useState, useRef } from 'react'
+import { Button } from '@/components/ui/button'
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle
+} from '@/components/ui/card'
+import { FileText, Upload, Eye, Trash2, Download, AlertCircle } from 'lucide-react'
+
+export const MedicalDocsCard = ({ userProfile, setUserProfile }) => {
+  const [uploading, setUploading] = useState(false)
+  const [selectedDoc, setSelectedDoc] = useState(null)
+  const [showPreview, setShowPreview] = useState(false)
+  const [medicalDocs, setMedicalDocs] = useState([])
+  const [loading, setLoading] = useState(true)
+  const fileInputRef = useRef(null)
+
+  // Cargar documentos del backend al montar el componente
+  const fetchDocs = async () => {
+    try {
+      setLoading(true)
+      // Por ahora usamos un userId fijo, en producción vendría del contexto de autenticación
+      const userId = 1
+      const response = await fetch(`/api/users/${userId}/medical-docs`)
+      const data = await response.json()
+
+      if (data.success) {
+        setMedicalDocs(data.docs || [])
+      }
+    } catch (error) {
+      console.error('Error cargando documentos:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Cargar documentos al montar el componente
+  React.useEffect(() => {
+    fetchDocs()
+  }, [])
+
+  const handleFileSelect = async (event) => {
+    const file = event.target.files[0]
+    if (!file) return
+
+    // Validar tipo de archivo
+    if (file.type !== 'application/pdf') {
+      alert('Solo se permiten archivos PDF')
+      return
+    }
+
+    // Validar tamaño (máximo 25MB para coincidir con el backend)
+    if (file.size > 25 * 1024 * 1024) {
+      alert('El archivo es demasiado grande. Máximo 25MB.')
+      return
+    }
+
+    setUploading(true)
+
+    try {
+      // Crear FormData para enviar el archivo
+      const formData = new FormData()
+      formData.append('file', file)
+
+      // Por ahora usamos un userId fijo, en producción vendría del contexto de autenticación
+      const userId = 1
+      const response = await fetch(`/api/users/${userId}/medical-docs`, {
+        method: 'POST',
+        body: formData
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        // Actualizar la lista de documentos
+        setMedicalDocs(data.docs || [])
+
+        // Limpiar input
+        if (fileInputRef.current) {
+          fileInputRef.current.value = ''
+        }
+
+        alert('Documento subido exitosamente')
+      } else {
+        throw new Error(data.error || 'Error al subir el archivo')
+      }
+    } catch (error) {
+      console.error('Error subiendo archivo:', error)
+      alert('Error al subir el archivo: ' + error.message)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+
+
+  const handlePreview = (doc) => {
+    setSelectedDoc(doc)
+    setShowPreview(true)
+  }
+
+  const handleDelete = async (docId) => {
+    if (confirm('¿Estás seguro de que quieres eliminar este documento?')) {
+      try {
+        // Por ahora usamos un userId fijo, en producción vendría del contexto de autenticación
+        const userId = 1
+        const response = await fetch(`/api/users/${userId}/medical-docs/${docId}`, {
+          method: 'DELETE'
+        })
+
+        const data = await response.json()
+
+        if (data.success) {
+          // Actualizar la lista de documentos
+          setMedicalDocs(data.docs || [])
+          alert('Documento eliminado exitosamente')
+        } else {
+          throw new Error(data.error || 'Error al eliminar el documento')
+        }
+      } catch (error) {
+        console.error('Error eliminando documento:', error)
+        alert('Error al eliminar el documento: ' + error.message)
+      }
+    }
+  }
+
+  const formatFileSize = (bytes) => {
+    if (bytes === 0) return '0 Bytes'
+    const k = 1024
+    const sizes = ['Bytes', 'KB', 'MB', 'GB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+  }
+
+  const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleDateString('es-ES', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  }
+
+  return (
+    <>
+      <Card className="bg-gray-900 border-yellow-400/20">
+        <CardHeader>
+          <CardTitle className="text-white flex items-center">
+            <FileText className="mr-2 text-yellow-400" />
+            Documentación Médica
+          </CardTitle>
+        </CardHeader>
+
+        <CardContent className="space-y-4">
+          {/* Botón de subida */}
+          <div className="border-2 border-dashed border-gray-600 rounded-lg p-6 text-center">
+            <Upload className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+            <p className="text-gray-400 mb-4">
+              Sube tus documentos médicos (PDF únicamente)
+            </p>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf"
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+            <Button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="bg-yellow-400 hover:bg-yellow-500 text-black"
+            >
+              {uploading ? 'Subiendo...' : 'Seleccionar Archivo'}
+            </Button>
+            <p className="text-xs text-gray-500 mt-2">
+              Máximo 10MB por archivo
+            </p>
+          </div>
+
+          {/* Lista de documentos */}
+          {loading ? (
+            <div className="text-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-yellow-400 mx-auto mb-4"></div>
+              <p className="text-gray-400">Cargando documentos...</p>
+            </div>
+          ) : medicalDocs.length > 0 ? (
+            <div className="space-y-3">
+              <h4 className="text-sm font-medium text-gray-300">
+                Documentos subidos ({medicalDocs.length})
+              </h4>
+              {medicalDocs.map((doc) => (
+                <div
+                  key={doc.id}
+                  className="flex items-center justify-between p-3 bg-gray-800 rounded-lg border border-gray-700"
+                >
+                  <div className="flex items-center space-x-3">
+                    <FileText className="h-8 w-8 text-red-400" />
+                    <div>
+                      <p className="text-white font-medium text-sm">
+                        {doc.originalName || doc.fileName}
+                      </p>
+                      <p className="text-gray-400 text-xs">
+                        {formatFileSize(doc.size)} • {formatDate(doc.uploadedAt)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    {doc.ai && (
+                      <div className="flex items-center text-green-400 text-xs">
+                        <AlertCircle className="h-4 w-4 mr-1" />
+                        Analizado
+                      </div>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handlePreview(doc)}
+                      className="border-gray-600 text-gray-300 hover:bg-gray-700"
+                    >
+                      <Eye className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleDelete(doc.id)}
+                      className="border-red-600 text-red-400 hover:bg-red-900/20"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <FileText className="mx-auto h-16 w-16 text-gray-600 mb-4" />
+              <p className="text-gray-400">
+                No hay documentos médicos subidos
+              </p>
+              <p className="text-gray-500 text-sm">
+                Sube tus informes médicos para un mejor seguimiento
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Modal de previsualización */}
+      {showPreview && selectedDoc && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 border border-yellow-400/20 rounded-lg w-full max-w-4xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-gray-700">
+              <h3 className="text-white font-medium">
+                {selectedDoc.fileName}
+              </h3>
+              <Button
+                onClick={() => setShowPreview(false)}
+                variant="outline"
+                size="sm"
+                className="border-gray-600 text-gray-300"
+              >
+                Cerrar
+              </Button>
+            </div>
+            
+            <div className="flex-1 p-4 overflow-auto">
+              <div className="bg-white rounded-lg h-full min-h-[500px] flex items-center justify-center">
+                <iframe
+                  src={`/api/users/1/medical-docs/${selectedDoc.id}/view`}
+                  className="w-full h-full min-h-[500px] rounded"
+                  title={selectedDoc.originalName || selectedDoc.fileName}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
