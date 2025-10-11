@@ -1,6 +1,0 @@
-echo "🚀 Running pre-commit checks..."
-
-# Run lint-staged for code quality
-npm run pre-commit
-
-echo "✅ Pre-commit checks passed!"

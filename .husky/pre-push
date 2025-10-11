@@ -1,9 +1,0 @@
-echo "🚀 Running pre-push checks..."
-
-echo "🧪 Running tests..."
-npm run test || exit 1
-
-echo "🏗️ Testing build..."
-npm run build || exit 1
-
-echo "✅ Pre-push checks passed!"

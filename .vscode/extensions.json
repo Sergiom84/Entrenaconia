@@ -1,9 +1,0 @@
-{
-  "recommendations": [
-    "eamodio.gitlens",
-    "ms-vscode.vscode-json",
-    "bradlc.vscode-tailwindcss",
-    "esbenp.prettier-vscode",
-    "dbaeumer.vscode-eslint"
-  ]
-}
