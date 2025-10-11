@@ -17,6 +17,12 @@ import WarmupModal from '../routines/WarmupModal.jsx';
 import MethodologyVersionSelectionModal from './shared/MethodologyVersionSelectionModal.jsx';
 import CalisteniaManualCard from './methodologies/CalisteniaManual/CalisteniaManualCard.jsx';
 import HeavyDutyManualCard from './methodologies/HeavyDuty/HeavyDutyManualCard.jsx';
+import HipertrofiaManualCard from './methodologies/Hipertrofia/HipertrofiaManualCard.jsx';
+import PowerliftingManualCard from './methodologies/Powerlifting/PowerliftingManualCard.jsx';
+import CrossFitManualCard from './methodologies/CrossFit/CrossFitManualCard.jsx';
+import FuncionalManualCard from './methodologies/Funcional/FuncionalManualCard.jsx';
+import HalterofíliaManualCard from './methodologies/Halterofilia/HalterofíliaManualCard.jsx';
+import CasaManualCard from './methodologies/Casa/CasaManualCard.jsx';
 import { useTrace } from '@/contexts/TraceContext';
 import { useNavigate } from 'react-router-dom';
 
@@ -306,6 +312,42 @@ export default function MethodologiesScreen() {
         return;
       }
 
+      // Si es Hipertrofia, mostrar el modal específico
+      if (methodology.name === 'Hipertrofia') {
+        ui.showModal('hipertrofiaManual');
+        return;
+      }
+
+      // Si es Powerlifting, mostrar el modal específico
+      if (methodology.name === 'Powerlifting') {
+        ui.showModal('powerliftingManual');
+        return;
+      }
+
+      // Si es CrossFit, mostrar el modal específico
+      if (methodology.name === 'CrossFit') {
+        ui.showModal('crossfitManual');
+        return;
+      }
+
+      // Si es Funcional, mostrar el modal específico
+      if (methodology.name === 'Funcional') {
+        ui.showModal('funcionalManual');
+        return;
+      }
+
+      // Si es Halterofilia, mostrar el modal específico
+      if (methodology.name === 'Halterofilia') {
+        ui.showModal('halterofíliaManual');
+        return;
+      }
+
+      // Si es Entrenamiento en Casa, mostrar el modal específico
+      if (methodology.name === 'Entrenamiento en Casa') {
+        ui.showModal('casaManual');
+        return;
+      }
+
       updateLocalState({
         pendingMethodology: methodology,
         versionSelectionData: {
@@ -459,6 +501,264 @@ export default function MethodologiesScreen() {
     } catch (error) {
       console.error('❌ Error generando plan de Heavy Duty:', error);
       ui.setError(error.message || 'Error al generar el plan de Heavy Duty');
+    }
+  };
+
+  const handleHipertrofiaManualGenerate = async (hipertrofiaData) => {
+    try { track('ACTION', { id: 'generate_hipertrofia' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
+
+    // 🎯 FLUJO SIMPLIFICADO - SUPABASE FIRST
+    const hasActivePlanInDB = await hasActivePlanFromDB();
+    if (hasActivePlanInDB) {
+      console.log('🔄 Plan activo detectado en BD, limpiando para generar nuevo...');
+      await cancelPlan();
+      await syncWithDatabase();
+    }
+
+    try {
+      console.log('🏋️ Generando plan de Hipertrofia...');
+
+      // Usar generatePlan del WorkoutContext
+      const result = await generatePlan({
+        mode: 'manual',
+        methodology: 'hipertrofia',
+        hipertrofiaData
+      });
+
+      if (result.success) {
+        console.log('✅ Plan de Hipertrofia generado exitosamente');
+        ui.hideModal('hipertrofiaManual');
+
+        // 🛡️ VALIDAR DATOS ANTES DE MOSTRAR MODAL
+        const validation = validatePlanData(result.plan);
+        if (validation.isValid) {
+          ui.showModal('planConfirmation');
+        } else {
+          console.error('❌ Plan inválido:', validation.error);
+          ui.setError(`Plan generado incorrectamente: ${validation.error}`);
+        }
+      } else {
+        throw new Error(result.error || 'Error al generar el plan de Hipertrofia');
+      }
+
+    } catch (error) {
+      console.error('❌ Error generando plan de Hipertrofia:', error);
+      ui.setError(error.message || 'Error al generar el plan de Hipertrofia');
+    }
+  };
+
+  const handlePowerliftingManualGenerate = async (powerliftingData) => {
+    try { track('ACTION', { id: 'generate_powerlifting' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
+
+    // 🎯 FLUJO SIMPLIFICADO - SUPABASE FIRST
+    const hasActivePlanInDB = await hasActivePlanFromDB();
+    if (hasActivePlanInDB) {
+      console.log('🔄 Plan activo detectado en BD, limpiando para generar nuevo...');
+      await cancelPlan();
+      await syncWithDatabase();
+    }
+
+    try {
+      console.log('🏋️ Generando plan de Powerlifting...');
+
+      // Usar generatePlan del WorkoutContext
+      const result = await generatePlan({
+        mode: 'manual',
+        methodology: 'powerlifting',
+        powerliftingData
+      });
+
+      if (result.success) {
+        console.log('✅ Plan de Powerlifting generado exitosamente');
+        ui.hideModal('powerliftingManual');
+
+        // 🛡️ VALIDAR DATOS ANTES DE MOSTRAR MODAL
+        const validation = validatePlanData(result.plan);
+        if (validation.isValid) {
+          ui.showModal('planConfirmation');
+        } else {
+          console.error('❌ Plan inválido:', validation.error);
+          ui.setError(`Plan generado incorrectamente: ${validation.error}`);
+        }
+      } else {
+        throw new Error(result.error || 'Error al generar el plan de Powerlifting');
+      }
+
+    } catch (error) {
+      console.error('❌ Error generando plan de Powerlifting:', error);
+      ui.setError(error.message || 'Error al generar el plan de Powerlifting');
+    }
+  };
+
+  const handleCrossFitManualGenerate = async (crossfitData) => {
+    try { track('ACTION', { id: 'generate_crossfit' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
+
+    // 🎯 FLUJO SIMPLIFICADO - SUPABASE FIRST
+    const hasActivePlanInDB = await hasActivePlanFromDB();
+    if (hasActivePlanInDB) {
+      console.log('🔄 Plan activo detectado en BD, limpiando para generar nuevo...');
+      await cancelPlan();
+      await syncWithDatabase();
+    }
+
+    try {
+      console.log('🏋️‍♀️ Generando plan de CrossFit...');
+
+      // Usar generatePlan del WorkoutContext
+      const result = await generatePlan({
+        mode: 'manual',
+        methodology: 'crossfit',
+        crossfitData
+      });
+
+      if (result.success) {
+        console.log('✅ Plan de CrossFit generado exitosamente');
+        ui.hideModal('crossfitManual');
+
+        // 🛡️ VALIDAR DATOS ANTES DE MOSTRAR MODAL
+        const validation = validatePlanData(result.plan);
+        if (validation.isValid) {
+          ui.showModal('planConfirmation');
+        } else {
+          console.error('❌ Plan inválido:', validation.error);
+          ui.setError(`Plan generado incorrectamente: ${validation.error}`);
+        }
+      } else {
+        throw new Error(result.error || 'Error al generar el plan de CrossFit');
+      }
+
+    } catch (error) {
+      console.error('❌ Error generando plan de CrossFit:', error);
+      ui.setError(error.message || 'Error al generar el plan de CrossFit');
+    }
+  };
+
+  const handleFuncionalManualGenerate = async (funcionalData) => {
+    try { track('ACTION', { id: 'generate_funcional' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
+
+    // 🎯 FLUJO SIMPLIFICADO - SUPABASE FIRST
+    const hasActivePlanInDB = await hasActivePlanFromDB();
+    if (hasActivePlanInDB) {
+      console.log('🔄 Plan activo detectado en BD, limpiando para generar nuevo...');
+      await cancelPlan();
+      await syncWithDatabase();
+    }
+
+    try {
+      console.log('⚙️ Generando plan de Entrenamiento Funcional...');
+
+      // Usar generatePlan del WorkoutContext
+      const result = await generatePlan({
+        mode: 'manual',
+        methodology: 'funcional',
+        funcionalData
+      });
+
+      if (result.success) {
+        console.log('✅ Plan de Funcional generado exitosamente');
+        ui.hideModal('funcionalManual');
+
+        // 🛡️ VALIDAR DATOS ANTES DE MOSTRAR MODAL
+        const validation = validatePlanData(result.plan);
+        if (validation.isValid) {
+          ui.showModal('planConfirmation');
+        } else {
+          console.error('❌ Plan inválido:', validation.error);
+          ui.setError(`Plan generado incorrectamente: ${validation.error}`);
+        }
+      } else {
+        throw new Error(result.error || 'Error al generar el plan de Funcional');
+      }
+
+    } catch (error) {
+      console.error('❌ Error generando plan de Funcional:', error);
+      ui.setError(error.message || 'Error al generar el plan de Funcional');
+    }
+  };
+
+  const handleHalterofíliaManualGenerate = async (halterofíliaData) => {
+    try { track('ACTION', { id: 'generate_halterofilia' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
+
+    // 🎯 FLUJO SIMPLIFICADO - SUPABASE FIRST
+    const hasActivePlanInDB = await hasActivePlanFromDB();
+    if (hasActivePlanInDB) {
+      console.log('🔄 Plan activo detectado en BD, limpiando para generar nuevo...');
+      await cancelPlan();
+      await syncWithDatabase();
+    }
+
+    try {
+      console.log('🏋️ Generando plan de Halterofilia...');
+
+      // Usar generatePlan del WorkoutContext
+      const result = await generatePlan({
+        mode: 'manual',
+        methodology: 'halterofilia',
+        halterofíliaData
+      });
+
+      if (result.success) {
+        console.log('✅ Plan de Halterofilia generado exitosamente');
+        ui.hideModal('halterofíliaManual');
+
+        // 🛡️ VALIDAR DATOS ANTES DE MOSTRAR MODAL
+        const validation = validatePlanData(result.plan);
+        if (validation.isValid) {
+          ui.showModal('planConfirmation');
+        } else {
+          console.error('❌ Plan inválido:', validation.error);
+          ui.setError(`Plan generado incorrectamente: ${validation.error}`);
+        }
+      } else {
+        throw new Error(result.error || 'Error al generar el plan de Halterofilia');
+      }
+
+    } catch (error) {
+      console.error('❌ Error generando plan de Halterofilia:', error);
+      ui.setError(error.message || 'Error al generar el plan de Halterofilia');
+    }
+  };
+
+  const handleCasaManualGenerate = async (casaData) => {
+    try { track('ACTION', { id: 'generate_casa' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
+
+    // 🎯 FLUJO SIMPLIFICADO - SUPABASE FIRST
+    const hasActivePlanInDB = await hasActivePlanFromDB();
+    if (hasActivePlanInDB) {
+      console.log('🔄 Plan activo detectado en BD, limpiando para generar nuevo...');
+      await cancelPlan();
+      await syncWithDatabase();
+    }
+
+    try {
+      console.log('🏠 Generando plan de Entrenamiento en Casa...');
+
+      // Usar generatePlan del WorkoutContext
+      const result = await generatePlan({
+        mode: 'manual',
+        methodology: 'entrenamiento-casa',
+        casaData
+      });
+
+      if (result.success) {
+        console.log('✅ Plan de Entrenamiento en Casa generado exitosamente');
+        ui.hideModal('casaManual');
+
+        // 🛡️ VALIDAR DATOS ANTES DE MOSTRAR MODAL
+        const validation = validatePlanData(result.plan);
+        if (validation.isValid) {
+          ui.showModal('planConfirmation');
+        } else {
+          console.error('❌ Plan inválido:', validation.error);
+          ui.setError(`Plan generado incorrectamente: ${validation.error}`);
+        }
+      } else {
+        throw new Error(result.error || 'Error al generar el plan de Entrenamiento en Casa');
+      }
+
+    } catch (error) {
+      console.error('❌ Error generando plan de Casa:', error);
+      ui.setError(error.message || 'Error al generar el plan de Entrenamiento en Casa');
     }
   };
 
@@ -842,6 +1142,102 @@ export default function MethodologiesScreen() {
             </DialogHeader>
             <HeavyDutyManualCard
               onGenerate={handleHeavyDutyManualGenerate}
+              isLoading={ui.isLoading}
+              error={ui.error}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Modal de Hipertrofia Manual */}
+      {ui.showHipertrofiaManual && (
+        <Dialog open={ui.showHipertrofiaManual} onOpenChange={() => ui.hideModal('hipertrofiaManual')}>
+          <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader className="sr-only">
+              <DialogTitle>Hipertrofia Manual</DialogTitle>
+            </DialogHeader>
+            <HipertrofiaManualCard
+              onGenerate={handleHipertrofiaManualGenerate}
+              isLoading={ui.isLoading}
+              error={ui.error}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Modal de Powerlifting Manual */}
+      {ui.showPowerliftingManual && (
+        <Dialog open={ui.showPowerliftingManual} onOpenChange={() => ui.hideModal('powerliftingManual')}>
+          <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader className="sr-only">
+              <DialogTitle>Powerlifting Manual</DialogTitle>
+            </DialogHeader>
+            <PowerliftingManualCard
+              onGenerate={handlePowerliftingManualGenerate}
+              isLoading={ui.isLoading}
+              error={ui.error}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Modal de CrossFit Manual */}
+      {ui.showCrossFitManual && (
+        <Dialog open={ui.showCrossFitManual} onOpenChange={() => ui.hideModal('crossfitManual')}>
+          <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader className="sr-only">
+              <DialogTitle>CrossFit Manual</DialogTitle>
+            </DialogHeader>
+            <CrossFitManualCard
+              onGenerate={handleCrossFitManualGenerate}
+              isLoading={ui.isLoading}
+              error={ui.error}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Modal de Funcional Manual */}
+      {ui.showFuncionalManual && (
+        <Dialog open={ui.showFuncionalManual} onOpenChange={() => ui.hideModal('funcionalManual')}>
+          <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader className="sr-only">
+              <DialogTitle>Entrenamiento Funcional Manual</DialogTitle>
+            </DialogHeader>
+            <FuncionalManualCard
+              onGenerate={handleFuncionalManualGenerate}
+              isLoading={ui.isLoading}
+              error={ui.error}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Modal de Halterofilia Manual */}
+      {ui.showHalterofíliaManual && (
+        <Dialog open={ui.showHalterofíliaManual} onOpenChange={() => ui.hideModal('halterofíliaManual')}>
+          <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader className="sr-only">
+              <DialogTitle>Halterofilia Manual</DialogTitle>
+            </DialogHeader>
+            <HalterofíliaManualCard
+              onGenerate={handleHalterofíliaManualGenerate}
+              isLoading={ui.isLoading}
+              error={ui.error}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Modal de Entrenamiento en Casa Manual */}
+      {ui.showCasaManual && (
+        <Dialog open={ui.showCasaManual} onOpenChange={() => ui.hideModal('casaManual')}>
+          <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader className="sr-only">
+              <DialogTitle>Entrenamiento en Casa Manual</DialogTitle>
+            </DialogHeader>
+            <CasaManualCard
+              onGenerate={handleCasaManualGenerate}
               isLoading={ui.isLoading}
               error={ui.error}
             />

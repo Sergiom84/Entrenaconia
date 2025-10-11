@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { LogOut, User, Home, Dumbbell, UserCircle, BookOpen, Calendar, Apple } from 'lucide-react';
+import { LogOut, User, Home, Dumbbell, UserCircle, BookOpen, Calendar, Apple, Shield } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { memo, useCallback, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
@@ -117,8 +117,8 @@ const Navigation = () => {
           <button
             onClick={() => navigate('/methodologies')}
             className={`flex flex-col items-center gap-1 py-2 px-2 transition-colors ${
-              isActive('/methodologies') 
-                ? 'text-yellow-400' 
+              isActive('/methodologies')
+                ? 'text-yellow-400'
                 : 'text-gray-300 hover:text-yellow-400'
             }`}
           >
@@ -126,10 +126,21 @@ const Navigation = () => {
             <span className="text-xs font-medium">Métodos</span>
           </button>
           <button
+            onClick={() => navigate('/oposiciones')}
+            className={`flex flex-col items-center gap-1 py-2 px-2 transition-colors ${
+              isActive('/oposiciones')
+                ? 'text-yellow-400'
+                : 'text-gray-300 hover:text-yellow-400'
+            }`}
+          >
+            <Shield size={22} />
+            <span className="text-xs font-medium">Oposiciones</span>
+          </button>
+          <button
             onClick={() => navigate('/routines')}
             className={`flex flex-col items-center gap-1 py-2 px-2 transition-colors relative ${
-              isActive('/routines') 
-                ? 'text-yellow-400' 
+              isActive('/routines')
+                ? 'text-yellow-400'
                 : 'text-gray-300 hover:text-yellow-400'
             }`}
           >

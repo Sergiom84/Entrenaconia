@@ -15,7 +15,7 @@
  * @version 4.0.0 - Role-Separated Architecture
  */
 
-import { Zap, Trophy, Dumbbell, Activity, Target, User, Home, Shield } from 'lucide-react';
+import { Zap, Trophy, Dumbbell, Activity, Target, User, Home, Shield, Flame } from 'lucide-react';
 import methodologyMapping from '../../config/methodologyMapping.js';
 
 // Configuraciones centralizadas
@@ -331,35 +331,35 @@ export const METHODOLOGIES = [
     videoPlaceholder: true
   },
   {
-    id: 'oposiciones',
-    name: 'Oposiciones',
-    description: 'Preparación física específica para pruebas de oposiciones',
-    detailedDescription: 'Programa especializado diseñado para superar las pruebas físicas de oposiciones (policía, bomberos, militar, etc.). Combina resistencia cardiovascular, fuerza funcional y agilidad específica según los requerimientos de cada convocatoria.',
-    focus: 'Acondicionamiento específico',
-    level: formatLevelRange([METHODOLOGIES_CONFIG.LEVELS.BEGINNER, METHODOLOGIES_CONFIG.LEVELS.INTERMEDIATE]),
-    homeCompatible: METHODOLOGIES_CONFIG.HOME_COMPATIBILITY.FULL,
-    icon: Shield,
-    programDuration: formatDuration(METHODOLOGIES_CONFIG.DURATIONS.LONG),
-    frequency: formatFrequency(METHODOLOGIES_CONFIG.FREQUENCIES.HIGH),
+    id: 'halterofilia',
+    name: 'Halterofilia',
+    description: 'Levantamiento olímpico: snatch y clean & jerk con técnica especializada',
+    detailedDescription: 'Disciplina técnica centrada en los dos levantamientos olímpicos oficiales. Desarrolla potencia explosiva, fuerza máxima, velocidad bajo la barra y movilidad específica. Requiere dedicación a la técnica y progresión sistemática desde fundamentos hasta levantamientos completos.',
+    focus: 'Potencia técnica',
+    level: formatLevelRange([METHODOLOGIES_CONFIG.LEVELS.INTERMEDIATE, METHODOLOGIES_CONFIG.LEVELS.ADVANCED]),
+    homeCompatible: METHODOLOGIES_CONFIG.HOME_COMPATIBILITY.MINIMAL,
+    icon: Zap,
+    programDuration: formatDuration(METHODOLOGIES_CONFIG.DURATIONS.EXTENDED),
+    frequency: formatFrequency(METHODOLOGIES_CONFIG.FREQUENCIES.INTENSE),
     volume: METHODOLOGIES_CONFIG.VOLUMES.HIGH,
     intensity: METHODOLOGIES_CONFIG.INTENSITIES.HIGH,
     principles: [
-      'Especificidad según pruebas de la oposición',
-      'Periodización hacia fecha de examen',
-      'Combinación de resistencia y fuerza funcional',
-      'Simulacros de pruebas reales',
-      'Progresión gradual y sostenible'
+      'Técnica perfecta sobre carga máxima',
+      'Progresión sistemática: hang → bloques → suelo',
+      'Desarrollo de triple extensión explosiva',
+      'Movilidad específica overhead y front rack',
+      'Periodización por bloques hacia picos'
     ],
     benefits: [
-      'Preparación específica para superar baremos oficiales',
-      'Mejora integral de capacidades físicas requeridas',
-      'Desarrollo de resistencia mental bajo presión',
-      'Optimización del rendimiento en fecha clave',
-      'Reducción del riesgo de lesiones durante pruebas'
+      'Desarrollo excepcional de potencia y velocidad',
+      'Fuerza máxima aplicada de forma explosiva',
+      'Mejora drástica de coordinación neuromuscular',
+      'Transferencia a todos los deportes de potencia',
+      'Movilidad y control corporal avanzado'
     ],
-    targetAudience: 'Opositores de cuerpos de seguridad, bomberos, militar y similares',
+    targetAudience: 'Intermedios-avanzados con base técnica o aspirantes a competición olímpica',
     duration: '60-90 minutos por sesión',
-    scientificBasis: 'Entrenamiento específico, periodización deportiva y adaptaciones cardiorrespiratorias',
+    scientificBasis: 'Biomecánica olímpica, potenciación post-activación, especificidad técnica y adaptaciones del SNC',
     videoPlaceholder: true
   },
   {
@@ -456,6 +456,138 @@ export const METHODOLOGIES = [
     targetAudience: 'Ideal para todos los niveles sin acceso a gimnasio o con limitaciones de tiempo',
     duration: '30-60 minutos por sesión',
     scientificBasis: 'Adaptaciones musculares con resistencia progresiva variable, entrenamiento funcional y biomecánica adaptativa',
+    videoPlaceholder: true,
+    isNew: true
+  },
+  {
+    id: 'bomberos',
+    name: 'Oposiciones Bombero',
+    description: 'Preparación física completa para las 9 pruebas físicas oficiales de Bombero',
+    detailedDescription: 'Programa especializado que prepara al opositor para superar las exigentes pruebas físicas de bombero. Incluye natación, buceo, trepa de cuerda, dominadas, carreras de velocidad y resistencia, press banca, flexiones y lanzamiento de balón medicinal. Entrenamiento multidisciplinar que desarrolla todas las capacidades físicas necesarias.',
+    focus: 'Preparación oposiciones',
+    level: formatLevelRange([METHODOLOGIES_CONFIG.LEVELS.INTERMEDIATE, METHODOLOGIES_CONFIG.LEVELS.ADVANCED]),
+    homeCompatible: METHODOLOGIES_CONFIG.HOME_COMPATIBILITY.MINIMAL,
+    icon: Flame,
+    programDuration: formatDuration(METHODOLOGIES_CONFIG.DURATIONS.LONG),
+    frequency: formatFrequency(METHODOLOGIES_CONFIG.FREQUENCIES.INTENSE),
+    volume: METHODOLOGIES_CONFIG.VOLUMES.HIGH,
+    intensity: METHODOLOGIES_CONFIG.INTENSITIES.HIGH,
+    principles: [
+      'Cobertura completa de las 9 pruebas oficiales de bombero',
+      'Balance entre natación, fuerza, resistencia, velocidad y agilidad',
+      'Especialización progresiva desde base general a específico',
+      'Simulaciones periódicas en condiciones oficiales',
+      'Gestión de fatiga para evitar sobreentrenamiento multidisciplinar'
+    ],
+    benefits: [
+      'Preparación integral para superar todas las pruebas físicas',
+      'Desarrollo excepcional de versatilidad atlética',
+      'Maximización de puntuación en convocatorias oficiales',
+      'Mejora significativa en natación, fuerza y resistencia',
+      'Confianza técnica y física para el día del examen'
+    ],
+    targetAudience: 'Opositores de bombero con nivel intermedio-avanzado buscando superar pruebas oficiales',
+    duration: '90-120 minutos por sesión',
+    scientificBasis: 'Entrenamiento concurrente, periodización por bloques, especificidad de pruebas oficiales',
+    videoPlaceholder: true,
+    isNew: true
+  },
+  {
+    id: 'guardia-civil',
+    name: 'Oposiciones Guardia Civil',
+    description: 'Entrenamiento específico para las 4 pruebas eliminatorias de Guardia Civil según BOE',
+    detailedDescription: 'Programa focalizado en las 4 pruebas eliminatorias oficiales: circuito de coordinación, carrera 2000m, extensiones de brazos y natación 50m. Sistema APTO/NO APTO donde fallar cualquier prueba significa eliminación inmediata. Adaptado a baremos oficiales por edad y sexo del BOE.',
+    focus: 'Preparación oposiciones',
+    level: formatLevelRange([METHODOLOGIES_CONFIG.LEVELS.INTERMEDIATE, METHODOLOGIES_CONFIG.LEVELS.ADVANCED]),
+    homeCompatible: METHODOLOGIES_CONFIG.HOME_COMPATIBILITY.PARTIAL,
+    icon: Shield,
+    programDuration: formatDuration(METHODOLOGIES_CONFIG.DURATIONS.MEDIUM),
+    frequency: formatFrequency(METHODOLOGIES_CONFIG.FREQUENCIES.INTENSE),
+    volume: METHODOLOGIES_CONFIG.VOLUMES.MODERATE,
+    intensity: METHODOLOGIES_CONFIG.INTENSITIES.HIGH,
+    principles: [
+      'Preparación para sistema eliminatorio (todas las pruebas deben superarse)',
+      'Adaptación a baremos oficiales según edad y sexo del usuario',
+      'Enfoque en no fallar primer intento (se permiten 2 en algunas pruebas)',
+      'Balance entre agilidad, resistencia, fuerza y natación',
+      'Simulaciones oficiales cada 3-4 semanas'
+    ],
+    benefits: [
+      'Preparación ajustada a baremos exactos por edad del BOE',
+      'Entrenamiento específico para las 4 pruebas eliminatorias',
+      'Margen de seguridad sobre baremos mínimos',
+      'Confianza para superar todas las pruebas sin eliminación',
+      'Técnica depurada en circuito de coordinación'
+    ],
+    targetAudience: 'Opositores de Guardia Civil con objetivo de superar las 4 pruebas según baremos oficiales',
+    duration: '60-90 minutos por sesión',
+    scientificBasis: 'Especificidad de pruebas oficiales BOE, entrenamiento concurrente, periodización adaptada',
+    videoPlaceholder: true,
+    isNew: true
+  },
+  {
+    id: 'policia-nacional',
+    name: 'Oposiciones Policía Nacional',
+    description: 'Preparación para las 3 pruebas físicas con sistema de puntuación 0-10',
+    detailedDescription: 'Entrenamiento orientado a maximizar puntuación en las 3 pruebas oficiales: circuito de agilidad con obstáculos, dominadas/suspensión en barra y carrera de 1000m. Sistema de puntuación 0-10 por prueba donde se requiere media mínima de 5 puntos para aprobar. Estrategia inteligente para maximizar puntos totales.',
+    focus: 'Preparación oposiciones',
+    level: formatLevelRange([METHODOLOGIES_CONFIG.LEVELS.INTERMEDIATE, METHODOLOGIES_CONFIG.LEVELS.ADVANCED]),
+    homeCompatible: METHODOLOGIES_CONFIG.HOME_COMPATIBILITY.PARTIAL,
+    icon: Shield,
+    programDuration: formatDuration(METHODOLOGIES_CONFIG.DURATIONS.MEDIUM),
+    frequency: formatFrequency(METHODOLOGIES_CONFIG.FREQUENCIES.HIGH),
+    volume: METHODOLOGIES_CONFIG.VOLUMES.MODERATE,
+    intensity: METHODOLOGIES_CONFIG.INTENSITIES.HIGH,
+    principles: [
+      'Estrategia de maximización de puntos (no solo aprobar)',
+      'Identificación de prueba más fuerte para puntuar alto (8-10)',
+      'Asegurar mínimos en pruebas débiles (4-5 puntos)',
+      'Diferenciación hombres/mujeres en prueba de fuerza',
+      'Sistema no eliminatorio permite gestión estratégica'
+    ],
+    benefits: [
+      'Maximización de puntuación total en convocatoria',
+      'Estrategia personalizada según fortalezas del usuario',
+      'Media superior a 5 puntos con margen de seguridad',
+      'Técnica específica en circuito de agilidad',
+      'Optimización de tiempo en carrera 1000m'
+    ],
+    targetAudience: 'Opositores de Policía Nacional buscando superar media de 5 puntos y maximizar puntuación',
+    duration: '60-75 minutos por sesión',
+    scientificBasis: 'Sistema de puntuación oficial, estrategia de maximización, entrenamiento específico por prueba',
+    videoPlaceholder: true,
+    isNew: true
+  },
+  {
+    id: 'policia-local',
+    name: 'Oposiciones Policía Local',
+    description: 'Preparación polivalente para pruebas comunes (varían por ayuntamiento)',
+    detailedDescription: 'Programa adaptable para las pruebas más frecuentes de Policía Local: velocidad 50m, resistencia 1000m, salto de longitud, fuerza tren superior y circuito de agilidad. IMPORTANTE: Las pruebas varían significativamente por ayuntamiento, por lo que el plan cubre las más comunes y se adapta según bases oficiales específicas.',
+    focus: 'Preparación oposiciones',
+    level: formatLevelRange([METHODOLOGIES_CONFIG.LEVELS.INTERMEDIATE, METHODOLOGIES_CONFIG.LEVELS.ADVANCED]),
+    homeCompatible: METHODOLOGIES_CONFIG.HOME_COMPATIBILITY.PARTIAL,
+    icon: Shield,
+    programDuration: formatDuration(METHODOLOGIES_CONFIG.DURATIONS.MEDIUM),
+    frequency: formatFrequency(METHODOLOGIES_CONFIG.FREQUENCIES.HIGH),
+    volume: METHODOLOGIES_CONFIG.VOLUMES.MODERATE,
+    intensity: METHODOLOGIES_CONFIG.INTENSITIES.HIGH,
+    principles: [
+      'Preparación polivalente para 4-5 pruebas más comunes',
+      'Adaptabilidad a bases específicas de cada ayuntamiento',
+      'Especialización tardía cuando se publican bases oficiales',
+      'Balance entre velocidad, resistencia, potencia y fuerza',
+      'Énfasis en consultar siempre bases de convocatoria objetivo'
+    ],
+    benefits: [
+      'Cobertura de pruebas presentes en 80%+ convocatorias',
+      'Preparación base sólida antes de bases oficiales',
+      'Rapidez de adaptación cuando se publican pruebas exactas',
+      'Desarrollo completo: sprint, medio fondo, salto, fuerza',
+      'Flexibilidad para ajustar según ayuntamiento específico'
+    ],
+    targetAudience: 'Opositores de Policía Local (NOTA: verificar siempre bases de tu ayuntamiento específico)',
+    duration: '60-90 minutos por sesión',
+    scientificBasis: 'Entrenamiento multidisciplinar, adaptabilidad metodológica, especificidad variable por convocatoria',
     videoPlaceholder: true,
     isNew: true
   }

@@ -129,7 +129,11 @@ const initialState = {
     showVersionSelection: false,
     showMethodologyDetails: false,
     showActiveTrainingWarning: false,
-    showCalisteniaManual: false
+    showCalisteniaManual: false,
+    showHeavyDutyManual: false,
+    showHipertrofiaManual: false,
+    showPowerliftingManual: false,
+    showCrossFitManual: false
   },
 
   // ===============================
@@ -289,6 +293,10 @@ function workoutReducer(state, action) {
     case WORKOUT_ACTIONS.SHOW_MODAL: {
       const modalKey = `show${action.payload.charAt(0).toUpperCase() + action.payload.slice(1)}`;
       const mappedKey = modalKey.replace('calisteniaManual', 'CalisteniaManual')
+                              .replace('heavyDutyManual', 'HeavyDutyManual')
+                              .replace('hipertrofiaManual', 'HipertrofiaManual')
+                              .replace('powerliftingManual', 'PowerliftingManual')
+                              .replace('crossfitManual', 'CrossFitManual')
                               .replace('planConfirmation', 'PlanConfirmation')
                               .replace('routineSession', 'RoutineSession')
                               .replace('versionSelection', 'VersionSelection')
@@ -307,6 +315,10 @@ function workoutReducer(state, action) {
     case WORKOUT_ACTIONS.HIDE_MODAL: {
       const modalKey = `show${action.payload.charAt(0).toUpperCase() + action.payload.slice(1)}`;
       const mappedKey = modalKey.replace('calisteniaManual', 'CalisteniaManual')
+                              .replace('heavyDutyManual', 'HeavyDutyManual')
+                              .replace('hipertrofiaManual', 'HipertrofiaManual')
+                              .replace('powerliftingManual', 'PowerliftingManual')
+                              .replace('crossfitManual', 'CrossFitManual')
                               .replace('planConfirmation', 'PlanConfirmation')
                               .replace('routineSession', 'RoutineSession')
                               .replace('versionSelection', 'VersionSelection')
@@ -336,7 +348,11 @@ function workoutReducer(state, action) {
           showVersionSelection: false,
           showMethodologyDetails: false,
           showActiveTrainingWarning: false,
-          showCalisteniaManual: false
+          showCalisteniaManual: false,
+          showHeavyDutyManual: false,
+          showHipertrofiaManual: false,
+          showPowerliftingManual: false,
+          showCrossFitManual: false
         }
       };
 
@@ -441,13 +457,25 @@ export function WorkoutProvider({ children }) {
         const { calisteniaData } = config;
         requestBody = {
           userProfile: calisteniaData.userProfile || { id: user.id },
-          selectedLevel: calisteniaData.level || 'basico',
+          selectedLevel: calisteniaData.level || 'principiante',
           goals: calisteniaData.goals || '',
           selectedMuscleGroups: calisteniaData.selectedMuscleGroups || [],
           aiEvaluation: calisteniaData.aiEvaluation || null,
           methodology: calisteniaData.methodology || 'Calistenia Specialist',
           source: calisteniaData.source || 'manual_selection',
           version: calisteniaData.version || '5.0'
+        };
+      } else if (config.mode === 'manual' && config.methodology === 'heavy-duty') {
+        const { heavyDutyData } = config;
+        requestBody = {
+          userProfile: heavyDutyData.userProfile || { id: user.id },
+          selectedLevel: heavyDutyData.level || 'avanzado',
+          goals: heavyDutyData.goals || '',
+          selectedMuscleGroups: heavyDutyData.selectedMuscleGroups || [],
+          aiEvaluation: heavyDutyData.aiEvaluation || null,
+          methodology: heavyDutyData.methodology || 'Heavy Duty Specialist',
+          source: heavyDutyData.source || 'manual_selection',
+          version: heavyDutyData.version || '1.0'
         };
       } else {
         requestBody = config;

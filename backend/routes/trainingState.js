@@ -30,7 +30,7 @@ router.get('/state', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // Solo buscar plan activo sin usar user_training_state
+    // Buscar plan activo o draft (para permitir visualización de planes recién generados)
     const activePlanResult = await pool.query(`
       SELECT
         mp.id as plan_id,
@@ -43,7 +43,7 @@ router.get('/state', authenticateToken, async (req, res) => {
         false as has_active_session,
         null as active_session_id
       FROM app.methodology_plans mp
-      WHERE mp.user_id = $1 AND mp.status = 'active'
+      WHERE mp.user_id = $1 AND mp.status IN ('active', 'draft')
       ORDER BY mp.created_at DESC
       LIMIT 1
     `, [userId]);

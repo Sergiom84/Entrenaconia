@@ -87,6 +87,90 @@ export const AI_MODULES = {
     promptId: 'pmpt_68bbf7d87c948194b0b82e000b5274f30663795f5e3b2843',
     promptVersion: "1.0",
     systemPrompt: 'calistenia_specialist' // Se cargará desde el archivo MD
+  },
+  HEAVY_DUTY_SPECIALIST: {
+    key: 'HEAVY_DUTY_SPECIALIST',
+    envKey: 'OPENAI_API_KEY',
+    model: 'gpt-4o-mini',
+    temperature: 0.7,  // Más conservador que calistenia (alta intensidad requiere precisión)
+    max_output_tokens: 16384,
+    top_p: 1.0,
+    store: true,
+    promptId: 'pmpt_heavyduty_001',  // Temporal - se generará el ID real
+    promptVersion: "1.0",
+    systemPrompt: 'heavy_duty_specialist' // Se cargará desde el archivo MD
+  },
+  HIPERTROFIA_SPECIALIST: {
+    key: 'HIPERTROFIA_SPECIALIST',
+    envKey: 'OPENAI_API_KEY',
+    model: 'gpt-4o-mini',
+    temperature: 0.8,  // Balance entre creatividad y precisión para periodización
+    max_output_tokens: 16384,
+    top_p: 1.0,
+    store: true,
+    promptId: 'pmpt_hipertrofia_001',  // Temporal - se generará el ID real
+    promptVersion: "1.0",
+    systemPrompt: 'hipertrofia_specialist' // Se cargará desde el archivo MD
+  },
+  POWERLIFTING_SPECIALIST: {
+    key: 'POWERLIFTING_SPECIALIST',
+    envKey: 'OPENAI_API_KEY',
+    model: 'gpt-4o-mini',
+    temperature: 0.7,  // Precisión alta para técnica y periodización específica
+    max_output_tokens: 16384,
+    top_p: 1.0,
+    store: true,
+    promptId: 'pmpt_powerlifting_001',  // Temporal - se generará el ID real
+    promptVersion: "1.0",
+    systemPrompt: 'powerlifting_specialist' // Se cargará desde el archivo MD
+  },
+  CROSSFIT_SPECIALIST: {
+    key: 'CROSSFIT_SPECIALIST',
+    envKey: 'OPENAI_API_KEY',
+    model: 'gpt-4o-mini',
+    temperature: 0.9,  // Alta variedad para WODs constantemente variados (filosofía CrossFit)
+    max_output_tokens: 16384,
+    top_p: 1.0,
+    store: true,
+    promptId: 'pmpt_crossfit_001',  // Temporal - se generará el ID real
+    promptVersion: "1.0",
+    systemPrompt: 'crossfit_specialist' // Se cargará desde el archivo MD
+  },
+  FUNCIONAL_SPECIALIST: {
+    key: 'FUNCIONAL_SPECIALIST',
+    envKey: 'OPENAI_API_KEY',
+    model: 'gpt-4o-mini',
+    temperature: 0.8,  // Balance entre creatividad y precisión para patrones funcionales
+    max_output_tokens: 16384,
+    top_p: 1.0,
+    store: true,
+    promptId: 'pmpt_funcional_001',  // Temporal - se generará el ID real
+    promptVersion: "1.0",
+    systemPrompt: 'funcional_specialist' // Se cargará desde el archivo MD
+  },
+  HALTEROFILIA_SPECIALIST: {
+    key: 'HALTEROFILIA_SPECIALIST',
+    envKey: 'OPENAI_API_KEY',
+    model: 'gpt-4o-mini',
+    temperature: 0.7,  // Precisión técnica alta para levantamientos olímpicos
+    max_output_tokens: 16384,
+    top_p: 1.0,
+    store: true,
+    promptId: 'pmpt_halterofilia_001',  // Temporal - se generará el ID real
+    promptVersion: "1.0",
+    systemPrompt: 'halterofilia_specialist' // Se cargará desde el archivo MD
+  },
+  CASA_SPECIALIST: {
+    key: 'CASA_SPECIALIST',
+    envKey: 'OPENAI_API_KEY',
+    model: 'gpt-4o-mini',
+    temperature: 0.8,  // Creatividad alta para adaptaciones con objetos domésticos
+    max_output_tokens: 16384,
+    top_p: 1.0,
+    store: true,
+    promptId: 'pmpt_casa_001',
+    promptVersion: "1.0",
+    systemPrompt: 'casa_specialist'
   }
 };
 

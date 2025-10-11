@@ -82,17 +82,17 @@ Responde SIEMPRE en JSON con esta estructura exacta:
     "target_calories": <calorías diarias objetivo>,
     "target_macros": {
       "protein": <gramos>,
-      "carbs": <gramos>, 
+      "carbs": <gramos>,
       "fat": <gramos>
     },
     "meals_per_day": <número de comidas>,
     "methodology_focus": "<metodología de entrenamiento>",
     "dietary_style": "<estilo alimentario>"
   },
-  "daily_plans": [
-    {
+  "daily_plans": {
+    "0": {
       "day": 1,
-      "day_name": "<nombre del día>",
+      "day_name": "Lunes",
       "training_day": <true/false>,
       "total_nutrition": {
         "calories": <total calorías>,
@@ -137,8 +137,14 @@ Responde SIEMPRE en JSON con esta estructura exacta:
           ]
         }
       ]
+    },
+    "1": {
+      "day": 2,
+      "day_name": "Martes",
+      ...
     }
-  ],
+    // ⚠️ IMPORTANTE: Continúa con "2", "3", "4", etc. hasta completar TODOS los duration_days
+  },
   "supplement_recommendations": [
     {
       "name": "<nombre del suplemento>",
@@ -177,6 +183,31 @@ Responde SIEMPRE en JSON con esta estructura exacta:
     "<nota importante 2>"
   ]
 }
+```
+
+## ⚠️ REGLAS CRÍTICAS DE GENERACIÓN
+
+### COMPLETITUD DEL PLAN
+1. **GENERA TODOS LOS DÍAS**: Si `duration_days` es 7, DEBES generar las claves "0" a "6" en `daily_plans`
+2. **VALIDACIÓN OBLIGATORIA**: Verifica que `Object.keys(daily_plans).length === duration_days`
+3. **CADA DÍA DEBE SER ÚNICO**: Varía las comidas entre días para evitar monotonía nutricional
+4. **ESTRUCTURA DE CLAVES**: Usa números como strings ("0", "1", "2", ..., "N-1") donde N es `duration_days`
+5. **NO USES ARRAYS**: `daily_plans` es un OBJETO con claves numéricas, NO un array
+
+### EJEMPLO CORRECTO para duration_days = 3:
+```json
+"daily_plans": {
+  "0": { "day": 1, "day_name": "Lunes", ... },
+  "1": { "day": 2, "day_name": "Martes", ... },
+  "2": { "day": 3, "day_name": "Miércoles", ... }
+}
+```
+
+### ❌ EJEMPLO INCORRECTO:
+```json
+"daily_plans": [
+  { "day": 1, ... }  // ❌ NO usar array
+]
 ```
 
 ## REGLAS ESPECÍFICAS

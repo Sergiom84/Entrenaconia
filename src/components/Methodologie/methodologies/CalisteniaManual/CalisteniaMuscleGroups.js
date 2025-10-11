@@ -10,7 +10,7 @@
 // Configuraciones centralizadas
 const MUSCLE_GROUP_CONFIG = {
   DURATIONS: {
-    basico: 45,
+    principiante: 45,
     intermedio: 60,
     avanzado: 75
   },
@@ -64,11 +64,11 @@ const MUSCLE_GROUP_THEMES = {
 // Utilidades de validación para grupos musculares
 const MuscleGroupValidationUtils = {
   isValidLevel(level) {
-    return typeof level === 'string' && ['basico', 'intermedio', 'avanzado'].includes(level.toLowerCase());
+    return typeof level === 'string' && ['principiante', 'intermedio', 'avanzado'].includes(level.toLowerCase());
   },
 
   sanitizeLevel(level) {
-    return typeof level === 'string' ? level.toLowerCase().trim() : 'basico';
+    return typeof level === 'string' ? level.toLowerCase().trim() : 'principiante';
   },
 
   validateSessionCount(sessions) {
@@ -316,12 +316,12 @@ export function getRecommendedGroupsByLevel(level) {
 
   // Configuración de grupos por nivel (centralizada)
   const LEVEL_GROUP_MAPPING = {
-    basico: ['empuje', 'traccion', 'piernas', 'core'],
+    principiante: ['empuje', 'traccion', 'piernas', 'core'],
     intermedio: ['empuje', 'traccion', 'piernas', 'core', 'habilidades'],
     avanzado: Object.keys(CALISTENIA_MUSCLE_GROUPS) // Todos los grupos
   };
 
-  const allowedGroups = LEVEL_GROUP_MAPPING[sanitizedLevel] || LEVEL_GROUP_MAPPING.basico;
+  const allowedGroups = LEVEL_GROUP_MAPPING[sanitizedLevel] || LEVEL_GROUP_MAPPING.principiante;
 
   return allGroups.filter(group => allowedGroups.includes(group.id));
 }
@@ -345,7 +345,7 @@ export function generateBalancedSplit(level, sessionsPerWeek) {
         sessionNumber: index + 1,
         muscleGroups: recommendedGroups.map(group => group.id),
         focus: index % 2 === 0 ? MUSCLE_GROUP_CONFIG.FOCUS_TYPES.STRENGTH : MUSCLE_GROUP_CONFIG.FOCUS_TYPES.SKILL,
-        duration: MUSCLE_GROUP_CONFIG.DURATIONS[sanitizedLevel] || MUSCLE_GROUP_CONFIG.DURATIONS.basico
+        duration: MUSCLE_GROUP_CONFIG.DURATIONS[sanitizedLevel] || MUSCLE_GROUP_CONFIG.DURATIONS.principiante
       }))
     };
   } else {
@@ -381,7 +381,7 @@ export function generateBalancedSplit(level, sessionsPerWeek) {
       type: MUSCLE_GROUP_CONFIG.SPLIT_TYPES.SPLIT,
       sessions: selectedSplit.map(session => ({
         ...session,
-        duration: MUSCLE_GROUP_CONFIG.DURATIONS[sanitizedLevel] || MUSCLE_GROUP_CONFIG.DURATIONS.basico,
+        duration: MUSCLE_GROUP_CONFIG.DURATIONS[sanitizedLevel] || MUSCLE_GROUP_CONFIG.DURATIONS.principiante,
         // Filtrar grupos que no están disponibles para el nivel
         groups: session.groups.filter(groupId =>
           recommendedGroups.some(group => group.id === groupId)

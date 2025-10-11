@@ -159,6 +159,83 @@ app.post('/api/calistenia-specialist/generate-plan', (req, res, next) => {
   next();
 });
 
+// Heavy Duty Specialist - Evaluación y Generación
+app.post('/api/heavy-duty-specialist/evaluate-profile', (req, res, next) => {
+  req.url = '/api/routine-generation/specialist/heavy-duty/evaluate';
+  next();
+});
+
+app.post('/api/heavy-duty-specialist/generate-plan', (req, res, next) => {
+  req.url = '/api/routine-generation/specialist/heavy-duty/generate';
+  next();
+});
+
+// Hipertrofia Specialist - Evaluación y Generación
+app.post('/api/hipertrofia-specialist/evaluate-profile', (req, res, next) => {
+  req.url = '/api/routine-generation/specialist/hipertrofia/evaluate';
+  next();
+});
+
+app.post('/api/hipertrofia-specialist/generate-plan', (req, res, next) => {
+  req.url = '/api/routine-generation/specialist/hipertrofia/generate';
+  next();
+});
+
+// Powerlifting Specialist - Evaluación y Generación
+app.post('/api/powerlifting-specialist/evaluate-profile', (req, res, next) => {
+  req.url = '/api/routine-generation/specialist/powerlifting/evaluate';
+  next();
+});
+
+app.post('/api/powerlifting-specialist/generate-plan', (req, res, next) => {
+  req.url = '/api/routine-generation/specialist/powerlifting/generate';
+  next();
+});
+
+// CrossFit Specialist - Evaluación y Generación
+app.post('/api/crossfit-specialist/evaluate-profile', (req, res, next) => {
+  req.url = '/api/routine-generation/specialist/crossfit/evaluate';
+  next();
+});
+
+app.post('/api/crossfit-specialist/generate-plan', (req, res, next) => {
+  req.url = '/api/routine-generation/specialist/crossfit/generate';
+  next();
+});
+
+// Funcional Specialist - Evaluación y Generación
+app.post('/api/funcional-specialist/evaluate-profile', (req, res, next) => {
+  req.url = '/api/routine-generation/specialist/funcional/evaluate';
+  next();
+});
+
+app.post('/api/funcional-specialist/generate-plan', (req, res, next) => {
+  req.url = '/api/routine-generation/specialist/funcional/generate';
+  next();
+});
+
+// Halterofilia Specialist - Evaluación y Generación
+app.post('/api/halterofilia-specialist/evaluate-profile', (req, res, next) => {
+  req.url = '/api/routine-generation/specialist/halterofilia/evaluate';
+  next();
+});
+
+app.post('/api/halterofilia-specialist/generate-plan', (req, res, next) => {
+  req.url = '/api/routine-generation/specialist/halterofilia/generate';
+  next();
+});
+
+// Casa Specialist - Entrenamiento en Casa - Evaluación y Generación
+app.post('/api/casa-specialist/evaluate-profile', (req, res, next) => {
+  req.url = '/api/routine-generation/specialist/casa/evaluate';
+  next();
+});
+
+app.post('/api/casa-specialist/generate-plan', (req, res, next) => {
+  req.url = '/api/routine-generation/specialist/casa/generate';
+  next();
+});
+
 // Metodologías IA - Múltiples endpoints
 app.post('/api/methodologie/generate', (req, res, next) => {
   req.url = '/api/routine-generation/ai/methodology';
@@ -232,16 +309,42 @@ app.post('/api/methodology/generate', authenticateToken, (req, res, next) => {
     req.url = '/api/routine-generation/specialist/calistenia/generate';
   } else if (mode === 'manual' && methodology) {
     // Para otras metodologías, mantener patrón actual (se añadirá routing específico cuando se habiliten)
-    if (methodology === 'oposicion' || methodology === 'oposiciones') {
-      req.url = '/api/routine-generation/specialist/oposicion';
+    if (methodology === 'heavy-duty' || methodology === 'heavy duty') {
+      console.log('💪 Heavy Duty manual detectada - specialist/heavy-duty/generate');
+      req.url = '/api/routine-generation/specialist/heavy-duty/generate';
     } else if (methodology === 'hipertrofia') {
-      req.url = '/api/routine-generation/specialist/hipertrofia';
+      console.log('🏋️ Hipertrofia manual detectada - specialist/hipertrofia/generate');
+      req.url = '/api/routine-generation/specialist/hipertrofia/generate';
+    } else if (methodology === 'oposicion' || methodology === 'oposiciones') {
+      console.log('🏃 Oposiciones detectada - specialist/oposicion/generate');
+      req.url = '/api/routine-generation/specialist/oposicion/generate';
     } else if (methodology === 'crossfit') {
-      req.url = '/api/routine-generation/specialist/crossfit';
+      console.log('🤸 CrossFit detectado - specialist/crossfit/generate');
+      req.url = '/api/routine-generation/specialist/crossfit/generate';
     } else if (methodology === 'powerlifting') {
-      req.url = '/api/routine-generation/specialist/powerlifting';
+      console.log('🏋️ Powerlifting manual detectada - specialist/powerlifting/generate');
+      req.url = '/api/routine-generation/specialist/powerlifting/generate';
     } else if (methodology === 'funcional') {
-      req.url = '/api/routine-generation/specialist/funcional';
+      console.log('⚙️ Funcional detectado - specialist/funcional/generate');
+      req.url = '/api/routine-generation/specialist/funcional/generate';
+    } else if (methodology === 'halterofilia') {
+      console.log('🏋️ Halterofilia detectado - specialist/halterofilia/generate');
+      req.url = '/api/routine-generation/specialist/halterofilia/generate';
+    } else if (methodology === 'entrenamiento-casa' || methodology === 'casa') {
+      console.log('🏠 Entrenamiento en Casa detectado - specialist/casa/generate');
+      req.url = '/api/routine-generation/specialist/casa/generate';
+    } else if (methodology === 'bomberos' || methodology === 'bombero') {
+      console.log('🚒 Bomberos detectado - specialist/bomberos/generate');
+      req.url = '/api/routine-generation/specialist/bomberos/generate';
+    } else if (methodology === 'guardia-civil' || methodology === 'guardia civil') {
+      console.log('🛡️ Guardia Civil detectado - specialist/guardia-civil/generate');
+      req.url = '/api/routine-generation/specialist/guardia-civil/generate';
+    } else if (methodology === 'policia-nacional' || methodology === 'policia nacional') {
+      console.log('👮 Policía Nacional detectado - specialist/policia-nacional/generate');
+      req.url = '/api/routine-generation/specialist/policia-nacional/generate';
+    } else if (methodology === 'policia-local' || methodology === 'policia local') {
+      console.log('🚓 Policía Local detectado - specialist/policia-local/generate');
+      req.url = '/api/routine-generation/specialist/policia-local/generate';
     } else {
       // Metodología manual genérica
       req.url = '/api/routine-generation/manual/methodology';

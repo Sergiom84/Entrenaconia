@@ -77,6 +77,44 @@ export default function NutritionScreen() {
     }
   };
 
+  const handleCancelPlan = async () => {
+    if (!nutritionPlan?.id) return;
+
+    const confirmed = window.confirm(
+      '¿Estás seguro de que quieres cancelar tu plan nutricional actual? Esta acción no se puede deshacer.'
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setIsLoading(true);
+      const token = localStorage.getItem('token');
+
+      const response = await fetch(`/api/nutrition/plan/${nutritionPlan.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        console.log('✅ Plan nutricional cancelado exitosamente');
+        setNutritionPlan(null);
+        await fetchUserNutritionData();
+      } else {
+        const error = await response.json();
+        console.error('❌ Error al cancelar plan:', error);
+        alert('Error al cancelar el plan nutricional. Por favor, intenta de nuevo.');
+      }
+    } catch (error) {
+      console.error('❌ Error al cancelar plan:', error);
+      alert('Error de conexión. Por favor, intenta de nuevo.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Calcular macros básicos basados en el perfil del usuario
   const calculateBasicMacros = () => {
     if (!userData) {
@@ -395,6 +433,16 @@ export default function NutritionScreen() {
                     <ShoppingCart size={16} className="mr-2" />
                     Ver Suplementos
                   </Button>
+                  {nutritionPlan && (
+                    <Button
+                      onClick={handleCancelPlan}
+                      variant="outline"
+                      className="w-full border-red-600 text-red-400 hover:bg-red-900/30 hover:text-red-300"
+                    >
+                      <Activity size={16} className="mr-2" />
+                      Cancelar Plan Actual
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
             </div>

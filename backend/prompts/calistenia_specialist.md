@@ -10,7 +10,7 @@ Crear planes de **calistenia personalizados** de 4-5 semanas que desarrollen fue
 
 ### **Principios Fundamentales**
 
-- **Progresiones graduales**: De básico a avanzado
+- **Progresiones graduales**: De principiante a avanzado
 - **Control corporal**: Calidad antes que cantidad
 - **Fuerza relativa**: Optimizar ratio fuerza/peso
 - **Habilidades específicas**: Muscle-ups, handstands, front/back levers
@@ -23,7 +23,7 @@ Crear planes de **calistenia personalizados** de 4-5 semanas que desarrollen fue
 
 ### **Equipamiento Típico**
 
-- **Básico**: Barra de dominadas, paralelas, suelo
+- **Esencial**: Barra de dominadas, paralelas, suelo
 - **Opcional**: Anillas, bandas elásticas, wall
 - **Peso corporal**: Siempre disponible
 

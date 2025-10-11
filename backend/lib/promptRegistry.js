@@ -3,11 +3,22 @@ import path from "path";
 
 export const FeatureKey = {
   PHOTO: "photo",
-  VIDEO: "video", 
+  VIDEO: "video",
   HOME: "home",
   METHODOLOGIE: "methodologie",
   NUTRITION: "nutrition",
-  CALISTENIA_SPECIALIST: "calistenia_specialist"
+  CALISTENIA_SPECIALIST: "calistenia_specialist",
+  HEAVY_DUTY_SPECIALIST: "heavy_duty_specialist",
+  HIPERTROFIA_SPECIALIST: "hipertrofia_specialist",
+  POWERLIFTING_SPECIALIST: "powerlifting_specialist",
+  CROSSFIT_SPECIALIST: "crossfit_specialist",
+  FUNCIONAL_SPECIALIST: "funcional_specialist",
+  HALTEROFILIA_SPECIALIST: "halterofilia_specialist",
+  CASA_SPECIALIST: "casa_specialist",
+  BOMBEROS_SPECIALIST: "bomberos_specialist",
+  GUARDIA_CIVIL_SPECIALIST: "guardia_civil_specialist",
+  POLICIA_NACIONAL_SPECIALIST: "policia_nacional_specialist",
+  POLICIA_LOCAL_SPECIALIST: "policia_local_specialist"
 };
 
 const FILE_BY_FEATURE = {
@@ -16,7 +27,18 @@ const FILE_BY_FEATURE = {
   [FeatureKey.HOME]: "home_training.md",
   [FeatureKey.METHODOLOGIE]: "Methodologie_(Auto).md",
   [FeatureKey.NUTRITION]: "Nutrition_AI.md",
-  [FeatureKey.CALISTENIA_SPECIALIST]: "calistenia.md"
+  [FeatureKey.CALISTENIA_SPECIALIST]: "calistenia.md",
+  [FeatureKey.HEAVY_DUTY_SPECIALIST]: "heavy_duty_specialist.md",
+  [FeatureKey.HIPERTROFIA_SPECIALIST]: "hipertrofia_specialist.md",
+  [FeatureKey.POWERLIFTING_SPECIALIST]: "powerlifting_specialist.md",
+  [FeatureKey.CROSSFIT_SPECIALIST]: "crossfit_specialist.md",
+  [FeatureKey.FUNCIONAL_SPECIALIST]: "funcional_specialist.md",
+  [FeatureKey.HALTEROFILIA_SPECIALIST]: "halterofilia_specialist.md",
+  [FeatureKey.CASA_SPECIALIST]: "casa_specialist.md",
+  [FeatureKey.BOMBEROS_SPECIALIST]: "bomberos_specialist.md",
+  [FeatureKey.GUARDIA_CIVIL_SPECIALIST]: "guardia_civil_specialist.md",
+  [FeatureKey.POLICIA_NACIONAL_SPECIALIST]: "policia_nacional_specialist.md",
+  [FeatureKey.POLICIA_LOCAL_SPECIALIST]: "policia_local_specialist.md"
 };
 
 const cache = new Map();

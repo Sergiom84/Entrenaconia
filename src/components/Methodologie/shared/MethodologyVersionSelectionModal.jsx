@@ -1,3 +1,18 @@
+/*
+ * ⚠️ ARCHIVO TEMPORALMENTE DESHABILITADO ⚠️
+ *
+ * Este modal ha sido reemplazado por modales específicos por metodología:
+ * - CalisteniaManualCard.jsx
+ * - HeavyDutyManualCard.jsx
+ * - HipertrofiaManualCard.jsx
+ *
+ * El flujo actual va directo a cada modal específico sin pasar por selección de versión.
+ * Se mantiene este archivo comentado para futuras referencias o posible restauración.
+ *
+ * Fecha de deshabilitación: 2025-10-06
+ */
+
+/*
 /**
  * MethodologyVersionSelectionModal - Arquitectura Modular Profesional v3.0
  * Advanced modal for methodology version selection with intelligent recommendations
@@ -7,6 +22,7 @@
  * @version 3.0.0 - Centralized Config & Component Composition
  */
 
+/*
 import React, { useEffect, useMemo, useReducer } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog.jsx';
 import { Button } from '@/components/ui/button.jsx';
@@ -619,4 +635,10 @@ export default function MethodologyVersionSelectionModal({
       </DialogContent>
     </Dialog>
   );
+}
+*/
+
+// Export vacío para evitar errores de importación
+export default function MethodologyVersionSelectionModal() {
+  return null;
 }

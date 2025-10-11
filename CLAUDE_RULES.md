@@ -7,7 +7,8 @@
 3. **NO inventes nuevas funciones** a menos que se soliciten explícitamente
 4. **Haz propuestas de mejora** pero NO las implementes hasta que se te pida
 5. **NO modifiques otras partes del código** que no estén relacionadas con la tarea
-6. **Todo lo anterior es OBLIGATORIO** - Sin excepciones
+6. **Nunca reincies el frontend y backend** cuando sea necesario, me lo solicitas a mi
+7. **Todo lo anterior es OBLIGATORIO** - Sin excepciones
 
 ## VERIFICACIÓN DE CUMPLIMIENTO
 

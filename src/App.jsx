@@ -58,6 +58,7 @@ const HomePage = lazy(() => import('./components/HomePage'));
 // Módulos de entrenamiento (prioridad alta para usuarios logueados)
 const RoutineScreen = lazy(() => import('./components/routines/RoutineScreen'));
 const MethodologiesScreen = lazy(() => import('./components/Methodologie/MethodologiesScreen'));
+const OposicionesScreen = lazy(() => import('./components/Oposiciones/OposicionesScreen'));
 const HomeTrainingSection = lazy(() => import('./components/HomeTraining/HomeTrainingSection'));
 
 // Módulos secundarios (prioridad baja)
@@ -191,6 +192,16 @@ const ROUTE_CONFIG = [
     module: "Metodologías",
     context: "Methodologies",
     loadingMessage: "Cargando metodologías...",
+    preloadPriority: "medium"
+  },
+  {
+    path: "/oposiciones",
+    component: OposicionesScreen,
+    protected: true,
+    name: "Oposiciones",
+    module: "Oposiciones",
+    context: "Oposiciones",
+    loadingMessage: "Cargando oposiciones...",
     preloadPriority: "medium"
   },
   {

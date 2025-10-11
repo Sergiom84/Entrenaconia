@@ -204,7 +204,7 @@ router.post('/specialist/calistenia/evaluate', authenticateToken, async (req, re
     const exerciseCountResult = await pool.query(`
       SELECT COUNT(*) as total
       FROM app."Ejercicios_Calistenia"
-      WHERE LOWER(nivel) = 'básico'
+      WHERE LOWER(nivel) = 'principiante'
     `);
 
     const exerciseCount = parseInt(exerciseCountResult.rows[0]?.total) || 0;
@@ -240,7 +240,7 @@ router.post('/specialist/calistenia/evaluate', authenticateToken, async (req, re
         'Edad y condición física general'
       ],
       level_descriptions: {
-        basico: 'Principiantes: 0-1 años experiencia, enfoque en técnica básica',
+        principiante: 'Principiantes: 0-1 años experiencia, enfoque en técnica básica',
         intermedio: 'Experiencia: 1-3 años, domina movimientos básicos',
         avanzado: 'Expertos: +3 años, ejecuta ejercicios complejos'
       }
@@ -266,7 +266,7 @@ INSTRUCCIONES:
 
 FORMATO DE RESPUESTA:
 {
-  "recommended_level": "basico|intermedio|avanzado",
+  "recommended_level": "principiante|intermedio|avanzado",
   "confidence": 0.75,
   "reasoning": "Explicación detallada",
   "key_indicators": ["Factor 1", "Factor 2"],
@@ -365,20 +365,21 @@ router.post('/specialist/calistenia/generate', authenticateToken, async (req, re
 
     // Mapear nivel
     const levelMapping = {
-      'basico': 'Básico',
+      'principiante': 'Principiante',
+      'basico': 'Principiante', // Alias para compatibilidad
       'intermedio': 'Intermedio',
       'avanzado': 'Avanzado'
     };
-    const dbLevel = levelMapping[selectedLevel.toLowerCase()] || 'Básico';
+    const dbLevel = levelMapping[selectedLevel.toLowerCase()] || 'Principiante';
 
     // Obtener ejercicios disponibles
     let levelCondition;
     if (dbLevel === 'Avanzado') {
-      levelCondition = "nivel IN ('Básico', 'Intermedio', 'Avanzado')";
+      levelCondition = "nivel IN ('Principiante', 'Intermedio', 'Avanzado')";
     } else if (dbLevel === 'Intermedio') {
-      levelCondition = "nivel IN ('Básico', 'Intermedio')";
+      levelCondition = "nivel IN ('Principiante', 'Intermedio')";
     } else {
-      levelCondition = "nivel = 'Básico'";
+      levelCondition = "nivel = 'Principiante'";
     }
 
     const exercisesResult = await pool.query(`
@@ -736,8 +737,8 @@ router.post('/specialist/heavy-duty/generate', authenticateToken, async (req, re
 
     const exercisesResult = await pool.query(`
       SELECT exercise_id, nombre, nivel, categoria, patron, equipamiento,
-             series_reps_objetivo, criterio_de_progreso, progresion_desde,
-             progresion_hacia, notas
+             series_reps_objetivo, descanso_seg, criterio_de_progreso,
+             progresion_desde, progresion_hacia, notas
       FROM app."Ejercicios_Heavy_Duty"
       WHERE ${levelCondition}
       ORDER BY RANDOM()
@@ -764,7 +765,7 @@ OBJETIVOS: ${goals || 'No especificado'}
 
 EJERCICIOS DISPONIBLES (${availableExercises.length}):
 ${availableExercises.map(ex =>
-  `- ${ex.nombre} (${ex.categoria}) - Nivel: ${ex.nivel}, Equipamiento: ${ex.equipamiento}`
+  `- ${ex.nombre} (${ex.categoria}) - Nivel: ${ex.nivel}, Equipamiento: ${ex.equipamiento}, Descanso: ${ex.descanso_seg}s`
 ).join('\n')}
 
 VERSIÓN: ${versionConfig?.version === 'strict' ? 'ESTRICTA (Mike Mentzer puro)' : 'ADAPTADA (4 semanas)'}
@@ -776,6 +777,7 @@ PRINCIPIOS HEAVY DUTY OBLIGATORIOS:
 3. Descansos prolongados: 4-7 días entre mismo grupo muscular
 4. RPE 10/10: Cada serie es al límite absoluto
 5. Tempo lento: Énfasis en negativas (4-6 segundos)
+6. IMPORTANTE: Usa los valores de descanso_seg especificados para cada ejercicio (240-360s según nivel)
 
 GENERA un plan completo siguiendo el formato JSON de metodología.`;
 
@@ -892,6 +894,1992 @@ FORMATO EXACTO:
   } catch (error) {
     console.error('Error generando plan de Heavy Duty:', error);
     logError('HEAVY_DUTY_SPECIALIST', error);
+
+    res.status(500).json({
+      success: false,
+      error: 'Error generando plan',
+      message: error.message
+    });
+  }
+});
+
+// =========================================
+// 🏋️ HIPERTROFIA SPECIALIST
+// =========================================
+
+/**
+ * POST /api/routine-generation/specialist/hipertrofia/evaluate
+ * Evaluación de perfil para Hipertrofia con IA
+ */
+router.post('/specialist/hipertrofia/evaluate', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+
+    logSeparator('HIPERTROFIA PROFILE EVALUATION');
+    logAPICall('/specialist/hipertrofia/evaluate', 'POST', userId);
+
+    // 🔄 PATRÓN ESTANDARIZADO: Obtener perfil siempre desde BD (igual que Calistenia)
+    const userProfile = await getUserFullProfile(userId);
+    const fullUserProfile = normalizeUserProfile(userProfile);
+
+    logUserProfile(fullUserProfile, userId);
+
+    // Llamar a IA para evaluar perfil
+    const client = getModuleOpenAI(AI_MODULES.HIPERTROFIA_SPECIALIST);
+    const config = AI_MODULES.HIPERTROFIA_SPECIALIST;
+
+    const userMessage = `EVALUACIÓN DE PERFIL PARA HIPERTROFIA
+
+DATOS DEL USUARIO:
+- Edad: ${fullUserProfile?.edad || 'No especificado'}
+- Experiencia: ${fullUserProfile?.experiencia_entrenamiento || 'No especificado'}
+- Nivel actual: ${fullUserProfile?.nivel_actual || 'No especificado'}
+- Objetivo principal: ${fullUserProfile?.objetivo_principal || 'No especificado'}
+- Días disponibles: ${fullUserProfile?.dias_disponibles || 'No especificado'}
+- Equipamiento: ${fullUserProfile?.equipamiento?.join(', ') || 'No especificado'}
+- Limitaciones: ${fullUserProfile?.limitaciones || 'Ninguna'}
+
+NIVELES DISPONIBLES:
+1. Principiante (0-1 año de entrenamiento con pesas)
+2. Intermedio (1-3 años de entrenamiento consistente)
+3. Avanzado (+3 años de entrenamiento serio)
+
+Analiza este perfil y recomienda:
+1. El nivel más adecuado (principiante/intermedio/avanzado)
+2. Confidence score (0.0-1.0)
+3. Razonamiento detallado
+4. Factores clave detectados
+5. Áreas de enfoque sugeridas
+
+RESPONDE EN JSON PURO (formato estandarizado):
+{
+  "recommended_level": "principiante|intermedio|avanzado",
+  "confidence": 0.85,
+  "reasoning": "Explicación detallada del nivel recomendado",
+  "key_indicators": ["Factor 1", "Factor 2", "Factor 3"],
+  "suggested_focus_areas": ["Área 1", "Área 2"],
+  "split_suggestion": "full_body|upper_lower|push_pull_legs",
+  "weekly_frequency": 3-6
+}`;
+
+    const completion = await client.chat.completions.create({
+      model: config.model,
+      messages: [
+        {
+          role: 'system',
+          content: `Eres un especialista en entrenamiento de hipertrofia muscular que evalúa perfiles de usuarios.
+
+INSTRUCCIONES:
+- Evalúa objetivamente la experiencia y condición física
+- Sé realista con la confianza (escala 0.0-1.0, no siempre 1.0)
+- Proporciona razonamiento detallado y factores clave
+- Sugiere áreas de enfoque específicas
+- RESPONDE SOLO EN JSON PURO, SIN MARKDOWN
+
+FORMATO DE RESPUESTA (OBLIGATORIO):
+{
+  "recommended_level": "principiante|intermedio|avanzado",
+  "confidence": 0.75,
+  "reasoning": "Explicación detallada del nivel recomendado",
+  "key_indicators": ["Factor 1", "Factor 2", "Factor 3"],
+  "suggested_focus_areas": ["Área 1", "Área 2"],
+  "split_suggestion": "full_body|upper_lower|push_pull_legs",
+  "weekly_frequency": 3-6
+}`
+        },
+        {
+          role: 'user',
+          content: userMessage
+        }
+      ],
+      temperature: 0.3,
+      max_tokens: 1000
+    });
+
+    const aiResponse = completion.choices[0].message.content;
+    logAIResponse(aiResponse);
+    logTokens(completion.usage);
+
+    // Parsear respuesta
+    let evaluation;
+    try {
+      evaluation = JSON.parse(parseAIResponse(aiResponse));
+    } catch (parseError) {
+      console.error('Error parseando evaluación:', parseError);
+      throw new Error('Evaluación con formato inválido');
+    }
+
+    // 🔄 NORMALIZAR RESPUESTA (formato estandarizado igual a Calistenia)
+    const normalizedLevel = evaluation.recommended_level.toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+    res.json({
+      success: true,
+      evaluation: {
+        recommended_level: normalizedLevel,
+        confidence: evaluation.confidence,
+        reasoning: evaluation.reasoning || 'No especificado',
+        key_indicators: evaluation.key_indicators || [],
+        suggested_focus_areas: evaluation.suggested_focus_areas || [],
+        split_suggestion: evaluation.split_suggestion || 'full_body',
+        weekly_frequency: evaluation.weekly_frequency || 3
+      },
+      metadata: {
+        model_used: config.model,
+        evaluation_timestamp: new Date().toISOString()
+      }
+    });
+
+  } catch (error) {
+    console.error('Error en evaluación de Hipertrofia:', error);
+    logError('HIPERTROFIA_SPECIALIST', error);
+
+    res.status(500).json({
+      success: false,
+      error: 'Error evaluando perfil',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/routine-generation/specialist/hipertrofia/generate
+ * Generación de plan especializado de Hipertrofia con IA
+ */
+router.post('/specialist/hipertrofia/generate', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+
+    // Extracción flexible: Soporte para hipertrofiaData (anidado) o datos en root
+    const hipertrofiaData = req.body.hipertrofiaData || req.body;
+    const {
+      userProfile,
+      level,
+      selectedLevel,
+      goals,
+      selectedMuscleGroups,
+      previousPlan,
+      regenerationReason,
+      additionalInstructions,
+      versionConfig
+    } = hipertrofiaData;
+
+    // Mapear level → selectedLevel
+    const actualLevel = selectedLevel || level;
+
+    const isRegeneration = !!(previousPlan || regenerationReason || additionalInstructions);
+
+    logSeparator('HIPERTROFIA PLAN GENERATION');
+    console.log('Generando plan de Hipertrofia...', {
+      selectedLevel: actualLevel,
+      selectedMuscleGroups,
+      isRegeneration,
+      goals: goals?.substring(0, 50)
+    });
+
+    // Obtener perfil completo si solo se envió ID
+    let fullUserProfile = userProfile;
+    if (userProfile && Object.keys(userProfile).length === 1 && userProfile.id) {
+      fullUserProfile = await getUserFullProfile(userId);
+      fullUserProfile = normalizeUserProfile(fullUserProfile);
+    }
+
+    logUserProfile(fullUserProfile, userId);
+
+    // Validar que tenemos nivel
+    if (!actualLevel) {
+      return res.status(400).json({
+        success: false,
+        error: 'Nivel no especificado (level o selectedLevel requerido)'
+      });
+    }
+
+    // Mapear nivel - Niveles estandarizados
+    const levelMapping = {
+      'principiante': 'Principiante',
+      'intermedio': 'Intermedio',
+      'avanzado': 'Avanzado'
+    };
+    const dbLevel = levelMapping[actualLevel.toLowerCase()] || 'Principiante';
+
+    // Obtener ejercicios disponibles
+    // Sistema de acceso progresivo: cada nivel accede a ejercicios de niveles inferiores también
+    let levelCondition;
+    if (dbLevel === 'Avanzado') {
+      // Avanzado: Acceso a TODOS los ejercicios
+      levelCondition = "nivel IN ('Principiante', 'Intermedio', 'Avanzado')";
+    } else if (dbLevel === 'Intermedio') {
+      // Intermedio: Principiante + Intermedio
+      levelCondition = "nivel IN ('Principiante', 'Intermedio')";
+    } else {
+      // Principiante: Solo Principiante
+      levelCondition = "nivel = 'Principiante'";
+    }
+
+    const exercisesResult = await pool.query(`
+      SELECT exercise_id, nombre, nivel, categoria as grupo_muscular, patron,
+             equipamiento, series_reps_objetivo, descanso_seg,
+             criterio_de_progreso, progresion_desde, progresion_hacia,
+             notas, variante
+      FROM app."Ejercicios_Hipertrofia"
+      WHERE ${levelCondition}
+      ORDER BY RANDOM()
+    `);
+
+    const availableExercises = exercisesResult.rows;
+
+    if (availableExercises.length === 0) {
+      throw new Error(`No hay ejercicios disponibles para el nivel ${dbLevel}`);
+    }
+
+    console.log(`✅ Ejercicios Hipertrofia cargados: ${availableExercises.length} para nivel ${dbLevel}`);
+
+    // Llamar a IA con prompt especializado
+    const client = getModuleOpenAI(AI_MODULES.HIPERTROFIA_SPECIALIST);
+    const config = AI_MODULES.HIPERTROFIA_SPECIALIST;
+
+    // Construir mensaje para IA
+    const userMessage = `GENERACIÓN DE PLAN DE HIPERTROFIA
+
+NIVEL: ${actualLevel}
+GRUPOS MUSCULARES: ${selectedMuscleGroups?.join(', ') || 'Todos'}
+OBJETIVOS: ${goals || 'Hipertrofia muscular general'}
+
+EJERCICIOS DISPONIBLES (${availableExercises.length}):
+${availableExercises.map(ex =>
+  `- ${ex.nombre} (${ex.grupo_muscular}) - Nivel: ${ex.nivel}, Equipamiento: ${ex.equipamiento}, Series/Reps: ${ex.series_reps_objetivo}, Descanso: ${ex.descanso_seg}s`
+).join('\n')}
+
+DURACIÓN: ${versionConfig?.customWeeks || 4} semanas
+
+PRINCIPIOS DE HIPERTROFIA OBLIGATORIOS:
+1. Volumen óptimo: ${actualLevel === 'principiante' ? '10-15' : actualLevel === 'intermedio' ? '15-20' : '20-25'} series por grupo muscular/semana
+2. Intensidad: ${actualLevel === 'principiante' ? '60-75% 1RM' : actualLevel === 'intermedio' ? '70-85% 1RM' : '75-90% 1RM'}
+3. Rangos de repeticiones: ${actualLevel === 'principiante' ? '8-12 reps' : actualLevel === 'intermedio' ? '6-15 reps' : '4-20 reps'}
+4. Frecuencia: ${actualLevel === 'principiante' ? '3-4' : actualLevel === 'intermedio' ? '4-5' : '5-6'} días/semana
+5. Descanso entre series: Usa los valores de descanso_seg especificados para cada ejercicio (60-90s según patrón)
+6. Progresión: Sobrecarga progresiva en peso y/o volumen
+
+GENERA un plan completo siguiendo el formato JSON de metodología.`;
+
+    const completion = await client.chat.completions.create({
+      model: config.model,
+      messages: [
+        {
+          role: 'system',
+          content: `Eres un especialista en hipertrofia muscular. Generas planes de entrenamiento basados en principios científicos de volumen, intensidad y frecuencia óptima.
+
+RESPONDE SOLO EN JSON PURO, SIN MARKDOWN.
+
+El plan DEBE incluir:
+- semanas: array de semanas
+- cada semana tiene sesiones (días de entrenamiento)
+- cada sesión tiene ejercicios con: nombre, series, repeticiones, intensidad (% 1RM o RPE), descanso_seg, tempo, notas
+
+FORMATO EXACTO:
+{
+  "metodologia": "Hipertrofia",
+  "nivel": "${actualLevel}",
+  "duracion_semanas": 4,
+  "frecuencia_semanal": 4,
+  "tipo_split": "upper_lower",
+  "semanas": [
+    {
+      "numero": 1,
+      "sesiones": [
+        {
+          "dia": "Lunes",
+          "tipo": "Upper",
+          "grupos_musculares": ["Pecho", "Espalda", "Hombros"],
+          "ejercicios": [
+            {
+              "nombre": "Press banca plano",
+              "series": 4,
+              "repeticiones": "8-12",
+              "intensidad": "75% 1RM",
+              "descanso_seg": 90,
+              "tempo": "3-0-1-0",
+              "notas": "Enfoque en contracción del pecho"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}`
+        },
+        {
+          role: 'user',
+          content: userMessage
+        }
+      ],
+      temperature: 0.4,
+      max_tokens: 4000
+    });
+
+    const aiResponse = completion.choices[0].message.content;
+    logAIResponse(aiResponse);
+    logTokens(completion.usage);
+
+    // Parsear respuesta
+    let generatedPlan;
+    try {
+      generatedPlan = JSON.parse(parseAIResponse(aiResponse));
+    } catch (parseError) {
+      console.error('Error parseando plan:', parseError);
+      throw new Error('Plan generado con formato inválido');
+    }
+
+    // Validar estructura del plan
+    if (!generatedPlan.semanas || !Array.isArray(generatedPlan.semanas)) {
+      throw new Error('Plan sin semanas válidas');
+    }
+
+    // Guardar plan en BD
+    const client_db = await pool.connect();
+    try {
+      await client_db.query('BEGIN');
+
+      // Limpiar drafts anteriores
+      await cleanUserDrafts(userId, client_db);
+
+      // Insertar plan
+      const planResult = await client_db.query(`
+        INSERT INTO app.methodology_plans (
+          user_id, methodology_type, plan_data, generation_mode, status, created_at
+        )
+        VALUES ($1, $2, $3, $4, $5, NOW())
+        RETURNING id
+      `, [userId, 'Hipertrofia', JSON.stringify(generatedPlan), 'manual', 'draft']);
+
+      const methodologyPlanId = planResult.rows[0].id;
+
+      await client_db.query('COMMIT');
+
+      console.log(`✅ Plan Hipertrofia guardado con ID: ${methodologyPlanId}`);
+
+      res.json({
+        success: true,
+        plan: generatedPlan,
+        methodologyPlanId,
+        planId: methodologyPlanId,
+        metadata: {
+          model_used: config.model,
+          generation_timestamp: new Date().toISOString()
+        }
+      });
+
+    } catch (dbError) {
+      await client_db.query('ROLLBACK');
+      throw dbError;
+    } finally {
+      client_db.release();
+    }
+
+  } catch (error) {
+    console.error('Error generando plan de Hipertrofia:', error);
+    logError('HIPERTROFIA_SPECIALIST', error);
+
+    res.status(500).json({
+      success: false,
+      error: 'Error generando plan',
+      message: error.message
+    });
+  }
+});
+
+// =========================================
+// POWERLIFTING SPECIALIST (IA)
+// =========================================
+
+/**
+ * POST /api/routine-generation/specialist/powerlifting/evaluate
+ * Evaluación automática del perfil para powerlifting
+ */
+router.post('/specialist/powerlifting/evaluate', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+
+    logSeparator('POWERLIFTING PROFILE EVALUATION');
+    logAPICall('/specialist/powerlifting/evaluate', 'POST', userId);
+
+    const userProfile = await getUserFullProfile(userId);
+    const normalizedProfile = normalizeUserProfile(userProfile);
+
+    logUserProfile(normalizedProfile, userId);
+
+    // Llamar a IA con prompt especializado
+    const client = getModuleOpenAI(AI_MODULES.POWERLIFTING_SPECIALIST);
+    const config = AI_MODULES.POWERLIFTING_SPECIALIST;
+
+    const aiPayload = {
+      user_profile: normalizedProfile,
+      evaluation_type: 'powerlifting_level',
+      task: 'Determinar nivel de powerlifting (novato, intermedio, avanzado, elite) basado en experiencia, fuerza relativa y objetivos competitivos'
+    };
+
+    logAIPayload(aiPayload);
+
+    const completion = await client.chat.completions.create({
+      model: config.model,
+      messages: [
+        {
+          role: 'system',
+          content: `Eres un evaluador especializado en Powerlifting. Analiza el perfil del usuario y determina su nivel de powerlifting.
+
+RESPONDE SOLO EN JSON PURO, SIN MARKDOWN.
+
+Niveles válidos: novato, intermedio, avanzado, elite
+
+Criterios:
+- Novato: 0-6 meses, ratios fuerza 1.0-1.25x (squat), 0.6-0.75x (bench), 1.25-1.5x (deadlift)
+- Intermedio: 6m-2 años, ratios 1.5-2.0x, 1.0-1.25x, 1.75-2.25x
+- Avanzado: 2-5 años, ratios 2.0-2.5x, 1.25-1.5x, 2.25-2.75x
+- Elite: +5 años competitivo, ratios 2.5x+, 1.5x+, 2.75x+
+
+FORMATO EXACTO:
+{
+  "recommended_level": "novato|intermedio|avanzado|elite",
+  "confidence": 0.75,
+  "reasoning": "Explicación detallada",
+  "key_indicators": ["Factor 1", "Factor 2"],
+  "suggested_focus_areas": ["Sentadilla", "Press Banca", "Peso Muerto"],
+  "safety_considerations": ["Advertencia 1", "Advertencia 2"]
+}`
+        },
+        {
+          role: 'user',
+          content: JSON.stringify(aiPayload)
+        }
+      ],
+      temperature: 0.3,
+      max_tokens: 800
+    });
+
+    const aiResponse = completion.choices[0].message.content;
+    logAIResponse(aiResponse);
+    logTokens(completion.usage);
+
+    // Parsear respuesta
+    let evaluation;
+    try {
+      evaluation = JSON.parse(parseAIResponse(aiResponse));
+    } catch (parseError) {
+      console.error('Error parseando respuesta IA:', parseError);
+      throw new Error('Respuesta de IA inválida');
+    }
+
+    // Validar respuesta
+    const normalizedLevel = evaluation.recommended_level.toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+    res.json({
+      success: true,
+      evaluation: {
+        recommended_level: normalizedLevel,
+        confidence: evaluation.confidence,
+        reasoning: evaluation.reasoning,
+        key_indicators: evaluation.key_indicators || [],
+        suggested_focus_areas: evaluation.suggested_focus_areas || [],
+        safety_considerations: evaluation.safety_considerations || []
+      },
+      metadata: {
+        model_used: config.model,
+        evaluation_timestamp: new Date().toISOString()
+      }
+    });
+
+  } catch (error) {
+    console.error('Error en evaluación de Powerlifting:', error);
+    logError('POWERLIFTING_SPECIALIST', error);
+
+    res.status(500).json({
+      success: false,
+      error: 'Error evaluando perfil',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/routine-generation/specialist/powerlifting/generate
+ * Generación de plan especializado de Powerlifting con IA
+ */
+router.post('/specialist/powerlifting/generate', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+
+    // Extracción flexible de datos
+    const powerliftingData = req.body.powerliftingData || req.body;
+    const {
+      userProfile,
+      level,
+      selectedLevel,
+      goals,
+      selectedMuscleGroups,
+      previousPlan,
+      regenerationReason,
+      additionalInstructions,
+      versionConfig
+    } = powerliftingData;
+
+    // Mapear level → selectedLevel
+    const actualLevel = selectedLevel || level;
+
+    const isRegeneration = !!(previousPlan || regenerationReason || additionalInstructions);
+
+    logSeparator('POWERLIFTING PLAN GENERATION');
+    console.log('Generando plan de Powerlifting...', {
+      selectedLevel: actualLevel,
+      selectedMuscleGroups,
+      isRegeneration,
+      goals: goals?.substring(0, 50)
+    });
+
+    // Obtener perfil completo si solo se envió ID
+    let fullUserProfile = userProfile;
+    if (userProfile && Object.keys(userProfile).length === 1 && userProfile.id) {
+      fullUserProfile = await getUserFullProfile(userId);
+      fullUserProfile = normalizeUserProfile(fullUserProfile);
+    }
+
+    logUserProfile(fullUserProfile, userId);
+
+    // Validar que tenemos nivel
+    if (!actualLevel) {
+      return res.status(400).json({
+        success: false,
+        error: 'Nivel no especificado (level o selectedLevel requerido)'
+      });
+    }
+
+    // Mapear nivel - Normalizado después de estandarización de BD
+    const levelMapping = {
+      'novato': 'Principiante',       // Normalizado: Novato → Principiante
+      'principiante': 'Principiante', // Alias
+      'intermedio': 'Intermedio',
+      'avanzado': 'Avanzado',
+      'elite': 'Elite'
+    };
+    const dbLevel = levelMapping[actualLevel.toLowerCase()] || 'Principiante';
+
+    // Obtener ejercicios disponibles - Powerlifting tiene niveles progresivos
+    let levelCondition;
+    if (dbLevel === 'Elite') {
+      // Elite: Acceso a TODOS los ejercicios
+      levelCondition = "nivel IN ('Principiante', 'Intermedio', 'Avanzado', 'Elite')";
+    } else if (dbLevel === 'Avanzado') {
+      // Avanzado: Principiante + Intermedio + Avanzado
+      levelCondition = "nivel IN ('Principiante', 'Intermedio', 'Avanzado')";
+    } else if (dbLevel === 'Intermedio') {
+      // Intermedio: Principiante + Intermedio
+      levelCondition = "nivel IN ('Principiante', 'Intermedio')";
+    } else {
+      // Principiante: Solo ejercicios básicos
+      levelCondition = "nivel = 'Principiante'";
+    }
+
+    const exercisesResult = await pool.query(`
+      SELECT exercise_id, nombre, nivel, categoria, patron, equipamiento,
+             series_reps_objetivo, intensidad, descanso_seg, notas
+      FROM app."Ejercicios_Powerlifting"
+      WHERE ${levelCondition}
+      ORDER BY RANDOM()
+    `);
+
+    const availableExercises = exercisesResult.rows;
+
+    if (availableExercises.length === 0) {
+      throw new Error(`No hay ejercicios disponibles para el nivel ${dbLevel}`);
+    }
+
+    console.log(`✅ Ejercicios Powerlifting cargados: ${availableExercises.length} para nivel ${dbLevel}`);
+
+    // Llamar a IA con prompt especializado
+    const client = getModuleOpenAI(AI_MODULES.POWERLIFTING_SPECIALIST);
+    const config = AI_MODULES.POWERLIFTING_SPECIALIST;
+
+    // Construir mensaje para IA
+    const userMessage = `GENERACIÓN DE PLAN POWERLIFTING
+
+NIVEL: ${actualLevel}
+LEVANTAMIENTOS PRIORITARIOS: ${selectedMuscleGroups?.join(', ') || 'Sentadilla, Press Banca, Peso Muerto'}
+OBJETIVOS: ${goals || 'Maximizar fuerza en los 3 levantamientos'}
+
+EJERCICIOS DISPONIBLES (${availableExercises.length}):
+${availableExercises.map(ex =>
+  `- ${ex.nombre} (${ex.categoria}) - Nivel: ${ex.nivel}, Equipamiento: ${ex.equipamiento}, Intensidad: ${ex.intensidad}`
+).join('\n')}
+
+DURACIÓN: ${versionConfig?.customWeeks || 4} semanas
+
+PRINCIPIOS POWERLIFTING OBLIGATORIOS:
+1. Fuerza máxima: 75-95% 1RM en levantamientos principales
+2. Bajo volumen: 3-8 series por ejercicio principal
+3. Descansos largos: 3-7 minutos entre series pesadas
+4. Especificidad: Sentadilla, Press Banca y Peso Muerto son prioritarios
+5. Periodización: ${actualLevel === 'novato' ? 'Linear' : actualLevel === 'intermedio' ? 'Ondulante' : actualLevel === 'avanzado' ? 'Bloques' : 'Conjugate'}
+
+GENERA un plan completo siguiendo el formato JSON de metodología.`;
+
+    const completion = await client.chat.completions.create({
+      model: config.model,
+      messages: [
+        {
+          role: 'system',
+          content: `Eres un especialista en Powerlifting. Generas planes de entrenamiento para maximizar fuerza en Sentadilla, Press Banca y Peso Muerto.
+
+RESPONDE SOLO EN JSON PURO, SIN MARKDOWN.
+
+El plan DEBE incluir:
+- semanas: array de semanas
+- cada semana tiene sesiones (días de entrenamiento)
+- cada sesión tiene ejercicios con: nombre, series (3-10), repeticiones (1-10), intensidad (% 1RM), descanso_seg (180-420), tempo, notas
+
+FORMATO EXACTO:
+{
+  "metodologia": "Powerlifting",
+  "nivel_powerlifting": "${actualLevel}",
+  "periodizacion_tipo": "${actualLevel === 'novato' ? 'linear' : actualLevel === 'intermedio' ? 'ondulante' : actualLevel === 'avanzado' ? 'bloques' : 'conjugate'}",
+  "objetivos_fuerza": {
+    "sentadilla_objetivo_kg": <número>,
+    "press_banca_objetivo_kg": <número>,
+    "peso_muerto_objetivo_kg": <número>
+  },
+  "semanas": [
+    {
+      "semana": 1,
+      "fase": "Adaptación|Acumulación|Intensificación",
+      "sesiones": [
+        {
+          "dia": "Lunes",
+          "enfoque_principal": "Sentadilla|Press Banca|Peso Muerto",
+          "ejercicios": [
+            {
+              "nombre": "<nombre exacto de BD>",
+              "tipo": "principal|variante|asistencia",
+              "series": <número>,
+              "repeticiones": "<rango>",
+              "intensidad": "<%% 1RM>",
+              "descanso_seg": <180-420>,
+              "tempo": "X-0-X-0",
+              "notas": "<cues técnicos>"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}`
+        },
+        {
+          role: 'user',
+          content: userMessage
+        }
+      ],
+      temperature: 0.4,
+      max_tokens: 4000
+    });
+
+    const aiResponse = completion.choices[0].message.content;
+    logAIResponse(aiResponse);
+    logTokens(completion.usage);
+
+    // Parsear respuesta
+    let generatedPlan;
+    try {
+      generatedPlan = JSON.parse(parseAIResponse(aiResponse));
+    } catch (parseError) {
+      console.error('Error parseando plan:', parseError);
+      throw new Error('Plan generado con formato inválido');
+    }
+
+    // Validar estructura del plan
+    if (!generatedPlan.semanas || !Array.isArray(generatedPlan.semanas)) {
+      throw new Error('Plan sin semanas válidas');
+    }
+
+    // Guardar plan en BD
+    const client_db = await pool.connect();
+    try {
+      await client_db.query('BEGIN');
+
+      // Limpiar drafts anteriores
+      await cleanUserDrafts(userId, client_db);
+
+      // Insertar plan
+      const planResult = await client_db.query(`
+        INSERT INTO app.methodology_plans (
+          user_id, methodology_type, plan_data, generation_mode, status, created_at
+        )
+        VALUES ($1, $2, $3, $4, $5, NOW())
+        RETURNING id
+      `, [userId, 'Powerlifting', JSON.stringify(generatedPlan), 'manual', 'draft']);
+
+      const methodologyPlanId = planResult.rows[0].id;
+
+      await client_db.query('COMMIT');
+
+      console.log(`✅ Plan Powerlifting guardado con ID: ${methodologyPlanId}`);
+
+      res.json({
+        success: true,
+        plan: generatedPlan,
+        methodologyPlanId,
+        planId: methodologyPlanId,
+        metadata: {
+          model_used: config.model,
+          generation_timestamp: new Date().toISOString()
+        }
+      });
+
+    } catch (dbError) {
+      await client_db.query('ROLLBACK');
+      throw dbError;
+    } finally {
+      client_db.release();
+    }
+
+  } catch (error) {
+    console.error('Error generando plan de Powerlifting:', error);
+    logError('POWERLIFTING_SPECIALIST', error);
+
+    res.status(500).json({
+      success: false,
+      error: 'Error generando plan',
+      message: error.message
+    });
+  }
+});
+
+// =========================================
+// CROSSFIT SPECIALIST (IA)
+// =========================================
+
+/**
+ * POST /api/routine-generation/specialist/crossfit/evaluate
+ * Evaluación automática del perfil para CrossFit
+ */
+router.post('/specialist/crossfit/evaluate', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+
+    logSeparator('CROSSFIT PROFILE EVALUATION');
+    logAPICall('/specialist/crossfit/evaluate', 'POST', userId);
+
+    const userProfile = await getUserFullProfile(userId);
+    const normalizedProfile = normalizeUserProfile(userProfile);
+
+    logUserProfile(normalizedProfile, userId);
+
+    // Llamar a IA con prompt especializado
+    const client = getModuleOpenAI(AI_MODULES.CROSSFIT_SPECIALIST);
+    const config = AI_MODULES.CROSSFIT_SPECIALIST;
+
+    const aiPayload = {
+      user_profile: normalizedProfile,
+      evaluation_type: 'crossfit_level',
+      task: 'Determinar nivel de CrossFit (principiante/intermedio/avanzado/elite) basado en las 10 habilidades físicas generales y experiencia en los 3 dominios metabólicos'
+    };
+
+    logAIPayload(aiPayload);
+
+    const completion = await client.chat.completions.create({
+      model: config.model,
+      messages: [
+        {
+          role: 'system',
+          content: `Eres un evaluador especializado en CrossFit Level-2. Analiza el perfil del usuario y determina su nivel de CrossFit.
+
+RESPONDE SOLO EN JSON PURO, SIN MARKDOWN.
+
+Niveles válidos: principiante, intermedio, avanzado, elite
+
+Criterios basados en las 10 habilidades físicas y experiencia:
+- Principiante (Scaled): 0-12 meses de CrossFit, aprendiendo movimientos base, necesita scaling
+- Intermedio (RX): 1-3 años, completa WODs RX, pull-ups, double-unders, cargas estándar (95/65 thrusters)
+- Avanzado (RX+): 3-5 años, muscle-ups, HSPUs, cargas pesadas, tiempos competitivos
+- Elite: 5+ años competitivo, Open/Quarterfinals, domina movimientos avanzados, levantamientos élite
+
+FORMATO EXACTO:
+{
+  "recommended_level": "principiante|intermedio|avanzado|elite",
+  "confidence": 0.75,
+  "reasoning": "Explicación detallada basada en las 10 habilidades",
+  "key_indicators": ["Factor 1", "Factor 2"],
+  "suggested_focus_areas": ["Gymnastic", "Weightlifting", "Monostructural"],
+  "safety_considerations": ["Advertencia 1", "Advertencia 2"],
+  "benchmark_targets": {
+    "fran": "Sub-8 min",
+    "helen": "Sub-12 min",
+    "back_squat": "1.5x BW"
+  }
+}`
+        },
+        {
+          role: 'user',
+          content: JSON.stringify(aiPayload)
+        }
+      ],
+      temperature: 0.3,
+      max_tokens: 800
+    });
+
+    const aiResponse = completion.choices[0].message.content;
+    logAIResponse(aiResponse);
+    logTokens(completion.usage);
+
+    // Parsear respuesta
+    let evaluation;
+    try {
+      evaluation = JSON.parse(parseAIResponse(aiResponse));
+    } catch (parseError) {
+      console.error('Error parseando respuesta IA:', parseError);
+      throw new Error('Respuesta de IA inválida');
+    }
+
+    // Validar respuesta
+    const normalizedLevel = evaluation.recommended_level.toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+    res.json({
+      success: true,
+      evaluation: {
+        recommended_level: normalizedLevel,
+        confidence: evaluation.confidence,
+        reasoning: evaluation.reasoning,
+        key_indicators: evaluation.key_indicators || [],
+        suggested_focus_areas: evaluation.suggested_focus_areas || [],
+        safety_considerations: evaluation.safety_considerations || [],
+        benchmark_targets: evaluation.benchmark_targets || {}
+      },
+      metadata: {
+        model_used: config.model,
+        evaluation_timestamp: new Date().toISOString()
+      }
+    });
+
+  } catch (error) {
+    console.error('Error en evaluación de CrossFit:', error);
+    logError('CROSSFIT_SPECIALIST', error);
+
+    res.status(500).json({
+      success: false,
+      error: 'Error evaluando perfil',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/routine-generation/specialist/crossfit/generate
+ * Generación de plan especializado de CrossFit con IA
+ */
+router.post('/specialist/crossfit/generate', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+
+    // Extracción flexible de datos
+    const crossfitData = req.body.crossfitData || req.body;
+    const {
+      userProfile,
+      level,
+      selectedLevel,
+      goals,
+      selectedDomains,  // CrossFit usa dominios en lugar de muscle groups
+      previousPlan,
+      regenerationReason,
+      additionalInstructions,
+      versionConfig
+    } = crossfitData;
+
+    // Mapear level → selectedLevel
+    const actualLevel = selectedLevel || level;
+
+    const isRegeneration = !!(previousPlan || regenerationReason || additionalInstructions);
+
+    logSeparator('CROSSFIT PLAN GENERATION');
+    console.log('Generando plan de CrossFit...', {
+      selectedLevel: actualLevel,
+      selectedDomains,
+      isRegeneration,
+      goals: goals?.substring(0, 50)
+    });
+
+    // Obtener perfil completo si solo se envió ID
+    let fullUserProfile = userProfile;
+    if (userProfile && Object.keys(userProfile).length === 1 && userProfile.id) {
+      fullUserProfile = await getUserFullProfile(userId);
+      fullUserProfile = normalizeUserProfile(fullUserProfile);
+    }
+
+    logUserProfile(fullUserProfile, userId);
+
+    // Validar que tenemos nivel
+    if (!actualLevel) {
+      return res.status(400).json({
+        success: false,
+        error: 'Nivel no especificado (level o selectedLevel requerido)'
+      });
+    }
+
+    // Mapear nivel - Normalizado con nomenclatura CrossFit
+    const levelMapping = {
+      'principiante': 'Principiante',  // Scaled
+      'scaled': 'Principiante',        // Alias CrossFit
+      'intermedio': 'Intermedio',      // RX
+      'rx': 'Intermedio',              // Alias CrossFit
+      'avanzado': 'Avanzado',          // RX+
+      'rx+': 'Avanzado',               // Alias CrossFit
+      'elite': 'Elite'
+    };
+    const dbLevel = levelMapping[actualLevel.toLowerCase()] || 'Principiante';
+
+    // Obtener ejercicios disponibles - CrossFit tiene niveles progresivos
+    let levelCondition;
+    if (dbLevel === 'Elite') {
+      // Elite: Acceso a TODOS los ejercicios (~120)
+      levelCondition = "nivel IN ('Principiante', 'Intermedio', 'Avanzado', 'Elite')";
+    } else if (dbLevel === 'Avanzado') {
+      // Avanzado (RX+): Principiante + Intermedio + Avanzado
+      levelCondition = "nivel IN ('Principiante', 'Intermedio', 'Avanzado')";
+    } else if (dbLevel === 'Intermedio') {
+      // Intermedio (RX): Principiante + Intermedio
+      levelCondition = "nivel IN ('Principiante', 'Intermedio')";
+    } else {
+      // Principiante (Scaled): Solo ejercicios básicos
+      levelCondition = "nivel = 'Principiante'";
+    }
+
+    const exercisesResult = await pool.query(`
+      SELECT exercise_id, nombre, nivel, dominio, categoria, equipamiento,
+             tipo_wod, intensidad, duracion_seg, descanso_seg, escalamiento, notas
+      FROM app."Ejercicios_CrossFit"
+      WHERE ${levelCondition}
+      ORDER BY RANDOM()
+    `);
+
+    const availableExercises = exercisesResult.rows;
+
+    if (availableExercises.length === 0) {
+      throw new Error(`No hay ejercicios disponibles para el nivel ${dbLevel}`);
+    }
+
+    console.log(`✅ Ejercicios CrossFit cargados: ${availableExercises.length} para nivel ${dbLevel}`);
+
+    // Llamar a IA con prompt especializado
+    const client = getModuleOpenAI(AI_MODULES.CROSSFIT_SPECIALIST);
+    const config = AI_MODULES.CROSSFIT_SPECIALIST;
+
+    // Construir mensaje para IA
+    const userMessage = `GENERACIÓN DE PLAN CROSSFIT
+
+NIVEL: ${actualLevel} (${dbLevel === 'Principiante' ? 'Scaled' : dbLevel === 'Intermedio' ? 'RX' : dbLevel === 'Avanzado' ? 'RX+' : 'Elite'})
+DOMINIOS PRIORITARIOS: ${selectedDomains?.join(', ') || 'Gymnastic, Weightlifting, Monostructural'}
+OBJETIVOS: ${goals || 'Desarrollar GPP (General Physical Preparedness)'}
+
+EJERCICIOS DISPONIBLES (${availableExercises.length}):
+${availableExercises.map(ex =>
+  `- ${ex.nombre} (${ex.dominio}/${ex.categoria}) - Nivel: ${ex.nivel}, WOD: ${ex.tipo_wod}, Equipamiento: ${ex.equipamiento}, Intensidad: ${ex.intensidad}`
+).join('\n')}
+
+DURACIÓN: ${versionConfig?.customWeeks || 12} semanas
+
+PRINCIPIOS CROSSFIT OBLIGATORIOS:
+1. Variedad constante: WODs constantemente variados (AMRAP, EMOM, For Time, Tabata, Chipper, Strength)
+2. Alta intensidad: Mantener intensidad > 75% capacidad máxima
+3. Movimientos funcionales: Multiarticulares, replican patrones naturales
+4. Balance de dominios: G/W/M equilibrados semanalmente (Gymnastic, Weightlifting, Monostructural)
+5. Scalability: Cada WOD debe incluir scaling options
+6. Benchmarks: Incluir WODs benchmark (Fran, Helen, Cindy, Murph, etc.) cada 4 semanas
+7. Descansos: ${actualLevel === 'principiante' ? '60-90s' : actualLevel === 'intermedio' ? '30-60s' : '30s o menos'} según capacidad metabólica
+
+GENERA un plan completo siguiendo el formato JSON de metodología.`;
+
+    const completion = await client.chat.completions.create({
+      model: config.model,
+      messages: [
+        {
+          role: 'system',
+          content: `Eres un CrossFit Level-2 Trainer certificado. Generas planes de entrenamiento (WODs) basados en la metodología CrossFit oficial: variedad constante, movimientos funcionales, alta intensidad.
+
+RESPONDE SOLO EN JSON PURO, SIN MARKDOWN.
+
+El plan DEBE incluir:
+- calendario: array de semanas con días de entrenamiento
+- cada día tiene un WOD con tipo (AMRAP, EMOM, For Time, Tabata, Chipper, Strength)
+- cada ejercicio tiene: nombre, reps/tiempo, carga, scaling options
+- balance de dominios G/W/M
+- benchmarks cada 4 semanas
+
+FORMATO EXACTO:
+{
+  "metodologia": "CrossFit",
+  "nivel_crossfit": "${actualLevel}",
+  "duracion_semanas": 12,
+  "frecuencia_semanal": ${actualLevel === 'principiante' ? 3 : actualLevel === 'intermedio' ? 4 : actualLevel === 'avanzado' ? 5 : 6},
+  "filosofia": "Constantly varied functional movements at high intensity",
+  "calendario": [
+    {
+      "semana": 1,
+      "fase": "Base|Build|Peak",
+      "dias": [
+        {
+          "dia": "Lunes",
+          "enfoque": "Gymnastic Heavy|Weightlifting Focus|Mixed Modal",
+          "wod": {
+            "tipo": "AMRAP|EMOM|For Time|Tabata|Chipper|Strength",
+            "duracion": "12 min",
+            "descripcion": "AMRAP 12 min:\\n- 5 Pull-Ups\\n- 10 Push-Ups\\n- 15 Air Squats",
+            "objetivo_rounds": "8-10 rounds RX",
+            "scaling": {
+              "scaled": "Band Pull-Ups, Box Push-Ups, Air Squats",
+              "rx": "Kipping Pull-Ups, Push-Ups, Air Squats",
+              "rx_plus": "Chest-to-Bar, Deficit HSPU, Pistol Squats"
+            },
+            "estrategia": "Pace sostenible, breaks estratégicos en pull-ups",
+            "movimientos": [
+              {
+                "nombre": "<nombre exacto de BD>",
+                "trabajo": "5 reps|15 cal|400m",
+                "carga": "20/14 lbs|95/65 lbs|BW",
+                "notas": "Mantener técnica bajo fatiga"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "benchmarks": [
+    {
+      "semana": 4,
+      "nombre": "Fran",
+      "descripcion": "21-15-9 Thrusters (95/65) + Pull-Ups",
+      "objetivo_tiempo": "Sub-8 min ${actualLevel}"
+    }
+  ]
+}`
+        },
+        {
+          role: 'user',
+          content: userMessage
+        }
+      ],
+      temperature: 0.9,  // Alta variedad para WODs constantemente variados
+      max_tokens: 6000
+    });
+
+    const aiResponse = completion.choices[0].message.content;
+    logAIResponse(aiResponse);
+    logTokens(completion.usage);
+
+    // Parsear respuesta
+    let generatedPlan;
+    try {
+      generatedPlan = JSON.parse(parseAIResponse(aiResponse));
+    } catch (parseError) {
+      console.error('Error parseando plan:', parseError);
+      throw new Error('Plan generado con formato inválido');
+    }
+
+    // Validar estructura del plan
+    if (!generatedPlan.calendario || !Array.isArray(generatedPlan.calendario)) {
+      throw new Error('Plan sin calendario válido');
+    }
+
+    // Guardar plan en BD
+    const client_db = await pool.connect();
+    try {
+      await client_db.query('BEGIN');
+
+      // Limpiar drafts anteriores
+      await cleanUserDrafts(userId, client_db);
+
+      // Insertar plan
+      const planResult = await client_db.query(`
+        INSERT INTO app.methodology_plans (
+          user_id, methodology_type, plan_data, generation_mode, status, created_at
+        )
+        VALUES ($1, $2, $3, $4, $5, NOW())
+        RETURNING id
+      `, [userId, 'CrossFit', JSON.stringify(generatedPlan), 'manual', 'draft']);
+
+      const methodologyPlanId = planResult.rows[0].id;
+
+      await client_db.query('COMMIT');
+
+      console.log(`✅ Plan CrossFit guardado con ID: ${methodologyPlanId}`);
+
+      res.json({
+        success: true,
+        plan: generatedPlan,
+        methodologyPlanId,
+        planId: methodologyPlanId,
+        metadata: {
+          model_used: config.model,
+          generation_timestamp: new Date().toISOString()
+        }
+      });
+
+    } catch (dbError) {
+      await client_db.query('ROLLBACK');
+      throw dbError;
+    } finally {
+      client_db.release();
+    }
+
+  } catch (error) {
+    console.error('Error generando plan de CrossFit:', error);
+    logError('CROSSFIT_SPECIALIST', error);
+
+    res.status(500).json({
+      success: false,
+      error: 'Error generando plan',
+      message: error.message
+    });
+  }
+});
+
+// =========================================
+// FUNCIONAL SPECIALIST ENDPOINTS
+// =========================================
+
+/**
+ * POST /api/routine-generation/specialist/funcional/evaluate
+ * Evaluación automática del perfil para Entrenamiento Funcional
+ */
+router.post('/specialist/funcional/evaluate', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    const { source } = req.body;
+
+    logSeparator('FUNCIONAL EVALUATE');
+    console.log(`🎯 Evaluando usuario ${userId} para Entrenamiento Funcional (source: ${source})`);
+
+    // Obtener perfil completo
+    const userProfile = await getUserFullProfile(userId);
+    const normalizedProfile = normalizeUserProfile(userProfile);
+
+    logUserProfile(normalizedProfile, userId);
+
+    // Llamar a IA con prompt especializado
+    const client = getModuleOpenAI(AI_MODULES.FUNCIONAL_SPECIALIST);
+    const config = AI_MODULES.FUNCIONAL_SPECIALIST;
+    const systemPrompt = await getPrompt(FeatureKey.FUNCIONAL_SPECIALIST);
+
+    const userMessage = `EVALUACIÓN DE USUARIO PARA ENTRENAMIENTO FUNCIONAL
+
+PERFIL:
+- Años entrenando: ${normalizedProfile.años_entrenando || 0}
+- Nivel: ${normalizedProfile.nivel_entrenamiento || 'principiante'}
+- Objetivo: ${normalizedProfile.objetivo_principal || 'general'}
+- Limitaciones: ${normalizedProfile.limitaciones_fisicas || 'ninguna'}
+
+EVALÚA el nivel apropiado (principiante/intermedio/avanzado) para entrenamiento funcional basándote en:
+1. Capacidad en patrones básicos (squat, hinge, push, pull)
+2. Experiencia con movimientos multiarticulares
+3. Movilidad y estabilidad general
+4. Capacidad de control motor
+
+RESPONDE SOLO EN JSON PURO:
+{
+  "recommended_level": "principiante|intermedio|avanzado",
+  "confidence": 0.0-1.0,
+  "reasoning": "Explicación",
+  "key_indicators": ["factor1", "factor2"],
+  "suggested_focus_areas": ["área1", "área2"],
+  "safety_considerations": ["consideración1"]
+}`;
+
+    const completion = await client.chat.completions.create({
+      model: config.model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage }
+      ],
+      temperature: config.temperature,
+      max_tokens: 1000,
+      response_format: { type: 'json_object' }
+    });
+
+    const evaluation = parseAIResponse(completion.choices[0].message.content);
+
+    console.log(`✅ Evaluación Funcional completada:`, {
+      level: evaluation.recommended_level,
+      confidence: evaluation.confidence
+    });
+
+    res.json({
+      success: true,
+      evaluation
+    });
+
+  } catch (error) {
+    console.error('❌ Error en evaluación Funcional:', error);
+    logError('FUNCIONAL_EVALUATE', error);
+
+    res.status(500).json({
+      success: false,
+      error: 'Error en evaluación',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/routine-generation/specialist/funcional/generate
+ * Generación de plan especializado de Entrenamiento Funcional con IA
+ */
+router.post('/specialist/funcional/generate', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+
+    // Extracción flexible de datos
+    const funcionalData = req.body.funcionalData || req.body;
+    const {
+      userProfile,
+      level,
+      selectedLevel,
+      goals,
+      selectedMuscleGroups,
+      previousPlan,
+      regenerationReason,
+      additionalInstructions,
+      versionConfig
+    } = funcionalData;
+
+    // Mapear level → selectedLevel
+    const actualLevel = selectedLevel || level;
+
+    const isRegeneration = !!(previousPlan || regenerationReason || additionalInstructions);
+
+    logSeparator('FUNCIONAL PLAN GENERATION');
+    console.log('Generando plan de Entrenamiento Funcional...', {
+      selectedLevel: actualLevel,
+      selectedMuscleGroups,
+      isRegeneration,
+      goals: goals?.substring(0, 50)
+    });
+
+    // Obtener perfil completo si solo se envió ID
+    let fullUserProfile = userProfile;
+    if (userProfile && Object.keys(userProfile).length === 1 && userProfile.id) {
+      fullUserProfile = await getUserFullProfile(userId);
+      fullUserProfile = normalizeUserProfile(fullUserProfile);
+    }
+
+    logUserProfile(fullUserProfile, userId);
+
+    // Validar que tenemos nivel
+    if (!actualLevel) {
+      return res.status(400).json({
+        success: false,
+        error: 'Nivel no especificado (level o selectedLevel requerido)'
+      });
+    }
+
+    // Mapear nivel - Normalizado
+    const levelMapping = {
+      'principiante': 'Principiante',
+      'intermedio': 'Intermedio',
+      'avanzado': 'Avanzado'
+    };
+    const dbLevel = levelMapping[actualLevel.toLowerCase()] || 'Principiante';
+
+    // Obtener ejercicios disponibles - Funcional tiene niveles progresivos
+    let levelCondition;
+    if (dbLevel === 'Avanzado') {
+      // Avanzado: Acceso a TODOS los ejercicios
+      levelCondition = "nivel IN ('Principiante', 'Intermedio', 'Avanzado')";
+    } else if (dbLevel === 'Intermedio') {
+      // Intermedio: Principiante + Intermedio
+      levelCondition = "nivel IN ('Principiante', 'Intermedio')";
+    } else {
+      // Principiante: Solo ejercicios básicos
+      levelCondition = "nivel = 'Principiante'";
+    }
+
+    const exercisesResult = await pool.query(`
+      SELECT exercise_id, nombre, nivel, categoria, patron, equipamiento,
+             series_reps_objetivo, descanso_seg, tempo, notas, progresion_hacia
+      FROM app."Ejercicios_Funcional"
+      WHERE ${levelCondition}
+      ORDER BY RANDOM()
+    `);
+
+    const availableExercises = exercisesResult.rows;
+
+    if (availableExercises.length === 0) {
+      throw new Error(`No hay ejercicios disponibles para el nivel ${dbLevel}`);
+    }
+
+    console.log(`✅ Ejercicios Funcionales cargados: ${availableExercises.length} para nivel ${dbLevel}`);
+
+    // Llamar a IA con prompt especializado
+    const client = getModuleOpenAI(AI_MODULES.FUNCIONAL_SPECIALIST);
+    const config = AI_MODULES.FUNCIONAL_SPECIALIST;
+    const systemPrompt = await getPrompt(FeatureKey.FUNCIONAL_SPECIALIST);
+
+    // Construir mensaje para IA
+    const userMessage = `GENERACIÓN DE PLAN ENTRENAMIENTO FUNCIONAL
+
+NIVEL: ${actualLevel} (${dbLevel})
+GRUPOS MUSCULARES PRIORITARIOS: ${selectedMuscleGroups?.join(', ') || 'Empuje, Tracción, Piernas, Core'}
+OBJETIVOS: ${goals || 'Desarrollar fuerza funcional y movilidad'}
+
+EJERCICIOS DISPONIBLES (${availableExercises.length}):
+${availableExercises.map(ex =>
+  `- ${ex.nombre} (${ex.patron}/${ex.categoria}) - Nivel: ${ex.nivel}, Series/Reps: ${ex.series_reps_objetivo}, Equipamiento: ${Array.isArray(ex.equipamiento) ? ex.equipamiento.join(', ') : ex.equipamiento}, Tempo: ${ex.tempo || 'Controlado'}`
+).join('\n')}
+
+DURACIÓN: ${versionConfig?.customWeeks || 4} semanas
+
+PRINCIPIOS FUNCIONALES OBLIGATORIOS:
+1. Patrones de movimiento: Squat, Hinge, Push, Pull, Rotation, Anti-rotation, Locomotion, Carry
+2. Multiarticular: Integración de múltiples grupos musculares
+3. Transferencia real: Aplicación a vida diaria
+4. Movilidad y estabilidad: Core activo en todos los ejercicios
+5. Progresión gradual: De bilateral a unilateral, de estable a inestable
+6. Descansos: ${actualLevel === 'principiante' ? '60-75s' : actualLevel === 'intermedio' ? '45-60s' : '45s'} según nivel
+7. Calentamiento específico: Movilidad articular + activación de patrones
+
+GENERA un plan completo siguiendo el formato JSON de metodología.`;
+
+    const completion = await client.chat.completions.create({
+      model: config.model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage }
+      ],
+      temperature: config.temperature,
+      max_tokens: config.max_output_tokens,
+      response_format: { type: 'json_object' }
+    });
+
+    const generatedPlan = parseAIResponse(completion.choices[0].message.content);
+
+    console.log(`✅ Plan Funcional generado por IA`);
+
+    // Validar estructura del plan
+    if (!generatedPlan.semanas || !Array.isArray(generatedPlan.semanas)) {
+      throw new Error('Plan generado no tiene estructura válida (falta semanas)');
+    }
+
+    // Guardar en BD con transacción
+    const client_db = await pool.connect();
+
+    try {
+      await client_db.query('BEGIN');
+
+      // Limpiar drafts previos
+      await cleanUserDrafts(userId, client_db);
+
+      // Insertar plan
+      const planResult = await client_db.query(`
+        INSERT INTO app.methodology_plans (
+          user_id, methodology_type, plan_data, generation_mode, status, created_at
+        )
+        VALUES ($1, $2, $3, $4, $5, NOW())
+        RETURNING id
+      `, [userId, 'Funcional', JSON.stringify(generatedPlan), 'manual', 'draft']);
+
+      const methodologyPlanId = planResult.rows[0].id;
+
+      await client_db.query('COMMIT');
+
+      console.log(`✅ Plan Funcional guardado con ID: ${methodologyPlanId}`);
+
+      res.json({
+        success: true,
+        plan: generatedPlan,
+        methodologyPlanId,
+        planId: methodologyPlanId,
+        metadata: {
+          model_used: config.model,
+          generation_timestamp: new Date().toISOString()
+        }
+      });
+
+    } catch (dbError) {
+      await client_db.query('ROLLBACK');
+      throw dbError;
+    } finally {
+      client_db.release();
+    }
+
+  } catch (error) {
+    console.error('Error generando plan de Entrenamiento Funcional:', error);
+    logError('FUNCIONAL_SPECIALIST', error);
+
+    res.status(500).json({
+      success: false,
+      error: 'Error generando plan',
+      message: error.message
+    });
+  }
+});
+
+// =========================================
+// HALTEROFILIA SPECIALIST ENDPOINTS
+// =========================================
+
+/**
+ * POST /api/routine-generation/specialist/halterofilia/evaluate
+ * Evaluación automática del perfil para Halterofilia (Olympic Weightlifting)
+ */
+router.post('/specialist/halterofilia/evaluate', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    const { source } = req.body;
+
+    logSeparator('HALTEROFILIA EVALUATE');
+    console.log(`🎯 Evaluando usuario ${userId} para Halterofilia (source: ${source})`);
+
+    // Obtener perfil completo
+    const userProfile = await getUserFullProfile(userId);
+    const normalizedProfile = normalizeUserProfile(userProfile);
+
+    logUserProfile(normalizedProfile, userId);
+
+    // Llamar a IA con prompt especializado
+    const client = getModuleOpenAI(AI_MODULES.HALTEROFILIA_SPECIALIST);
+    const config = AI_MODULES.HALTEROFILIA_SPECIALIST;
+    const systemPrompt = await getPrompt(FeatureKey.HALTEROFILIA_SPECIALIST);
+
+    const userMessage = `EVALUACIÓN DE USUARIO PARA HALTEROFILIA (OLYMPIC WEIGHTLIFTING)
+
+PERFIL:
+- Años entrenando: ${normalizedProfile.años_entrenando || 0}
+- Nivel: ${normalizedProfile.nivel_entrenamiento || 'principiante'}
+- Objetivo: ${normalizedProfile.objetivo_principal || 'general'}
+- Limitaciones: ${normalizedProfile.limitaciones_fisicas || 'ninguna'}
+
+EVALÚA el nivel apropiado (principiante/intermedio/avanzado) para halterofilia basándote en:
+1. Técnica de snatch (hang, power, full)
+2. Técnica de clean & jerk
+3. Movilidad overhead (overhead squat profundo)
+4. Fuerza base (squats, pulls)
+5. Experiencia con levantamientos explosivos
+
+RESPONDE SOLO EN JSON PURO:
+{
+  "recommended_level": "principiante|intermedio|avanzado",
+  "confidence": 0.0-1.0,
+  "reasoning": "Explicación",
+  "key_indicators": ["factor1", "factor2"],
+  "suggested_focus_areas": ["área1", "área2"],
+  "safety_considerations": ["consideración1"]
+}`;
+
+    const completion = await client.chat.completions.create({
+      model: config.model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage }
+      ],
+      temperature: config.temperature,
+      max_tokens: 1000,
+      response_format: { type: 'json_object' }
+    });
+
+    const evaluation = parseAIResponse(completion.choices[0].message.content);
+
+    console.log(`✅ Evaluación Halterofilia completada:`, {
+      level: evaluation.recommended_level,
+      confidence: evaluation.confidence
+    });
+
+    res.json({
+      success: true,
+      evaluation
+    });
+
+  } catch (error) {
+    console.error('❌ Error en evaluación Halterofilia:', error);
+    logError('HALTEROFILIA_EVALUATE', error);
+
+    res.status(500).json({
+      success: false,
+      error: 'Error en evaluación',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/routine-generation/specialist/halterofilia/generate
+ * Generación de plan especializado de Halterofilia con IA
+ */
+router.post('/specialist/halterofilia/generate', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+
+    // Extracción flexible de datos
+    const halterofíliaData = req.body.halterofíliaData || req.body;
+    const {
+      userProfile,
+      level,
+      selectedLevel,
+      goals,
+      selectedMuscleGroups,
+      previousPlan,
+      regenerationReason,
+      additionalInstructions,
+      versionConfig
+    } = halterofíliaData;
+
+    // Mapear level → selectedLevel
+    const actualLevel = selectedLevel || level;
+
+    const isRegeneration = !!(previousPlan || regenerationReason || additionalInstructions);
+
+    logSeparator('HALTEROFILIA PLAN GENERATION');
+    console.log('Generando plan de Halterofilia...', {
+      selectedLevel: actualLevel,
+      selectedMuscleGroups,
+      isRegeneration,
+      goals: goals?.substring(0, 50)
+    });
+
+    // Obtener perfil completo si solo se envió ID
+    let fullUserProfile = userProfile;
+    if (userProfile && Object.keys(userProfile).length === 1 && userProfile.id) {
+      fullUserProfile = await getUserFullProfile(userId);
+      fullUserProfile = normalizeUserProfile(fullUserProfile);
+    }
+
+    logUserProfile(fullUserProfile, userId);
+
+    // Validar que tenemos nivel
+    if (!actualLevel) {
+      return res.status(400).json({
+        success: false,
+        error: 'Nivel no especificado (level o selectedLevel requerido)'
+      });
+    }
+
+    // Mapear nivel - Normalizado
+    const levelMapping = {
+      'principiante': 'Principiante',
+      'intermedio': 'Intermedio',
+      'avanzado': 'Avanzado'
+    };
+    const dbLevel = levelMapping[actualLevel.toLowerCase()] || 'Principiante';
+
+    // Obtener ejercicios disponibles - Halterofilia tiene progresión técnica
+    let levelCondition;
+    if (dbLevel === 'Avanzado') {
+      // Avanzado: Acceso a TODOS los ejercicios (full lifts, complejos, etc.)
+      levelCondition = "nivel IN ('Principiante', 'Intermedio', 'Avanzado')";
+    } else if (dbLevel === 'Intermedio') {
+      // Intermedio: Principiante + Intermedio (power lifts, hang work)
+      levelCondition = "nivel IN ('Principiante', 'Intermedio')";
+    } else {
+      // Principiante: Solo ejercicios básicos (hang, muscle, técnica)
+      levelCondition = "nivel = 'Principiante'";
+    }
+
+    const exercisesResult = await pool.query(`
+      SELECT exercise_id, nombre, nivel, categoria, patron, equipamiento,
+             series_reps_objetivo, descanso_seg, tempo, notas, progresion_hacia
+      FROM app."Ejercicios_Halterofilia"
+      WHERE ${levelCondition}
+      ORDER BY RANDOM()
+    `);
+
+    const availableExercises = exercisesResult.rows;
+
+    if (availableExercises.length === 0) {
+      throw new Error(`No hay ejercicios disponibles para el nivel ${dbLevel}`);
+    }
+
+    console.log(`✅ Ejercicios Halterofilia cargados: ${availableExercises.length} para nivel ${dbLevel}`);
+
+    // Llamar a IA con prompt especializado
+    const client = getModuleOpenAI(AI_MODULES.HALTEROFILIA_SPECIALIST);
+    const config = AI_MODULES.HALTEROFILIA_SPECIALIST;
+    const systemPrompt = await getPrompt(FeatureKey.HALTEROFILIA_SPECIALIST);
+
+    // Construir mensaje para IA
+    const userMessage = `GENERACIÓN DE PLAN HALTEROFILIA (OLYMPIC WEIGHTLIFTING)
+
+NIVEL: ${actualLevel} (${dbLevel})
+ENFOQUE PRIORITARIO: ${selectedMuscleGroups?.join(', ') || 'Snatch, Clean & Jerk, Fuerza Base'}
+OBJETIVOS: ${goals || 'Desarrollar técnica olímpica y potencia explosiva'}
+
+EJERCICIOS DISPONIBLES (${availableExercises.length}):
+${availableExercises.map(ex =>
+  `- ${ex.nombre} (${ex.categoria}) - Nivel: ${ex.nivel}, Series/Reps: ${ex.series_reps_objetivo}, Descanso: ${ex.descanso_seg}s, Tempo: ${ex.tempo || 'Explosivo'}`
+).join('\n')}
+
+DURACIÓN: ${versionConfig?.customWeeks || 4} semanas
+
+PRINCIPIOS OLÍMPICOS OBLIGATORIOS:
+1. Técnica sobre carga SIEMPRE
+2. Snatch y Clean & Jerk como lifts principales
+3. Progresión: Hang → Bloques → Suelo
+4. Trabajo de potencia: Pulls overload (100-120% del lift)
+5. Fuerza base: Squats (front, back, overhead)
+6. Movilidad específica: Overhead squat, front rack
+7. Descansos adecuados: ${actualLevel === 'principiante' ? '2-3 min' : actualLevel === 'intermedio' ? '3-4 min' : '4-5 min'} en lifts principales
+8. Periodización: Semana 1-2 volume, Semana 3 intensity, Semana 4 deload
+
+GENERA un plan completo siguiendo el formato JSON de metodología.`;
+
+    const completion = await client.chat.completions.create({
+      model: config.model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage }
+      ],
+      temperature: config.temperature,
+      max_tokens: config.max_output_tokens,
+      response_format: { type: 'json_object' }
+    });
+
+    const generatedPlan = parseAIResponse(completion.choices[0].message.content);
+
+    console.log(`✅ Plan Halterofilia generado por IA`);
+
+    // Validar estructura del plan
+    if (!generatedPlan.semanas || !Array.isArray(generatedPlan.semanas)) {
+      throw new Error('Plan generado no tiene estructura válida (falta semanas)');
+    }
+
+    // Guardar en BD con transacción
+    const client_db = await pool.connect();
+
+    try {
+      await client_db.query('BEGIN');
+
+      // Limpiar drafts previos
+      await cleanUserDrafts(userId, client_db);
+
+      // Insertar plan
+      const planResult = await client_db.query(`
+        INSERT INTO app.methodology_plans (
+          user_id, methodology_type, plan_data, generation_mode, status, created_at
+        )
+        VALUES ($1, $2, $3, $4, $5, NOW())
+        RETURNING id
+      `, [userId, 'Halterofilia', JSON.stringify(generatedPlan), 'manual', 'draft']);
+
+      const methodologyPlanId = planResult.rows[0].id;
+
+      await client_db.query('COMMIT');
+
+      console.log(`✅ Plan Halterofilia guardado con ID: ${methodologyPlanId}`);
+
+      res.json({
+        success: true,
+        plan: generatedPlan,
+        methodologyPlanId,
+        planId: methodologyPlanId,
+        metadata: {
+          model_used: config.model,
+          generation_timestamp: new Date().toISOString()
+        }
+      });
+
+    } catch (dbError) {
+      await client_db.query('ROLLBACK');
+      throw dbError;
+    } finally {
+      client_db.release();
+    }
+
+  } catch (error) {
+    console.error('Error generando plan de Halterofilia:', error);
+    logError('HALTEROFILIA_SPECIALIST', error);
+
+    res.status(500).json({
+      success: false,
+      error: 'Error generando plan',
+      message: error.message
+    });
+  }
+});
+
+// =========================================
+// ENTRENAMIENTO EN CASA (Casa Specialist)
+// =========================================
+
+/**
+ * POST /api/routine-generation/specialist/casa/evaluate
+ * Evaluación de perfil para entrenamiento en casa
+ */
+router.post('/specialist/casa/evaluate', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+
+    logSeparator('CASA EVALUATION');
+    logAPICall('/specialist/casa/evaluate', 'POST', userId);
+
+    // Obtener perfil completo del usuario
+    const userProfile = await getUserFullProfile(userId);
+    const normalizedProfile = normalizeUserProfile(userProfile);
+
+    logUserProfile(normalizedProfile, userId);
+
+    // Obtener configuración y cliente de IA
+    const client = getModuleOpenAI(AI_MODULES.CASA_SPECIALIST);
+    const config = AI_MODULES.CASA_SPECIALIST;
+    const systemPrompt = await getPrompt(FeatureKey.CASA_SPECIALIST);
+
+    // Construcción del mensaje para evaluación
+    const userMessage = `EVALUACIÓN DE USUARIO PARA ENTRENAMIENTO EN CASA
+
+Analiza el siguiente perfil de usuario para determinar su nivel apropiado y recomendaciones específicas para entrenar en casa:
+
+DATOS DEL USUARIO:
+- Edad: ${normalizedProfile.edad || 'No especificada'} años
+- Sexo: ${normalizedProfile.sexo || 'No especificado'}
+- Nivel de entrenamiento: ${normalizedProfile.nivel_entrenamiento || 'principiante'}
+- Años entrenando: ${normalizedProfile.anos_entrenando || 0}
+- Objetivo principal: ${normalizedProfile.objetivo_principal || 'mejorar condición física'}
+- Frecuencia semanal deseada: ${normalizedProfile.frecuencia_semanal || 3} días
+- Limitaciones físicas: ${normalizedProfile.limitaciones_fisicas?.join(', ') || 'Ninguna'}
+
+EVALÚA el nivel apropiado (principiante/intermedio/avanzado) basándote en:
+1. Experiencia previa con entrenamiento en casa
+2. Capacidad para realizar ejercicios con peso corporal
+3. Disponibilidad de equipamiento (mínimo/básico/avanzado)
+4. Espacio disponible en casa
+5. Objetivos personales y limitaciones
+
+Devuelve un JSON con:
+{
+  "nivel_recomendado": "principiante|intermedio|avanzado",
+  "razonamiento": "Explicación breve de por qué este nivel",
+  "categorias_recomendadas": ["funcional", "hiit", "fuerza", "cardio", "movilidad"],
+  "equipamiento_sugerido": "minimo|basico|avanzado",
+  "espacio_minimo": "reducido|medio|amplio",
+  "duracion_sesion_recomendada": 30-60,
+  "frecuencia_recomendada": 3-6
+}`;
+
+    console.log('🤖 Llamando a OpenAI para evaluación Casa...');
+    const completion = await client.chat.completions.create({
+      model: config.model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage }
+      ],
+      temperature: config.temperature,
+      max_tokens: 1000,
+      response_format: { type: 'json_object' }
+    });
+
+    const evaluation = parseAIResponse(completion.choices[0].message.content);
+    console.log('✅ Evaluación Casa completada:', evaluation);
+
+    res.json({
+      success: true,
+      evaluation
+    });
+
+  } catch (error) {
+    console.error('Error en evaluación Casa:', error);
+    logError('CASA_EVALUATE', error);
+
+    res.status(500).json({
+      success: false,
+      error: 'Error en evaluación',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/routine-generation/specialist/casa/generate
+ * Generación de plan especializado de entrenamiento en casa con IA
+ */
+router.post('/specialist/casa/generate', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+
+    // Extracción flexible de datos
+    const casaData = req.body.casaData || req.body;
+    const {
+      userProfile,
+      selectedLevel,
+      selectedCategories,
+      equipmentLevel,
+      spaceAvailable,
+      customGoals,
+      aiEvaluation
+    } = casaData;
+
+    logSeparator('CASA PLAN GENERATION');
+    console.log('🏠 Generando plan de entrenamiento en casa...', {
+      selectedLevel,
+      selectedCategories,
+      equipmentLevel,
+      spaceAvailable
+    });
+
+    // Obtener perfil completo si solo se envió ID
+    let fullUserProfile = userProfile;
+    if (userProfile && Object.keys(userProfile).length === 1 && userProfile.id) {
+      fullUserProfile = await getUserFullProfile(userId);
+      fullUserProfile = normalizeUserProfile(fullUserProfile);
+    }
+
+    logUserProfile(fullUserProfile, userId);
+
+    // Nivel actual del usuario
+    const actualLevel = selectedLevel || aiEvaluation?.nivel_recomendado || 'principiante';
+
+    // Mapear nivel frontend a nivel BD
+    const levelMapping = {
+      'principiante': 'Principiante',
+      'intermedio': 'Intermedio',
+      'avanzado': 'Avanzado'
+    };
+    const dbLevel = levelMapping[actualLevel.toLowerCase()] || 'Principiante';
+
+    // Sistema de acceso progresivo a ejercicios
+    let levelCondition;
+    if (dbLevel === 'Avanzado') {
+      levelCondition = "nivel IN ('Principiante', 'Intermedio', 'Avanzado')";
+    } else if (dbLevel === 'Intermedio') {
+      levelCondition = "nivel IN ('Principiante', 'Intermedio')";
+    } else {
+      levelCondition = "nivel = 'Principiante'";
+    }
+
+    // Obtener ejercicios disponibles de la tabla Ejercicios_Casa
+    const exercisesResult = await pool.query(`
+      SELECT exercise_id, nombre, nivel, categoria, patron, equipamiento,
+             series_reps_objetivo, descanso_seg, tempo, notas, progresion_hacia
+      FROM app."Ejercicios_Casa"
+      WHERE ${levelCondition}
+      ORDER BY RANDOM()
+    `);
+
+    const availableExercises = exercisesResult.rows;
+    console.log(`📋 Ejercicios Casa disponibles: ${availableExercises.length}`);
+
+    // Filtrar por categorías si hay seleccionadas
+    const categoriasActivas = selectedCategories && selectedCategories.length > 0
+      ? selectedCategories
+      : ['Funcional', 'Fuerza', 'Cardio'];
+
+    const exercisesByCategory = availableExercises.reduce((acc, exercise) => {
+      const cat = exercise.categoria;
+      if (!acc[cat]) acc[cat] = [];
+      acc[cat].push(exercise);
+      return acc;
+    }, {});
+
+    console.log('🗂️ Ejercicios por categoría:', Object.keys(exercisesByCategory).map(cat => `${cat}: ${exercisesByCategory[cat].length}`));
+
+    // Configuración y cliente de IA
+    const client = getModuleOpenAI(AI_MODULES.CASA_SPECIALIST);
+    const config = AI_MODULES.CASA_SPECIALIST;
+    const systemPrompt = await getPrompt(FeatureKey.CASA_SPECIALIST);
+
+    // Construcción del mensaje para generación
+    const userMessage = `GENERAR PLAN DE ENTRENAMIENTO EN CASA PERSONALIZADO
+
+PERFIL DEL USUARIO:
+${JSON.stringify(fullUserProfile, null, 2)}
+
+CONFIGURACIÓN DEL PLAN:
+- Nivel seleccionado: ${actualLevel}
+- Categorías preferidas: ${categoriasActivas.join(', ')}
+- Equipamiento disponible: ${equipmentLevel || 'basico'}
+- Espacio disponible: ${spaceAvailable || 'medio'}
+- Objetivos personalizados: ${customGoals || 'Ninguno especificado'}
+
+${aiEvaluation ? `EVALUACIÓN PREVIA DE IA:\n${JSON.stringify(aiEvaluation, null, 2)}\n` : ''}
+
+EJERCICIOS DISPONIBLES POR CATEGORÍA:
+${Object.entries(exercisesByCategory).map(([cat, exs]) =>
+  `\n${cat} (${exs.length} ejercicios):\n${exs.slice(0, 10).map(e => `- ${e.nombre} [${e.nivel}] - ${e.equipamiento?.join(', ')}`).join('\n')}`
+).join('\n')}
+
+INSTRUCCIONES ESPECIALES:
+1. Usa SOLO los ejercicios proporcionados de la tabla Ejercicios_Casa
+2. Respeta el equipamiento disponible: ${equipmentLevel}
+3. Adapta al espacio: ${spaceAvailable}
+4. Genera un plan de 4 semanas progresivo
+5. Incluye calentamiento, trabajo principal y enfriamiento en cada sesión
+6. Usa creatividad para adaptar objetos domésticos según equipamiento
+7. Especifica claramente qué objetos usar (silla, toalla, pared, etc.)
+
+Devuelve un JSON siguiendo EXACTAMENTE la estructura del prompt especialista Casa.`;
+
+    console.log('🤖 Llamando a OpenAI para generación de plan Casa...');
+    const completion = await client.chat.completions.create({
+      model: config.model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage }
+      ],
+      temperature: config.temperature,
+      max_tokens: config.max_output_tokens,
+      response_format: { type: 'json_object' }
+    });
+
+    const generatedPlan = parseAIResponse(completion.choices[0].message.content);
+    console.log('✅ Plan Casa generado exitosamente');
+
+    // Guardar plan en la base de datos
+    const client_db = await pool.connect();
+
+    try {
+      await client_db.query('BEGIN');
+
+      // Limpiar borradores previos del usuario
+      await cleanUserDrafts(userId, client_db);
+
+      // Insertar plan en methodology_plans
+      const planResult = await client_db.query(`
+        INSERT INTO app.methodology_plans (
+          user_id,
+          methodology_type,
+          plan_data,
+          generation_mode,
+          status,
+          created_at
+        )
+        VALUES ($1, $2, $3, $4, $5, NOW())
+        RETURNING id
+      `, [
+        userId,
+        'Casa',
+        JSON.stringify(generatedPlan),
+        'manual',
+        'draft'
+      ]);
+
+      const methodologyPlanId = planResult.rows[0].id;
+      console.log(`💾 Plan Casa guardado con ID: ${methodologyPlanId}`);
+
+      await client_db.query('COMMIT');
+
+      res.json({
+        success: true,
+        plan: generatedPlan,
+        methodologyPlanId
+      });
+
+    } catch (dbError) {
+      await client_db.query('ROLLBACK');
+      console.error('Error guardando plan en BD:', dbError);
+      throw dbError;
+    } finally {
+      client_db.release();
+    }
+
+  } catch (error) {
+    console.error('Error generando plan de Casa:', error);
+    logError('CASA_SPECIALIST', error);
 
     res.status(500).json({
       success: false,
@@ -1534,8 +3522,8 @@ router.get('/methodologies', (req, res) => {
 router.get('/calistenia/levels', (req, res) => {
   const levels = [
     {
-      id: 'basico',
-      name: 'Básico',
+      id: 'principiante',
+      name: 'Principiante',
       description: 'Principiantes: 0-1 años experiencia',
       frequency: '3 días/semana',
       duration: '30 minutos/sesión',
@@ -1631,6 +3619,1165 @@ router.get('/user/current-plan', authenticateToken, async (req, res) => {
   }
 });
 
+// =========================================
+// OPOSICIONES - BOMBEROS SPECIALIST
+// =========================================
+
+/**
+ * POST /api/routine-generation/specialist/bomberos/evaluate
+ * Evaluación del nivel del usuario para oposiciones de Bombero
+ */
+router.post('/specialist/bomberos/evaluate', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+
+    logSeparator('BOMBEROS OPOSICION EVALUATION');
+    logAPICall('/specialist/bomberos/evaluate', 'POST', userId);
+
+    const userProfile = await getUserFullProfile(userId);
+    const normalizedProfile = normalizeUserProfile(userProfile);
+
+    logUserProfile(normalizedProfile, userId);
+
+    // Verificar ejercicios disponibles
+    const exerciseCountResult = await pool.query(`
+      SELECT COUNT(*) as total
+      FROM app."Ejercicios_Bomberos"
+    `);
+
+    const exerciseCount = parseInt(exerciseCountResult.rows[0]?.total) || 0;
+    if (exerciseCount === 0) {
+      throw new Error('No se encontraron ejercicios de Bomberos en la base de datos');
+    }
+
+    // Preparar payload para IA
+    const aiPayload = {
+      task: 'evaluate_bomberos_level',
+      user_profile: normalizedProfile,
+      evaluation_criteria: [
+        'Capacidad de natación (50-100m)',
+        'Fuerza de tracción (dominadas, trepa)',
+        'Resistencia cardiovascular (2800m)',
+        'Velocidad (100-200m)',
+        'Experiencia previa en preparación física completa',
+        'Edad y condición física general'
+      ],
+      level_descriptions: {
+        principiante: 'Principiante: 0-6 meses preparación, necesita desarrollar base aeróbica y técnicas',
+        intermedio: 'Intermedio: 6-12 meses, se acerca a baremos mínimos en varias pruebas',
+        avanzado: 'Avanzado: 12+ meses, supera baremos mínimos, busca maximizar puntuación'
+      }
+    };
+
+    logAIPayload('BOMBEROS_EVALUATION', aiPayload);
+
+    // Llamar a IA
+    const client = getModuleOpenAI(AI_MODULES.CALISTENIA_SPECIALIST); // Usar mismo módulo
+    const config = AI_MODULES.CALISTENIA_SPECIALIST;
+
+    const completion = await client.chat.completions.create({
+      model: config.model,
+      messages: [
+        {
+          role: 'system',
+          content: `Eres un especialista en preparación física para oposiciones de Bombero.
+
+INSTRUCCIONES:
+- Evalúa la capacidad del usuario para las 9 pruebas oficiales de bombero
+- Considera su nivel en natación, fuerza, resistencia, velocidad y agilidad
+- RESPONDE SOLO EN JSON PURO, SIN MARKDOWN
+
+FORMATO DE RESPUESTA:
+{
+  "recommended_level": "principiante|intermedio|avanzado",
+  "confidence": 0.75,
+  "reasoning": "Explicación detallada",
+  "key_indicators": ["Factor 1", "Factor 2"],
+  "suggested_focus_areas": ["Área 1", "Área 2"],
+  "progression_timeline": "Tiempo estimado"
+}`
+        },
+        {
+          role: 'user',
+          content: JSON.stringify(aiPayload)
+        }
+      ],
+      temperature: 0.3,
+      max_tokens: 800
+    });
+
+    const aiResponse = completion.choices[0].message.content;
+    logAIResponse(aiResponse);
+    logTokens(completion.usage);
+
+    // Parsear respuesta
+    let evaluation;
+    try {
+      evaluation = JSON.parse(parseAIResponse(aiResponse));
+    } catch (parseError) {
+      console.error('Error parseando respuesta IA:', parseError);
+      throw new Error('Respuesta de IA inválida');
+    }
+
+    // Validar respuesta
+    const normalizedLevel = evaluation.recommended_level.toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+    res.json({
+      success: true,
+      evaluation: {
+        recommended_level: normalizedLevel,
+        confidence: evaluation.confidence,
+        reasoning: evaluation.reasoning,
+        key_indicators: evaluation.key_indicators || [],
+        suggested_focus_areas: evaluation.suggested_focus_areas || [],
+        progression_timeline: evaluation.progression_timeline || 'No especificado'
+      },
+      metadata: {
+        model_used: config.model,
+        evaluation_timestamp: new Date().toISOString()
+      }
+    });
+
+  } catch (error) {
+    console.error('Error en evaluación de Bomberos:', error);
+    logError('BOMBEROS_SPECIALIST', error);
+
+    res.status(500).json({
+      success: false,
+      error: 'Error evaluando perfil',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/routine-generation/specialist/bomberos/generate
+ * Generación de plan especializado para oposiciones de Bombero
+ */
+router.post('/specialist/bomberos/generate', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    const {
+      userProfile,
+      selectedLevel,
+      goals,
+      previousPlan,
+      regenerationReason,
+      additionalInstructions,
+      versionConfig
+    } = req.body;
+
+    const isRegeneration = !!(previousPlan || regenerationReason || additionalInstructions);
+
+    logSeparator('BOMBEROS PLAN GENERATION');
+    console.log('Generando plan de Bomberos...', {
+      selectedLevel,
+      isRegeneration,
+      customWeeks: versionConfig?.customWeeks
+    });
+
+    // Obtener perfil completo
+    let fullUserProfile = userProfile;
+    if (userProfile && Object.keys(userProfile).length === 1 && userProfile.id) {
+      fullUserProfile = await getUserFullProfile(userId);
+      fullUserProfile = normalizeUserProfile(fullUserProfile);
+    }
+
+    logUserProfile(fullUserProfile, userId);
+
+    // Mapear nivel
+    const levelMapping = {
+      'principiante': 'Principiante',
+      'intermedio': 'Intermedio',
+      'avanzado': 'Avanzado'
+    };
+    const dbLevel = levelMapping[selectedLevel.toLowerCase()] || 'Principiante';
+
+    // Obtener ejercicios disponibles de Bomberos
+    const exercisesResult = await pool.query(`
+      SELECT nombre, nivel, categoria, tipo_prueba, baremo_hombres, baremo_mujeres,
+             series_reps_objetivo, intensidad, descanso_seg, equipamiento, notas
+      FROM app."Ejercicios_Bomberos"
+      ORDER BY RANDOM()
+    `);
+
+    const availableExercises = exercisesResult.rows;
+    console.log(`Ejercicios de Bomberos disponibles: ${availableExercises.length}`);
+
+    // Configuración del plan
+    const dayInfo = getCurrentDayInfo();
+    const durationWeeks = versionConfig?.customWeeks || (dbLevel === 'Avanzado' ? 8 : 12);
+    const sessionsPerWeek = dbLevel === 'Avanzado' ? 6 : (dbLevel === 'Intermedio' ? 5 : 4);
+
+    const planPayload = {
+      task: isRegeneration ? 'regenerate_bomberos_plan' : 'generate_bomberos_plan',
+      user_profile: fullUserProfile,
+      selected_level: selectedLevel,
+      goals: goals || 'Superar todas las pruebas físicas de oposición de Bombero',
+      available_exercises: availableExercises,
+      plan_requirements: {
+        duration_weeks: durationWeeks,
+        sessions_per_week: sessionsPerWeek,
+        start_day: dayInfo.dayName,
+        start_date: dayInfo.isoDate
+      },
+      ...(isRegeneration && {
+        previous_plan: previousPlan,
+        user_feedback: {
+          reasons: regenerationReason || [],
+          additional_instructions: additionalInstructions || null
+        }
+      })
+    };
+
+    logAIPayload('BOMBEROS_PLAN', planPayload);
+
+    // Obtener prompt y generar
+    clearPromptCache(FeatureKey.BOMBEROS_SPECIALIST);
+    const systemPrompt = await getPrompt(FeatureKey.BOMBEROS_SPECIALIST);
+
+    if (!systemPrompt) {
+      throw new Error('Prompt no disponible para Bomberos Specialist');
+    }
+
+    const client = getModuleOpenAI(AI_MODULES.CALISTENIA_SPECIALIST);
+    const config = AI_MODULES.CALISTENIA_SPECIALIST;
+
+    const completion = await client.chat.completions.create({
+      model: config.model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: JSON.stringify(planPayload) }
+      ],
+      temperature: config.temperature,
+      max_tokens: config.max_output_tokens
+    });
+
+    const aiResponse = completion.choices[0].message.content;
+    logAIResponse(aiResponse);
+    logTokens(completion.usage);
+
+    // Parsear y guardar plan
+    const generatedPlan = JSON.parse(parseAIResponse(aiResponse));
+
+    if (!generatedPlan.semanas || !Array.isArray(generatedPlan.semanas)) {
+      throw new Error('Plan debe contener array de semanas');
+    }
+
+    // Guardar en BD
+    const dbClient = await pool.connect();
+    try {
+      await dbClient.query('BEGIN');
+
+      await cleanUserDrafts(userId, dbClient);
+
+      const methodologyResult = await dbClient.query(`
+        INSERT INTO app.methodology_plans (
+          user_id, methodology_type, plan_data, generation_mode, status, created_at
+        ) VALUES ($1, $2, $3, $4, $5, NOW())
+        RETURNING id
+      `, [userId, 'Bomberos', JSON.stringify(generatedPlan), 'automatic', 'draft']);
+
+      const methodologyPlanId = methodologyResult.rows[0].id;
+
+      await dbClient.query('COMMIT');
+
+      res.json({
+        success: true,
+        plan: generatedPlan,
+        methodologyPlanId,
+        planId: methodologyPlanId,
+        justification: isRegeneration
+          ? `Plan mejorado para Bomberos basado en tu feedback`
+          : generatedPlan.justification || 'Plan personalizado de Bomberos generado',
+        metadata: {
+          model_used: config.model,
+          generation_timestamp: new Date().toISOString()
+        }
+      });
+
+    } catch (dbError) {
+      await dbClient.query('ROLLBACK');
+      throw dbError;
+    } finally {
+      dbClient.release();
+    }
+
+  } catch (error) {
+    console.error('Error generando plan de Bomberos:', error);
+    logError('BOMBEROS_SPECIALIST', error);
+
+    res.status(500).json({
+      success: false,
+      error: 'Error generando plan de Bomberos',
+      message: error.message
+    });
+  }
+});
+
+// =========================================
+// OPOSICIONES - GUARDIA CIVIL SPECIALIST
+// =========================================
+
+/**
+ * POST /api/routine-generation/specialist/guardia-civil/evaluate
+ * Evaluación del nivel del usuario para oposiciones de Guardia Civil
+ */
+router.post('/specialist/guardia-civil/evaluate', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+
+    logSeparator('GUARDIA CIVIL OPOSICION EVALUATION');
+    logAPICall('/specialist/guardia-civil/evaluate', 'POST', userId);
+
+    const userProfile = await getUserFullProfile(userId);
+    const normalizedProfile = normalizeUserProfile(userProfile);
+
+    logUserProfile(normalizedProfile, userId);
+
+    // Verificar ejercicios disponibles
+    const exerciseCountResult = await pool.query(`
+      SELECT COUNT(*) as total
+      FROM app."Ejercicios_Guardia_Civil"
+    `);
+
+    const exerciseCount = parseInt(exerciseCountResult.rows[0]?.total) || 0;
+    if (exerciseCount === 0) {
+      throw new Error('No se encontraron ejercicios de Guardia Civil en la base de datos');
+    }
+
+    // Preparar payload para IA
+    const aiPayload = {
+      task: 'evaluate_guardia_civil_level',
+      user_profile: normalizedProfile,
+      evaluation_criteria: [
+        'Resistencia cardiovascular (2000m)',
+        'Fuerza de empuje (flexiones/extensiones)',
+        'Capacidad de natación (50m)',
+        'Agilidad y coordinación (circuito)',
+        'Edad (baremos ajustados por edad)',
+        'Experiencia en entrenamiento funcional'
+      ],
+      level_descriptions: {
+        principiante: 'Principiante: 0-6 meses, necesita desarrollar capacidades básicas',
+        intermedio: 'Intermedio: 6-12 meses, cerca de alcanzar baremos por edad',
+        avanzado: 'Avanzado: 12+ meses, supera baremos con margen de seguridad'
+      }
+    };
+
+    logAIPayload('GUARDIA_CIVIL_EVALUATION', aiPayload);
+
+    // Llamar a IA
+    const client = getModuleOpenAI(AI_MODULES.CALISTENIA_SPECIALIST);
+    const config = AI_MODULES.CALISTENIA_SPECIALIST;
+
+    const completion = await client.chat.completions.create({
+      model: config.model,
+      messages: [
+        {
+          role: 'system',
+          content: `Eres un especialista en preparación física para oposiciones de Guardia Civil.
+
+INSTRUCCIONES:
+- Evalúa la capacidad del usuario para las 4 pruebas eliminatorias oficiales
+- Considera edad para baremos (importante en Guardia Civil)
+- RESPONDE SOLO EN JSON PURO, SIN MARKDOWN
+
+FORMATO DE RESPUESTA:
+{
+  "recommended_level": "principiante|intermedio|avanzado",
+  "confidence": 0.75,
+  "reasoning": "Explicación detallada",
+  "key_indicators": ["Factor 1", "Factor 2"],
+  "suggested_focus_areas": ["Área 1", "Área 2"],
+  "progression_timeline": "Tiempo estimado"
+}`
+        },
+        {
+          role: 'user',
+          content: JSON.stringify(aiPayload)
+        }
+      ],
+      temperature: 0.3,
+      max_tokens: 800
+    });
+
+    const aiResponse = completion.choices[0].message.content;
+    logAIResponse(aiResponse);
+    logTokens(completion.usage);
+
+    // Parsear respuesta
+    let evaluation;
+    try {
+      evaluation = JSON.parse(parseAIResponse(aiResponse));
+    } catch (parseError) {
+      console.error('Error parseando respuesta IA:', parseError);
+      throw new Error('Respuesta de IA inválida');
+    }
+
+    const normalizedLevel = evaluation.recommended_level.toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+    res.json({
+      success: true,
+      evaluation: {
+        recommended_level: normalizedLevel,
+        confidence: evaluation.confidence,
+        reasoning: evaluation.reasoning,
+        key_indicators: evaluation.key_indicators || [],
+        suggested_focus_areas: evaluation.suggested_focus_areas || [],
+        progression_timeline: evaluation.progression_timeline || 'No especificado'
+      },
+      metadata: {
+        model_used: config.model,
+        evaluation_timestamp: new Date().toISOString()
+      }
+    });
+
+  } catch (error) {
+    console.error('Error en evaluación de Guardia Civil:', error);
+    logError('GUARDIA_CIVIL_SPECIALIST', error);
+
+    res.status(500).json({
+      success: false,
+      error: 'Error evaluando perfil',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/routine-generation/specialist/guardia-civil/generate
+ * Generación de plan especializado para oposiciones de Guardia Civil
+ */
+router.post('/specialist/guardia-civil/generate', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    const {
+      userProfile,
+      selectedLevel,
+      goals,
+      previousPlan,
+      regenerationReason,
+      additionalInstructions,
+      versionConfig
+    } = req.body;
+
+    const isRegeneration = !!(previousPlan || regenerationReason || additionalInstructions);
+
+    logSeparator('GUARDIA CIVIL PLAN GENERATION');
+    console.log('Generando plan de Guardia Civil...', {
+      selectedLevel,
+      isRegeneration,
+      customWeeks: versionConfig?.customWeeks
+    });
+
+    let fullUserProfile = userProfile;
+    if (userProfile && Object.keys(userProfile).length === 1 && userProfile.id) {
+      fullUserProfile = await getUserFullProfile(userId);
+      fullUserProfile = normalizeUserProfile(fullUserProfile);
+    }
+
+    logUserProfile(fullUserProfile, userId);
+
+    const levelMapping = {
+      'principiante': 'Principiante',
+      'intermedio': 'Intermedio',
+      'avanzado': 'Avanzado'
+    };
+    const dbLevel = levelMapping[selectedLevel.toLowerCase()] || 'Principiante';
+
+    const exercisesResult = await pool.query(`
+      SELECT nombre, nivel, categoria, tipo_prueba, baremo_hombres, baremo_mujeres,
+             series_reps_objetivo, intensidad, descanso_seg, equipamiento, notas
+      FROM app."Ejercicios_Guardia_Civil"
+      ORDER BY RANDOM()
+    `);
+
+    const availableExercises = exercisesResult.rows;
+    console.log(`Ejercicios de Guardia Civil disponibles: ${availableExercises.length}`);
+
+    const dayInfo = getCurrentDayInfo();
+    const durationWeeks = versionConfig?.customWeeks || (dbLevel === 'Avanzado' ? 8 : 12);
+    const sessionsPerWeek = dbLevel === 'Avanzado' ? 6 : (dbLevel === 'Intermedio' ? 5 : 4);
+
+    const planPayload = {
+      task: isRegeneration ? 'regenerate_guardia_civil_plan' : 'generate_guardia_civil_plan',
+      user_profile: fullUserProfile,
+      selected_level: selectedLevel,
+      goals: goals || 'Superar las 4 pruebas eliminatorias de Guardia Civil según baremos por edad',
+      available_exercises: availableExercises,
+      plan_requirements: {
+        duration_weeks: durationWeeks,
+        sessions_per_week: sessionsPerWeek,
+        start_day: dayInfo.dayName,
+        start_date: dayInfo.isoDate
+      },
+      ...(isRegeneration && {
+        previous_plan: previousPlan,
+        user_feedback: {
+          reasons: regenerationReason || [],
+          additional_instructions: additionalInstructions || null
+        }
+      })
+    };
+
+    logAIPayload('GUARDIA_CIVIL_PLAN', planPayload);
+
+    clearPromptCache(FeatureKey.GUARDIA_CIVIL_SPECIALIST);
+    const systemPrompt = await getPrompt(FeatureKey.GUARDIA_CIVIL_SPECIALIST);
+
+    if (!systemPrompt) {
+      throw new Error('Prompt no disponible para Guardia Civil Specialist');
+    }
+
+    const client = getModuleOpenAI(AI_MODULES.CALISTENIA_SPECIALIST);
+    const config = AI_MODULES.CALISTENIA_SPECIALIST;
+
+    const completion = await client.chat.completions.create({
+      model: config.model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: JSON.stringify(planPayload) }
+      ],
+      temperature: config.temperature,
+      max_tokens: config.max_output_tokens
+    });
+
+    const aiResponse = completion.choices[0].message.content;
+    logAIResponse(aiResponse);
+    logTokens(completion.usage);
+
+    const generatedPlan = JSON.parse(parseAIResponse(aiResponse));
+
+    if (!generatedPlan.semanas || !Array.isArray(generatedPlan.semanas)) {
+      throw new Error('Plan debe contener array de semanas');
+    }
+
+    const dbClient = await pool.connect();
+    try {
+      await dbClient.query('BEGIN');
+
+      await cleanUserDrafts(userId, dbClient);
+
+      const methodologyResult = await dbClient.query(`
+        INSERT INTO app.methodology_plans (
+          user_id, methodology_type, plan_data, generation_mode, status, created_at
+        ) VALUES ($1, $2, $3, $4, $5, NOW())
+        RETURNING id
+      `, [userId, 'Guardia Civil', JSON.stringify(generatedPlan), 'automatic', 'draft']);
+
+      const methodologyPlanId = methodologyResult.rows[0].id;
+
+      await dbClient.query('COMMIT');
+
+      res.json({
+        success: true,
+        plan: generatedPlan,
+        methodologyPlanId,
+        planId: methodologyPlanId,
+        justification: isRegeneration
+          ? `Plan mejorado para Guardia Civil basado en tu feedback`
+          : generatedPlan.justification || 'Plan personalizado de Guardia Civil generado',
+        metadata: {
+          model_used: config.model,
+          generation_timestamp: new Date().toISOString()
+        }
+      });
+
+    } catch (dbError) {
+      await dbClient.query('ROLLBACK');
+      throw dbError;
+    } finally {
+      dbClient.release();
+    }
+
+  } catch (error) {
+    console.error('Error generando plan de Guardia Civil:', error);
+    logError('GUARDIA_CIVIL_SPECIALIST', error);
+
+    res.status(500).json({
+      success: false,
+      error: 'Error generando plan de Guardia Civil',
+      message: error.message
+    });
+  }
+});
+
+// =========================================
+// OPOSICIONES - POLICÍA NACIONAL SPECIALIST
+// =========================================
+
+/**
+ * POST /api/routine-generation/specialist/policia-nacional/evaluate
+ * Evaluación del nivel del usuario para oposiciones de Policía Nacional
+ */
+router.post('/specialist/policia-nacional/evaluate', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+
+    logSeparator('POLICIA NACIONAL OPOSICION EVALUATION');
+    logAPICall('/specialist/policia-nacional/evaluate', 'POST', userId);
+
+    const userProfile = await getUserFullProfile(userId);
+    const normalizedProfile = normalizeUserProfile(userProfile);
+
+    logUserProfile(normalizedProfile, userId);
+
+    const exerciseCountResult = await pool.query(`
+      SELECT COUNT(*) as total
+      FROM app."Ejercicios_Policia_Nacional"
+    `);
+
+    const exerciseCount = parseInt(exerciseCountResult.rows[0]?.total) || 0;
+    if (exerciseCount === 0) {
+      throw new Error('No se encontraron ejercicios de Policía Nacional en la base de datos');
+    }
+
+    const aiPayload = {
+      task: 'evaluate_policia_nacional_level',
+      user_profile: normalizedProfile,
+      evaluation_criteria: [
+        'Fuerza tren superior (dominadas para hombres / suspensión para mujeres)',
+        'Resistencia cardiovascular (1000m)',
+        'Agilidad y coordinación (circuito con obstáculos)',
+        'Experiencia en preparación física',
+        'Capacidad para puntuar alto (sistema 0-10 por prueba)'
+      ],
+      level_descriptions: {
+        principiante: 'Principiante: Puntuación < 4 en pruebas, necesita base',
+        intermedio: 'Intermedio: Puntuación 4-7, cerca de aprobar',
+        avanzado: 'Avanzado: Puntuación 7-10, busca maximizar puntos'
+      }
+    };
+
+    logAIPayload('POLICIA_NACIONAL_EVALUATION', aiPayload);
+
+    const client = getModuleOpenAI(AI_MODULES.CALISTENIA_SPECIALIST);
+    const config = AI_MODULES.CALISTENIA_SPECIALIST;
+
+    const completion = await client.chat.completions.create({
+      model: config.model,
+      messages: [
+        {
+          role: 'system',
+          content: `Eres un especialista en preparación física para oposiciones de Policía Nacional.
+
+INSTRUCCIONES:
+- Evalúa la capacidad del usuario para las 3 pruebas oficiales con sistema de puntuación 0-10
+- Considera que necesita media ≥ 5 puntos para aprobar
+- RESPONDE SOLO EN JSON PURO, SIN MARKDOWN
+
+FORMATO DE RESPUESTA:
+{
+  "recommended_level": "principiante|intermedio|avanzado",
+  "confidence": 0.75,
+  "reasoning": "Explicación detallada",
+  "key_indicators": ["Factor 1", "Factor 2"],
+  "suggested_focus_areas": ["Área 1", "Área 2"],
+  "progression_timeline": "Tiempo estimado"
+}`
+        },
+        {
+          role: 'user',
+          content: JSON.stringify(aiPayload)
+        }
+      ],
+      temperature: 0.3,
+      max_tokens: 800
+    });
+
+    const aiResponse = completion.choices[0].message.content;
+    logAIResponse(aiResponse);
+    logTokens(completion.usage);
+
+    let evaluation;
+    try {
+      evaluation = JSON.parse(parseAIResponse(aiResponse));
+    } catch (parseError) {
+      console.error('Error parseando respuesta IA:', parseError);
+      throw new Error('Respuesta de IA inválida');
+    }
+
+    const normalizedLevel = evaluation.recommended_level.toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+    res.json({
+      success: true,
+      evaluation: {
+        recommended_level: normalizedLevel,
+        confidence: evaluation.confidence,
+        reasoning: evaluation.reasoning,
+        key_indicators: evaluation.key_indicators || [],
+        suggested_focus_areas: evaluation.suggested_focus_areas || [],
+        progression_timeline: evaluation.progression_timeline || 'No especificado'
+      },
+      metadata: {
+        model_used: config.model,
+        evaluation_timestamp: new Date().toISOString()
+      }
+    });
+
+  } catch (error) {
+    console.error('Error en evaluación de Policía Nacional:', error);
+    logError('POLICIA_NACIONAL_SPECIALIST', error);
+
+    res.status(500).json({
+      success: false,
+      error: 'Error evaluando perfil',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/routine-generation/specialist/policia-nacional/generate
+ * Generación de plan especializado para oposiciones de Policía Nacional
+ */
+router.post('/specialist/policia-nacional/generate', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    const {
+      userProfile,
+      selectedLevel,
+      goals,
+      previousPlan,
+      regenerationReason,
+      additionalInstructions,
+      versionConfig
+    } = req.body;
+
+    const isRegeneration = !!(previousPlan || regenerationReason || additionalInstructions);
+
+    logSeparator('POLICIA NACIONAL PLAN GENERATION');
+    console.log('Generando plan de Policía Nacional...', {
+      selectedLevel,
+      isRegeneration,
+      customWeeks: versionConfig?.customWeeks
+    });
+
+    let fullUserProfile = userProfile;
+    if (userProfile && Object.keys(userProfile).length === 1 && userProfile.id) {
+      fullUserProfile = await getUserFullProfile(userId);
+      fullUserProfile = normalizeUserProfile(fullUserProfile);
+    }
+
+    logUserProfile(fullUserProfile, userId);
+
+    const levelMapping = {
+      'principiante': 'Principiante',
+      'intermedio': 'Intermedio',
+      'avanzado': 'Avanzado'
+    };
+    const dbLevel = levelMapping[selectedLevel.toLowerCase()] || 'Principiante';
+
+    const exercisesResult = await pool.query(`
+      SELECT nombre, nivel, categoria, tipo_prueba, baremo_hombres, baremo_mujeres,
+             series_reps_objetivo, intensidad, descanso_seg, equipamiento, notas
+      FROM app."Ejercicios_Policia_Nacional"
+      ORDER BY RANDOM()
+    `);
+
+    const availableExercises = exercisesResult.rows;
+    console.log(`Ejercicios de Policía Nacional disponibles: ${availableExercises.length}`);
+
+    const dayInfo = getCurrentDayInfo();
+    const durationWeeks = versionConfig?.customWeeks || (dbLevel === 'Avanzado' ? 8 : 12);
+    const sessionsPerWeek = dbLevel === 'Avanzado' ? 5 : (dbLevel === 'Intermedio' ? 5 : 4);
+
+    const planPayload = {
+      task: isRegeneration ? 'regenerate_policia_nacional_plan' : 'generate_policia_nacional_plan',
+      user_profile: fullUserProfile,
+      selected_level: selectedLevel,
+      goals: goals || 'Alcanzar media ≥ 5 puntos en las 3 pruebas de Policía Nacional',
+      available_exercises: availableExercises,
+      plan_requirements: {
+        duration_weeks: durationWeeks,
+        sessions_per_week: sessionsPerWeek,
+        start_day: dayInfo.dayName,
+        start_date: dayInfo.isoDate
+      },
+      ...(isRegeneration && {
+        previous_plan: previousPlan,
+        user_feedback: {
+          reasons: regenerationReason || [],
+          additional_instructions: additionalInstructions || null
+        }
+      })
+    };
+
+    logAIPayload('POLICIA_NACIONAL_PLAN', planPayload);
+
+    clearPromptCache(FeatureKey.POLICIA_NACIONAL_SPECIALIST);
+    const systemPrompt = await getPrompt(FeatureKey.POLICIA_NACIONAL_SPECIALIST);
+
+    if (!systemPrompt) {
+      throw new Error('Prompt no disponible para Policía Nacional Specialist');
+    }
+
+    const client = getModuleOpenAI(AI_MODULES.CALISTENIA_SPECIALIST);
+    const config = AI_MODULES.CALISTENIA_SPECIALIST;
+
+    const completion = await client.chat.completions.create({
+      model: config.model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: JSON.stringify(planPayload) }
+      ],
+      temperature: config.temperature,
+      max_tokens: config.max_output_tokens
+    });
+
+    const aiResponse = completion.choices[0].message.content;
+    logAIResponse(aiResponse);
+    logTokens(completion.usage);
+
+    const generatedPlan = JSON.parse(parseAIResponse(aiResponse));
+
+    if (!generatedPlan.semanas || !Array.isArray(generatedPlan.semanas)) {
+      throw new Error('Plan debe contener array de semanas');
+    }
+
+    const dbClient = await pool.connect();
+    try {
+      await dbClient.query('BEGIN');
+
+      await cleanUserDrafts(userId, dbClient);
+
+      const methodologyResult = await dbClient.query(`
+        INSERT INTO app.methodology_plans (
+          user_id, methodology_type, plan_data, generation_mode, status, created_at
+        ) VALUES ($1, $2, $3, $4, $5, NOW())
+        RETURNING id
+      `, [userId, 'Policia Nacional', JSON.stringify(generatedPlan), 'automatic', 'draft']);
+
+      const methodologyPlanId = methodologyResult.rows[0].id;
+
+      await dbClient.query('COMMIT');
+
+      res.json({
+        success: true,
+        plan: generatedPlan,
+        methodologyPlanId,
+        planId: methodologyPlanId,
+        justification: isRegeneration
+          ? `Plan mejorado para Policía Nacional basado en tu feedback`
+          : generatedPlan.justification || 'Plan personalizado de Policía Nacional generado',
+        metadata: {
+          model_used: config.model,
+          generation_timestamp: new Date().toISOString()
+        }
+      });
+
+    } catch (dbError) {
+      await dbClient.query('ROLLBACK');
+      throw dbError;
+    } finally {
+      dbClient.release();
+    }
+
+  } catch (error) {
+    console.error('Error generando plan de Policía Nacional:', error);
+    logError('POLICIA_NACIONAL_SPECIALIST', error);
+
+    res.status(500).json({
+      success: false,
+      error: 'Error generando plan de Policía Nacional',
+      message: error.message
+    });
+  }
+});
+
+// =========================================
+// OPOSICIONES - POLICÍA LOCAL SPECIALIST
+// =========================================
+
+/**
+ * POST /api/routine-generation/specialist/policia-local/evaluate
+ * Evaluación del nivel del usuario para oposiciones de Policía Local
+ */
+router.post('/specialist/policia-local/evaluate', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+
+    logSeparator('POLICIA LOCAL OPOSICION EVALUATION');
+    logAPICall('/specialist/policia-local/evaluate', 'POST', userId);
+
+    const userProfile = await getUserFullProfile(userId);
+    const normalizedProfile = normalizeUserProfile(userProfile);
+
+    logUserProfile(normalizedProfile, userId);
+
+    const exerciseCountResult = await pool.query(`
+      SELECT COUNT(*) as total
+      FROM app."Ejercicios_Policia_Local"
+    `);
+
+    const exerciseCount = parseInt(exerciseCountResult.rows[0]?.total) || 0;
+    if (exerciseCount === 0) {
+      throw new Error('No se encontraron ejercicios de Policía Local en la base de datos');
+    }
+
+    const aiPayload = {
+      task: 'evaluate_policia_local_level',
+      user_profile: normalizedProfile,
+      evaluation_criteria: [
+        'Velocidad (sprint 50m)',
+        'Resistencia (carrera 1000m)',
+        'Potencia de salto (salto de longitud)',
+        'Fuerza tren superior (dominadas/suspensión)',
+        'Agilidad (circuito si aplica)',
+        'Nota: Pruebas varían por ayuntamiento'
+      ],
+      level_descriptions: {
+        principiante: 'Principiante: Lejos de baremos mínimos, necesita base',
+        intermedio: 'Intermedio: Cerca de alcanzar baremos mínimos',
+        avanzado: 'Avanzado: Supera baremos mínimos con margen'
+      }
+    };
+
+    logAIPayload('POLICIA_LOCAL_EVALUATION', aiPayload);
+
+    const client = getModuleOpenAI(AI_MODULES.CALISTENIA_SPECIALIST);
+    const config = AI_MODULES.CALISTENIA_SPECIALIST;
+
+    const completion = await client.chat.completions.create({
+      model: config.model,
+      messages: [
+        {
+          role: 'system',
+          content: `Eres un especialista en preparación física para oposiciones de Policía Local.
+
+INSTRUCCIONES:
+- Evalúa la capacidad del usuario para las pruebas MÁS COMUNES de Policía Local
+- IMPORTANTE: Las pruebas varían por ayuntamiento - preparación polivalente
+- RESPONDE SOLO EN JSON PURO, SIN MARKDOWN
+
+FORMATO DE RESPUESTA:
+{
+  "recommended_level": "principiante|intermedio|avanzado",
+  "confidence": 0.75,
+  "reasoning": "Explicación detallada",
+  "key_indicators": ["Factor 1", "Factor 2"],
+  "suggested_focus_areas": ["Área 1", "Área 2"],
+  "progression_timeline": "Tiempo estimado"
+}`
+        },
+        {
+          role: 'user',
+          content: JSON.stringify(aiPayload)
+        }
+      ],
+      temperature: 0.3,
+      max_tokens: 800
+    });
+
+    const aiResponse = completion.choices[0].message.content;
+    logAIResponse(aiResponse);
+    logTokens(completion.usage);
+
+    let evaluation;
+    try {
+      evaluation = JSON.parse(parseAIResponse(aiResponse));
+    } catch (parseError) {
+      console.error('Error parseando respuesta IA:', parseError);
+      throw new Error('Respuesta de IA inválida');
+    }
+
+    const normalizedLevel = evaluation.recommended_level.toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+    res.json({
+      success: true,
+      evaluation: {
+        recommended_level: normalizedLevel,
+        confidence: evaluation.confidence,
+        reasoning: evaluation.reasoning,
+        key_indicators: evaluation.key_indicators || [],
+        suggested_focus_areas: evaluation.suggested_focus_areas || [],
+        progression_timeline: evaluation.progression_timeline || 'No especificado'
+      },
+      metadata: {
+        model_used: config.model,
+        evaluation_timestamp: new Date().toISOString()
+      }
+    });
+
+  } catch (error) {
+    console.error('Error en evaluación de Policía Local:', error);
+    logError('POLICIA_LOCAL_SPECIALIST', error);
+
+    res.status(500).json({
+      success: false,
+      error: 'Error evaluando perfil',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/routine-generation/specialist/policia-local/generate
+ * Generación de plan especializado para oposiciones de Policía Local
+ */
+router.post('/specialist/policia-local/generate', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    const {
+      userProfile,
+      selectedLevel,
+      goals,
+      previousPlan,
+      regenerationReason,
+      additionalInstructions,
+      versionConfig
+    } = req.body;
+
+    const isRegeneration = !!(previousPlan || regenerationReason || additionalInstructions);
+
+    logSeparator('POLICIA LOCAL PLAN GENERATION');
+    console.log('Generando plan de Policía Local...', {
+      selectedLevel,
+      isRegeneration,
+      customWeeks: versionConfig?.customWeeks
+    });
+
+    let fullUserProfile = userProfile;
+    if (userProfile && Object.keys(userProfile).length === 1 && userProfile.id) {
+      fullUserProfile = await getUserFullProfile(userId);
+      fullUserProfile = normalizeUserProfile(fullUserProfile);
+    }
+
+    logUserProfile(fullUserProfile, userId);
+
+    const levelMapping = {
+      'principiante': 'Principiante',
+      'intermedio': 'Intermedio',
+      'avanzado': 'Avanzado'
+    };
+    const dbLevel = levelMapping[selectedLevel.toLowerCase()] || 'Principiante';
+
+    const exercisesResult = await pool.query(`
+      SELECT nombre, nivel, categoria, tipo_prueba, baremo_hombres, baremo_mujeres,
+             series_reps_objetivo, intensidad, descanso_seg, equipamiento, notas
+      FROM app."Ejercicios_Policia_Local"
+      ORDER BY RANDOM()
+    `);
+
+    const availableExercises = exercisesResult.rows;
+    console.log(`Ejercicios de Policía Local disponibles: ${availableExercises.length}`);
+
+    const dayInfo = getCurrentDayInfo();
+    const durationWeeks = versionConfig?.customWeeks || (dbLevel === 'Avanzado' ? 8 : 12);
+    const sessionsPerWeek = dbLevel === 'Avanzado' ? 5 : (dbLevel === 'Intermedio' ? 5 : 4);
+
+    const planPayload = {
+      task: isRegeneration ? 'regenerate_policia_local_plan' : 'generate_policia_local_plan',
+      user_profile: fullUserProfile,
+      selected_level: selectedLevel,
+      goals: goals || 'Preparación polivalente para pruebas comunes de Policía Local (CONSULTAR BASES ESPECÍFICAS)',
+      available_exercises: availableExercises,
+      plan_requirements: {
+        duration_weeks: durationWeeks,
+        sessions_per_week: sessionsPerWeek,
+        start_day: dayInfo.dayName,
+        start_date: dayInfo.isoDate
+      },
+      ...(isRegeneration && {
+        previous_plan: previousPlan,
+        user_feedback: {
+          reasons: regenerationReason || [],
+          additional_instructions: additionalInstructions || null
+        }
+      })
+    };
+
+    logAIPayload('POLICIA_LOCAL_PLAN', planPayload);
+
+    clearPromptCache(FeatureKey.POLICIA_LOCAL_SPECIALIST);
+    const systemPrompt = await getPrompt(FeatureKey.POLICIA_LOCAL_SPECIALIST);
+
+    if (!systemPrompt) {
+      throw new Error('Prompt no disponible para Policía Local Specialist');
+    }
+
+    const client = getModuleOpenAI(AI_MODULES.CALISTENIA_SPECIALIST);
+    const config = AI_MODULES.CALISTENIA_SPECIALIST;
+
+    const completion = await client.chat.completions.create({
+      model: config.model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: JSON.stringify(planPayload) }
+      ],
+      temperature: config.temperature,
+      max_tokens: config.max_output_tokens
+    });
+
+    const aiResponse = completion.choices[0].message.content;
+    logAIResponse(aiResponse);
+    logTokens(completion.usage);
+
+    const generatedPlan = JSON.parse(parseAIResponse(aiResponse));
+
+    if (!generatedPlan.semanas || !Array.isArray(generatedPlan.semanas)) {
+      throw new Error('Plan debe contener array de semanas');
+    }
+
+    const dbClient = await pool.connect();
+    try {
+      await dbClient.query('BEGIN');
+
+      await cleanUserDrafts(userId, dbClient);
+
+      const methodologyResult = await dbClient.query(`
+        INSERT INTO app.methodology_plans (
+          user_id, methodology_type, plan_data, generation_mode, status, created_at
+        ) VALUES ($1, $2, $3, $4, $5, NOW())
+        RETURNING id
+      `, [userId, 'Policia Local', JSON.stringify(generatedPlan), 'automatic', 'draft']);
+
+      const methodologyPlanId = methodologyResult.rows[0].id;
+
+      await dbClient.query('COMMIT');
+
+      res.json({
+        success: true,
+        plan: generatedPlan,
+        methodologyPlanId,
+        planId: methodologyPlanId,
+        justification: isRegeneration
+          ? `Plan mejorado para Policía Local basado en tu feedback`
+          : generatedPlan.justification || 'Plan personalizado de Policía Local generado',
+        metadata: {
+          model_used: config.model,
+          generation_timestamp: new Date().toISOString()
+        }
+      });
+
+    } catch (dbError) {
+      await dbClient.query('ROLLBACK');
+      throw dbError;
+    } finally {
+      dbClient.release();
+    }
+
+  } catch (error) {
+    console.error('Error generando plan de Policía Local:', error);
+    logError('POLICIA_LOCAL_SPECIALIST', error);
+
+    res.status(500).json({
+      success: false,
+      error: 'Error generando plan de Policía Local',
+      message: error.message
+    });
+  }
+});
+
 /**
  * GET /api/routine-generation/health
  * Health check del servicio consolidado
@@ -1652,7 +4799,23 @@ router.get('/health', (req, res) => {
       ],
       specialist: [
         'POST /api/routine-generation/specialist/calistenia/evaluate',
-        'POST /api/routine-generation/specialist/calistenia/generate'
+        'POST /api/routine-generation/specialist/calistenia/generate',
+        'POST /api/routine-generation/specialist/heavy-duty/evaluate',
+        'POST /api/routine-generation/specialist/heavy-duty/generate',
+        'POST /api/routine-generation/specialist/hipertrofia/evaluate',
+        'POST /api/routine-generation/specialist/hipertrofia/generate',
+        'POST /api/routine-generation/specialist/powerlifting/evaluate',
+        'POST /api/routine-generation/specialist/powerlifting/generate',
+        'POST /api/routine-generation/specialist/crossfit/evaluate',
+        'POST /api/routine-generation/specialist/crossfit/generate',
+        'POST /api/routine-generation/specialist/bomberos/evaluate',
+        'POST /api/routine-generation/specialist/bomberos/generate',
+        'POST /api/routine-generation/specialist/guardia-civil/evaluate',
+        'POST /api/routine-generation/specialist/guardia-civil/generate',
+        'POST /api/routine-generation/specialist/policia-nacional/evaluate',
+        'POST /api/routine-generation/specialist/policia-nacional/generate',
+        'POST /api/routine-generation/specialist/policia-local/evaluate',
+        'POST /api/routine-generation/specialist/policia-local/generate'
       ],
       auxiliary: [
         'GET /api/routine-generation/methodologies',

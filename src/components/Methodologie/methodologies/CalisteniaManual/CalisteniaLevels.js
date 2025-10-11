@@ -7,32 +7,32 @@
  */
 
 // Constantes de configuración
-const LEVEL_ORDER = ['basico', 'intermedio', 'avanzado'];
+const LEVEL_ORDER = ['principiante', 'intermedio', 'avanzado'];
 
 const TRAINING_CONSTANTS = {
   WARMUP_DURATION: {
-    basico: 10,
+    principiante: 10,
     intermedio: 15,
     avanzado: 20
   },
   COOLDOWN_DURATION: 10, // Igual para todos los niveles
   SKILL_WORK_PERCENT: {
-    basico: 30,
+    principiante: 30,
     intermedio: 50,
     avanzado: 70
   },
   STRENGTH_WORK_PERCENT: {
-    basico: 70,
+    principiante: 70,
     intermedio: 50,
     avanzado: 30
   },
   DELOAD_WEEKS: {
-    basico: 6,
+    principiante: 6,
     intermedio: 4,
     avanzado: 3
   },
   MAX_TRAINING_DAYS: {
-    basico: 3,
+    principiante: 3,
     intermedio: 5,
     avanzado: 6
   }
@@ -40,7 +40,7 @@ const TRAINING_CONSTANTS = {
 
 // Sistema de temas de colores
 const LEVEL_THEMES = {
-  basico: {
+  principiante: {
     primary: 'green-500',
     background: 'green-50',
     border: 'green-200',
@@ -75,7 +75,7 @@ const ValidationUtils = {
   sanitizeLevelId(levelId) {
     if (typeof levelId !== 'string') return null;
     try {
-      // Normaliza y elimina diacríticos: 'básico' -> 'basico'
+      // Normaliza y elimina diacríticos: mantiene compatibilidad con niveles antiguos
       const noDiacritics = levelId
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '');
@@ -115,9 +115,9 @@ const ValidationUtils = {
 };
 
 export const CALISTENIA_LEVELS = {
-  'basico': {
-    id: 'basico',
-    name: 'Básico',
+  'principiante': {
+    id: 'principiante',
+    name: 'Principiante',
     description: '0-6 meses de entrenamiento',
     frequency: '2-3 días/semana',
     restDays: 'Descanso mínimo 48h entre sesiones',
@@ -136,10 +136,10 @@ export const CALISTENIA_LEVELS = {
       'Mejora de movilidad y flexibilidad básica'
     ],
     equipment: ['Suelo', 'Pared', 'Barra (opcional)'],
-    theme: LEVEL_THEMES.basico,
+    theme: LEVEL_THEMES.principiante,
     // Backward compatibility
-    color: LEVEL_THEMES.basico.tailwindClass,
-    icon: LEVEL_THEMES.basico.icon,
+    color: LEVEL_THEMES.principiante.tailwindClass,
+    icon: LEVEL_THEMES.principiante.icon,
     recommendedProgression: 'Enfoque en movimientos básicos hasta dominar técnica perfecta'
   },
   'intermedio': {
@@ -200,7 +200,7 @@ export const CALISTENIA_LEVELS = {
 
 /**
  * Obtener configuración de nivel por ID
- * @param {string} levelId - ID del nivel ('basico', 'intermedio', 'avanzado')
+ * @param {string} levelId - ID del nivel ('principiante', 'intermedio', 'avanzado')
  * @returns {Object|null} Configuración del nivel
  */
 export function getLevelConfig(levelId) {

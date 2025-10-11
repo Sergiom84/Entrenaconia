@@ -1405,18 +1405,60 @@ router.post('/sessions/:sessionId/handle-abandon', authenticateToken, async (req
       }
     }
 
-    // 3. Marcar momento de abandono (no cerrar la sesión, solo marcar)
+    // 3. Verificar progreso para determinar el status final
+    const progressCheck = await pool.query(`
+      SELECT
+        COUNT(*) as total_exercises,
+        COUNT(*) FILTER (WHERE status IN ('completed', 'skipped')) as finished_exercises,
+        COUNT(*) FILTER (WHERE series_completed > 0 OR status IN ('completed', 'skipped', 'in_progress')) as exercises_with_progress
+      FROM app.home_exercise_progress
+      WHERE home_training_session_id = $1
+    `, [sessionId]);
+
+    const { total_exercises, finished_exercises, exercises_with_progress } = progressCheck.rows[0];
+    const allFinished = parseInt(finished_exercises) === parseInt(total_exercises) && parseInt(total_exercises) > 0;
+    const hasProgress = parseInt(exercises_with_progress) > 0;
+
+    // 4. Determinar status final:
+    // - Todos finalizados → 'completed'
+    // - Hay progreso pero no todos finalizados → 'in_progress' (permitir reanudar)
+    // - Sin progreso → 'cancelled'
+    let finalStatus;
+    if (allFinished) {
+      finalStatus = 'completed';
+    } else if (hasProgress) {
+      finalStatus = 'in_progress';
+    } else {
+      finalStatus = 'cancelled';
+    }
+
+    // 5. Marcar abandono y actualizar status
     await pool.query(`
       UPDATE app.home_training_sessions
-      SET 
+      SET
         abandoned_at = NOW(),
-        abandon_reason = $2
+        abandon_reason = $2,
+        status = $3,
+        completed_at = CASE
+          WHEN $3 = 'completed' THEN NOW()
+          ELSE completed_at
+        END
       WHERE id = $1
-    `, [sessionId, reason]);
+    `, [sessionId, reason, finalStatus]);
 
     console.log(`✅ Sesión ${sessionId} marcada como abandonada (${reason})`);
-    
-    res.json({ success: true, message: 'Progreso guardado antes de abandono' });
+    console.log(`   Status final: ${finalStatus} (${finished_exercises}/${total_exercises} ejercicios finalizados)`);
+
+    res.json({
+      success: true,
+      message: 'Progreso guardado antes de abandono',
+      finalStatus: finalStatus,
+      progress: {
+        total: parseInt(total_exercises),
+        finished: parseInt(finished_exercises),
+        canResume: finalStatus === 'in_progress'
+      }
+    });
     
   } catch (error) {
     console.error('❌ Error manejando abandono:', error);

@@ -16,14 +16,14 @@ import { updateWarmupTime } from './api.js';
  * - Estados del timer más claros
  *
  * Props:
- * - level: Nivel del usuario (básico, intermedio, avanzado)
+ * - level: Nivel del usuario (principiante, intermedio, avanzado)
  * - sessionId: ID de la sesión de entrenamiento (REQUERIDO para guardar tiempo)
  * - onComplete: Función llamada al completar calentamiento
  * - onSkip: Función llamada al saltar calentamiento
  * - onClose: Función llamada al cerrar modal
  */
 export default function WarmupModal({
-  level = 'básico',
+  level = 'principiante',
   sessionId,
   onComplete,
   onSkip,
@@ -77,13 +77,13 @@ export default function WarmupModal({
   }, [saveProgress]);
 
   // Configuración por nivel
-  const normalizedLevel = typeof level === 'string' ? level : (level?.level || 'básico');
+  const normalizedLevel = typeof level === 'string' ? level : (level?.level || 'principiante');
   const levelConfig = getLevelRecommendations(normalizedLevel) || {};
   const warmupDuration = levelConfig.warmupDuration || 10; // minutos
 
   // Ejercicios de calentamiento por nivel
   const warmupExercises = {
-    básico: [
+    principiante: [
       { name: 'Movimientos de brazos', duration: 30, description: 'Círculos lentos hacia adelante y atrás' },
       { name: 'Rotaciones de hombros', duration: 30, description: 'Movimientos suaves y controlados' },
       { name: 'Giros de cuello', duration: 20, description: 'Laterales suaves, evitar movimientos bruscos' },
@@ -113,7 +113,7 @@ export default function WarmupModal({
   };
 
   // Resolver ejercicios antes de cualquier efecto que los use
-  const exercises = warmupExercises[normalizedLevel] || warmupExercises.básico;
+  const exercises = warmupExercises[normalizedLevel] || warmupExercises.principiante;
   const currentExercise = exercises[currentExerciseIndex] || {};
 
 
