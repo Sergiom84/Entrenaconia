@@ -74,8 +74,9 @@ function mapByDayNames(weekDays, sesiones) {
     const dayNameShort = dayNamesShort[dayOfWeek];
 
     // Buscar sesión para este día
+    // Compatibilidad: Buscar en 'dia' o 'dia_semana' (diferentes formatos de prompt)
     const session = sesiones.find(ses => {
-      const sessionDay = ses.dia?.toLowerCase();
+      const sessionDay = (ses.dia || ses.dia_semana)?.toLowerCase();
       return sessionDay === dayName ||
              sessionDay === dayNameShort ||
              sessionDay === dayNameShort.replace('é', 'e') ||

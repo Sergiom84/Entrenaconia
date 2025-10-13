@@ -85,7 +85,11 @@ function findTodaySession(plan, targetDay, weekIdx = 0) {
   const week = semanas[safeWeekIdx];
   if (!week?.sesiones) return null;
 
-  return week.sesiones.find((sesion) => sesion.dia?.toLowerCase() === targetDay?.toLowerCase()) || null;
+  // Buscar por 'dia' o 'dia_semana' (compatibilidad con diferentes formatos de prompt)
+  return week.sesiones.find((sesion) => {
+    const diaField = sesion.dia || sesion.dia_semana;
+    return diaField?.toLowerCase() === targetDay?.toLowerCase();
+  }) || null;
 }
 
 export default function TodayTrainingTab({
