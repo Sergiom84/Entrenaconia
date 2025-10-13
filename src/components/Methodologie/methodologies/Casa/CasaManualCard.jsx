@@ -1,15 +1,16 @@
 import React, { useReducer } from 'react';
 import { useAuth } from '../../../../contexts/AuthContext';
 import tokenManager from '../../../../utils/tokenManager';
+import { useUserContext } from '../../../../contexts/UserContext';
 import { CASA_LEVELS, getLevelConfig, getTrainingConstants } from './CasaLevels';
 import { CASA_TRAINING_CATEGORIES, generateBalancedSplit } from './CasaMuscleGroups';
 import { Loader2, Home, Zap, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
 
 // Estado inicial del componente
 const initialState = {
-  mode: null, // 'ai' | 'manual'
+  mode: 'manual', // 'ai' | 'manual' - Inicia directo en modo manual
   selectedLevel: null,
-  selectedCategories: [],
+  selectedCategory: null, // Cambio: de array a string único
   customGoals: '',
   equipmentLevel: 'basico', // 'minimo' | 'basico' | 'avanzado'
   spaceAvailable: 'medio', // 'reducido' | 'medio' | 'amplio'
@@ -28,16 +29,8 @@ function casaCardReducer(state, action) {
     case 'SET_LEVEL':
       return { ...state, selectedLevel: action.payload };
 
-    case 'TOGGLE_CATEGORY': {
-      const category = action.payload;
-      const isSelected = state.selectedCategories.includes(category);
-      return {
-        ...state,
-        selectedCategories: isSelected
-          ? state.selectedCategories.filter(c => c !== category)
-          : [...state.selectedCategories, category]
-      };
-    }
+    case 'SET_CATEGORY':
+      return { ...state, selectedCategory: action.payload };
 
     case 'SET_EQUIPMENT_LEVEL':
       return { ...state, equipmentLevel: action.payload };
@@ -74,6 +67,7 @@ function casaCardReducer(state, action) {
 export default function CasaManualCard({ onGenerate, isLoading, error }) {
   const [state, dispatch] = useReducer(casaCardReducer, initialState);
   const { user } = useAuth();
+  const { userData } = useUserContext();
 
   // Evaluación AI del perfil del usuario
   const evaluateUserProfile = async () => {
@@ -124,19 +118,25 @@ export default function CasaManualCard({ onGenerate, isLoading, error }) {
       return;
     }
 
-    if (state.mode === 'manual' && state.selectedCategories.length === 0) {
-      dispatch({ type: 'SET_ERROR', payload: 'Debes seleccionar al menos una categoría de entrenamiento' });
+    if (state.mode === 'manual' && !state.selectedCategory) {
+      dispatch({ type: 'SET_ERROR', payload: 'Debes seleccionar una categoría de entrenamiento' });
       return;
     }
+
+    // Construir perfil del usuario (siguiendo patrón de Calistenia)
+    const fullProfile = {
+      id: userData?.id || user?.id
+    };
 
     // Preparar datos para el backend
     const casaData = {
       mode: state.mode,
       selectedLevel: state.mode === 'ai' ? state.aiEvaluation?.nivel_recomendado : state.selectedLevel,
-      selectedCategories: state.selectedCategories.length > 0 ? state.selectedCategories : ['funcional', 'fuerza', 'cardio'],
+      selectedCategory: state.selectedCategory, // Cambio: singular
       equipmentLevel: state.equipmentLevel,
       spaceAvailable: state.spaceAvailable,
       customGoals: state.customGoals,
+      userProfile: fullProfile, // Añadido: perfil del usuario
       aiEvaluation: state.mode === 'ai' ? state.aiEvaluation : null
     };
 
@@ -149,6 +149,19 @@ export default function CasaManualCard({ onGenerate, isLoading, error }) {
 
   return (
     <div className="w-full max-w-4xl mx-auto bg-gray-900 rounded-2xl p-6 space-y-6">
+      {/* Loading Overlay - Similar a Calistenia */}
+      {isLoading && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60]">
+          <div className="bg-black/90 border border-yellow-400/30 rounded-lg p-6 text-center shadow-xl">
+            <svg className="w-10 h-10 text-yellow-400 animate-spin mx-auto mb-3" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+            </svg>
+            <p className="text-white font-semibold">La IA está generando el entrenamiento</p>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="text-center space-y-2">
         <div className="flex items-center justify-center gap-3">
@@ -167,128 +180,6 @@ export default function CasaManualCard({ onGenerate, isLoading, error }) {
           <div>
             <p className="text-red-400 text-sm font-medium">Error</p>
             <p className="text-red-300 text-sm">{error || state.errorMessage}</p>
-          </div>
-        </div>
-      )}
-
-      {/* Mode Selection */}
-      {!state.mode && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <button
-            onClick={() => dispatch({ type: 'SET_MODE', payload: 'ai' })}
-            className="p-6 bg-gradient-to-br from-yellow-400/20 to-orange-500/20 border-2 border-yellow-400/30 rounded-xl hover:border-yellow-400 transition-all group"
-          >
-            <Zap className="w-12 h-12 text-yellow-400 mx-auto mb-3 group-hover:scale-110 transition-transform" />
-            <h3 className="text-lg font-bold text-white mb-2">Evaluación con IA</h3>
-            <p className="text-gray-300 text-sm">
-              Dejanos evaluar tu perfil y recomendarte el mejor plan personalizado
-            </p>
-          </button>
-
-          <button
-            onClick={() => dispatch({ type: 'SET_MODE', payload: 'manual' })}
-            className="p-6 bg-gradient-to-br from-blue-500/20 to-purple-500/20 border-2 border-blue-400/30 rounded-xl hover:border-blue-400 transition-all group"
-          >
-            <Home className="w-12 h-12 text-blue-400 mx-auto mb-3 group-hover:scale-110 transition-transform" />
-            <h3 className="text-lg font-bold text-white mb-2">Selección Manual</h3>
-            <p className="text-gray-300 text-sm">
-              Elige tu nivel y categorías de entrenamiento que prefieras
-            </p>
-          </button>
-        </div>
-      )}
-
-      {/* AI Evaluation Section */}
-      {state.mode === 'ai' && !state.aiEvaluation && (
-        <div className="space-y-4">
-          <div className="bg-gray-800 rounded-xl p-6 space-y-4">
-            <h3 className="text-lg font-bold text-white flex items-center gap-2">
-              <Zap className="w-5 h-5 text-yellow-400" />
-              Evaluación Inteligente
-            </h3>
-            <p className="text-gray-300 text-sm">
-              Analizaremos tu perfil, experiencia y objetivos para recomendarte el plan de entrenamiento en casa más adecuado.
-            </p>
-            <button
-              onClick={evaluateUserProfile}
-              disabled={state.isEvaluating}
-              className="w-full bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-bold py-3 px-6 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              {state.isEvaluating ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  Evaluando perfil...
-                </>
-              ) : (
-                <>
-                  <Zap className="w-5 h-5" />
-                  Evaluar mi perfil
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* AI Evaluation Results */}
-      {state.mode === 'ai' && state.aiEvaluation && (
-        <div className="space-y-4">
-          <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-6 space-y-4">
-            <div className="flex items-center gap-3">
-              <CheckCircle2 className="w-6 h-6 text-green-400" />
-              <h3 className="text-lg font-bold text-white">Evaluación Completada</h3>
-            </div>
-
-            <div className="space-y-3">
-              <div className="bg-gray-800 rounded-lg p-4">
-                <p className="text-gray-400 text-sm mb-1">Nivel Recomendado</p>
-                <p className="text-white font-bold text-lg capitalize">{state.aiEvaluation.nivel_recomendado}</p>
-              </div>
-
-              {state.aiEvaluation.razonamiento && (
-                <div className="bg-gray-800 rounded-lg p-4">
-                  <p className="text-gray-400 text-sm mb-2">Análisis</p>
-                  <p className="text-gray-200 text-sm">{state.aiEvaluation.razonamiento}</p>
-                </div>
-              )}
-
-              {state.aiEvaluation.categorias_recomendadas && (
-                <div className="bg-gray-800 rounded-lg p-4">
-                  <p className="text-gray-400 text-sm mb-2">Categorías Recomendadas</p>
-                  <div className="flex flex-wrap gap-2">
-                    {state.aiEvaluation.categorias_recomendadas.map((cat) => (
-                      <span key={cat} className="px-3 py-1 bg-yellow-400/20 text-yellow-400 rounded-full text-xs font-medium capitalize">
-                        {cat}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <button
-              onClick={handleGeneratePlan}
-              disabled={isLoading}
-              className="w-full bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-bold py-3 px-6 rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  Generando plan...
-                </>
-              ) : (
-                <>
-                  Generar Plan Personalizado
-                </>
-              )}
-            </button>
-
-            <button
-              onClick={() => dispatch({ type: 'RESET' })}
-              className="w-full bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded-lg transition-colors"
-            >
-              Volver a evaluar
-            </button>
           </div>
         </div>
       )}
@@ -321,14 +212,14 @@ export default function CasaManualCard({ onGenerate, isLoading, error }) {
           {/* Category Selection */}
           <div className="space-y-3">
             <label className="text-white font-bold text-sm">Categorías de Entrenamiento</label>
-            <p className="text-gray-400 text-xs">Selecciona una o más categorías (mínimo 1)</p>
+            <p className="text-gray-400 text-xs">Selecciona una categoría</p>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               {Object.entries(CASA_TRAINING_CATEGORIES).map(([key, category]) => {
-                const isSelected = state.selectedCategories.includes(key);
+                const isSelected = state.selectedCategory === key;
                 return (
                   <button
                     key={key}
-                    onClick={() => dispatch({ type: 'TOGGLE_CATEGORY', payload: key })}
+                    onClick={() => dispatch({ type: 'SET_CATEGORY', payload: key })}
                     className={`p-4 rounded-xl border-2 transition-all ${
                       isSelected
                         ? 'border-yellow-400 bg-yellow-400/10'
@@ -409,7 +300,7 @@ export default function CasaManualCard({ onGenerate, isLoading, error }) {
           {/* Generate Button */}
           <button
             onClick={handleGeneratePlan}
-            disabled={isLoading || !state.selectedLevel || state.selectedCategories.length === 0}
+            disabled={isLoading || !state.selectedLevel || !state.selectedCategory}
             className="w-full bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-bold py-3 px-6 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
             {isLoading ? (
@@ -423,24 +314,7 @@ export default function CasaManualCard({ onGenerate, isLoading, error }) {
               </>
             )}
           </button>
-
-          <button
-            onClick={() => dispatch({ type: 'RESET' })}
-            className="w-full bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded-lg transition-colors"
-          >
-            Reiniciar Selección
-          </button>
         </div>
-      )}
-
-      {/* Back to Mode Selection */}
-      {state.mode && !state.aiEvaluation && state.mode !== 'manual' && (
-        <button
-          onClick={() => dispatch({ type: 'RESET' })}
-          className="w-full bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded-lg transition-colors"
-        >
-          Volver atrás
-        </button>
       )}
     </div>
   );

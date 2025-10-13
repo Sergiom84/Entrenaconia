@@ -253,3 +253,98 @@ export async function updateWarmupTime({ sessionId, warmupTimeSeconds }) {
   if (!resp.ok || !data.success) throw new Error(data.error || 'No se pudo actualizar el tiempo de calentamiento');
   return data;
 }
+
+// ===============================================
+// 📊 RE-EVALUACIÓN PROGRESIVA
+// ===============================================
+
+/**
+ * Verificar si debe mostrarse el modal de re-evaluación
+ */
+export async function shouldTriggerReEvaluation({ methodologyPlanId, currentWeek }) {
+  const token = getToken();
+  const params = new URLSearchParams({
+    methodology_plan_id: methodologyPlanId,
+    current_week: currentWeek
+  });
+
+  const resp = await fetch(`/api/progress/should-trigger?${params.toString()}`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok || !data.success) {
+    console.warn('⚠️ Error verificando trigger de re-evaluación:', data.error);
+    return { should_trigger: false };
+  }
+  return data; // { should_trigger, current_week, last_re_evaluation }
+}
+
+/**
+ * Enviar re-evaluación y obtener sugerencias de IA
+ */
+export async function submitReEvaluation({
+  methodology,
+  methodologyPlanId,
+  week,
+  sentiment,
+  overallComment,
+  exercises
+}) {
+  const token = getToken();
+  const resp = await fetch('/api/progress/re-evaluation', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+    body: JSON.stringify({
+      methodology,
+      methodology_plan_id: methodologyPlanId,
+      week,
+      sentiment,
+      overall_comment: overallComment,
+      exercises
+    })
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok || !data.success) {
+    throw new Error(data.error || 'No se pudo guardar la re-evaluación');
+  }
+  return data; // { re_evaluation_id, adjustments, progress_assessment, motivational_feedback, warnings }
+}
+
+/**
+ * Obtener ejercicios clave para re-evaluación
+ */
+export async function getKeyExercisesForReEvaluation({ methodologyPlanId, week }) {
+  const token = getToken();
+  const params = new URLSearchParams({
+    methodology_plan_id: methodologyPlanId,
+    week
+  });
+
+  const resp = await fetch(`/api/progress/key-exercises?${params.toString()}`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok || !data.success) {
+    throw new Error(data.error || 'No se pudieron cargar los ejercicios');
+  }
+  return data.exercises || [];
+}
+
+/**
+ * Obtener historial de re-evaluaciones
+ */
+export async function getReEvaluationHistory({ methodologyPlanId = null } = {}) {
+  const token = getToken();
+  const params = methodologyPlanId
+    ? `?methodology_plan_id=${encodeURIComponent(methodologyPlanId)}`
+    : '';
+
+  const resp = await fetch(`/api/progress/re-evaluation-history${params}`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok || !data.success) {
+    throw new Error(data.error || 'No se pudo cargar el historial');
+  }
+  return data.history || [];
+}

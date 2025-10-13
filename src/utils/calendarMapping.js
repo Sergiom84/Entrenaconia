@@ -66,22 +66,34 @@ function isWeekDayName(str) {
  */
 function mapByDayNames(weekDays, sesiones) {
   const dayNames = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
-  const dayNamesShort = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
+
+  // Función helper para normalizar nombres de día (completos y abreviados)
+  const normalizeDay = (day) => {
+    if (!day) return '';
+    const dayLower = day.toLowerCase();
+    const dayMap = {
+      'lunes': 'lun', 'lun': 'lun',
+      'martes': 'mar', 'mar': 'mar',
+      'miércoles': 'mie', 'miercoles': 'mie', 'mié': 'mie', 'mie': 'mie',
+      'jueves': 'jue', 'jue': 'jue',
+      'viernes': 'vie', 'vier': 'vie', 'vie': 'vie',
+      'sábado': 'sab', 'sabado': 'sab', 'sáb': 'sab', 'sab': 'sab',
+      'domingo': 'dom', 'dom': 'dom'
+    };
+    return dayMap[dayLower] || dayLower.substring(0, 3);
+  };
 
   weekDays.forEach((day, index) => {
     const dayOfWeek = day.date.getDay();
     const dayName = dayNames[dayOfWeek];
-    const dayNameShort = dayNamesShort[dayOfWeek];
+    const normalizedDayName = normalizeDay(dayName);
 
     // Buscar sesión para este día
     // Compatibilidad: Buscar en 'dia' o 'dia_semana' (diferentes formatos de prompt)
     const session = sesiones.find(ses => {
-      const sessionDay = (ses.dia || ses.dia_semana)?.toLowerCase();
-      return sessionDay === dayName ||
-             sessionDay === dayNameShort ||
-             sessionDay === dayNameShort.replace('é', 'e') ||
-             (sessionDay === 'mie' && dayName === 'miércoles') ||
-             (sessionDay === 'sab' && dayName === 'sábado');
+      const sessionDay = ses.dia || ses.dia_semana;
+      const normalizedSessionDay = normalizeDay(sessionDay);
+      return normalizedSessionDay === normalizedDayName;
     });
 
     if (session) {

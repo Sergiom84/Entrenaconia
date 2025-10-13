@@ -366,14 +366,14 @@ export default function FuncionalManualCard({ onGenerate, isLoading, error }) {
           </div>
           <div className="flex-1">
             <h3 className="text-xl font-semibold text-white mb-2">
-              Nivel Recomendado: <span className={`text-${CARD_CONFIG.THEME.PRIMARY}`}>
+              Nivel Recomendado: <span className="text-emerald-400">
                 {state.aiEvaluation.recommended_level.charAt(0).toUpperCase() + state.aiEvaluation.recommended_level.slice(1)}
               </span>
             </h3>
             <div className="flex items-center gap-2 mb-3">
               <div className="flex-1 bg-gray-700 rounded-full h-2">
                 <div
-                  className={`bg-${CARD_CONFIG.THEME.PRIMARY} h-2 rounded-full`}
+                  className="bg-emerald-400 h-2 rounded-full transition-all duration-500"
                   style={{ width: `${Math.round(state.aiEvaluation.confidence * 100)}%` }}
                 ></div>
               </div>
@@ -447,7 +447,7 @@ export default function FuncionalManualCard({ onGenerate, isLoading, error }) {
             className={`flex-1 px-6 py-3 rounded-xl font-semibold transition-all ${
               isLoading
                 ? 'bg-gray-600 cursor-not-allowed text-gray-400'
-                : `bg-${CARD_CONFIG.THEME.PRIMARY} text-black hover:bg-emerald-300 transform hover:scale-[1.02]`
+                : 'bg-emerald-400 text-black hover:bg-emerald-300 transform hover:scale-[1.02]'
             }`}
           >
             <div className="flex items-center justify-center gap-2">
@@ -595,7 +595,7 @@ export default function FuncionalManualCard({ onGenerate, isLoading, error }) {
           className={`flex-1 px-8 py-3 rounded-xl text-black font-semibold transition-all ${
             isLoading
               ? 'bg-gray-600 cursor-not-allowed'
-              : `bg-${CARD_CONFIG.THEME.PRIMARY} hover:bg-emerald-300 transform hover:scale-[1.02]`
+              : 'bg-emerald-400 hover:bg-emerald-300 transform hover:scale-[1.02]'
           }`}
         >
           {isLoading ? (

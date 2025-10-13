@@ -30,6 +30,7 @@ import routineGenerationRoutes from './routes/routineGeneration.js';
 import trainingSessionRoutes from './routes/trainingSession.js';
 import exerciseCatalogRoutes from './routes/exerciseCatalog.js';
 import trainingStateRoutes from './routes/trainingState.js';
+import progressReEvaluationRoutes from './routes/progressReEvaluation.js';
 
 // ===============================================
 // 🔗 OTRAS RUTAS DEL SISTEMA
@@ -368,6 +369,7 @@ app.use('/api/routine-generation', routineGenerationRoutes);
 app.use('/api/training-session', trainingSessionRoutes);
 app.use('/api/training', trainingStateRoutes);
 app.use('/api/exercise-catalog', exerciseCatalogRoutes);
+app.use('/api/progress', progressReEvaluationRoutes);
 
 // === RUTAS NO AFECTADAS POR LA CONSOLIDACIÓN ===
 app.use('/api/auth', authRoutes);

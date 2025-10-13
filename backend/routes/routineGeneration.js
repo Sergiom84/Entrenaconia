@@ -167,6 +167,51 @@ function parseAIResponse(response) {
 }
 
 /**
+ * Normaliza planes de entrenamiento en casa para mantener compatibilidad con componentes existentes.
+ */
+function normalizeCasaPlan(plan) {
+  if (!plan || typeof plan !== 'object') {
+    return plan;
+  }
+
+  if (Array.isArray(plan.semanas)) {
+    plan.semanas = plan.semanas.map((semana) => {
+      const sesiones = Array.isArray(semana.sesiones) ? semana.sesiones : [];
+      const normalizedSesiones = sesiones.map((sesion) => {
+        const bloques = Array.isArray(sesion.bloques) ? sesion.bloques : [];
+        let ejercicios = Array.isArray(sesion.ejercicios) ? sesion.ejercicios : [];
+
+        if ((Array.isArray(ejercicios) ? ejercicios.length : 0) === 0 && bloques.length > 0) {
+          ejercicios = bloques.reduce((acc, bloque) => {
+            if (Array.isArray(bloque.ejercicios)) {
+              return acc.concat(bloque.ejercicios);
+            }
+            return acc;
+          }, []);
+        }
+
+        if (!Array.isArray(ejercicios)) {
+          ejercicios = [];
+        }
+
+        return {
+          ...sesion,
+          bloques,
+          ejercicios
+        };
+      });
+
+      return {
+        ...semana,
+        sesiones: normalizedSesiones
+      };
+    });
+  }
+
+  return plan;
+}
+
+/**
  * Obtener día actual para inicio de rutina
  */
 function getCurrentDayInfo() {
@@ -2271,7 +2316,7 @@ RESPONDE SOLO EN JSON PURO:
       response_format: { type: 'json_object' }
     });
 
-    const evaluation = parseAIResponse(completion.choices[0].message.content);
+    const evaluation = JSON.parse(parseAIResponse(completion.choices[0].message.content));
 
     console.log(`✅ Evaluación Funcional completada:`, {
       level: evaluation.recommended_level,
@@ -2368,6 +2413,8 @@ router.post('/specialist/funcional/generate', authenticateToken, async (req, res
       levelCondition = "nivel = 'Principiante'";
     }
 
+    console.log(`🔍 Consultando ejercicios con condición: ${levelCondition}`);
+
     const exercisesResult = await pool.query(`
       SELECT exercise_id, nombre, nivel, categoria, patron, equipamiento,
              series_reps_objetivo, descanso_seg, tempo, notas, progresion_hacia
@@ -2377,6 +2424,7 @@ router.post('/specialist/funcional/generate', authenticateToken, async (req, res
     `);
 
     const availableExercises = exercisesResult.rows;
+    console.log(`📊 Query completado: ${availableExercises.length} ejercicios encontrados`);
 
     if (availableExercises.length === 0) {
       throw new Error(`No hay ejercicios disponibles para el nivel ${dbLevel}`);
@@ -2385,11 +2433,16 @@ router.post('/specialist/funcional/generate', authenticateToken, async (req, res
     console.log(`✅ Ejercicios Funcionales cargados: ${availableExercises.length} para nivel ${dbLevel}`);
 
     // Llamar a IA con prompt especializado
+    console.log('🔧 Inicializando cliente OpenAI...');
     const client = getModuleOpenAI(AI_MODULES.FUNCIONAL_SPECIALIST);
     const config = AI_MODULES.FUNCIONAL_SPECIALIST;
+
+    console.log('📄 Cargando system prompt...');
     const systemPrompt = await getPrompt(FeatureKey.FUNCIONAL_SPECIALIST);
+    console.log(`✅ System prompt cargado (${systemPrompt.length} caracteres)`);
 
     // Construir mensaje para IA
+    console.log('📝 Construyendo mensaje para IA...');
     const userMessage = `GENERACIÓN DE PLAN ENTRENAMIENTO FUNCIONAL
 
 NIVEL: ${actualLevel} (${dbLevel})
@@ -2414,6 +2467,12 @@ PRINCIPIOS FUNCIONALES OBLIGATORIOS:
 
 GENERA un plan completo siguiendo el formato JSON de metodología.`;
 
+    console.log(`📏 Mensaje construido (${userMessage.length} caracteres)`);
+
+    const startTime = Date.now();
+    console.log('🤖 Iniciando llamada a OpenAI para generación Funcional...');
+    console.log(`📊 Config: model=${config.model}, max_tokens=${config.max_output_tokens}, temp=${config.temperature}`);
+
     const completion = await client.chat.completions.create({
       model: config.model,
       messages: [
@@ -2425,25 +2484,42 @@ GENERA un plan completo siguiendo el formato JSON de metodología.`;
       response_format: { type: 'json_object' }
     });
 
-    const generatedPlan = parseAIResponse(completion.choices[0].message.content);
+    const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(2);
+    console.log(`⏱️  OpenAI respondió en ${elapsedTime}s`);
 
-    console.log(`✅ Plan Funcional generado por IA`);
+    console.log('🔄 Parseando respuesta de IA...');
+    const rawContent = completion.choices[0].message.content;
+    console.log(`📦 Contenido recibido (${rawContent.length} caracteres)`);
+
+    const cleanedResponse = parseAIResponse(rawContent);
+    console.log(`🧹 Respuesta limpiada (${cleanedResponse.length} caracteres)`);
+
+    const generatedPlan = JSON.parse(cleanedResponse);
+    console.log(`✅ JSON parseado correctamente`);
+
+    console.log(`✅ Plan Funcional generado por IA (${elapsedTime}s total)`);
 
     // Validar estructura del plan
+    console.log('🔍 Validando estructura del plan...');
     if (!generatedPlan.semanas || !Array.isArray(generatedPlan.semanas)) {
       throw new Error('Plan generado no tiene estructura válida (falta semanas)');
     }
+    console.log(`✅ Estructura válida: ${generatedPlan.semanas.length} semanas`);
 
     // Guardar en BD con transacción
+    console.log('💾 Conectando a base de datos...');
     const client_db = await pool.connect();
 
     try {
+      console.log('🔄 Iniciando transacción...');
       await client_db.query('BEGIN');
 
       // Limpiar drafts previos
+      console.log('🧹 Limpiando drafts previos...');
       await cleanUserDrafts(userId, client_db);
 
       // Insertar plan
+      console.log('📝 Insertando plan en BD...');
       const planResult = await client_db.query(`
         INSERT INTO app.methodology_plans (
           user_id, methodology_type, plan_data, generation_mode, status, created_at
@@ -2454,6 +2530,7 @@ GENERA un plan completo siguiendo el formato JSON de metodología.`;
 
       const methodologyPlanId = planResult.rows[0].id;
 
+      console.log('✅ Commit de transacción...');
       await client_db.query('COMMIT');
 
       console.log(`✅ Plan Funcional guardado con ID: ${methodologyPlanId}`);
@@ -2477,13 +2554,15 @@ GENERA un plan completo siguiendo el formato JSON de metodología.`;
     }
 
   } catch (error) {
-    console.error('Error generando plan de Entrenamiento Funcional:', error);
+    console.error('❌ Error generando plan de Entrenamiento Funcional:', error);
+    console.error('📍 Stack trace:', error.stack);
     logError('FUNCIONAL_SPECIALIST', error);
 
     res.status(500).json({
       success: false,
       error: 'Error generando plan',
-      message: error.message
+      message: error.message,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });
@@ -2551,7 +2630,7 @@ RESPONDE SOLO EN JSON PURO:
       response_format: { type: 'json_object' }
     });
 
-    const evaluation = parseAIResponse(completion.choices[0].message.content);
+    const evaluation = JSON.parse(parseAIResponse(completion.choices[0].message.content));
 
     console.log(`✅ Evaluación Halterofilia completada:`, {
       level: evaluation.recommended_level,
@@ -2706,7 +2785,7 @@ GENERA un plan completo siguiendo el formato JSON de metodología.`;
       response_format: { type: 'json_object' }
     });
 
-    const generatedPlan = parseAIResponse(completion.choices[0].message.content);
+    const generatedPlan = JSON.parse(parseAIResponse(completion.choices[0].message.content));
 
     console.log(`✅ Plan Halterofilia generado por IA`);
 
@@ -2839,7 +2918,7 @@ Devuelve un JSON con:
       response_format: { type: 'json_object' }
     });
 
-    const evaluation = parseAIResponse(completion.choices[0].message.content);
+    const evaluation = JSON.parse(parseAIResponse(completion.choices[0].message.content));
     console.log('✅ Evaluación Casa completada:', evaluation);
 
     res.json({
@@ -2872,6 +2951,7 @@ router.post('/specialist/casa/generate', authenticateToken, async (req, res) => 
     const {
       userProfile,
       selectedLevel,
+      selectedCategory,
       selectedCategories,
       equipmentLevel,
       spaceAvailable,
@@ -2879,10 +2959,12 @@ router.post('/specialist/casa/generate', authenticateToken, async (req, res) => 
       aiEvaluation
     } = casaData;
 
+    const categoria = selectedCategory || (Array.isArray(selectedCategories) ? selectedCategories[0] : undefined);
+
     logSeparator('CASA PLAN GENERATION');
     console.log('🏠 Generando plan de entrenamiento en casa...', {
       selectedLevel,
-      selectedCategories,
+      selectedCategory: categoria,
       equipmentLevel,
       spaceAvailable
     });
@@ -2927,12 +3009,24 @@ router.post('/specialist/casa/generate', authenticateToken, async (req, res) => 
     `);
 
     const availableExercises = exercisesResult.rows;
+
+    if (availableExercises.length === 0) {
+      console.error('No se encontraron ejercicios en app."Ejercicios_Casa"');
+      return res.status(503).json({
+        success: false,
+        error: 'Sin ejercicios disponibles',
+        message: 'No hay ejercicios configurados para entrenamiento en casa'
+      });
+    }
+
     console.log(`📋 Ejercicios Casa disponibles: ${availableExercises.length}`);
 
     // Filtrar por categorías si hay seleccionadas
-    const categoriasActivas = selectedCategories && selectedCategories.length > 0
+    const categoriasActivas = Array.isArray(selectedCategories) && selectedCategories.length > 0
       ? selectedCategories
-      : ['Funcional', 'Fuerza', 'Cardio'];
+      : (categoria ? [categoria] : ['Funcional', 'Fuerza', 'Cardio']);
+
+    const categoriaActiva = categoriasActivas[0];
 
     const exercisesByCategory = availableExercises.reduce((acc, exercise) => {
       const cat = exercise.categoria;
@@ -2956,7 +3050,8 @@ ${JSON.stringify(fullUserProfile, null, 2)}
 
 CONFIGURACIÓN DEL PLAN:
 - Nivel seleccionado: ${actualLevel}
-- Categorías preferidas: ${categoriasActivas.join(', ')}
+- Categoría principal: ${categoriaActiva}
+- Categorías complementarias: ${categoriasActivas.slice(1).join(', ') || 'Ninguna'}
 - Equipamiento disponible: ${equipmentLevel || 'basico'}
 - Espacio disponible: ${spaceAvailable || 'medio'}
 - Objetivos personalizados: ${customGoals || 'Ninguno especificado'}
@@ -2970,12 +3065,13 @@ ${Object.entries(exercisesByCategory).map(([cat, exs]) =>
 
 INSTRUCCIONES ESPECIALES:
 1. Usa SOLO los ejercicios proporcionados de la tabla Ejercicios_Casa
-2. Respeta el equipamiento disponible: ${equipmentLevel}
-3. Adapta al espacio: ${spaceAvailable}
-4. Genera un plan de 4 semanas progresivo
-5. Incluye calentamiento, trabajo principal y enfriamiento en cada sesión
-6. Usa creatividad para adaptar objetos domésticos según equipamiento
-7. Especifica claramente qué objetos usar (silla, toalla, pared, etc.)
+2. Enfoca el plan en la categoría principal: ${categoriaActiva}
+3. Respeta el equipamiento disponible: ${equipmentLevel}
+4. Adapta al espacio: ${spaceAvailable}
+5. Genera un plan de 4 semanas progresivo
+6. Incluye calentamiento, trabajo principal y enfriamiento en cada sesión
+7. Usa creatividad para adaptar objetos domésticos según equipamiento
+8. Especifica claramente qué objetos usar (silla, toalla, pared, etc.)
 
 Devuelve un JSON siguiendo EXACTAMENTE la estructura del prompt especialista Casa.`;
 
@@ -2991,7 +3087,22 @@ Devuelve un JSON siguiendo EXACTAMENTE la estructura del prompt especialista Cas
       response_format: { type: 'json_object' }
     });
 
-    const generatedPlan = parseAIResponse(completion.choices[0].message.content);
+    const rawPlan = parseAIResponse(completion.choices[0].message.content);
+    let generatedPlan;
+
+    try {
+      generatedPlan = JSON.parse(rawPlan);
+    } catch (parseError) {
+      console.error('Error parseando plan de Casa:', parseError);
+      console.error('Respuesta recibida:', rawPlan);
+      return res.status(422).json({
+        success: false,
+        error: 'Plan invalido',
+        message: 'La respuesta del generador no es un JSON valido'
+      });
+    }
+
+    generatedPlan = normalizeCasaPlan(generatedPlan);
     console.log('✅ Plan Casa generado exitosamente');
 
     // Guardar plan en la base de datos

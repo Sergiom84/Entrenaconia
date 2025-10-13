@@ -36,106 +36,88 @@ const BodyMeasurementsStep = ({ formData, onInputChange, errors = {} }) => {
     return <p className={ERROR_MESSAGE_STYLES}>{errors[fieldName]}</p>;
   };
 
-  // Componente para un campo de medida individual
-  const MeasurementField = ({ name, config }) => (
-    <div>
-      <label className={LABEL_STYLES}>{config.label}</label>
-      <input
-        type="number"
-        name={name}
-        value={formData[name]}
-        onChange={handleChange}
-        placeholder={config.placeholder}
-        min={config.min}
-        max={config.max}
-        step="0.1"
-        className={getInputClassName(name)}
-      />
-      <ErrorMessage fieldName={name} />
-    </div>
-  );
-
-  // Sección: Header y descripción
-  const HeaderSection = () => (
-    <div className="text-center mb-8">
-      <h2 className="text-2xl font-bold text-yellow-400 mb-2">Medidas Corporales (Opcional)</h2>
-      <p className="text-gray-400">Estas medidas nos ayudarán a personalizar mejor tu entrenamiento</p>
-    </div>
-  );
-
-  // Sección: Campos de medidas
-  const MeasurementFieldsSection = () => (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-      {Object.entries(BODY_MEASUREMENTS).map(([name, config]) => (
-        <MeasurementField key={name} name={name} config={config} />
-      ))}
-    </div>
-  );
-
-  // Sección: Información sobre el propósito
-  const PurposeInfoSection = () => (
-    <div className="bg-gray-700/30 rounded-lg p-6 border border-gray-600">
-      <h3 className="text-lg font-semibold text-yellow-400 mb-4">¿Por qué necesitamos estas medidas?</h3>
-      <div className="space-y-3 text-gray-300">
-        <div className="flex items-start gap-3">
-          <div className="w-2 h-2 bg-yellow-400 rounded-full mt-2 flex-shrink-0"></div>
-          <p><strong>Personalización:</strong> Nos permite crear rutinas específicas para tu tipo de cuerpo</p>
-        </div>
-        <div className="flex items-start gap-3">
-          <div className="w-2 h-2 bg-yellow-400 rounded-full mt-2 flex-shrink-0"></div>
-          <p><strong>Seguimiento:</strong> Podrás ver tu progreso de forma visual y detallada</p>
-        </div>
-        <div className="flex items-start gap-3">
-          <div className="w-2 h-2 bg-yellow-400 rounded-full mt-2 flex-shrink-0"></div>
-          <p><strong>Objetivos:</strong> Establecemos metas realistas basadas en tu composición actual</p>
-        </div>
-        <div className="flex items-start gap-3">
-          <div className="w-2 h-2 bg-yellow-400 rounded-full mt-2 flex-shrink-0"></div>
-          <p><strong>Opcional:</strong> Puedes completar estas medidas más tarde en tu perfil</p>
-        </div>
-      </div>
-    </div>
-  );
-
-  // Sección: Consejos para tomar medidas
-  const TipsSection = () => (
-    <div className="bg-blue-900/20 rounded-lg p-6 border border-blue-700/50">
-      <h3 className="text-lg font-semibold text-blue-400 mb-4">💡 Consejos para tomar medidas precisas</h3>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-300">
-        <div>
-          <h4 className="font-medium text-blue-300 mb-2">Cintura:</h4>
-          <p>Mide en la parte más estrecha, generalmente a la altura del ombligo</p>
-        </div>
-        <div>
-          <h4 className="font-medium text-blue-300 mb-2">Pecho:</h4>
-          <p>Mide alrededor de la parte más ancha del pecho, pasando por los pezones</p>
-        </div>
-        <div>
-          <h4 className="font-medium text-blue-300 mb-2">Brazos:</h4>
-          <p>Mide la parte más ancha del bíceps con el brazo flexionado</p>
-        </div>
-        <div>
-          <h4 className="font-medium text-blue-300 mb-2">Muslos:</h4>
-          <p>Mide la parte más ancha del muslo, aproximadamente a 15cm de la rodilla</p>
-        </div>
-        <div>
-          <h4 className="font-medium text-blue-300 mb-2">Cuello:</h4>
-          <p>Mide alrededor del cuello, justo debajo de la nuez de Adán</p>
-        </div>
-        <div>
-          <h4 className="font-medium text-blue-300 mb-2">Antebrazos:</h4>
-          <p>Mide la parte más ancha del antebrazo, cerca del codo</p>
-        </div>
-      </div>
-    </div>
-  );
-
   return (
     <div className="space-y-8">
-      <HeaderSection />
-      <MeasurementFieldsSection />
-      <PurposeInfoSection />
-      <TipsSection />
+      {/* Sección: Header y descripción */}
+      <div className="text-center mb-8">
+        <h2 className="text-2xl font-bold text-yellow-400 mb-2">Medidas Corporales (Opcional)</h2>
+        <p className="text-gray-400">Estas medidas nos ayudarán a personalizar mejor tu entrenamiento</p>
+      </div>
+
+      {/* Sección: Campos de medidas */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {Object.entries(BODY_MEASUREMENTS).map(([name, config]) => (
+          <div key={name}>
+            <label className={LABEL_STYLES}>{config.label}</label>
+            <input
+              type="number"
+              name={name}
+              value={formData[name]}
+              onChange={handleChange}
+              placeholder={config.placeholder}
+              min={config.min}
+              max={config.max}
+              step="0.1"
+              className={getInputClassName(name)}
+            />
+            <ErrorMessage fieldName={name} />
+          </div>
+        ))}
+      </div>
+
+      {/* Sección: Información sobre el propósito */}
+      <div className="bg-gray-700/30 rounded-lg p-6 border border-gray-600">
+        <h3 className="text-lg font-semibold text-yellow-400 mb-4">¿Por qué necesitamos estas medidas?</h3>
+        <div className="space-y-3 text-gray-300">
+          <div className="flex items-start gap-3">
+            <div className="w-2 h-2 bg-yellow-400 rounded-full mt-2 flex-shrink-0"></div>
+            <p><strong>Personalización:</strong> Nos permite crear rutinas específicas para tu tipo de cuerpo</p>
+          </div>
+          <div className="flex items-start gap-3">
+            <div className="w-2 h-2 bg-yellow-400 rounded-full mt-2 flex-shrink-0"></div>
+            <p><strong>Seguimiento:</strong> Podrás ver tu progreso de forma visual y detallada</p>
+          </div>
+          <div className="flex items-start gap-3">
+            <div className="w-2 h-2 bg-yellow-400 rounded-full mt-2 flex-shrink-0"></div>
+            <p><strong>Objetivos:</strong> Establecemos metas realistas basadas en tu composición actual</p>
+          </div>
+          <div className="flex items-start gap-3">
+            <div className="w-2 h-2 bg-yellow-400 rounded-full mt-2 flex-shrink-0"></div>
+            <p><strong>Opcional:</strong> Puedes completar estas medidas más tarde en tu perfil</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Sección: Consejos para tomar medidas */}
+      <div className="bg-blue-900/20 rounded-lg p-6 border border-blue-700/50">
+        <h3 className="text-lg font-semibold text-blue-400 mb-4">💡 Consejos para tomar medidas precisas</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-300">
+          <div>
+            <h4 className="font-medium text-blue-300 mb-2">Cintura:</h4>
+            <p>Mide en la parte más estrecha, generalmente a la altura del ombligo</p>
+          </div>
+          <div>
+            <h4 className="font-medium text-blue-300 mb-2">Pecho:</h4>
+            <p>Mide alrededor de la parte más ancha del pecho, pasando por los pezones</p>
+          </div>
+          <div>
+            <h4 className="font-medium text-blue-300 mb-2">Brazos:</h4>
+            <p>Mide la parte más ancha del bíceps con el brazo flexionado</p>
+          </div>
+          <div>
+            <h4 className="font-medium text-blue-300 mb-2">Muslos:</h4>
+            <p>Mide la parte más ancha del muslo, aproximadamente a 15cm de la rodilla</p>
+          </div>
+          <div>
+            <h4 className="font-medium text-blue-300 mb-2">Cuello:</h4>
+            <p>Mide alrededor del cuello, justo debajo de la nuez de Adán</p>
+          </div>
+          <div>
+            <h4 className="font-medium text-blue-300 mb-2">Antebrazos:</h4>
+            <p>Mide la parte más ancha del antebrazo, cerca del codo</p>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

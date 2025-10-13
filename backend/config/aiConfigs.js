@@ -141,7 +141,7 @@ export const AI_MODULES = {
     envKey: 'OPENAI_API_KEY',
     model: 'gpt-4o-mini',
     temperature: 0.8,  // Balance entre creatividad y precisión para patrones funcionales
-    max_output_tokens: 16384,
+    max_output_tokens: 12000,  // 🔧 Reducido de 16384 a 12000 para mejorar velocidad
     top_p: 1.0,
     store: true,
     promptId: 'pmpt_funcional_001',  // Temporal - se generará el ID real

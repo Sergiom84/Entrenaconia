@@ -85,10 +85,30 @@ function findTodaySession(plan, targetDay, weekIdx = 0) {
   const week = semanas[safeWeekIdx];
   if (!week?.sesiones) return null;
 
+  // Normalizar nombre del día (soporta nombres completos y abreviados)
+  const normalizeDay = (day) => {
+    if (!day) return '';
+    const dayLower = day.toLowerCase();
+    // Mapeo de nombres completos y abreviados a un formato unificado
+    const dayMap = {
+      'lunes': 'lun', 'lun': 'lun',
+      'martes': 'mar', 'mar': 'mar',
+      'miércoles': 'mie', 'miercoles': 'mie', 'mié': 'mie', 'mie': 'mie',
+      'jueves': 'jue', 'jue': 'jue',
+      'viernes': 'vie', 'vier': 'vie', 'vie': 'vie',
+      'sábado': 'sab', 'sabado': 'sab', 'sáb': 'sab', 'sab': 'sab',
+      'domingo': 'dom', 'dom': 'dom'
+    };
+    return dayMap[dayLower] || dayLower.substring(0, 3);
+  };
+
+  const normalizedTarget = normalizeDay(targetDay);
+
   // Buscar por 'dia' o 'dia_semana' (compatibilidad con diferentes formatos de prompt)
   return week.sesiones.find((sesion) => {
     const diaField = sesion.dia || sesion.dia_semana;
-    return diaField?.toLowerCase() === targetDay?.toLowerCase();
+    const normalizedDia = normalizeDay(diaField);
+    return normalizedDia === normalizedTarget;
   }) || null;
 }
 

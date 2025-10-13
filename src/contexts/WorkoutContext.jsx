@@ -50,7 +50,11 @@ const WORKOUT_ACTIONS = {
   // Modal management
   SHOW_MODAL: 'SHOW_MODAL',
   HIDE_MODAL: 'HIDE_MODAL',
-  HIDE_ALL_MODALS: 'HIDE_ALL_MODALS'
+  HIDE_ALL_MODALS: 'HIDE_ALL_MODALS',
+
+  // Re-evaluation
+  SET_RE_EVALUATION_TRIGGER: 'SET_RE_EVALUATION_TRIGGER',
+  CLEAR_RE_EVALUATION: 'CLEAR_RE_EVALUATION'
 };
 
 const WORKOUT_VIEWS = {
@@ -137,7 +141,19 @@ const initialState = {
     showVersionSelection: false,    // Mostrar modal de selección de versión
     showMethodologyDetails: false,  // Mostrar modal de detalles de metodología
     showActiveTrainingWarning: false, // Mostrar modal de advertencia de entrenamiento activo
-    showCalisteniaManual: false     // Mostrar modal de calistenia manual
+    showCalisteniaManual: false,    // Mostrar modal de calistenia manual
+    showCrossFitManual: false,      // Mostrar modal de CrossFit manual
+    showReEvaluation: false         // Mostrar modal de re-evaluación progresiva
+  },
+
+  // ===============================
+  // 📊 RE-EVALUATION STATE
+  // ===============================
+  reEvaluation: {
+    shouldTrigger: false,           // Debe mostrarse el modal
+    currentWeek: 1,                 // Semana actual del plan
+    weeksSinceLastEval: 0,          // Semanas desde última evaluación
+    lastEvaluation: null            // Última evaluación realizada
   },
 
   // ===============================
@@ -302,6 +318,8 @@ function workoutReducer(state, action) {
       const modalKey = `show${action.payload.charAt(0).toUpperCase() + action.payload.slice(1)}`;
       // Convert camelCase to proper modal names
       const mappedKey = modalKey.replace('calisteniaManual', 'CalisteniaManual')
+                              .replace('crossfitManual', 'CrossFitManual')
+                              .replace('CrossfitManual', 'CrossFitManual')
                               .replace('planConfirmation', 'PlanConfirmation')
                               .replace('routineSession', 'RoutineSession')
                               .replace('versionSelection', 'VersionSelection')
@@ -321,6 +339,8 @@ function workoutReducer(state, action) {
       const modalKey = `show${action.payload.charAt(0).toUpperCase() + action.payload.slice(1)}`;
       // Convert camelCase to proper modal names
       const mappedKey = modalKey.replace('calisteniaManual', 'CalisteniaManual')
+                              .replace('crossfitManual', 'CrossFitManual')
+                              .replace('CrossfitManual', 'CrossFitManual')
                               .replace('planConfirmation', 'PlanConfirmation')
                               .replace('routineSession', 'RoutineSession')
                               .replace('versionSelection', 'VersionSelection')
@@ -350,8 +370,33 @@ function workoutReducer(state, action) {
           showVersionSelection: false,
           showMethodologyDetails: false,
           showActiveTrainingWarning: false,
-          showCalisteniaManual: false
+          showCalisteniaManual: false,
+          showCrossFitManual: false,
+          showReEvaluation: false
         }
+      };
+
+    // ===============================
+    // 📊 RE-EVALUATION ACTIONS
+    // ===============================
+    case WORKOUT_ACTIONS.SET_RE_EVALUATION_TRIGGER:
+      return {
+        ...state,
+        reEvaluation: {
+          ...state.reEvaluation,
+          ...action.payload
+        },
+        ui: {
+          ...state.ui,
+          showReEvaluation: action.payload.shouldTrigger || false
+        }
+      };
+
+    case WORKOUT_ACTIONS.CLEAR_RE_EVALUATION:
+      return {
+        ...state,
+        reEvaluation: { ...initialState.reEvaluation },
+        ui: { ...state.ui, showReEvaluation: false }
       };
 
     default:
