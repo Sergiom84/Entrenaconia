@@ -181,6 +181,158 @@ function getCurrentDayInfo() {
 }
 
 // =========================================
+// CROSSFIT HELPER FUNCTIONS
+// =========================================
+
+/**
+ * Parse duration to minutes (CrossFit)
+ */
+const parseDurationToMinutes = (value) => {
+  if (!value) return 45;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  const text = String(value);
+  const minuteMatch = text.match(/(\d+)\s*(?:min|mins|minutes)/i);
+  if (minuteMatch) {
+    return Number(minuteMatch[1]);
+  }
+
+  const numeric = parseInt(text, 10);
+  return Number.isNaN(numeric) ? 45 : numeric;
+};
+
+/**
+ * Parse rest to seconds (CrossFit)
+ */
+const parseRestToSeconds = (value) => {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  const text = String(value);
+  const secondMatch = text.match(/(\d+)\s*(?:seg|sec(?:s)?|s)/i);
+  if (secondMatch) {
+    return Number(secondMatch[1]);
+  }
+
+  const minuteMatch = text.match(/(\d+)\s*(?:min)/i);
+  if (minuteMatch) {
+    return Number(minuteMatch[1]) * 60;
+  }
+
+  const numeric = parseInt(text, 10);
+  return Number.isNaN(numeric) ? null : numeric;
+};
+
+/**
+ * Extract series and reps from CrossFit movement (CrossFit)
+ */
+const extractSeriesAndReps = (movement = {}) => {
+  let series = movement.series;
+  let reps = movement.repeticiones;
+
+  if (!series || !reps) {
+    const job = movement.trabajo || movement.work || "";
+    const setRepMatch = job.match(/(\d+)\s*[xX×]\s*(\d+)/i);
+
+    if (setRepMatch) {
+      if (!series) series = Number(setRepMatch[1]);
+      if (!reps) reps = Number(setRepMatch[2]);
+    }
+
+    if (!reps) {
+      const repsMatch = job.match(/(\d+)\s*(?:reps?|repeticiones)/i);
+      if (repsMatch) reps = Number(repsMatch[1]);
+    }
+
+    if (!series) {
+      const roundsMatch = job.match(/(\d+)\s*(?:rounds?)/i);
+      if (roundsMatch) series = Number(roundsMatch[1]);
+    }
+  }
+
+  return {
+    series: series || 1,
+    repeticiones: reps || movement.trabajo || movement.work || "Ver descripcion"
+  };
+};
+
+/**
+ * Normalize CrossFit plan from calendario format to semanas format
+ * Converts CrossFit-specific structure (calendario with WODs) to standard methodology format
+ */
+const normalizeCrossFitPlan = (plan) => {
+  // If plan already has semanas or doesn't have calendario, return as-is
+  if (!plan || plan.semanas || !Array.isArray(plan.calendario)) {
+    return plan;
+  }
+
+  const semanas = plan.calendario.map((week, weekIndex) => {
+    const dias = Array.isArray(week?.dias) ? week.dias : [];
+    const sesiones = dias.map((day, dayIndex) => {
+      const wod = day?.wod || {};
+      const movimientos = Array.isArray(wod.movimientos) ? wod.movimientos : [];
+      const ejercicios = movimientos.map((movement, movementIndex) => {
+        const { series, repeticiones } = extractSeriesAndReps(movement);
+        return {
+          id: `cf-${weekIndex + 1}-${dayIndex + 1}-${movementIndex + 1}`,
+          nombre: movement.nombre || `Movimiento ${movementIndex + 1}`,
+          series,
+          repeticiones,
+          descanso_seg: parseRestToSeconds(movement.descanso_seg ?? movement.descanso),
+          descripcion: movement.descripcion || movement.trabajo || movement.work || "",
+          carga: movement.carga || movement.peso || null,
+          intensidad: movement.intensidad || null,
+          equipamiento: movement.equipamiento || null,
+          notas: movement.notas || "",
+          tempo: movement.tempo || null,
+          variante: movement.variante || null
+        };
+      });
+
+      const variantes = wod.scaling && typeof wod.scaling === "object"
+        ? Object.entries(wod.scaling).map(([nivel, descripcion]) => ({
+          nivel,
+          descripcion
+        }))
+        : [];
+
+      return {
+        id: `cf-${weekIndex + 1}-${dayIndex + 1}`,
+        dia: day?.dia || `Dia ${dayIndex + 1}`,
+        titulo: wod.tipo ? `${wod.tipo}${day?.enfoque ? ` - ${day.enfoque}` : ""}` : (day?.enfoque || `Sesion ${dayIndex + 1}`),
+        tipo: wod.tipo || day?.tipo || "WOD",
+        enfoque: day?.enfoque || null,
+        descripcion: wod.descripcion || "",
+        objetivo_de_la_sesion: wod.objetivo_rounds || wod.objetivo || day?.objetivo || "",
+        estrategia: wod.estrategia || "",
+        duracion_sesion_min: parseDurationToMinutes(wod.duracion || day?.duracion),
+        intensidad: wod.intensidad || null,
+        variantes,
+        ejercicios
+      };
+    });
+
+    return {
+      semana: week?.semana || weekIndex + 1,
+      fase: week?.fase || null,
+      sesiones
+    };
+  });
+
+  return {
+    ...plan,
+    metodologia: plan.metodologia || "CrossFit",
+    semanas,
+    duracion_total_semanas: plan.duracion_total_semanas || plan.duracion_semanas || semanas.length,
+    frecuencia_semanal: plan.frecuencia_semanal || (semanas[0]?.sesiones?.length || 0)
+  };
+};
+
+// =========================================
 // CALISTENIA SPECIALIST (IA)
 // =========================================
 
@@ -1991,6 +2143,19 @@ FORMATO EXACTO:
       throw new Error('Plan sin calendario válido');
     }
 
+    // 🔥 NORMALIZAR PLAN: Convertir formato calendario → semanas
+    console.log('🔄 Normalizando plan CrossFit (calendario → semanas)...');
+    const normalizedPlan = normalizeCrossFitPlan(generatedPlan);
+
+    // Validar plan normalizado
+    if (!normalizedPlan?.semanas || !Array.isArray(normalizedPlan.semanas) || normalizedPlan.semanas.length === 0) {
+      throw new Error('Plan normalizado sin semanas válidas');
+    }
+
+    console.log(`✅ Plan normalizado: ${normalizedPlan.semanas.length} semanas, ${normalizedPlan.frecuencia_semanal} días/semana`);
+
+    const planToPersist = normalizedPlan;
+
     // Guardar plan en BD
     const client_db = await pool.connect();
     try {
@@ -1999,14 +2164,14 @@ FORMATO EXACTO:
       // Limpiar drafts anteriores
       await cleanUserDrafts(userId, client_db);
 
-      // Insertar plan
+      // Insertar plan normalizado
       const planResult = await client_db.query(`
         INSERT INTO app.methodology_plans (
           user_id, methodology_type, plan_data, generation_mode, status, created_at
         )
         VALUES ($1, $2, $3, $4, $5, NOW())
         RETURNING id
-      `, [userId, 'CrossFit', JSON.stringify(generatedPlan), 'manual', 'draft']);
+      `, [userId, 'CrossFit', JSON.stringify(planToPersist), 'manual', 'draft']);
 
       const methodologyPlanId = planResult.rows[0].id;
 
@@ -2016,7 +2181,7 @@ FORMATO EXACTO:
 
       res.json({
         success: true,
-        plan: generatedPlan,
+        plan: planToPersist,
         methodologyPlanId,
         planId: methodologyPlanId,
         metadata: {
