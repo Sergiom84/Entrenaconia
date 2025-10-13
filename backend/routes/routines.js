@@ -1,4 +1,6 @@
+/* eslint-env node */
 import express from 'express';
+import process from 'node:process';
 import authenticateToken from '../middleware/auth.js';
 import { pool } from '../db.js';
 import { preSessionCleanup } from '../utils/sessionCleanup.js';
@@ -112,7 +114,7 @@ async function getRandomCalistheniaExercises(client, level = 'basico', limit = 6
 // 🎯 FASE 3: Función DESHABILITADA - Las sesiones se crean bajo demanda
 // Esta función llamaba al stored procedure create_methodology_exercise_sessions
 // que ha sido reemplazado por ensureWorkoutSchedule() + creación bajo demanda
-async function ensureMethodologySessions(client, userId, methodologyPlanId, planDataJson) {
+async function ensureMethodologySessions() {
   console.log(`📋 [ensureMethodologySessions] DESHABILITADA (FASE 3) - sesiones se crean bajo demanda`);
   // Las sesiones en methodology_exercise_sessions se crean cuando el usuario
   // inicia un entrenamiento (endpoint /sessions/start)
@@ -205,6 +207,18 @@ async function ensureWorkoutSchedule(client, userId, methodologyPlanId, planData
 
       const sessionTitle = sesion?.titulo || sesion?.title || `Sesión ${globalSessionOrder}`;
 
+      // 📦 Extraer ejercicios: soportar estructura directa Y estructura de bloques (Halterofilia)
+      let sessionExercises = [];
+      if (Array.isArray(sesion.ejercicios)) {
+        // Estructura directa: sesion.ejercicios[]
+        sessionExercises = sesion.ejercicios;
+      } else if (Array.isArray(sesion.bloques)) {
+        // Estructura de bloques: sesion.bloques[].ejercicios[]
+        sessionExercises = sesion.bloques.flatMap(bloque =>
+          Array.isArray(bloque.ejercicios) ? bloque.ejercicios : []
+        );
+      }
+
       // Insertar en workout_schedule
       await client.query(
         `INSERT INTO app.workout_schedule (
@@ -230,7 +244,7 @@ async function ensureWorkoutSchedule(client, userId, methodologyPlanId, planData
           dayName,
           dayAbbrev,
           sessionTitle,
-          JSON.stringify(sesion.ejercicios || []),
+          JSON.stringify(sessionExercises),
           'scheduled'
         ]
       );
@@ -242,7 +256,7 @@ async function ensureWorkoutSchedule(client, userId, methodologyPlanId, planData
           plan_id, day_id, week_number, day_name, date_local, is_rest, planned_exercises_count
         ) VALUES ($1, $2, $3, $4, $5, $6, $7)
         ON CONFLICT (plan_id, day_id) DO NOTHING`,
-        [methodologyPlanId, day_id, weekNumber, dayAbbrev, currentDate.toISOString().split('T')[0], false, sesion.ejercicios?.length || 0]
+        [methodologyPlanId, day_id, weekNumber, dayAbbrev, currentDate.toISOString().split('T')[0], false, sessionExercises.length]
       );
 
       day_id++;
@@ -444,7 +458,6 @@ router.post('/sessions/start', authenticateToken, async (req, res) => {
         // Fallback simple si no existe fila (debería existir por migración):
         week_number = Math.ceil(Number(day_id) / 7);
         // Derivar nombre del día por seguridad (Lunes..Domingo)
-        const days = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
         // Usar plan_start_datetime para calcularlo sería ideal; en ausencia, asumimos lunes si no podemos derivar
         day_name = day_name || 'lunes';
       }
@@ -557,9 +570,21 @@ router.post('/sessions/start', authenticateToken, async (req, res) => {
       console.log(`📋 Usando template de ${sesionDef.dia} para día faltante ${normalizedDay}`);
     }
 
-    let ejercicios = scheduleExercises.length > 0
-      ? scheduleExercises
-      : (Array.isArray(sesionDef?.ejercicios) ? sesionDef.ejercicios : []);
+    // Extraer ejercicios: soportar estructura directa Y estructura de bloques (Halterofilia)
+    let ejercicios = [];
+    if (scheduleExercises.length > 0) {
+      ejercicios = scheduleExercises;
+    } else if (Array.isArray(sesionDef?.ejercicios)) {
+      // Estructura directa: sesion.ejercicios[]
+      ejercicios = sesionDef.ejercicios;
+    } else if (Array.isArray(sesionDef?.bloques)) {
+      // Estructura de bloques: sesion.bloques[].ejercicios[]
+      // Aplanar todos los ejercicios de todos los bloques
+      ejercicios = sesionDef.bloques.flatMap(bloque =>
+        Array.isArray(bloque.ejercicios) ? bloque.ejercicios : []
+      );
+      console.log(`📦 Extrayendo ejercicios desde estructura de bloques: ${ejercicios.length} ejercicios`);
+    }
 
     // 🛟 Fallback: si no hay ejercicios definidos para este día, tomar aleatorios por nivel desde BD
     if (!Array.isArray(ejercicios) || ejercicios.length === 0) {
@@ -1130,8 +1155,6 @@ router.get('/sessions/today-status', authenticateToken, async (req, res) => {
     const normalizedDay = normalizeDayAbbrev(day_name);
 
     // Buscar la sesión del día por fecha específica (más preciso)
-    const { session_date } = req.query;
-
     // 🎯 BÚSQUEDA MEJORADA: Siempre filtrar por week_number Y day_name
     // Esto evita devolver sesiones de días incorrectos
     const sessionQuery = await pool.query(
@@ -1165,6 +1188,50 @@ router.get('/sessions/today-status', authenticateToken, async (req, res) => {
 
     const session = sessionQuery.rows[0];
 
+    // 🎯 CORRECCIÓN CRÍTICA: Obtener el TOTAL REAL de ejercicios del plan
+    // El query de progreso solo devuelve ejercicios que YA tienen progreso guardado
+    // Esto causaba que summary.total = 2 cuando realmente el plan tiene 5 ejercicios
+    const planDayQuery = await pool.query(
+      `SELECT planned_exercises_count FROM app.methodology_plan_days
+       WHERE plan_id = $1 AND week_number = $2 AND day_name = $3`,
+      [methodology_plan_id, week_number, normalizedDay]
+    );
+
+    const totalExercisesFromPlan = planDayQuery.rows[0]?.planned_exercises_count || 0;
+
+    console.log('🔍 Total real de ejercicios:', {
+      totalFromPlan: totalExercisesFromPlan,
+      planDayExists: planDayQuery.rowCount > 0,
+      plannedCount: planDayQuery.rows[0]?.planned_exercises_count
+    });
+
+    // 🎯 Obtener ejercicios completos desde workout_schedule
+    // Nota: workout_schedule usa day_name completo ("Lunes") no abreviado ("Lun")
+    const dayNameMap = {
+      'Lun': 'Lunes',
+      'Mar': 'Martes',
+      'Mie': 'Miércoles',
+      'Jue': 'Jueves',
+      'Vie': 'Viernes',
+      'Sab': 'Sábado',
+      'Dom': 'Domingo'
+    };
+    const fullDayName = dayNameMap[normalizedDay] || normalizedDay;
+
+    const workoutScheduleQuery = await pool.query(
+      `SELECT exercises FROM app.workout_schedule
+       WHERE methodology_plan_id = $1 AND week_number = $2 AND day_name = $3`,
+      [methodology_plan_id, week_number, fullDayName]
+    );
+
+    const planExercisesFromSchedule = workoutScheduleQuery.rows[0]?.exercises || [];
+
+    console.log('🔍 Ejercicios desde workout_schedule:', {
+      fullDayName,
+      found: workoutScheduleQuery.rowCount > 0,
+      exerciseCount: planExercisesFromSchedule.length
+    });
+
     // Obtener progreso de ejercicios con feedback
     const exercisesQuery = await pool.query(
       `SELECT
@@ -1182,7 +1249,8 @@ router.get('/sessions/today-status', authenticateToken, async (req, res) => {
     );
 
     // Calcular resumen detallado por estado
-    const totalExercises = exercisesQuery.rowCount;
+    // ✅ CORRECCIÓN: Usar total del plan, no del query de progreso
+    const totalExercises = totalExercisesFromPlan || exercisesQuery.rowCount;
     const statusCounts = exercisesQuery.rows.reduce((acc, ex) => {
       const s = String(ex.status || 'pending').toLowerCase();
       acc[s] = (acc[s] || 0) + 1;
@@ -1193,25 +1261,45 @@ router.get('/sessions/today-status', authenticateToken, async (req, res) => {
     const skippedExercises = statusCounts['skipped'] || 0;
     const cancelledExercises = statusCounts['cancelled'] || 0;
     const inProgressExercises = statusCounts['in_progress'] || 0;
-    const pendingExercises = statusCounts['pending'] || 0;
 
-    const isFinished = totalExercises > 0 && pendingExercises === 0 && inProgressExercises === 0;
+    // ✅ CORRECCIÓN: Calcular pendientes = total - (procesados)
+    // Ejercicios sin registro en BD también son pendientes
+    const exercisesWithProgress = exercisesQuery.rowCount;
+    const pendingExercises = totalExercises - (completedExercises + skippedExercises + cancelledExercises + inProgressExercises);
+
+    console.log('📊 Contadores de ejercicios:', {
+      totalExercises,
+      exercisesWithProgress,
+      completedExercises,
+      pendingExercises,
+      inProgressExercises,
+      skippedExercises,
+      cancelledExercises,
+      suma: completedExercises + pendingExercises + inProgressExercises + skippedExercises + cancelledExercises
+    });
+
+    // 🎯 CORRECCIÓN: isFinished debe reflejar la verdad de la BD (session_status)
+    // Esta es la única fuente de verdad para determinar si una sesión está realmente completada
+    const isFinished = session.session_status === 'completed';
     const isCompleteSuccess = totalExercises > 0 && completedExercises === totalExercises;
-    const allSkipped = totalExercises > 0 && skippedExercises === totalExercises;
-    const allCancelled = totalExercises > 0 && cancelledExercises === totalExercises;
+
+    // Nuevo flag: Todos fueron procesados (no hay pending/in_progress) pero NO necesariamente completados
+    const allProcessed = totalExercises > 0 && pendingExercises === 0 && inProgressExercises === 0;
 
     // Lógica de reanudación:
-    // - Reanudar si NO está finalizada Y (ya hubo progreso O la sesión fue iniciada)
+    // - Reanudar si NO está completada (session_status) Y (ya hubo progreso O la sesión fue iniciada)
     // - Comenzar si todo sigue pendiente y session_started_at es null
     const hasAnyProgress = (inProgressExercises > 0) || ((completedExercises + skippedExercises + cancelledExercises) > 0);
     const sessionWasStarted = session.session_started_at != null;
-    const canResume = !isFinished && (hasAnyProgress || sessionWasStarted);
-    const canRetry = (allSkipped || allCancelled);
+    const canResume = session.session_status !== 'completed' && (hasAnyProgress || sessionWasStarted);
+
+    // canRetry: puede reintentar si todos procesados pero no todos completados exitosamente (ej: skipped/cancelled)
+    const canRetry = allProcessed && !isCompleteSuccess;
 
     console.log(`🎯 today-status NUEVA LÓGICA INTELIGENTE:`, {
       session_status: session.session_status,
       canResume,
-      decision: canResume ? 'REANUDAR ⚠️' : 'COMENZAR ✅',
+      decision: canResume ? 'REANUDAR ⚠️' : (isFinished ? 'COMPLETADO ✅' : 'COMENZAR ✅'),
       totalExercises,
       completedExercises,
       skippedExercises,
@@ -1219,10 +1307,42 @@ router.get('/sessions/today-status', authenticateToken, async (req, res) => {
       inProgressExercises,
       pendingExercises,
       isFinished,
-      isCompleteSuccess
+      isCompleteSuccess,
+      allProcessed,
+      canRetry
     });
 
     // 🔍 DEBUG: Mostrar datos completos que se envían al frontend
+    // ✅ CORRECCIÓN: Construir lista completa de ejercicios combinando plan con progreso
+    // Frontend necesita ver TODOS los ejercicios (4), no solo los que tienen progreso (2)
+    const progressMap = new Map(exercisesQuery.rows.map(ex => [ex.exercise_order, ex]));
+
+    const completeExerciseList = planExercisesFromSchedule.map((planEx, index) => {
+      const progressData = progressMap.get(index);
+
+      if (progressData) {
+        // Ejercicio con progreso guardado
+        return progressData;
+      } else {
+        // Ejercicio sin progreso = pending
+        return {
+          exercise_order: index,
+          exercise_name: planEx.nombre,
+          series_total: planEx.series,
+          series_completed: 0,
+          repeticiones: planEx.repeticiones,
+          descanso_seg: planEx.descanso_seg,
+          intensidad: planEx.intensidad,
+          tempo: planEx.tempo || null,
+          status: 'pending',
+          time_spent_seconds: 0,
+          notas: planEx.notas || null,
+          sentiment: null,
+          comment: null
+        };
+      }
+    });
+
     console.log(`🔍 today-status RESPONSE DATA:`, {
       session: {
         id: session.id,
@@ -1241,10 +1361,12 @@ router.get('/sessions/today-status', authenticateToken, async (req, res) => {
         pending: pendingExercises,
         isFinished: isFinished,
         isComplete: isCompleteSuccess,
-        canRetry
+        allProcessed: allProcessed,  // 🆕 Todos procesados (no pending/in_progress)
+        canRetry                     // 🆕 Puede reintentar ejercicios skipped/cancelled
       },
-      exerciseCount: exercisesQuery.rows.length,
-      exerciseStatuses: exercisesQuery.rows.map(ex => ({ order: ex.exercise_order, status: ex.status, name: ex.exercise_name }))
+      exerciseCount: completeExerciseList.length,
+      exercisesWithProgress: exercisesQuery.rows.length,
+      exerciseStatuses: completeExerciseList.map(ex => ({ order: ex.exercise_order, status: ex.status, name: ex.exercise_name }))
     });
 
     res.json({
@@ -1254,7 +1376,7 @@ router.get('/sessions/today-status', authenticateToken, async (req, res) => {
         canResume,
         session_started_at: session.started_at
       },
-      exercises: exercisesQuery.rows,
+      exercises: completeExerciseList,
       summary: {
         total: totalExercises,
         completed: completedExercises,
@@ -1264,7 +1386,8 @@ router.get('/sessions/today-status', authenticateToken, async (req, res) => {
         pending: pendingExercises,
         isFinished: isFinished,
         isComplete: isCompleteSuccess,
-        canRetry
+        allProcessed: allProcessed,  // 🆕 Todos procesados (no pending/in_progress)
+        canRetry                     // 🆕 Puede reintentar ejercicios skipped/cancelled
       }
     });
 
@@ -1355,6 +1478,7 @@ router.post('/confirm-plan', authenticateToken, async (req, res) => {
     }
 
     const plan = planCheck.rows[0];
+    console.log("🔍 [confirm-plan] Plan encontrado:", { id: plan.id, status: plan.status, methodology_type: plan.methodology_type, userId });
 
     // Confirmación del plan con fallback seguro si no existe la función/tabla legacy
     let confirmed = false;

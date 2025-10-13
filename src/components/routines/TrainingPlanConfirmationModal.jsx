@@ -103,12 +103,26 @@ export default function TrainingPlanConfirmationModal({
   const totalSessions = plan.semanas?.reduce((acc, week) => acc + (week.sesiones?.length || 0), 0) || 0;
 
   // Contar ejercicios únicos
+  // Soportar dos estructuras: sesion.ejercicios[] o sesion.bloques[].ejercicios[]
   const uniqueExercises = new Set();
   plan.semanas?.forEach(week => {
     week.sesiones?.forEach(session => {
-      session.ejercicios?.forEach(exercise => {
-        uniqueExercises.add(exercise.nombre || exercise.name);
-      });
+      // Estructura directa: session.ejercicios
+      if (Array.isArray(session.ejercicios)) {
+        session.ejercicios.forEach(exercise => {
+          uniqueExercises.add(exercise.nombre || exercise.name);
+        });
+      }
+      // Estructura con bloques: session.bloques[].ejercicios
+      if (Array.isArray(session.bloques)) {
+        session.bloques.forEach(bloque => {
+          if (Array.isArray(bloque.ejercicios)) {
+            bloque.ejercicios.forEach(exercise => {
+              uniqueExercises.add(exercise.nombre || exercise.name);
+            });
+          }
+        });
+      }
     });
   });
 
@@ -201,7 +215,19 @@ export default function TrainingPlanConfirmationModal({
                   </div>
                   <div className="p-3 sm:p-4 grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
                     {(semana.sesiones || []).map((sesion, idx) => {
-                      const ejercicios = Array.isArray(sesion.ejercicios) ? sesion.ejercicios : [];
+                      // Soportar dos estructuras:
+                      // 1. sesion.ejercicios[] (directo)
+                      // 2. sesion.bloques[].ejercicios[] (con bloques, como en Halterofilia)
+                      let ejercicios = [];
+                      if (Array.isArray(sesion.ejercicios)) {
+                        ejercicios = sesion.ejercicios;
+                      } else if (Array.isArray(sesion.bloques)) {
+                        // Aplanar ejercicios de todos los bloques
+                        ejercicios = sesion.bloques.flatMap(bloque =>
+                          Array.isArray(bloque.ejercicios) ? bloque.ejercicios : []
+                        );
+                      }
+
                       const preview = ejercicios.slice(0, 3).map((e) => e.nombre || e.name).filter(Boolean).join(', ');
                       return (
                         <div
@@ -209,7 +235,7 @@ export default function TrainingPlanConfirmationModal({
                           className="bg-black/40 rounded-md p-2 sm:p-3 border border-gray-700 hover:border-gray-600 transition-colors"
                         >
                           <div className="text-yellow-300 font-semibold text-xs sm:text-sm mb-1">
-                            {sesion.dia || `Día ${idx + 1}`}
+                            {sesion.dia || sesion.dia_semana || `Día ${idx + 1}`}
                           </div>
                           <div className="text-gray-300 text-xs sm:text-sm line-clamp-2">
                             {preview || 'Ver detalles en la sesión'}

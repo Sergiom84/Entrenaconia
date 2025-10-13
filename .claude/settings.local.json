@@ -42,7 +42,13 @@
       "Bash(PGPASSWORD=Xe05Klm563kkjL psql -h aws-0-eu-north-1.pooler.supabase.com -p 6543 -U postgres.lhsnmjgdtjalfcsurxvg -d postgres -f /mnt/c/Users/Sergio/Desktop/Entrenaconia/scripts/create-policia-nacional-table.sql)",
       "Bash(PGPASSWORD=Xe05Klm563kkjL psql -h aws-0-eu-north-1.pooler.supabase.com -p 6543 -U postgres.lhsnmjgdtjalfcsurxvg -d postgres -f /mnt/c/Users/Sergio/Desktop/Entrenaconia/scripts/create-policia-local-table.sql)",
       "Bash(PGPASSWORD=Xe05Klm563kkjL psql -h aws-0-eu-north-1.pooler.supabase.com -p 6543 -U postgres.lhsnmjgdtjalfcsurxvg -d postgres -c \"SELECT table_name FROM information_schema.tables WHERE table_schema = ''app'' AND table_name LIKE ''%ejercicios%'' ORDER BY table_name;\")",
-      "Bash(PGPASSWORD=Xe05Klm563kkjL psql:*)"
+      "Bash(PGPASSWORD=Xe05Klm563kkjL psql:*)",
+      "Bash(npm run lint:*)",
+      "Bash(npm run dev)",
+      "Bash(npx eslint:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(curl:*)"
     ],
     "deny": [],
     "ask": []

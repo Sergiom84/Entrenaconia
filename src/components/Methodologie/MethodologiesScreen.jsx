@@ -80,10 +80,25 @@ export default function MethodologiesScreen() {
     }
 
     // Verificar que al menos una sesión tenga ejercicios
+    // Soportar dos estructuras:
+    // 1. sesion.ejercicios[] (directo)
+    // 2. sesion.bloques[].ejercicios[] (con bloques intermedios, como en Halterofilia)
     const hasValidExercises = planData.semanas.some(semana =>
-      semana.sesiones && semana.sesiones.some(sesion =>
-        sesion.ejercicios && Array.isArray(sesion.ejercicios) && sesion.ejercicios.length > 0
-      )
+      semana.sesiones && semana.sesiones.some(sesion => {
+        // Estructura directa: sesion.ejercicios
+        if (sesion.ejercicios && Array.isArray(sesion.ejercicios) && sesion.ejercicios.length > 0) {
+          return true;
+        }
+
+        // Estructura con bloques: sesion.bloques[].ejercicios
+        if (sesion.bloques && Array.isArray(sesion.bloques)) {
+          return sesion.bloques.some(bloque =>
+            bloque.ejercicios && Array.isArray(bloque.ejercicios) && bloque.ejercicios.length > 0
+          );
+        }
+
+        return false;
+      })
     );
 
     if (!hasValidExercises) {
@@ -699,6 +714,13 @@ export default function MethodologiesScreen() {
 
       if (result.success) {
         console.log('✅ Plan de Halterofilia generado exitosamente');
+        console.log('🔍 Datos del plan generado:', {
+          hasPlan: !!result.plan,
+          methodologyPlanId: result.methodologyPlanId || result.planId,
+          planId: result.planId,
+          hasMetadata: !!result.metadata
+        });
+
         ui.hideModal('halterofíliaManual');
 
         // 🛡️ VALIDAR DATOS ANTES DE MOSTRAR MODAL
@@ -767,11 +789,19 @@ export default function MethodologiesScreen() {
       try { track('BUTTON_CLICK', { id: 'start_training' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
       console.log('🚀 Iniciando sesión de entrenamiento...');
 
+      console.log('🔍 Estado del plan antes de confirmar:', {
+        hasPlan: !!plan.currentPlan,
+        methodologyPlanId: plan.methodologyPlanId,
+        planType: plan.planType,
+        methodology: plan.methodology,
+        status: plan.status
+      });
+
       if (!plan.currentPlan || !plan.methodologyPlanId) {
         throw new Error('No hay plan generado para iniciar');
       }
 
-      console.log('🎯 PASO 1: Confirmando plan...');
+      console.log('🎯 PASO 1: Confirmando plan con ID:', plan.methodologyPlanId);
 
       // 🎯 NUEVO: Confirmar el plan ANTES de iniciar sesión (draft → active)
       const confirmResponse = await fetch('/api/routines/confirm-plan', {

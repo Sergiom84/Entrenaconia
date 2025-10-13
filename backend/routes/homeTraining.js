@@ -1497,12 +1497,103 @@ router.put('/close-active-sessions', authenticateToken, async (req, res) => {
 });
 
 // ===============================================
+// FUNCIONES HELPER PARA CACHÉ DE EJERCICIOS
+// ===============================================
+
+/**
+ * Lista de todas las tablas de ejercicios en la BD
+ */
+const EXERCISE_TABLES = [
+  'Ejercicios_Bomberos',
+  'Ejercicios_Calistenia',
+  'Ejercicios_Casa',
+  'Ejercicios_CrossFit',
+  'Ejercicios_Funcional',
+  'Ejercicios_Guardia_Civil',
+  'Ejercicios_Halterofilia',
+  'Ejercicios_Heavy_duty',
+  'Ejercicios_Hipertrofia',
+  'Ejercicios_Policia_Local',
+  'Ejercicios_Powerlifting'
+];
+
+/**
+ * Busca un ejercicio en todas las tablas de metodologías
+ * Retorna: { found: boolean, table: string|null, hasCache: boolean, cacheData: object|null }
+ */
+async function findExerciseInTables(exerciseName) {
+  const normalizedName = exerciseName.toLowerCase().trim();
+
+  for (const table of EXERCISE_TABLES) {
+    try {
+      const result = await pool.query(
+        `SELECT nombre, ejecucion, consejos, errores_evitar
+         FROM app."${table}"
+         WHERE LOWER(TRIM(nombre)) = $1
+         LIMIT 1`,
+        [normalizedName]
+      );
+
+      if (result.rows.length > 0) {
+        const row = result.rows[0];
+        const hasCache = row.ejecucion && row.consejos && row.errores_evitar;
+
+        return {
+          found: true,
+          table: table,
+          hasCache: hasCache,
+          cacheData: hasCache ? {
+            ejecucion: row.ejecucion,
+            consejos: row.consejos,
+            errores_evitar: row.errores_evitar
+          } : null
+        };
+      }
+    } catch (error) {
+      console.warn(`Error buscando en ${table}:`, error.message);
+      continue;
+    }
+  }
+
+  return { found: false, table: null, hasCache: false, cacheData: null };
+}
+
+/**
+ * Guarda la información de IA en la tabla específica de ejercicios
+ */
+async function saveExerciseInfoToTable(tableName, exerciseName, exerciseInfo) {
+  try {
+    await pool.query(
+      `UPDATE app."${tableName}"
+       SET ejecucion = $1,
+           consejos = $2,
+           errores_evitar = $3,
+           updated_at = NOW()
+       WHERE LOWER(TRIM(nombre)) = $4`,
+      [
+        exerciseInfo.ejecucion,
+        exerciseInfo.consejos,
+        exerciseInfo.errores_evitar,
+        exerciseName.toLowerCase().trim()
+      ]
+    );
+
+    console.log(`💾 Información guardada en ${tableName} para: ${exerciseName}`);
+    return true;
+  } catch (error) {
+    console.error(`❌ Error guardando en ${tableName}:`, error.message);
+    return false;
+  }
+}
+
+// ===============================================
 // 🤖 ENDPOINT DE INFORMACIÓN DE EJERCICIOS CON IA
 // ===============================================
 
 /**
  * POST /api/ia-home-training/exercise-info
  * Obtiene información detallada de un ejercicio usando IA con cache en BD
+ * NUEVO: Busca primero en tablas de metodologías específicas
  */
 router.post('/exercise-info', authenticateToken, async (req, res) => {
   try {
@@ -1521,44 +1612,65 @@ router.post('/exercise-info', authenticateToken, async (req, res) => {
 
     console.log(`🔍 Buscando información para ejercicio: ${exerciseName}`);
 
-    // 1. BUSCAR EN CACHE (tabla exercise_ai_info)
-    const cacheResult = await pool.query(
-      `SELECT ejecucion, consejos, errores_evitar, request_count, ai_model_used, created_at
-       FROM app.exercise_ai_info
-       WHERE exercise_name_normalized = $1 OR exercise_name = $2
-       LIMIT 1`,
-      [normalizedName, exerciseName]
-    );
+    // 1. BUSCAR PRIMERO EN TABLAS DE METODOLOGÍAS ESPECÍFICAS
+    const exerciseLocation = await findExerciseInTables(exerciseName);
 
-    if (cacheResult.rows.length > 0) {
-      // ✅ ENCONTRADO EN CACHE - Incrementar contador y devolver
-      const cachedInfo = cacheResult.rows[0];
-
-      await pool.query(
-        `UPDATE app.exercise_ai_info
-         SET request_count = request_count + 1,
-             last_updated = NOW()
-         WHERE exercise_name_normalized = $1 OR exercise_name = $2`,
-        [normalizedName, exerciseName]
-      );
-
-      console.log(`💾 Cache HIT para ${exerciseName} (solicitado ${cachedInfo.request_count + 1} veces)`);
+    if (exerciseLocation.found && exerciseLocation.hasCache) {
+      // ✅ ENCONTRADO EN TABLA ESPECÍFICA CON CACHE
+      console.log(`💾 Cache HIT en ${exerciseLocation.table} para: ${exerciseName}`);
 
       return res.json({
         success: true,
-        exerciseInfo: {
-          ejecucion: cachedInfo.ejecucion,
-          consejos: cachedInfo.consejos,
-          errores_evitar: cachedInfo.errores_evitar
-        },
-        source: 'cache',
-        cached_at: cachedInfo.created_at,
-        model_used: cachedInfo.ai_model_used
+        exerciseInfo: exerciseLocation.cacheData,
+        source: 'specific_table',
+        table_name: exerciseLocation.table,
+        cached: true
       });
     }
 
-    // 2. NO ENCONTRADO EN CACHE - GENERAR CON IA
-    console.log(`🤖 Cache MISS - Generando información para ejercicio: ${exerciseName}`);
+    // 2. SI EXISTE EN TABLA ESPECÍFICA PERO SIN CACHE → Generar y guardar ahí
+    // 3. SI NO EXISTE EN NINGUNA TABLA → Buscar en exercise_ai_info (fallback)
+
+    if (!exerciseLocation.found) {
+      // Buscar en tabla genérica (exercise_ai_info) como fallback
+      const cacheResult = await pool.query(
+        `SELECT ejecucion, consejos, errores_evitar, request_count, ai_model_used, created_at
+         FROM app.exercise_ai_info
+         WHERE exercise_name_normalized = $1 OR exercise_name = $2
+         LIMIT 1`,
+        [normalizedName, exerciseName]
+      );
+
+      if (cacheResult.rows.length > 0) {
+        const cachedInfo = cacheResult.rows[0];
+
+        await pool.query(
+          `UPDATE app.exercise_ai_info
+           SET request_count = request_count + 1,
+               last_updated = NOW()
+           WHERE exercise_name_normalized = $1 OR exercise_name = $2`,
+          [normalizedName, exerciseName]
+        );
+
+        console.log(`💾 Cache HIT en exercise_ai_info (genérica) para ${exerciseName}`);
+
+        return res.json({
+          success: true,
+          exerciseInfo: {
+            ejecucion: cachedInfo.ejecucion,
+            consejos: cachedInfo.consejos,
+            errores_evitar: cachedInfo.errores_evitar
+          },
+          source: 'generic_cache',
+          cached_at: cachedInfo.created_at,
+          model_used: cachedInfo.ai_model_used
+        });
+      }
+    }
+
+    // 4. NO ENCONTRADO EN NINGÚN CACHE - GENERAR CON IA
+    const cacheTarget = exerciseLocation.found ? exerciseLocation.table : 'exercise_ai_info';
+    console.log(`🤖 Cache MISS - Generando información para: ${exerciseName} → guardará en ${cacheTarget}`);
 
     // Prompt específico para información de ejercicios
     const exerciseInfoPrompt = `Eres un experto entrenador personal y biomecánico. Te voy a dar el nombre de un ejercicio y necesito que me proporciones información detallada sobre él.
@@ -1605,12 +1717,29 @@ Instrucciones importantes:
         throw new Error('No se recibió respuesta de OpenAI');
       }
 
-      // Intentar parsear la respuesta JSON
+      // Limpiar respuesta de IA (puede venir con ```json...``` markdown)
+      let cleanedResponse = aiResponse.trim();
+
+      // Eliminar bloques de código markdown si existen
+      const blockMatch = cleanedResponse.match(/```json\s*([\s\S]*?)```/i) || cleanedResponse.match(/```\s*([\s\S]*?)```/i);
+      if (blockMatch && blockMatch[1]) {
+        cleanedResponse = blockMatch[1].trim();
+      }
+
+      // Extraer solo el objeto JSON (buscar primera { y última })
+      const firstBrace = cleanedResponse.indexOf('{');
+      const lastBrace = cleanedResponse.lastIndexOf('}');
+      if (firstBrace !== -1 && lastBrace !== -1) {
+        cleanedResponse = cleanedResponse.slice(firstBrace, lastBrace + 1);
+      }
+
+      // Intentar parsear la respuesta JSON limpia
       let exerciseInfo;
       try {
-        exerciseInfo = JSON.parse(aiResponse);
+        exerciseInfo = JSON.parse(cleanedResponse);
       } catch (parseError) {
         console.error('Error parseando respuesta de IA:', parseError);
+        console.error('Respuesta recibida:', cleanedResponse.slice(0, 500));
         throw new Error('Respuesta de IA no válida');
       }
 
@@ -1619,32 +1748,61 @@ Instrucciones importantes:
         throw new Error('Respuesta de IA incompleta');
       }
 
-      // 3. GUARDAR EN CACHE (tabla exercise_ai_info)
+      // 3. GUARDAR EN CACHE (tabla específica o genérica según corresponda)
       const estimatedCost = (tokensUsed / 1000) * 0.0015; // Estimación para gpt-4o-mini
 
       try {
-        await pool.query(
-          `INSERT INTO app.exercise_ai_info
-           (exercise_name, exercise_name_normalized, ejecucion, consejos, errores_evitar,
-            first_requested_by, ai_model_used, tokens_used, generation_cost, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
-           ON CONFLICT (exercise_name) DO UPDATE SET
-             request_count = app.exercise_ai_info.request_count + 1,
-             last_updated = NOW()`,
-          [
+        if (exerciseLocation.found) {
+          // ✅ GUARDAR EN TABLA ESPECÍFICA (el ejercicio existe en una metodología)
+          const saved = await saveExerciseInfoToTable(
+            exerciseLocation.table,
             exerciseName,
-            normalizedName,
-            exerciseInfo.ejecucion,
-            exerciseInfo.consejos,
-            exerciseInfo.errores_evitar,
-            user_id,
-            model,
-            tokensUsed,
-            estimatedCost
-          ]
-        );
+            exerciseInfo
+          );
 
-        console.log(`💾 Información guardada en cache para: ${exerciseName} (${tokensUsed} tokens, ~$${estimatedCost.toFixed(4)})`);
+          if (saved) {
+            console.log(`💾 Información guardada en ${exerciseLocation.table} para: ${exerciseName} (${tokensUsed} tokens, ~$${estimatedCost.toFixed(4)})`);
+          } else {
+            console.warn(`⚠️ No se pudo guardar en ${exerciseLocation.table}, intentando con cache genérica...`);
+            // Fallback: intentar guardar en tabla genérica si falla el guardado específico
+            await pool.query(
+              `INSERT INTO app.exercise_ai_info
+               (exercise_name, exercise_name_normalized, ejecucion, consejos, errores_evitar,
+                first_requested_by, ai_model_used, tokens_used, generation_cost, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+               ON CONFLICT (exercise_name) DO UPDATE SET
+                 request_count = app.exercise_ai_info.request_count + 1,
+                 last_updated = NOW()`,
+              [exerciseName, normalizedName, exerciseInfo.ejecucion, exerciseInfo.consejos,
+               exerciseInfo.errores_evitar, user_id, model, tokensUsed, estimatedCost]
+            );
+            console.log(`💾 Información guardada en cache genérica (fallback) para: ${exerciseName}`);
+          }
+        } else {
+          // ❌ NO EXISTE EN NINGUNA TABLA → GUARDAR EN CACHE GENÉRICA (exercise_ai_info)
+          await pool.query(
+            `INSERT INTO app.exercise_ai_info
+             (exercise_name, exercise_name_normalized, ejecucion, consejos, errores_evitar,
+              first_requested_by, ai_model_used, tokens_used, generation_cost, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+             ON CONFLICT (exercise_name) DO UPDATE SET
+               request_count = app.exercise_ai_info.request_count + 1,
+               last_updated = NOW()`,
+            [
+              exerciseName,
+              normalizedName,
+              exerciseInfo.ejecucion,
+              exerciseInfo.consejos,
+              exerciseInfo.errores_evitar,
+              user_id,
+              model,
+              tokensUsed,
+              estimatedCost
+            ]
+          );
+
+          console.log(`💾 Información guardada en cache genérica para: ${exerciseName} (${tokensUsed} tokens, ~$${estimatedCost.toFixed(4)})`);
+        }
       } catch (cacheError) {
         console.warn('⚠️ Error guardando en cache (no crítico):', cacheError.message);
       }

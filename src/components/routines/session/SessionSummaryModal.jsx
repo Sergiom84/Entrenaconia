@@ -1,6 +1,5 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useWorkout } from '@/contexts/WorkoutContext.jsx';
 import { useTrace } from '@/contexts/TraceContext.jsx';
 
 /**
@@ -19,36 +18,9 @@ export const SessionSummaryModal = ({
   onEndSession,
   navigateToRoutines
 }) => {
-  const { plan, getTodayStatusCached } = useWorkout();
   const { track } = useTrace();
   const navigate = useNavigate();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
-
-  // Compute day_id from plan start datetime and timezone (calendar days, 1-indexed)
-  function computeDayId(startISO, timezone = 'Europe/Madrid', now = new Date()) {
-    try {
-      const getParts = (d, tz) => {
-        const s = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
-        const [y, m, dd] = s.split('-').map(Number);
-        return { y, m, d: dd };
-      };
-      const s = getParts(new Date(startISO), timezone);
-      const n = getParts(now, timezone);
-      const startUTC = Date.UTC(s.y, s.m - 1, s.d);
-      const nowUTC = Date.UTC(n.y, n.m - 1, n.d);
-      const diffDays = Math.floor((nowUTC - startUTC) / 86400000) + 1;
-      return Math.max(1, diffDays);
-    } catch (e) {
-      // Fallback simple sin timezone
-      const start = new Date(startISO);
-      const startDateOnly = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-      const current = new Date();
-      const currentDateOnly = new Date(current.getFullYear(), current.getMonth(), current.getDate());
-      const diffDays = Math.floor((currentDateOnly - startDateOnly) / 86400000) + 1;
-      return Math.max(1, diffDays);
-    }
-  }
-
 
   // Ref para evitar loop infinito en tracking
   const prevShowRef = React.useRef(show);
@@ -76,35 +48,35 @@ export const SessionSummaryModal = ({
     console.log('🎯 Terminando sesión y navegando a rutinas');
 
     try {
-      // Llamar a onEndSession primero para guardar los datos
+      // 🎯 PASO 1: Llamar a onEndSession y ESPERAR a que complete (incluye fetchTodayStatus)
       if (onEndSession) {
+        console.log('📝 Llamando a onEndSession para completar sesión en BD');
         await onEndSession();
+        console.log('✅ onEndSession completado, estado actualizado');
       }
 
-      // Prefetch del estado del día para que TodayTrainingTab llegue con datos frescos
-      try {
-        const methodologyPlanId = plan?.methodologyPlanId;
-        const startISO = plan?.planStartDate || new Date().toISOString();
-        if (methodologyPlanId) {
-          const dayId = computeDayId(startISO, 'Europe/Madrid');
-          await getTodayStatusCached({ methodologyPlanId, dayId });
-        }
-      } catch (e) {
-        console.warn('Prefetch today-status falló (no bloqueante):', e);
-      }
+      // 🎯 PASO 2: Esperar un poco más para asegurar que el estado se propagó
+      await new Promise(resolve => setTimeout(resolve, 300));
 
-      // Navegar a Rutinas
+      // 🎯 PASO 3: Cerrar modal ANTES de navegar para asegurar limpieza de estado
+      console.log('🔒 Cerrando modal antes de navegar');
+      onClose?.();
+
+      // 🎯 PASO 4: Esperar dos frames para asegurar que el modal se cerró Y el estado se actualizó
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+      // 🎯 PASO 5: Navegar a Rutinas (estado ya está actualizado)
+      console.log('🚀 Navegando a rutinas con estado actualizado');
       if (typeof navigateToRoutines === 'function') {
         navigateToRoutines();
       } else {
         navigate('/routines');
       }
-
-      // Cerrar modal al final
-      onClose?.();
+    } catch (error) {
+      console.error('❌ Error en handleViewProgress:', error);
     } finally {
       // Evitar quedarse bloqueado si algo falla
-      setTimeout(() => setIsSubmitting(false), 300);
+      setTimeout(() => setIsSubmitting(false), 500);
     }
   };
 

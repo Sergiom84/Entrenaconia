@@ -66,8 +66,8 @@ function computeDayId(startISO, timezone = 'Europe/Madrid', now = new Date()) {
     const nowUTC = Date.UTC(n.y, n.m - 1, n.d);
     const diffDays = Math.floor((nowUTC - startUTC) / 86400000) + 1;
     return Math.max(1, diffDays);
-  } catch (e) {
-    // Fallback simple sin timezone
+  } catch (error) {
+    console.warn('computeDayId fallback sin timezone:', error?.message || error);
     const start = new Date(startISO);
     const startDateOnly = new Date(start.getFullYear(), start.getMonth(), start.getDate());
     const current = new Date();
@@ -114,7 +114,6 @@ function findTodaySession(plan, targetDay, weekIdx = 0) {
 
 export default function TodayTrainingTab({
   routinePlan,
-  routinePlanId,
   methodologyPlanId,
   planStartDate,
   todayName,
@@ -147,7 +146,6 @@ export default function TodayTrainingTab({
     // Utilidades basadas en BD
     hasActivePlan,
     hasActiveSession,
-    isTraining,
 
     // Funciones adicionales
     setLoading,
@@ -204,8 +202,8 @@ export default function TodayTrainingTab({
 
       setTodayStatus(null);
       return null;
-    } catch (e) {
-      console.error('Error obteniendo estado del día:', e);
+    } catch (error) {
+      console.error('Error obteniendo estado del día:', error);
       setTodayStatus(null);
       return null;
     } finally {
@@ -268,7 +266,7 @@ export default function TodayTrainingTab({
         loadExerciseProgress();
       }
     }
-  }, [hasActivePlan, routinePlan, plan.currentPlan, currentTodayName, hasActiveSession, session, plan.planStartDate, planStartDate]);
+  }, [hasActivePlan, routinePlan, plan.currentPlan, currentTodayName, hasActiveSession, session, plan.planStartDate, planStartDate, loadExerciseProgress]);
 
   const loadExerciseProgress = useCallback(async () => {
     if (!session.sessionId) return;
@@ -353,6 +351,26 @@ export default function TodayTrainingTab({
       totalOriginalExercises: allExercises.length
     };
   }, [todaySessionData, wantRoutineModal, todayStatus?.exercises, exerciseProgress]);
+
+  const sessionExerciseProgress = useMemo(() => {
+    // Fuente preferente: todayStatus.exercises (estructura del backend)
+    if (Array.isArray(todayStatus?.exercises) && todayStatus.exercises.length > 0) {
+      return todayStatus.exercises.map((ex, idx) => ({
+        exercise_order: idx,
+        status: String(ex?.status || 'pending').toLowerCase()
+      }));
+    }
+
+    // Fallback: estado local exerciseProgress
+    if (todaySessionData?.ejercicios?.length) {
+      return todaySessionData.ejercicios.map((_, idx) => ({
+        exercise_order: idx,
+        status: String(exerciseProgress?.[idx]?.status || 'pending').toLowerCase()
+      }));
+    }
+
+    return [];
+  }, [todayStatus?.exercises, exerciseProgress, todaySessionData?.ejercicios]);
 
   const handleStartSession = useCallback(async (exerciseIndex = 0) => {
     // 🚫 Prevenir doble ejecución
@@ -515,7 +533,7 @@ export default function TodayTrainingTab({
       setIsLoadingSession(false);
       setIsStarting(false); // 🔓 Desbloquear
     }
-  }, [todaySessionData, hasActiveSession, startSession, methodologyPlanId, currentTodayName, session.sessionId, todayStatus, track, onStartTraining, setError, isStarting, isLoadingSession]);
+  }, [todaySessionData, startSession, methodologyPlanId, session.sessionId, todayStatus, track, onStartTraining, setError, isStarting, isLoadingSession, plan.planStartDate, planStartDate, sessionExerciseProgress]);
 
   const handleResumeSession = useCallback(async () => {
     track('BUTTON_CLICK', { id: 'resume_session' }, { component: 'TodayTrainingTab' });
@@ -527,16 +545,28 @@ export default function TodayTrainingTab({
     const existingSessionId = statusSource?.session?.id || session.sessionId || localState.pendingSessionData?.sessionId;
     const sessionKey = existingSessionId != null ? String(existingSessionId) : null;
     const sessionStarted = Boolean(statusSource?.session?.session_started_at);
+    const sessionCompleted = statusSource?.session?.session_status === 'completed';
     const warmupAlreadyShown = sessionKey ? warmupShownSessionsRef.current.has(sessionKey) : false;
+
+    // Verificar si puede reintentar ejercicios (skipped/cancelled)
+    const canRetry = statusSource?.summary?.canRetry || false;
 
     console.log('[TodayTrainingTab] handleResumeSession', {
       existingSessionId,
       sessionStarted,
+      sessionCompleted,
+      canRetry,
       warmupAlreadyShown,
       hasActiveSession,
       todayStatusSession: statusSource?.session,
       contextSessionId: session.sessionId
     });
+
+    // 🎯 CORRECCIÓN: Si la sesión está completada Y NO puede reintentar, NO abrir modal
+    if (sessionCompleted && !canRetry) {
+      console.log('[TodayTrainingTab] Session completed with no exercises to retry');
+      return;
+    }
 
     if (!existingSessionId) {
       console.log('[TodayTrainingTab] No existing session found, starting new with warmup');
@@ -604,9 +634,10 @@ export default function TodayTrainingTab({
           warmupShownSessionsRef.current.delete(String(sid));
         }
 
-        // Limpiar estado del modal
+        // Limpiar estado del modal (TODOS los modales)
         updateLocalState({
           showSessionModal: false,
+          showWarmupModal: false,
           pendingSessionData: null
         });
 
@@ -615,6 +646,10 @@ export default function TodayTrainingTab({
           duration: sessionStartTime ? Date.now() - sessionStartTime.getTime() : 0,
           exercisesCompleted: Object.keys(exerciseProgress).length
         });
+
+        // 🎯 CRÍTICO: Refrescar estado INMEDIATAMENTE después de completar
+        console.log('🔄 Refrescando estado después de SESSION_COMPLETE');
+        await fetchTodayStatus();
 
         if (typeof onProgressUpdate === 'function') {
           onProgressUpdate();
@@ -629,7 +664,7 @@ export default function TodayTrainingTab({
       console.error('Error completando sesión:', error);
       setError(`Error finalizando sesión: ${error.message}`);
     }
-  }, [hasActiveSession, completeSession, session.sessionId, sessionStartTime, exerciseProgress, track, onProgressUpdate, showSuccess, setError, localState.pendingSessionData?.sessionId]);
+  }, [hasActiveSession, completeSession, session.sessionId, sessionStartTime, exerciseProgress, track, onProgressUpdate, showSuccess, setError, localState.pendingSessionData?.sessionId, fetchTodayStatus]);
 
   const handleExerciseUpdate = useCallback(async (exerciseIndex, progressData) => {
     // 🎯 CORRECCIÓN: exerciseIndex YA ES el originalIndex (viene desde useExerciseProgress)
@@ -696,8 +731,8 @@ export default function TodayTrainingTab({
     // Marcar inicio real de la sesión en backend (idempotente)
     try {
       await apiClient.post(`/routines/sessions/${pendingId}/mark-started`);
-    } catch (e) {
-      console.warn('mark-started fallo (no bloqueante):', e?.message || e);
+    } catch (error) {
+      console.warn('mark-started fallo (no bloqueante):', error?.message || error);
     }
 
     // Preparar datos mínimos de sesión si faltaran por cualquier carrera de estado
@@ -839,32 +874,13 @@ export default function TodayTrainingTab({
   // 📊 CÁLCULOS DE PROGRESO
   // ===============================================
 
-  const sessionStats = useMemo(() => {
-    if (!todaySessionData?.ejercicios) {
-      return { total: 0, completed: 0, inProgress: 0, pending: 0, progress: 0 };
-    }
-
-    const totalExercises = todaySessionData.ejercicios.length;
-    const completedCount = Object.values(exerciseProgress).filter(p => p.status === 'completed').length;
-    const inProgressCount = Object.values(exerciseProgress).filter(p => p.status === 'in_progress').length;
-
-    return {
-      total: totalExercises,
-      completed: completedCount,
-      inProgress: inProgressCount,
-
-      pending: totalExercises - completedCount - inProgressCount,
-      progress: totalExercises > 0 ? Math.round((completedCount / totalExercises) * 100) : 0
-    };
-  }, [todaySessionData?.ejercicios, exerciseProgress]);
-
   const estimatedDuration = useMemo(() => {
     if (!todaySessionData?.ejercicios) return 0;
 
     return todaySessionData.ejercicios.reduce((total, ejercicio) => {
-      const sets = parseInt(ejercicio.series) || 3;
-      const reps = parseInt(ejercicio.repeticiones) || 10;
-      const rest = parseInt(ejercicio.descanso_seg) || 60;
+      const sets = parseInt(ejercicio.series, 10) || 3;
+      const reps = parseInt(ejercicio.repeticiones, 10) || 10;
+      const rest = parseInt(ejercicio.descanso_seg, 10) || 60;
 
       // Estimación básica: (tiempo por rep * reps * sets) + descansos
       const exerciseTime = (2 * reps * sets) + (rest * (sets - 1));
@@ -873,26 +889,6 @@ export default function TodayTrainingTab({
   }, [todaySessionData?.ejercicios]);
 
   // Progreso por ejercicio que usará el modal para saltar completados
-  const sessionExerciseProgress = useMemo(() => {
-    // Fuente preferente: todayStatus.exercises (estructura del backend)
-    if (Array.isArray(todayStatus?.exercises) && todayStatus.exercises.length > 0) {
-      return todayStatus.exercises.map((ex, idx) => ({
-        exercise_order: idx,
-        status: String(ex?.status || 'pending').toLowerCase()
-      }));
-    }
-
-    // Fallback: estado local exerciseProgress
-    if (todaySessionData?.ejercicios?.length) {
-      return todaySessionData.ejercicios.map((_, idx) => ({
-        exercise_order: idx,
-        status: String(exerciseProgress?.[idx]?.status || 'pending').toLowerCase()
-      }));
-    }
-
-    return [];
-  }, [todayStatus?.exercises, exerciseProgress, todaySessionData?.ejercicios]);
-
 
   // 🎯 NUEVA LÓGICA: Usar canResume del backend en lugar de calcular localmente
   const shouldResume = useMemo(() => {
@@ -936,44 +932,109 @@ export default function TodayTrainingTab({
     }
   }, [hasActiveSession, nextPendingIndex]);
 
-
-  const actualDuration = useMemo(() => {
-    if (!sessionStartTime) return 0;
-    return Math.floor((Date.now() - sessionStartTime.getTime()) / 1000);
-  }, [sessionStartTime]);
-
   // Estados para mostrar el entrenamiento de hoy
-  // ✅ CORREGIDO: Verificar tanto contexto como backend para sesión completada
-  // Gating robusto: estados derivados para decidir si mostrar Comenzar/Reanudar o solo Resumen
-  const totalCountForGate = (todayStatus?.summary?.total ?? (todaySessionData?.ejercicios?.length || 0));
-  const completedCountForGate = (todayStatus?.summary?.completed ?? Object.values(exerciseProgress || {}).filter(p => String(p?.status || '').toLowerCase() === 'completed').length);
-  const skippedCountForGate = (todayStatus?.summary?.skipped ?? Object.values(exerciseProgress || {}).filter(p => String(p?.status || '').toLowerCase() === 'skipped').length);
-  const cancelledCountForGate = (todayStatus?.summary?.cancelled ?? Object.values(exerciseProgress || {}).filter(p => String(p?.status || '').toLowerCase() === 'cancelled').length);
-  const pendingCountForGate = (todayStatus?.summary?.pending ?? (Array.isArray(todayStatus?.exercises)
-    ? todayStatus.exercises.filter(ex => String(ex?.status || 'pending').toLowerCase() === 'pending').length
-    : (() => {
-        if (todaySessionData?.ejercicios?.length) {
-          let c = 0;
-          for (let i = 0; i < todaySessionData.ejercicios.length; i++) {
-            const s = String(exerciseProgress?.[i]?.status || 'pending').toLowerCase();
-            if (s === 'pending') c++;
-          }
-          return c;
-        }
-        return 0;
-      })()
-    ));
-  const inProgressCountForGate = (todayStatus?.summary?.in_progress ?? (Array.isArray(todayStatus?.exercises)
-    ? todayStatus.exercises.filter(ex => String(ex?.status || '').toLowerCase() === 'in_progress').length
-    : 0));
+  // ✅ CORRECCIÓN VISUAL: Priorizar datos locales para evitar parpadeo del botón
+  // Siempre usar todaySessionData como fuente de verdad para el total (no cambia)
+  const totalCountForGate = todaySessionData?.ejercicios?.length || todayStatus?.summary?.total || 0;
 
-  const isFinishedToday = totalCountForGate > 0 && pendingCountForGate === 0 && inProgressCountForGate === 0;
-  const hasCompletedSession = isFinishedToday && (completedCountForGate === totalCountForGate);
-  const allSkippedToday = totalCountForGate > 0 && (todayStatus?.summary?.skipped ?? 0) === totalCountForGate;
-  const allCancelledToday = totalCountForGate > 0 && (todayStatus?.summary?.cancelled ?? 0) === totalCountForGate;
-  const canRetryToday = Boolean(todayStatus?.summary?.canRetry) || allSkippedToday || allCancelledToday;
-  // Mostrar CTA de reanudar si queda trabajo por hacer (pendientes, saltados o cancelados)
-  const hasUnfinishedWorkToday = totalCountForGate > 0 && (completedCountForGate < totalCountForGate);
+  // Usar datos locales primero, backend como fallback (más estable visualmente)
+  const completedCountForGate = (() => {
+    // Si hay exerciseProgress local, usarlo
+    if (todaySessionData?.ejercicios?.length && exerciseProgress && Object.keys(exerciseProgress).length > 0) {
+      return Object.values(exerciseProgress).filter(p => String(p?.status || '').toLowerCase() === 'completed').length;
+    }
+    // Fallback: backend
+    return todayStatus?.summary?.completed || 0;
+  })();
+
+  const skippedCountForGate = (() => {
+    if (todaySessionData?.ejercicios?.length && exerciseProgress && Object.keys(exerciseProgress).length > 0) {
+      return Object.values(exerciseProgress).filter(p => String(p?.status || '').toLowerCase() === 'skipped').length;
+    }
+    return todayStatus?.summary?.skipped || 0;
+  })();
+
+  const cancelledCountForGate = (() => {
+    if (todaySessionData?.ejercicios?.length && exerciseProgress && Object.keys(exerciseProgress).length > 0) {
+      return Object.values(exerciseProgress).filter(p => String(p?.status || '').toLowerCase() === 'cancelled').length;
+    }
+    return todayStatus?.summary?.cancelled || 0;
+  })();
+
+  const pendingCountForGate = (() => {
+    // Calcular desde local si disponible
+    if (todaySessionData?.ejercicios?.length) {
+      let c = 0;
+      for (let i = 0; i < todaySessionData.ejercicios.length; i++) {
+        const s = String(exerciseProgress?.[i]?.status || 'pending').toLowerCase();
+        if (s === 'pending') c++;
+      }
+      return c;
+    }
+    // Fallback: backend
+    if (Array.isArray(todayStatus?.exercises)) {
+      return todayStatus.exercises.filter(ex => String(ex?.status || 'pending').toLowerCase() === 'pending').length;
+    }
+    return todayStatus?.summary?.pending || 0;
+  })();
+
+  const inProgressCountForGate = (() => {
+    if (todaySessionData?.ejercicios?.length && exerciseProgress && Object.keys(exerciseProgress).length > 0) {
+      return Object.values(exerciseProgress).filter(p => String(p?.status || '').toLowerCase() === 'in_progress').length;
+    }
+    if (Array.isArray(todayStatus?.exercises)) {
+      return todayStatus.exercises.filter(ex => String(ex?.status || '').toLowerCase() === 'in_progress').length;
+    }
+    return todayStatus?.summary?.in_progress || 0;
+  })();
+
+  // 🎯 CORRECCIÓN VISUAL: Lógica robusta estabilizada con useMemo para evitar recálculos
+  const gateLogic = useMemo(() => {
+    // 1. Hay ejercicios incompletos (no todos están "completed")
+    const hasIncompleteExercises = totalCountForGate > 0 && (completedCountForGate < totalCountForGate);
+
+    // 2. Todos los ejercicios fueron procesados (no quedan pending/in_progress)
+    const allProcessedToday = totalCountForGate > 0 && pendingCountForGate === 0 && inProgressCountForGate === 0;
+
+    // 3. Estado desde backend (para validación adicional)
+    const isFinishedToday = todayStatus?.session?.session_status === 'completed';
+
+    // 4. Sesión completada exitosamente: session_status = 'completed' O todos los ejercicios completed
+    const hasCompletedSession = isFinishedToday || (totalCountForGate > 0 && completedCountForGate === totalCountForGate);
+
+    // 5. Sesión finalizada incompleta: todos procesados pero no todos completados
+    // Ejemplo: 3 completed + 1 skipped + 1 cancelled (como en Halterofilia)
+    const allProcessedIncomplete = allProcessedToday && hasIncompleteExercises && !hasCompletedSession;
+
+    const allSkippedToday = totalCountForGate > 0 && (todayStatus?.summary?.skipped ?? 0) === totalCountForGate;
+    const allCancelledToday = totalCountForGate > 0 && (todayStatus?.summary?.cancelled ?? 0) === totalCountForGate;
+    const canRetryToday = Boolean(todayStatus?.summary?.canRetry) || allSkippedToday || allCancelledToday;
+
+    // 6. Mostrar CTA de comenzar/reanudar: hay ejercicios incompletos Y NO todos están procesados
+    // Esta lógica asegura que el botón aparezca cuando hay pending/in_progress
+    const hasUnfinishedWorkToday = hasIncompleteExercises && !allProcessedToday;
+
+    return {
+      hasIncompleteExercises,
+      allProcessedToday,
+      isFinishedToday,
+      hasCompletedSession,
+      allProcessedIncomplete,
+      canRetryToday,
+      hasUnfinishedWorkToday
+    };
+  }, [totalCountForGate, completedCountForGate, pendingCountForGate, inProgressCountForGate, todayStatus?.session?.session_status, todayStatus?.summary?.skipped, todayStatus?.summary?.cancelled, todayStatus?.summary?.canRetry]);
+
+  // Extraer valores del objeto memoizado
+  const {
+    hasIncompleteExercises,
+    allProcessedToday,
+    isFinishedToday,
+    hasCompletedSession,
+    allProcessedIncomplete,
+    canRetryToday,
+    hasUnfinishedWorkToday
+  } = gateLogic;
   const isRestDay = hasActivePlan && !todaySessionData;
   const noActivePlan = !hasActivePlan;
   const sessionMatchesToday = hasActiveSession && !!session?.dayName && !!todaySessionData?.dia && (
@@ -1013,24 +1074,42 @@ export default function TodayTrainingTab({
     return { completed, total, skipped, cancelled };
   }, [todayStatus?.exercises, todayStatus?.summary, exerciseProgress, todaySessionData?.ejercicios?.length]);
 
-  // 🔍 DEBUG: Verificar qué está pasando antes del render
+  // 🔍 DEBUG: Verificar qué está pasando antes del render (incluyendo estados de carga)
   console.log('🔍 DEBUG TodayTrainingTab SECTIONS:', {
     // Condiciones principales
     hasActivePlan,
     hasToday,
-    hasCompletedSession,
     todayStatus: !!todayStatus,
+    loadingTodayStatus, // 🎯 NUEVO: estado de carga
 
-    // Sección 1: Sesión NO finalizada (pendientes/en progreso) o caso especial (todos skipped/cancelled)
-    showSection1: hasToday && hasActivePlan && hasUnfinishedWorkToday,
+    // Contadores (priorizan datos locales sobre backend para estabilidad)
+    totalCountForGate,
+    completedCountForGate,
+    pendingCountForGate,
+    inProgressCountForGate,
+    skippedCountForGate,
+    cancelledCountForGate,
 
-    // Sección 2: Sesión FINALIZADA (sin pendientes)
-    showSection2: hasActivePlan && hasToday && isFinishedToday && todayStatus,
+    // Estados derivados (corregidos y robustos con useMemo)
+    hasIncompleteExercises,    // hay ejercicios sin completar
+    allProcessedToday,         // no quedan pending/in_progress
+    isFinishedToday,           // session_status === 'completed' (backend)
+    hasCompletedSession,       // session completada exitosamente
+    allProcessedIncomplete,    // procesados pero no todos completed
+    hasUnfinishedWorkToday,    // hay trabajo sin terminar (botón de reanudar)
 
-    // Estados para debug
+    // Secciones a renderizar (ahora incluye loading state)
+    showSection1_InProgress: (hasToday && hasActivePlan && hasUnfinishedWorkToday) || (hasToday && hasActivePlan && loadingTodayStatus && !todayStatus),
+    showSection2_Incomplete: hasActivePlan && hasToday && allProcessedIncomplete && todayStatus,
+    showSection3_Completed: hasActivePlan && hasToday && hasCompletedSession && todayStatus,
+
+    // Debug adicional
     sessionStatus: session.status,
     todayStatusSessionStatus: todayStatus?.session?.session_status,
-    todayStatusIsComplete: todayStatus?.summary?.isComplete
+    canRetry: canRetryToday,
+
+    // 🎯 NUEVO: Fuente de datos para contadores
+    dataSource: todaySessionData?.ejercicios?.length ? 'local (todaySessionData)' : (todayStatus ? 'backend (todayStatus)' : 'ninguno')
   });
 
 
@@ -1143,8 +1222,9 @@ export default function TodayTrainingTab({
             {/* 📋 SESIÓN DEL DÍA (NO INICIADA) */}
             {/* =============================================== */}
 
-            {hasToday && hasActivePlan && hasUnfinishedWorkToday && (
-              <section>
+            {/* 🎯 FIX VISUAL: Mantener sección visible durante carga de todayStatus para evitar parpadeo */}
+            {((hasToday && hasActivePlan && hasUnfinishedWorkToday) || (hasToday && hasActivePlan && loadingTodayStatus && !todayStatus)) ? (
+              <section className="transition-opacity duration-300 ease-in-out opacity-100">
 
                 <div className="text-center py-6">
                   <Dumbbell className="w-12 h-12 text-yellow-400 mx-auto mb-4" />
@@ -1154,24 +1234,33 @@ export default function TodayTrainingTab({
                   <p className="text-gray-400 mb-4">
                     {todaySessionData?.ejercicios?.length || 0} ejercicios programados
                   </p>
-                  {/* Decidir si debemos reanudar (hay sesión activa o ya hay ejercicios realizados) */}
-                  <Button
-                    onClick={() => ((shouldResume || hasUnfinishedWorkToday) ? handleResumeSession() : handleStartSession(0))}
-                    className="bg-yellow-500 hover:bg-yellow-600 text-black font-medium"
-                    disabled={ui.isLoading || isLoadingSession || isStarting}
-                  >
-                    {isLoadingSession ? (
-                      <>
-                        <RefreshCw className="h-5 w-5 animate-spin mr-2" />
-                        Iniciando...
-                      </>
-                    ) : (
-                      <>
-                        <Play className="h-5 w-5 mr-2" />
-                        {'Reanudar Entrenamiento'}
-                      </>
-                    )}
-                  </Button>
+
+                  {/* Mostrar indicador de carga si está cargando todayStatus por primera vez */}
+                  {loadingTodayStatus && !todayStatus ? (
+                    <div className="flex items-center justify-center gap-2 text-gray-400">
+                      <RefreshCw className="h-5 w-5 animate-spin" />
+                      <span>Verificando progreso...</span>
+                    </div>
+                  ) : (
+                    // Decidir si debemos reanudar (hay sesión activa o ya hay ejercicios realizados)
+                    <Button
+                      onClick={() => ((shouldResume || hasUnfinishedWorkToday) ? handleResumeSession() : handleStartSession(0))}
+                      className="bg-yellow-500 hover:bg-yellow-600 text-black font-medium"
+                      disabled={ui.isLoading || isLoadingSession || isStarting}
+                    >
+                      {isLoadingSession ? (
+                        <>
+                          <RefreshCw className="h-5 w-5 animate-spin mr-2" />
+                          Iniciando...
+                        </>
+                      ) : (
+                        <>
+                          <Play className="h-5 w-5 mr-2" />
+                          {'Reanudar Entrenamiento'}
+                        </>
+                      )}
+                    </Button>
+                  )}
                 </div>
 
                 {/* Lista de ejercicios */}
@@ -1216,32 +1305,90 @@ export default function TodayTrainingTab({
                   </Card>
                 )}
               </section>
+            ) : null}
+
+            {/* =============================================== */}
+            {/* ⚠️ SESIÓN FINALIZADA INCOMPLETA */}
+            {/* =============================================== */}
+
+            {/* Sección 2: Sesión finalizada pero NO completada (algunos skipped/cancelled) */}
+            {hasActivePlan && hasToday && allProcessedIncomplete && todayStatus && (
+              <Card className="p-6 border-yellow-500/30 bg-yellow-900/10">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <AlertTriangle className="w-6 h-6 text-yellow-400" />
+                      <h3 className="text-xl font-semibold text-white">Sesión Finalizada - Incompleta</h3>
+                    </div>
+                    <p className="text-gray-300 mt-1">
+                      {todayStatus.summary.completed} completados - {todayStatus.summary.skipped} saltados - {todayStatus.summary.cancelled} cancelados
+                    </p>
+                    <p className="text-sm text-yellow-300 mt-2">
+                      Algunos ejercicios no fueron completados. Puedes reintentarlos si lo deseas.
+                    </p>
+                  </div>
+                  <div className="text-sm text-gray-400">
+                    Duración: {(todayStatus.summary.total > 0 && todayStatus.session?.total_duration_seconds)
+                      ? Math.round((todayStatus.session.total_duration_seconds + (todayStatus.session.warmup_time_seconds || 0)) / 60)
+                      : 0} min
+                  </div>
+                </div>
+
+                {/* Lista de ejercicios con sus estados */}
+                <div className="space-y-2 mb-6">
+                  {todayStatus.exercises.map((ex, index) => (
+                    <ExerciseListItem key={index} exercise={ex} index={index} />
+                  ))}
+                </div>
+
+                {/* Botón para reintentar ejercicios saltados/cancelados */}
+                {canRetryToday && (
+                  <div className="flex justify-center pt-4 border-t border-gray-700">
+                    <Button
+                      onClick={() => handleResumeSession()}
+                      className="bg-yellow-500 hover:bg-yellow-600 text-black font-medium"
+                      disabled={ui.isLoading || isLoadingSession}
+                    >
+                      <Play className="h-5 w-5 mr-2" />
+                      Reintentar Ejercicios Pendientes
+                    </Button>
+                  </div>
+                )}
+              </Card>
             )}
 
+            {/* =============================================== */}
+            {/* ✅ SESIÓN COMPLETADA EXITOSAMENTE */}
+            {/* =============================================== */}
 
+            {/* Resumen de sesión completada exitosamente */}
+            {hasActivePlan && hasToday && hasCompletedSession && todayStatus && (
+              <Card className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h3 className="text-xl font-semibold text-white">Resumen de hoy ({currentTodayName})</h3>
+                    <p className="text-gray-400 mt-1">
+                      {todayStatus.summary.completed} completados - {todayStatus.summary.skipped} saltados - {todayStatus.summary.total} ejercicios
+                    </p>
+                  </div>
+                  <div className="text-sm text-gray-400">
+                    {"Duracion total: "}
+                    {todayStatus.session?.total_duration_seconds
+                      ? Math.round(
+                          (todayStatus.session.total_duration_seconds + (todayStatus.session.warmup_time_seconds || 0)) / 60
+                        )
+                      : 0}
+                    {" min"}
+                  </div>
+                </div>
 
-                {/* Resumen de sesión finalizada */}
-                {hasActivePlan && hasToday && isFinishedToday && todayStatus && (
-                  <Card className="p-6">
-                    <div className="flex items-center justify-between mb-6">
-                      <div>
-                        <h3 className="text-xl font-semibold text-white">Resumen de hoy ({currentTodayName})</h3>
-                        <p className="text-gray-400 mt-1">
-                          {todayStatus.summary.completed} completados · {todayStatus.summary.skipped} saltados · {todayStatus.summary.total} ejercicios
-                        </p>
-                      </div>
-                      <div className="text-sm text-gray-400">
-                        Duración total: {todayStatus.session?.total_duration_seconds ? Math.round((todayStatus.session.total_duration_seconds + (todayStatus.session.warmup_time_seconds || 0)) / 60) : 0} min
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      {todayStatus.exercises.map((ex, index) => (
-                        <ExerciseListItem key={index} exercise={ex} index={index} />
-                      ))}
-                    </div>
-                  </Card>
-                )}
+                <div className="space-y-2">
+                  {todayStatus.exercises.map((ex, index) => (
+                    <ExerciseListItem key={index} exercise={ex} index={index} />
+                  ))}
+                </div>
+              </Card>
+            )}
 
 
 
@@ -1323,7 +1470,10 @@ export default function TodayTrainingTab({
       {/* =============================================== */}
 
       {/* Modal de Calentamiento */}
-      {(localState.showWarmupModal || ui.showWarmup) && (localState.pendingSessionData?.sessionId || session.sessionId) && (
+      {(localState.showWarmupModal || ui.showWarmup) &&
+       (localState.pendingSessionData?.sessionId || session.sessionId) &&
+       !loadingTodayStatus &&
+       (todayStatus?.session?.session_status !== 'completed' || todayStatus?.summary?.canRetry) && (
         <WarmupModal
           level={(routinePlan || plan.currentPlan)?.level || 'básico'}
           sessionId={localState.pendingSessionData?.sessionId || session.sessionId}
@@ -1334,7 +1484,10 @@ export default function TodayTrainingTab({
       )}
 
       {/* Modal de Entrenamiento */}
-      {(localState.showSessionModal || ui.showRoutineSession) && effectiveSession && (
+      {(localState.showSessionModal || ui.showRoutineSession) &&
+       effectiveSession &&
+       !loadingTodayStatus &&
+       (todayStatus?.session?.session_status !== 'completed' || todayStatus?.summary?.canRetry) && (
         <RoutineSessionModal
           session={effectiveSession}
           sessionId={effectiveSessionId}
