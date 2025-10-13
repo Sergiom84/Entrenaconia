@@ -16,6 +16,7 @@
  *   - /api/routine-generation/specialist/* -> Especialistas (calistenia, gym)
  */
 
+import process from 'node:process';
 import express from 'express';
 import authenticateToken from '../middleware/auth.js';
 import { pool } from '../db.js';
@@ -1026,7 +1027,7 @@ FORMATO EXACTO:
         }
       ],
       temperature: 0.4,
-      max_tokens: 4000
+      max_tokens: config.max_output_tokens  // 16384 tokens para planes completos
     });
 
     const aiResponse = completion.choices[0].message.content;
@@ -1121,43 +1122,33 @@ router.post('/specialist/hipertrofia/evaluate', authenticateToken, async (req, r
 
     logUserProfile(fullUserProfile, userId);
 
-    // Llamar a IA para evaluar perfil
+    // Preparar payload para IA (patrón estandarizado igual a Calistenia)
+    const aiPayload = {
+      task: 'evaluate_hipertrofia_level',
+      user_profile: {
+        ...fullUserProfile
+      },
+      evaluation_criteria: [
+        'Años de entrenamiento con pesas (años_entrenando)',
+        'Nivel de entrenamiento actual (nivel_entrenamiento)',
+        'Objetivo principal de hipertrofia muscular',
+        'Tolerancia al volumen de entrenamiento',
+        'Capacidad de recuperación (edad, nivel_actividad)',
+        'Limitaciones físicas o lesiones',
+        'Composición corporal actual (grasa_corporal, masa_muscular)'
+      ],
+      level_descriptions: {
+        principiante: 'Principiantes: 0-1 años con pesas, volumen moderado (10-15 series/músculo/semana)',
+        intermedio: 'Intermedio: 1-3 años, tolerancia media-alta al volumen (15-20 series/músculo/semana)',
+        avanzado: 'Avanzado: +3 años, periodización avanzada, alto volumen (20-25 series/músculo/semana)'
+      }
+    };
+
+    logAIPayload('HIPERTROFIA_EVALUATION', aiPayload);
+
+    // Llamar a IA
     const client = getModuleOpenAI(AI_MODULES.HIPERTROFIA_SPECIALIST);
     const config = AI_MODULES.HIPERTROFIA_SPECIALIST;
-
-    const userMessage = `EVALUACIÓN DE PERFIL PARA HIPERTROFIA
-
-DATOS DEL USUARIO:
-- Edad: ${fullUserProfile?.edad || 'No especificado'}
-- Experiencia: ${fullUserProfile?.experiencia_entrenamiento || 'No especificado'}
-- Nivel actual: ${fullUserProfile?.nivel_actual || 'No especificado'}
-- Objetivo principal: ${fullUserProfile?.objetivo_principal || 'No especificado'}
-- Días disponibles: ${fullUserProfile?.dias_disponibles || 'No especificado'}
-- Equipamiento: ${fullUserProfile?.equipamiento?.join(', ') || 'No especificado'}
-- Limitaciones: ${fullUserProfile?.limitaciones || 'Ninguna'}
-
-NIVELES DISPONIBLES:
-1. Principiante (0-1 año de entrenamiento con pesas)
-2. Intermedio (1-3 años de entrenamiento consistente)
-3. Avanzado (+3 años de entrenamiento serio)
-
-Analiza este perfil y recomienda:
-1. El nivel más adecuado (principiante/intermedio/avanzado)
-2. Confidence score (0.0-1.0)
-3. Razonamiento detallado
-4. Factores clave detectados
-5. Áreas de enfoque sugeridas
-
-RESPONDE EN JSON PURO (formato estandarizado):
-{
-  "recommended_level": "principiante|intermedio|avanzado",
-  "confidence": 0.85,
-  "reasoning": "Explicación detallada del nivel recomendado",
-  "key_indicators": ["Factor 1", "Factor 2", "Factor 3"],
-  "suggested_focus_areas": ["Área 1", "Área 2"],
-  "split_suggestion": "full_body|upper_lower|push_pull_legs",
-  "weekly_frequency": 3-6
-}`;
 
     const completion = await client.chat.completions.create({
       model: config.model,
@@ -1169,24 +1160,26 @@ RESPONDE EN JSON PURO (formato estandarizado):
 INSTRUCCIONES:
 - Evalúa objetivamente la experiencia y condición física
 - Sé realista con la confianza (escala 0.0-1.0, no siempre 1.0)
+- Presta especial atención a años_entrenando y nivel_entrenamiento del perfil
 - Proporciona razonamiento detallado y factores clave
-- Sugiere áreas de enfoque específicas
+- Sugiere áreas de enfoque específicas (grupos musculares)
 - RESPONDE SOLO EN JSON PURO, SIN MARKDOWN
 
 FORMATO DE RESPUESTA (OBLIGATORIO):
 {
   "recommended_level": "principiante|intermedio|avanzado",
   "confidence": 0.75,
-  "reasoning": "Explicación detallada del nivel recomendado",
-  "key_indicators": ["Factor 1", "Factor 2", "Factor 3"],
-  "suggested_focus_areas": ["Área 1", "Área 2"],
+  "reasoning": "Explicación detallada del nivel recomendado basada en datos del perfil",
+  "key_indicators": ["Factor 1 detectado en perfil", "Factor 2", "Factor 3"],
+  "suggested_focus_areas": ["Pecho", "Espalda", "Piernas", etc.],
   "split_suggestion": "full_body|upper_lower|push_pull_legs",
-  "weekly_frequency": 3-6
+  "weekly_frequency": 3-6,
+  "volume_tolerance": "baja|media|alta"
 }`
         },
         {
           role: 'user',
-          content: userMessage
+          content: JSON.stringify(aiPayload)
         }
       ],
       temperature: 0.3,
@@ -1220,7 +1213,8 @@ FORMATO DE RESPUESTA (OBLIGATORIO):
         key_indicators: evaluation.key_indicators || [],
         suggested_focus_areas: evaluation.suggested_focus_areas || [],
         split_suggestion: evaluation.split_suggestion || 'full_body',
-        weekly_frequency: evaluation.weekly_frequency || 3
+        weekly_frequency: evaluation.weekly_frequency || 3,
+        volume_tolerance: evaluation.volume_tolerance || 'media'
       },
       metadata: {
         model_used: config.model,
@@ -1318,7 +1312,7 @@ router.post('/specialist/hipertrofia/generate', authenticateToken, async (req, r
       SELECT exercise_id, nombre, nivel, categoria as grupo_muscular, patron,
              equipamiento, series_reps_objetivo, descanso_seg,
              criterio_de_progreso, progresion_desde, progresion_hacia,
-             notas, variante
+             notas, ejecucion, consejos, errores_evitar
       FROM app."Ejercicios_Hipertrofia"
       WHERE ${levelCondition}
       ORDER BY RANDOM()
@@ -1412,7 +1406,7 @@ FORMATO EXACTO:
         }
       ],
       temperature: 0.4,
-      max_tokens: 4000
+      max_tokens: config.max_output_tokens  // 16384 tokens para planes completos
     });
 
     const aiResponse = completion.choices[0].message.content;
@@ -1777,7 +1771,7 @@ FORMATO EXACTO:
         }
       ],
       temperature: 0.4,
-      max_tokens: 4000
+      max_tokens: config.max_output_tokens  // 16384 tokens para planes completos
     });
 
     const aiResponse = completion.choices[0].message.content;
@@ -2167,7 +2161,7 @@ FORMATO EXACTO:
         }
       ],
       temperature: 0.9,  // Alta variedad para WODs constantemente variados
-      max_tokens: 6000
+      max_tokens: config.max_output_tokens  // 16384 tokens (igual que Calistenia)
     });
 
     const aiResponse = completion.choices[0].message.content;

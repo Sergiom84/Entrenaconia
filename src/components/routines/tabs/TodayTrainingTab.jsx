@@ -225,6 +225,39 @@ export default function TodayTrainingTab({
   }, []);
 
   // ===============================================
+  // 🔄 CARGAR PROGRESO DE EJERCICIOS
+  // ===============================================
+
+  const loadExerciseProgress = useCallback(async () => {
+    if (!session.sessionId) return;
+
+    console.log('🔍 DEBUG loadExerciseProgress: TEMPORALMENTE DESHABILITADO para evitar 404');
+    // TEMPORALMENTE COMENTADO PARA EVITAR ERROR 404
+    // TODO: Implementar endpoint /api/training-session/progress/:sessionId en backend
+    /*
+
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`/api/training-session/progress/${session.sessionId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success && result.progress) {
+          setExerciseProgress(result.progress);
+        }
+      }
+    } catch (error) {
+      console.error('Error cargando progreso de ejercicios:', error);
+    }
+    */
+  }, [session.sessionId]);
+
+  // ===============================================
   // 🔄 SINCRONIZACIÓN CON BD
   // ===============================================
 
@@ -268,34 +301,6 @@ export default function TodayTrainingTab({
     }
   }, [hasActivePlan, routinePlan, plan.currentPlan, currentTodayName, hasActiveSession, session, plan.planStartDate, planStartDate, loadExerciseProgress]);
 
-  const loadExerciseProgress = useCallback(async () => {
-    if (!session.sessionId) return;
-
-    console.log('🔍 DEBUG loadExerciseProgress: TEMPORALMENTE DESHABILITADO para evitar 404');
-    // TEMPORALMENTE COMENTADO PARA EVITAR ERROR 404
-    // TODO: Implementar endpoint /api/training-session/progress/:sessionId en backend
-    /*
-
-    try {
-      const token = localStorage.getItem('authToken');
-      const response = await fetch(`/api/training-session/progress/${session.sessionId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        if (result.success && result.progress) {
-          setExerciseProgress(result.progress);
-        }
-      }
-    } catch (error) {
-      console.error('Error cargando progreso de ejercicios:', error);
-    }
-    */
-  }, [session.sessionId]);
 
   // ===============================================
   // 🏃 HANDLERS DE SESIÓN
