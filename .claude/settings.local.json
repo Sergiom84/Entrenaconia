@@ -50,7 +50,10 @@
       "Bash(findstr:*)",
       "Bash(curl:*)",
       "Bash(rm:*)",
-      "Bash(git restore:*)"
+      "Bash(git restore:*)",
+      "Bash(for:*)",
+      "Bash(grep:*)",
+      "Bash(done)"
     ],
     "deny": [],
     "ask": []

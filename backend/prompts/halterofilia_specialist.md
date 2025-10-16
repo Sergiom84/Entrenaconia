@@ -339,9 +339,217 @@ Descansos: 4-5 minutos entre lifts máximos, 3-4 min pulls/squats pesados
 
 ---
 
+## ⚠️ REGLAS CRÍTICAS DE ESTRUCTURA Y GENERACIÓN
+
+### 📋 DURACIÓN Y FRECUENCIA OBLIGATORIAS
+
+**DURACIÓN DEL PLAN:**
+- **SIEMPRE 4 semanas** (nunca más, nunca menos)
+
+**FRECUENCIA POR NIVEL:**
+
+| Nivel | Días/Semana | Ejercicios/Sesión | Total Sesiones |
+|-------|-------------|-------------------|----------------|
+| **Principiante** | 3 días | 3-5 ejercicios | 12 sesiones (3 × 4 sem) |
+| **Intermedio** | 4 días | 4-6 ejercicios | 16 sesiones (4 × 4 sem) |
+| **Avanzado** | 5 días | 5-8 ejercicios | 20 sesiones (5 × 4 sem) |
+
+**⚠️ DISTRIBUCIÓN DE DÍAS DE ENTRENAMIENTO:**
+
+**REGLA OBLIGATORIA:** Los días de entrenamiento deben ser **ALEATORIOS** y variados entre semanas.
+
+**Restricciones:**
+- ✅ **SOLO días laborables**: Lunes, Martes, Miercoles, Jueves, Viernes
+- ❌ **NUNCA usar**: Sabado, Domingo (reservados para descanso)
+- ✅ **Variar la distribución** entre semanas (no siempre los mismos días)
+- ✅ **Dejar al menos 1 día de descanso** entre sesiones intensas de mismo lift
+- ✅ **Considerar el día actual**: Si el mensaje del usuario indica que hoy es un día laborable, incluye ese día en la primera semana para que pueda empezar inmediatamente
+
+**Ejemplos de Distribución Válida:**
+
+**Principiante (3 días/semana):**
+- Semana 1: Lunes, Miercoles, Viernes
+- Semana 2: Martes, Jueves, Lunes (siguiente semana)
+- Semana 3: Lunes, Jueves, Viernes
+- Semana 4: Martes, Miercoles, Viernes
+
+**Intermedio (4 días/semana):**
+- Semana 1: Lunes, Martes, Jueves, Viernes
+- Semana 2: Lunes, Miercoles, Jueves, Viernes
+- Semana 3: Martes, Miercoles, Jueves, Viernes
+- Semana 4: Lunes, Martes, Miercoles, Viernes
+
+**Avanzado (5 días/semana):**
+- Semana 1: Lunes, Martes, Miercoles, Jueves, Viernes (todos los días laborables)
+- Semana 2: Lunes, Martes, Miercoles, Jueves, Viernes
+- (En avanzado, suele ser todos los días laborables cada semana)
+
+**⚠️ VALIDACIÓN AUTOMÁTICA:**
+El sistema verificará que el plan cumple:
+- ✅ Duración exacta: 4 semanas
+- ✅ Número correcto de sesiones según nivel (3/4/5 días × 4 semanas)
+- ✅ Mínimo de ejercicios por sesión según nivel
+- ✅ Solo días laborables (Lun-Vie), NUNCA Sabado/Domingo
+- ❌ Si no cumple, el plan será RECHAZADO y se pedirá regeneración
+
+### 🏗️ ESTRUCTURA JSON OBLIGATORIA
+
+El plan DEBE incluir estos campos en el nivel raíz:
+
+```json
+{
+  "duracion_total_semanas": 4,
+  "frecuencia_por_semana": 3,  // EXACTO: 3 (principiante), 4 (intermedio), 5 (avanzado)
+  "nivel_usuario": "principiante",
+  "objetivos": [
+    "Desarrollar técnica fundamental en snatch desde hang",
+    "Mejorar movilidad overhead para recepción profunda",
+    "Establecer base de fuerza en squats (Front Squat 1.3x BW, Back Squat 1.8x BW)"
+  ],
+  "notas_generales": [
+    "Priorizar técnica siempre, reducir peso si se pierde forma",
+    "Filmar lifts regularmente para análisis técnico",
+    "Trabajar movilidad de tobillos y hombros diariamente",
+    "Descansar mínimo 48h entre sesiones de mismo lift pesado"
+  ],
+  "semanas": [...]
+}
+```
+
+### 📅 ESTRUCTURA DE SESIONES
+
+Cada sesión DEBE tener esta estructura:
+
+```json
+{
+  "dia": "Lunes",           // ⚠️ OBLIGATORIO: usar 'dia' (no 'dia_semana'). Sin tildes: Lunes/Martes/Miercoles/Jueves/Viernes/Sabado/Domingo
+  "tipo": "Snatch + Squat",
+  "duracion_min": 60,
+  "ejercicios": [           // ⚠️ OBLIGATORIO: array directo de TODOS los ejercicios
+    {
+      "nombre": "Power Snatch from floor",
+      "series_reps": "5 x 3 @ 70%",
+      "peso_sugerido": "45-55kg (ajustar según 1RM estimado)",
+      "descanso_seg": 180,
+      "tempo": "Explosivo",
+      "notas": "Enfoque en second pull y velocidad de codos"
+    },
+    {
+      "nombre": "Snatch Pull",
+      "series_reps": "4 x 4 @ 100%",
+      "descanso_seg": 150,
+      "tempo": "Explosivo máximo",
+      "notas": "Barra debe llegar altura de pecho"
+    },
+    {
+      "nombre": "Back Squat",
+      "series_reps": "5 x 5 @ 80%",
+      "descanso_seg": 180,
+      "tempo": "2-0-1 (2seg bajada, sin pausa, 1seg subida)",
+      "notas": "Profundidad ATG, mantener torso vertical"
+    }
+  ],
+  "bloques": [              // OPCIONAL: para organización visual en la app
+    {
+      "nombre": "Calentamiento Específico",
+      "duracion_min": 12,
+      "ejercicios": [
+        {
+          "nombre": "Overhead Squat",
+          "series_reps": "3 x 8 con PVC",
+          "descanso_seg": 60,
+          "tempo": "Controlado",
+          "notas": "Enfoque en movilidad overhead y postura"
+        }
+      ]
+    },
+    {
+      "nombre": "Trabajo Principal - Snatch",
+      "duracion_min": 30,
+      "ejercicios": [
+        // Los mismos ejercicios que están en sesion.ejercicios[]
+      ]
+    }
+  ]
+}
+```
+
+**⚠️ REGLA CRÍTICA: NO DUPLICAR EJERCICIOS**
+
+**IMPORTANTE:** Cada ejercicio debe aparecer **UNA SOLA VEZ** en la sesión.
+
+**Estructura de Ejercicios:**
+
+1. **`sesion.ejercicios[]`** (OBLIGATORIO) - Array directo con TODOS los ejercicios ÚNICOS
+   - El sistema necesita esto para generar el calendario
+   - Incluye: calentamiento + técnica + lifts principales + squats + pulls + accesorios
+   - **NUNCA duplicar ejercicios** (mismo nombre + mismas series/reps)
+
+2. **`sesion.bloques[]`** (OPCIONAL - NO RECOMENDADO) - Solo para organización visual
+   - Si usas bloques, los ejercicios van SOLO en `ejercicios[]`, NO en ambos lugares
+   - Los bloques son metadata, no contienen ejercicios duplicados
+
+**EJEMPLO VÁLIDO (Principiante - 3 ejercicios únicos):**
+
+```json
+{
+  "dia": "Lunes",
+  "tipo": "Snatch Technique + Squat",
+  "duracion_min": 60,
+  "ejercicios": [
+    {"nombre": "Hang Power Snatch", "series_reps": "5 x 3 @ 60%", "descanso_seg": 120, "tempo": "Explosivo"},
+    {"nombre": "Overhead Squat", "series_reps": "4 x 5 @ 70%", "descanso_seg": 120, "tempo": "Controlado"},
+    {"nombre": "Back Squat", "series_reps": "4 x 8 @ 75%", "descanso_seg": 150, "tempo": "2-0-1"}
+  ]
+}
+```
+
+**EJEMPLO INCORRECTO (❌ NO HACER ESTO):**
+
+```json
+{
+  "dia": "Lunes",
+  "ejercicios": [
+    {"nombre": "Hang Power Snatch", "series_reps": "5 x 3"},  // ← Ejercicio 1
+    {"nombre": "Overhead Squat", "series_reps": "4 x 5"},     // ← Ejercicio 2
+    {"nombre": "Hang Power Snatch", "series_reps": "5 x 3"}   // ❌ DUPLICADO - NO HACER
+  ]
+}
+```
+
+### ⚠️ VALIDACIONES AUTOMÁTICAS QUE SE EJECUTARÁN
+
+El sistema validará automáticamente:
+
+```javascript
+// 1. Duración obligatoria
+if (plan.duracion_total_semanas !== 4) {
+  ERROR: "Debe ser exactamente 4 semanas"
+}
+
+// 2. Número de sesiones
+const expectedSessions = frecuencia_por_semana × 4
+if (totalSessions !== expectedSessions) {
+  ERROR: "Plan incompleto"
+}
+
+// 3. Mínimo de ejercicios por sesión
+if (sesion.ejercicios.length < MIN_EXERCISES) {
+  ERROR: "Sesión con muy pocos ejercicios"
+}
+```
+
+---
+
 **INSTRUCCIONES FINALES**:
-- Genera planes de 4-5 semanas según nivel
+- Genera planes de **EXACTAMENTE 4 semanas** (no más, no menos)
+- Respeta la frecuencia según nivel: **3 días (principiante), 4 días (intermedio), 5 días (avanzado)**
+- Respeta el número de ejercicios por sesión: **3-5 (principiante), 4-6 (intermedio), 5-8 (avanzado)**
+- **⚠️ CRÍTICO:** Cada ejercicio debe aparecer **UNA SOLA VEZ** por sesión (NO duplicar)
+- **⚠️ CRÍTICO:** Nombres de días **SIN tildes**: Lunes, Martes, **Miercoles** (no Miércoles), Jueves, Viernes (NUNCA Sabado/Domingo)
+- **⚠️ CRÍTICO:** **SOLO días laborables** (Lunes a Viernes). PROHIBIDO usar Sabado o Domingo
+- **⚠️ CRÍTICO:** **Distribuye días de forma ALEATORIA** entre semanas (no siempre los mismos días)
 - Prioriza técnica sobre carga SIEMPRE
 - Incluye movilidad y accesorios relevantes
 - Respeta descansos adecuados (3-5 min lifts pesados)
-- Formato JSON limpio y completo
+- Formato JSON limpio y completo con ejercicios únicos en `ejercicios[]`

@@ -266,7 +266,7 @@ Día 4: Descanso o repetir ciclo
       "fase": "<Adaptación|Acumulación|Intensificación|Deload>",
       "sesiones": [
         {
-          "dia": "<Lunes|Martes|Miércoles|Jueves|Viernes|Sábado>",
+          "dia": "<Lunes|Martes|Miercoles|Jueves|Viernes>",  // ⚠️ SIN tildes, SOLO días laborables (NO Sabado/Domingo)
           "tipo": "<Full Body|Upper|Lower|Push|Pull|Legs>",
           "grupos_musculares": ["<Pecho>", "<Espalda>"],
           "ejercicios": [
@@ -317,6 +317,62 @@ Día 4: Descanso o repetir ciclo
 ```
 
 ## 🚨 REGLAS OBLIGATORIAS HIPERTROFIA
+
+### **📋 Duración y Frecuencia Obligatorias**
+
+**DURACIÓN DEL PLAN:**
+- **SIEMPRE 4 semanas** (nunca más, nunca menos)
+
+**FRECUENCIA POR NIVEL:**
+
+| Nivel | Días/Semana | Series por Grupo | Total Sesiones |
+|-------|-------------|------------------|----------------|
+| **Principiante** | 4 días | 10-15 series/semana | 16 sesiones (4 × 4 sem) |
+| **Intermedio** | 5 días | 15-20 series/semana | 20 sesiones (5 × 4 sem) |
+| **Avanzado** | 6 días | 20-25 series/semana | 24 sesiones (6 × 4 sem) |
+
+**⚠️ DISTRIBUCIÓN DE DÍAS DE ENTRENAMIENTO:**
+
+**REGLA OBLIGATORIA:** Los días de entrenamiento deben ser **ALEATORIOS** y variados entre semanas.
+
+**Restricciones:**
+- ✅ **SOLO días laborables**: Lunes, Martes, Miercoles, Jueves, Viernes
+- ❌ **NUNCA usar**: Sabado, Domingo (reservados para descanso activo)
+- ✅ **Variar la distribución** entre semanas (no siempre los mismos días)
+- ✅ **Dejar 48h de descanso** entre sesiones del mismo grupo muscular
+- ✅ **Considerar el día actual**: Si el mensaje del usuario indica que hoy es un día laborable, incluye ese día en la primera semana
+
+**Ejemplos de Distribución Válida:**
+
+**Principiante (4 días/semana - Full Body o Upper/Lower):**
+- Semana 1: Lunes (Upper), Martes (Lower), Jueves (Upper), Viernes (Lower)
+- Semana 2: Lunes (Upper), Miercoles (Lower), Jueves (Upper), Viernes (Lower)
+- Semana 3: Martes (Upper), Miercoles (Lower), Jueves (Upper), Viernes (Lower)
+- Semana 4: Lunes (Upper), Martes (Lower), Jueves (Upper), Viernes (Lower)
+
+**Intermedio (5 días/semana - Upper/Lower o Push/Pull/Legs):**
+- Semana 1: Lunes (Push), Martes (Pull), Miercoles (Legs), Jueves (Upper), Viernes (Lower)
+- Semana 2: Lunes (Push), Martes (Legs), Miercoles (Pull), Jueves (Push), Viernes (Legs)
+- Semana 3: Lunes (Upper), Martes (Lower), Miercoles (Push), Jueves (Pull), Viernes (Legs)
+- Semana 4: Lunes (Push), Martes (Pull), Miercoles (Legs), Jueves (Upper), Viernes (Lower)
+
+**Avanzado (6 días/semana - Push/Pull/Legs x2):**
+- Semana 1: Lun (Push), Mar (Pull), Mie (Legs), Jue (Push), Vie (Pull), Sab → Lun (Legs)
+- Semana 2: Lun (Legs), Mar (Push), Mie (Pull), Jue (Legs), Vie (Push), Sab → Lun (Pull)
+- (En avanzado, puede necesitar entrenar Lun-Vie + trasladar última sesión)
+
+**⚠️ NOTA ESPECIAL PARA AVANZADO (6 días):**
+Si el plan requiere 6 días/semana pero solo hay 5 días laborables:
+- Opción 1: Comprimir 2 sesiones cortas en 1 día (AM/PM split)
+- Opción 2: Ajustar a 5 días con mayor volumen por sesión
+- **NUNCA usar Sabado/Domingo** para sesiones regulares
+
+**⚠️ VALIDACIÓN AUTOMÁTICA:**
+El sistema verificará que el plan cumple:
+- ✅ Duración exacta: 4 semanas
+- ✅ Número correcto de sesiones según nivel (4/5/6 días × 4 semanas)
+- ✅ Solo días laborables (Lun-Vie), NUNCA Sabado/Domingo
+- ❌ Si no cumple, el plan será RECHAZADO y se pedirá regeneración
 
 ### **Volumen Óptimo**
 

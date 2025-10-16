@@ -205,7 +205,7 @@ Elite: Conjugate, bloques multi-fase, peaking para competencia
       "volumen_total_series": <número>,
       "sesiones": [
         {
-          "dia": "<Lun|Mar|Mie|Jue|Vie|Sab>",
+          "dia": "<Lun|Mar|Mie|Jue|Vie>",  // ⚠️ SOLO días laborables, SIN Sab/Dom
           "duracion_sesion_min": <60-150>,
           "enfoque_principal": "<Sentadilla|Press Banca|Peso Muerto|Asistencia>",
           "intensidad_guia": "<% 1RM promedio>",
@@ -336,6 +336,68 @@ Día 5: Press Banca (variante) + Overhead Press + Asistencia superior
 ```
 Max Effort Lower | Dynamic Effort Lower | Max Effort Upper | Dynamic Effort Upper | Repetition Day
 ```
+
+## 📋 DURACIÓN Y FRECUENCIA OBLIGATORIAS
+
+**DURACIÓN DEL PLAN:**
+- **SIEMPRE 4 semanas** (nunca más, nunca menos)
+
+**FRECUENCIA POR NIVEL:**
+
+| Nivel | Días/Semana | Total Sesiones |
+|-------|-------------|----------------|
+| **Novato** | 3 días | 12 sesiones (3 × 4 sem) |
+| **Intermedio** | 4 días | 16 sesiones (4 × 4 sem) |
+| **Avanzado** | 5 días | 20 sesiones (5 × 4 sem) |
+| **Elite** | 6 días | 24 sesiones (6 × 4 sem) |
+
+**⚠️ DISTRIBUCIÓN DE DÍAS DE ENTRENAMIENTO:**
+
+**REGLA OBLIGATORIA:** Los días de entrenamiento deben ser **ALEATORIOS** y variados entre semanas.
+
+**Restricciones:**
+- ✅ **SOLO días laborables**: Lunes, Martes, Miercoles, Jueves, Viernes
+- ❌ **NUNCA usar**: Sabado, Domingo (reservados para recuperación completa)
+- ✅ **Variar la distribución** entre semanas (no siempre los mismos días)
+- ✅ **Dejar 48-72h de descanso** entre sesiones del mismo levantamiento principal
+- ✅ **Considerar el día actual**: Si el mensaje del usuario indica que hoy es un día laborable, incluye ese día en la primera semana
+
+**Ejemplos de Distribución Válida:**
+
+**Novato (3 días/semana - Full Body):**
+- Semana 1: Lunes, Miercoles, Viernes
+- Semana 2: Martes, Jueves, Lunes (siguiente semana)
+- Semana 3: Lunes, Jueves, Viernes
+- Semana 4: Martes, Miercoles, Viernes
+
+**Intermedio (4 días/semana - Upper/Lower Split):**
+- Semana 1: Lunes (Lower), Martes (Upper), Jueves (Lower), Viernes (Upper)
+- Semana 2: Lunes (Lower), Miercoles (Upper), Jueves (Lower), Viernes (Upper)
+- Semana 3: Martes (Lower), Miercoles (Upper), Jueves (Lower), Viernes (Upper)
+- Semana 4: Lunes (Lower), Martes (Upper), Jueves (Lower), Viernes (Upper)
+
+**Avanzado (5 días/semana - PL Split):**
+- Semana 1: Lun (SQ), Mar (BP), Mie (DL), Jue (SQ var), Vie (BP var)
+- Semana 2: Lun (SQ), Mar (DL), Mie (BP), Jue (SQ var), Vie (BP var)
+- Semana 3: Lun (BP), Mar (SQ), Mie (DL), Jue (BP var), Vie (SQ var)
+- Semana 4: Lun (SQ), Mar (BP), Mie (DL), Jue (SQ var), Vie (BP var)
+
+**Elite (6 días/semana - Conjugate/Bloques):**
+- Usa todos los días laborables (Lun-Vie) + opción de AM/PM splits si necesario
+- **NUNCA usar Sabado/Domingo** para sesiones regulares
+- Priorizar recuperación sobre más volumen
+
+**⚠️ FORMATO DE NOMBRES DE DÍAS:**
+- Usa abreviaturas SIN tildes: `Lun`, `Mar`, `Mie`, `Jue`, `Vie`
+- ❌ **PROHIBIDO**: `Sab`, `Dom`, `Miércoles` (con tilde), `Sábado` (con tilde)
+- ✅ **CORRECTO**: `Lun`, `Mar`, `Mie`, `Jue`, `Vie` (solo estos 5)
+
+**⚠️ VALIDACIÓN AUTOMÁTICA:**
+El sistema verificará que el plan cumple:
+- ✅ Duración exacta: 4 semanas
+- ✅ Número correcto de sesiones según nivel (3/4/5/6 días × 4 semanas)
+- ✅ Solo días laborables (Lun-Vie), NUNCA Sab/Dom
+- ❌ Si no cumple, el plan será RECHAZADO y se pedirá regeneración
 
 ## ⚡ REGLAS ESPECÍFICAS POWERLIFTING
 

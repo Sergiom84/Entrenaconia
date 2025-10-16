@@ -1490,8 +1490,17 @@ router.post('/specialist/hipertrofia/generate', authenticateToken, async (req, r
     const client = getModuleOpenAI(AI_MODULES.HIPERTROFIA_SPECIALIST);
     const config = AI_MODULES.HIPERTROFIA_SPECIALIST;
 
+    // Obtener día actual para incluirlo en la generación
+    const today = new Date();
+    const daysOfWeek = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+    const todayName = daysOfWeek[today.getDay()];
+    const todayNormalized = normalizeDayName(todayName);
+
     // Construir mensaje para IA
     const userMessage = `GENERACIÓN DE PLAN DE HIPERTROFIA
+
+📅 DÍA DE GENERACIÓN: ${todayNormalized} (HOY)
+⚠️ IMPORTANTE: Si ${todayNormalized} es un día laborable (Lun-Vie), considera incluirlo en la primera semana del plan para que el usuario pueda empezar hoy mismo.
 
 NIVEL: ${actualLevel}
 GRUPOS MUSCULARES: ${selectedMuscleGroups?.join(', ') || 'Todos'}
@@ -1852,8 +1861,20 @@ router.post('/specialist/powerlifting/generate', authenticateToken, async (req, 
     const client = getModuleOpenAI(AI_MODULES.POWERLIFTING_SPECIALIST);
     const config = AI_MODULES.POWERLIFTING_SPECIALIST;
 
+    // Obtener día actual para incluirlo en la generación
+    const today = new Date();
+    const daysOfWeek = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+    const todayName = daysOfWeek[today.getDay()];
+    const todayNormalized = normalizeDayName(todayName);
+    // Convertir a abreviatura para Powerlifting
+    const dayAbbrevMap = { 'Lunes': 'Lun', 'Martes': 'Mar', 'Miercoles': 'Mie', 'Jueves': 'Jue', 'Viernes': 'Vie', 'Sabado': 'Sab', 'Domingo': 'Dom' };
+    const todayAbbrev = dayAbbrevMap[todayNormalized] || todayNormalized;
+
     // Construir mensaje para IA
     const userMessage = `GENERACIÓN DE PLAN POWERLIFTING
+
+📅 DÍA DE GENERACIÓN: ${todayAbbrev} (HOY)
+⚠️ IMPORTANTE: Si ${todayAbbrev} es un día laborable (Lun-Vie), considera incluirlo en la primera semana del plan para que el usuario pueda empezar hoy mismo.
 
 NIVEL: ${actualLevel}
 LEVANTAMIENTOS PRIORITARIOS: ${selectedMuscleGroups?.join(', ') || 'Sentadilla, Press Banca, Peso Muerto'}
@@ -2260,8 +2281,15 @@ GENERA un plan completo siguiendo el formato JSON de metodología.`;
     let normalizedPlan = null;
     let lastError = null;
 
-    const MIN_EXERCISES = 3;
+    const MIN_EXERCISES = 3; // Por defecto (AMRAP/EMOM/Chipper/Tabata)
     const MAX_EXERCISES = 8;
+
+    // Mínimo dinámico por tipo de WOD
+    const getMinExercisesForType = (tipo) => {
+      const t = String(tipo || '').toLowerCase();
+      if (t.includes('for time') || t.includes('strength')) return 2; // Fran/Strength
+      return MIN_EXERCISES;
+    };
 
     while (attempts < 3) {
       try {
@@ -2395,14 +2423,16 @@ FORMATO EXACTO:
 
         normalizedPlan.semanas.forEach((semana, sIdx) => {
           semana.sesiones.forEach((sesion, dIdx) => {
-            const numExercises = sesion.ejercicios ? sesion.ejercicios.length : 0;
+            const numExercises = Array.isArray(sesion.ejercicios) ? sesion.ejercicios.length : 0;
+            const minForType = getMinExercisesForType(sesion.tipo);
 
-            if (numExercises < MIN_EXERCISES) {
+            if (numExercises < minForType) {
               invalidDays.push({
                 semana: semana.semana,
                 dia: sesion.dia,
+                tipo: sesion.tipo || 'WOD',
                 ejercicios: numExercises,
-                minimo: MIN_EXERCISES
+                minimo: minForType
               });
             }
 
@@ -2815,6 +2845,171 @@ GENERA un plan completo siguiendo el formato JSON de metodología.`;
 // =========================================
 
 /**
+ * Helper: Normaliza nombres de días eliminando tildes para compatibilidad con workout_schedule
+ * @param {string} dayName - Nombre del día con tildes: "Lunes", "Miércoles", "Sábado"
+ * @returns {string} Nombre sin tildes: "Lunes", "Miercoles", "Sabado"
+ */
+function normalizeDayName(dayName) {
+  if (!dayName || typeof dayName !== 'string') return dayName;
+
+  const normalizationMap = {
+    'Lunes': 'Lunes',
+    'Martes': 'Martes',
+    'Miércoles': 'Miercoles',   // ← Sin tilde (compatibilidad BD)
+    'Mié': 'Miercoles',          // ← Abreviatura
+    'Miercoles': 'Miercoles',    // ← Ya normalizado
+    'Jueves': 'Jueves',
+    'Jue': 'Jueves',             // ← Abreviatura
+    'Viernes': 'Viernes',
+    'Vie': 'Viernes',            // ← Abreviatura
+    'Sábado': 'Sabado',          // ← Sin tilde
+    'Sab': 'Sabado',             // ← Abreviatura
+    'Sabado': 'Sabado',          // ← Ya normalizado
+    'Domingo': 'Domingo',
+    'Dom': 'Domingo'             // ← Abreviatura
+  };
+
+  return normalizationMap[dayName] || dayName;
+}
+
+/**
+ * Helper: Parsea repeticiones desde string de series (ej: "3x10" → "10", "5 x 3" → "3")
+ * @param {string} seriesString - String tipo "3x10", "5 x 3 @ 70%", "3 x 8 con PVC"
+ * @returns {string} Número de repeticiones o string original
+ */
+function parseRepsFromSeries(seriesString) {
+  if (!seriesString || typeof seriesString !== 'string') return '';
+
+  // Buscar patrón: número x número (con o sin espacios)
+  const match = seriesString.match(/(\d+)\s*x\s*(\d+)/i);
+  if (match) {
+    return match[2]; // Segundo número es las repeticiones
+  }
+
+  // Si no hay patrón, devolver el string original
+  return seriesString;
+}
+
+/**
+ * Normaliza plan de Halterofilia para compatibilidad con ensureWorkoutScheduleV2
+ *
+ * Problema: Halterofilia genera estructura con bloques[] que no es reconocida
+ * Solución: Aplanar bloques a ejercicios[] directos en sesión
+ *
+ * @param {Object} generatedPlan - Plan generado por OpenAI
+ * @returns {Object} Plan normalizado compatible con workout_schedule
+ */
+function normalizeHalterofiliaPlan(generatedPlan) {
+  console.log('🔄 Normalizando plan de Halterofilia (bloques → ejercicios directos)...');
+
+  if (!generatedPlan || !generatedPlan.semanas) {
+    throw new Error('Plan inválido para normalizar');
+  }
+
+  // Copiar estructura
+  const normalized = {
+    ...generatedPlan,
+    semanas: []
+  };
+
+  // Detectar sessions_per_week si no está
+  let inferredSessionsPerWeek = 0;
+  if (generatedPlan.semanas.length > 0 && generatedPlan.semanas[0].sesiones) {
+    inferredSessionsPerWeek = generatedPlan.semanas[0].sesiones.length;
+  }
+
+  // Procesar cada semana
+  for (const semana of generatedPlan.semanas) {
+    const normalizedSemana = {
+      numero: semana.numero || semana.semana,
+      enfoque: semana.enfoque || '',
+      sesiones: []
+    };
+
+    if (!semana.sesiones || !Array.isArray(semana.sesiones)) {
+      console.warn(`⚠️ Semana ${semana.numero} sin sesiones, saltando...`);
+      continue;
+    }
+
+    // Procesar cada sesión
+    for (const sesion of semana.sesiones) {
+      const rawDayName = sesion.dia || sesion.dia_semana;
+      const normalizedSesion = {
+        dia: normalizeDayName(rawDayName),  // ⚠️ Normalizar nombre (eliminar tildes, expandir abreviaturas)
+        tipo: sesion.tipo || 'Entrenamiento',
+        duracion_min: sesion.duracion_min || 60,
+        ejercicios: []
+      };
+
+      // 🔥 ESTRATEGIA: Prioridad ejercicios directos > bloques (evita duplicados)
+      const hasDirectExercises = sesion.ejercicios && Array.isArray(sesion.ejercicios) && sesion.ejercicios.length > 0;
+
+      if (hasDirectExercises) {
+        // Si ya tiene ejercicios directos, usarlos ÚNICAMENTE
+        normalizedSesion.ejercicios = [...sesion.ejercicios];
+      } else if (sesion.bloques && Array.isArray(sesion.bloques)) {
+        // Si NO tiene ejercicios directos, extraer desde bloques
+        for (const bloque of sesion.bloques) {
+          if (bloque.ejercicios && Array.isArray(bloque.ejercicios)) {
+            normalizedSesion.ejercicios.push(...bloque.ejercicios);
+          }
+        }
+      }
+
+      // 🔥 DEDUPLICACIÓN: Eliminar ejercicios duplicados por nombre + series
+      const uniqueExercises = [];
+      const seen = new Set();
+
+      normalizedSesion.ejercicios.forEach(ejercicio => {
+        // Crear clave única: nombre + series_reps (o series_reps_objetivo)
+        const key = `${ejercicio.nombre}-${ejercicio.series_reps || ejercicio.series_reps_objetivo || ''}`;
+
+        if (!seen.has(key)) {
+          seen.add(key);
+          // Asegurar campos esperados por el frontend
+          const normalizedExercise = {
+            ...ejercicio,
+            // Mapear series_reps si falta
+            series_reps: ejercicio.series_reps || ejercicio.series_reps_objetivo || '',
+            // Asegurar que repeticiones exista (parsear de series_reps si es necesario)
+            repeticiones: ejercicio.repeticiones || parseRepsFromSeries(ejercicio.series_reps || ejercicio.series_reps_objetivo || '')
+          };
+          uniqueExercises.push(normalizedExercise);
+        }
+      });
+
+      normalizedSesion.ejercicios = uniqueExercises;
+
+      // Guardar bloques originales para visualización (opcional)
+      if (sesion.bloques) {
+        normalizedSesion.bloques = sesion.bloques;
+      }
+
+      normalizedSemana.sesiones.push(normalizedSesion);
+    }
+
+    normalized.semanas.push(normalizedSemana);
+  }
+
+  // Añadir campos requeridos si faltan
+  if (!normalized.duracion_total_semanas) {
+    normalized.duracion_total_semanas = normalized.semanas.length;
+  }
+
+  if (!normalized.frecuencia_por_semana && inferredSessionsPerWeek > 0) {
+    normalized.frecuencia_por_semana = inferredSessionsPerWeek;
+  }
+
+  if (!normalized.nivel_usuario && generatedPlan.nivel) {
+    normalized.nivel_usuario = generatedPlan.nivel;
+  }
+
+  console.log(`✅ Plan normalizado: ${normalized.semanas.length} semanas, ${normalized.frecuencia_por_semana || 'N/A'} sesiones/semana`);
+
+  return normalized;
+}
+
+/**
  * POST /api/routine-generation/specialist/halterofilia/evaluate
  * Evaluación automática del perfil para Halterofilia (Olympic Weightlifting)
  */
@@ -2991,8 +3186,17 @@ router.post('/specialist/halterofilia/generate', authenticateToken, async (req, 
     const config = AI_MODULES.HALTEROFILIA_SPECIALIST;
     const systemPrompt = await getPrompt(FeatureKey.HALTEROFILIA_SPECIALIST);
 
+    // Obtener día actual para incluirlo en la generación
+    const today = new Date();
+    const daysOfWeek = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+    const todayName = daysOfWeek[today.getDay()];
+    const todayNormalized = normalizeDayName(todayName);
+
     // Construir mensaje para IA
     const userMessage = `GENERACIÓN DE PLAN HALTEROFILIA (OLYMPIC WEIGHTLIFTING)
+
+📅 DÍA DE GENERACIÓN: ${todayNormalized} (HOY)
+⚠️ IMPORTANTE: Si ${todayNormalized} es un día laborable (Lun-Vie), considera incluirlo en la primera semana del plan para que el usuario pueda empezar hoy mismo.
 
 NIVEL: ${actualLevel} (${dbLevel})
 ENFOQUE PRIORITARIO: ${selectedMuscleGroups?.join(', ') || 'Snatch, Clean & Jerk, Fuerza Base'}
@@ -3017,25 +3221,182 @@ PRINCIPIOS OLÍMPICOS OBLIGATORIOS:
 
 GENERA un plan completo siguiendo el formato JSON de metodología.`;
 
-    const completion = await client.chat.completions.create({
-      model: config.model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage }
-      ],
-      temperature: config.temperature,
-      max_tokens: config.max_output_tokens,
-      response_format: { type: 'json_object' }
-    });
+    // 🔥 RETRY LOGIC CON VALIDACIONES COMPLETAS
+    let attempts = 0;
+    let completion = null;
+    let lastError = null;
+    let normalizedPlan = null;
 
-    const generatedPlan = JSON.parse(parseAIResponse(completion.choices[0].message.content));
+    // Definir parámetros de validación según nivel
+    const sessionsPerWeek = dbLevel === 'Avanzado' ? 5 : (dbLevel === 'Intermedio' ? 4 : 3);
+    const MIN_EXERCISES = dbLevel === 'Avanzado' ? 5 : (dbLevel === 'Intermedio' ? 4 : 3);
+    const MAX_EXERCISES = 8;
 
-    console.log(`✅ Plan Halterofilia generado por IA`);
+    while (attempts < 3) {
+      try {
+        console.log(`🤖 [HALTEROFILIA] Intento ${attempts + 1}/3 de generación de plan...`);
 
-    // Validar estructura del plan
-    if (!generatedPlan.semanas || !Array.isArray(generatedPlan.semanas)) {
-      throw new Error('Plan generado no tiene estructura válida (falta semanas)');
+        completion = await client.chat.completions.create({
+          model: config.model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userMessage }
+          ],
+          temperature: config.temperature,
+          max_tokens: config.max_output_tokens,
+          response_format: { type: 'json_object' }
+        });
+
+        const aiResponse = completion.choices[0].message.content;
+        logAIResponse(aiResponse);
+        logTokens(completion.usage);
+
+        // Parsear respuesta
+        const generatedPlan = JSON.parse(parseAIResponse(aiResponse));
+
+        // Validar estructura básica
+        if (!generatedPlan.semanas || !Array.isArray(generatedPlan.semanas)) {
+          throw new Error('Plan generado no tiene estructura válida (falta semanas)');
+        }
+
+        // 🔥 NORMALIZAR PLAN
+        console.log('🔄 Normalizando plan Halterofilia (bloques → ejercicios)...');
+        normalizedPlan = normalizeHalterofiliaPlan(generatedPlan);
+
+        // Validar plan normalizado
+        if (!normalizedPlan?.semanas || !Array.isArray(normalizedPlan.semanas) || normalizedPlan.semanas.length === 0) {
+          throw new Error('Plan normalizado sin semanas válidas');
+        }
+
+        console.log(`✅ Plan normalizado: ${normalizedPlan.semanas.length} semanas, ${normalizedPlan.frecuencia_por_semana || 'N/A'} sesiones/semana`);
+
+        // 🔥 VALIDACIÓN 1: Campos requeridos
+        const requiredFields = [
+          'semanas',
+          'duracion_total_semanas',
+          'frecuencia_por_semana',
+          'nivel_usuario'
+        ];
+
+        const missingFields = [];
+        for (const field of requiredFields) {
+          if (!normalizedPlan[field]) {
+            missingFields.push(field);
+          }
+        }
+
+        if (missingFields.length > 0) {
+          throw new Error(`Plan incompleto: faltan campos [${missingFields.join(', ')}]`);
+        }
+
+        console.log(`✅ Validación campos: Todos los campos requeridos presentes`);
+
+        // 🔥 VALIDACIÓN 2: Número total de sesiones
+        const totalWeeks = normalizedPlan.duracion_total_semanas || 4;
+        const expectedSessions = sessionsPerWeek * totalWeeks;
+
+        let totalSessions = 0;
+        normalizedPlan.semanas.forEach(semana => {
+          if (semana.sesiones && Array.isArray(semana.sesiones)) {
+            totalSessions += semana.sesiones.length;
+          }
+        });
+
+        if (totalSessions !== expectedSessions) {
+          throw new Error(
+            `Plan incompleto: esperadas ${expectedSessions} sesiones ` +
+            `(${sessionsPerWeek} sesiones/semana × ${totalWeeks} semanas), ` +
+            `pero se generaron ${totalSessions} sesiones. El plan debe ser regenerado.`
+          );
+        }
+
+        console.log(`✅ Validación sesiones: ${totalSessions}/${expectedSessions} sesiones correctas`);
+
+        // 🔥 VALIDACIÓN 3: Mínimo de ejercicios por sesión
+        const invalidDays = [];
+
+        normalizedPlan.semanas.forEach((semana, sIdx) => {
+          semana.sesiones.forEach((sesion, dIdx) => {
+            const numExercises = sesion.ejercicios ? sesion.ejercicios.length : 0;
+
+            if (numExercises < MIN_EXERCISES) {
+              invalidDays.push({
+                semana: semana.numero,
+                dia: sesion.dia,
+                ejercicios: numExercises,
+                minimo: MIN_EXERCISES
+              });
+            }
+
+            if (numExercises > MAX_EXERCISES) {
+              console.warn(`⚠️ Semana ${semana.numero}, ${sesion.dia}: ${numExercises} ejercicios excede el máximo recomendado (${MAX_EXERCISES})`);
+            }
+          });
+        });
+
+        if (invalidDays.length > 0) {
+          const errorDetails = invalidDays.map(d =>
+            `Semana ${d.semana}, ${d.dia}: ${d.ejercicios} ejercicios (mínimo: ${d.minimo})`
+          ).join('; ');
+
+          throw new Error(
+            `Plan Halterofilia inválido: ${invalidDays.length} días con menos de ${MIN_EXERCISES} ejercicios. ` +
+            `Detalles: ${errorDetails}`
+          );
+        }
+
+        console.log(`✅ Validación ejercicios: Todos los días tienen entre ${MIN_EXERCISES}-${MAX_EXERCISES} ejercicios`);
+
+        // 🔥 VALIDACIÓN 4: Solo días laborables (NO sábado/domingo)
+        const weekendDays = [];
+        const diasLaborables = ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes'];
+
+        normalizedPlan.semanas.forEach((semana, sIdx) => {
+          semana.sesiones.forEach((sesion, dIdx) => {
+            const diaName = sesion.dia;
+            if (!diasLaborables.includes(diaName)) {
+              weekendDays.push({
+                semana: semana.numero,
+                dia: diaName
+              });
+            }
+          });
+        });
+
+        if (weekendDays.length > 0) {
+          const errorDetails = weekendDays.map(d =>
+            `Semana ${d.semana}: ${d.dia}`
+          ).join('; ');
+
+          throw new Error(
+            `Plan Halterofilia inválido: ${weekendDays.length} sesiones en fin de semana (solo Lun-Vie permitidos). ` +
+            `Detalles: ${errorDetails}`
+          );
+        }
+
+        console.log(`✅ Validación días laborables: Todas las sesiones están en Lun-Vie`);
+        console.log(`✅ [HALTEROFILIA] Plan generado y validado exitosamente en intento ${attempts + 1}`);
+        break; // Plan válido, salir del loop
+
+      } catch (error) {
+        attempts++;
+        lastError = error;
+        console.error(`❌ [HALTEROFILIA] Error en intento ${attempts}/3:`, error.message);
+
+        if (attempts < 3) {
+          const waitTime = 1000 * attempts; // Backoff exponencial: 1s, 2s, 3s
+          console.log(`⏳ Esperando ${waitTime}ms antes del siguiente intento...`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+        }
+      }
     }
+
+    // Si no se logró generar un plan válido después de 3 intentos
+    if (!normalizedPlan) {
+      throw new Error(`No se pudo generar un plan Halterofilia válido después de 3 intentos. Último error: ${lastError?.message || 'Desconocido'}`);
+    }
+
+    console.log(`✅ Plan Halterofilia generado por IA`)
 
     // Guardar en BD con transacción
     const client_db = await pool.connect();
@@ -3046,14 +3407,14 @@ GENERA un plan completo siguiendo el formato JSON de metodología.`;
       // Limpiar drafts previos
       await cleanUserDrafts(userId, client_db);
 
-      // Insertar plan
+      // Insertar plan NORMALIZADO
       const planResult = await client_db.query(`
         INSERT INTO app.methodology_plans (
           user_id, methodology_type, plan_data, generation_mode, status, created_at
         )
         VALUES ($1, $2, $3, $4, $5, NOW())
         RETURNING id
-      `, [userId, 'Halterofilia', JSON.stringify(generatedPlan), 'manual', 'draft']);
+      `, [userId, 'Halterofilia', JSON.stringify(normalizedPlan), 'manual', 'draft']);
 
       const methodologyPlanId = planResult.rows[0].id;
 
@@ -3063,7 +3424,7 @@ GENERA un plan completo siguiendo el formato JSON de metodología.`;
 
       res.json({
         success: true,
-        plan: generatedPlan,
+        plan: normalizedPlan,
         methodologyPlanId,
         planId: methodologyPlanId,
         metadata: {

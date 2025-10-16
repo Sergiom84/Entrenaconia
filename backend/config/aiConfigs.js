@@ -151,7 +151,7 @@ export const AI_MODULES = {
   HALTEROFILIA_SPECIALIST: {
     key: 'HALTEROFILIA_SPECIALIST',
     envKey: 'OPENAI_API_KEY',
-    model: 'gpt-4o-mini',
+    model: 'gpt-4o',  // ✅ Cambiado de gpt-4o-mini a gpt-4o para mejor comprensión de progresiones técnicas
     temperature: 0.7,  // Precisión técnica alta para levantamientos olímpicos
     max_output_tokens: 16384,
     top_p: 1.0,
