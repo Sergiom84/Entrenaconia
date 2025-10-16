@@ -552,29 +552,43 @@ export function WorkoutProvider({ children }) {
 
       const result = await response.json();
 
-      // Log para debug
-      console.log('📦 Respuesta del servidor:', {
+      // Log detallado para debug
+      console.log('📦 [WORKOUT] Respuesta del servidor:', {
+        timestamp: new Date().toISOString(),
         success: result.success,
         hasPlan: !!result.plan,
         methodologyPlanId: result.planId || result.methodologyPlanId,
-        methodology: result.methodology || config.mode
+        methodology: result.methodology || config.mode,
+        planStartDate: result.metadata?.plan_start_date,
+        processingTime: result.metadata?.processing_time_seconds
       });
 
       // Verificar que la respuesta sea válida
       if (!result.success || !result.plan) {
+        console.error('❌ [WORKOUT] Plan inválido recibido:', result);
         throw new Error(result.error || 'No se recibió un plan válido del servidor');
       }
 
-      // Activar plan automáticamente
+      // Validar estructura del plan
+      if (!result.plan.semanas || !Array.isArray(result.plan.semanas)) {
+        console.error('❌ [WORKOUT] Estructura del plan inválida');
+        throw new Error('El plan no tiene estructura de semanas válida');
+      }
+
+      console.log('✅ [WORKOUT] Plan validado en frontend');
+
+      // Activar plan automáticamente - Usar UTC para consistencia
+      const nowUTC = new Date().toISOString();
       const planData = {
         currentPlan: result.plan,
         methodologyPlanId: result.planId || result.methodologyPlanId,
-        planStartDate: new Date().toISOString(),
+        planStartDate: nowUTC,  // UTC timestamp
         planType: config.mode || 'automatic',
         methodology: result.methodology || config.mode || 'Calistenia',
-        generatedAt: result.metadata?.generatedAt || new Date().toISOString(),
+        generatedAt: result.metadata?.generatedAt || nowUTC,
         weekTotal: result.plan?.semanas?.length || result.plan?.weeks?.length || 0,
-        currentWeek: 1
+        currentWeek: 1,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone // Guardar zona horaria del cliente
       };
 
       dispatch({ type: WORKOUT_ACTIONS.SET_PLAN, payload: planData });

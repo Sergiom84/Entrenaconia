@@ -50,20 +50,42 @@ async function cleanUserDrafts(userId, client = null) {
   try {
     console.log(`🧹 Limpiando drafts fallidos para usuario ${userId}...`);
 
+    // Primero, verificar cuántos drafts existen
+    const checkResult = await dbClient.query(`
+      SELECT id, created_at, methodology_type
+      FROM app.methodology_plans
+      WHERE user_id = $1 AND status = 'draft'
+      ORDER BY created_at DESC
+    `, [userId]);
+
+    if (checkResult.rowCount > 0) {
+      console.log(`📊 Encontrados ${checkResult.rowCount} drafts:`,
+        checkResult.rows.map(r => ({
+          id: r.id,
+          type: r.methodology_type,
+          age: Math.floor((Date.now() - new Date(r.created_at).getTime()) / 1000 / 60) + ' mins'
+        }))
+      );
+    }
+
+    // Eliminar todos los drafts
     const result = await dbClient.query(`
       DELETE FROM app.methodology_plans
       WHERE user_id = $1 AND status = 'draft'
+      RETURNING id
     `, [userId]);
 
     const deletedCount = result.rowCount;
     if (deletedCount > 0) {
-      console.log(`✅ Eliminados ${deletedCount} drafts fallidos del usuario ${userId}`);
+      console.log(`✅ Eliminados ${deletedCount} drafts fallidos: IDs [${result.rows.map(r => r.id).join(', ')}]`);
+    } else {
+      console.log(`ℹ️ No había drafts que limpiar para usuario ${userId}`);
     }
 
     return deletedCount;
   } catch (error) {
-    console.error('❌ Error limpiando drafts:', error);
-    // No lanzar error - la limpieza es opcional
+    console.error('❌ Error limpiando drafts:', error.message);
+    // No lanzar error - la limpieza es opcional pero loguear detalles
     return 0;
   }
 }
@@ -136,7 +158,15 @@ function normalizeUserProfile(profile) {
  * Parsear respuesta JSON de IA con manejo robusto
  */
 function parseAIResponse(response) {
+  if (!response || typeof response !== 'string') {
+    console.error('❌ Respuesta de IA inválida: no es string');
+    throw new Error('Respuesta de IA inválida');
+  }
+
   let cleanResponse = response.trim();
+
+  // Log para debug
+  console.log(`📝 Parseando respuesta IA (${cleanResponse.length} caracteres)`);
 
   // Manejar markdown code blocks
   if (cleanResponse.includes('```')) {
@@ -150,6 +180,7 @@ function parseAIResponse(response) {
       const match = cleanResponse.match(pattern);
       if (match && match[1]) {
         cleanResponse = match[1].trim();
+        console.log('✅ Extraído contenido de code block markdown');
         break;
       }
     }
@@ -160,6 +191,7 @@ function parseAIResponse(response) {
     .replace(/^[`\s]*/, '')
     .replace(/[`\s]*$/, '')
     .replace(/^\s*json\s*/i, '')
+    .replace(/[\u0000-\u001F\u007F-\u009F]/g, '') // Eliminar caracteres de control
     .trim();
 
   // Validar estructura JSON
@@ -168,7 +200,21 @@ function parseAIResponse(response) {
     const lastBrace = cleanResponse.lastIndexOf('}');
     if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
       cleanResponse = cleanResponse.substring(firstBrace, lastBrace + 1);
+      console.log('⚠️ Estructura JSON reparada (recortada a llaves)');
+    } else {
+      console.error('❌ No se pudo encontrar estructura JSON válida');
+      throw new Error('Respuesta no contiene JSON válido');
     }
+  }
+
+  // Intento de validación temprana
+  try {
+    JSON.parse(cleanResponse);
+    console.log('✅ Respuesta parseada exitosamente');
+  } catch (e) {
+    console.error('❌ Error parseando JSON:', e.message);
+    console.error('Primeros 200 caracteres:', cleanResponse.substring(0, 200));
+    throw new Error(`Respuesta JSON mal formateada: ${e.message}`);
   }
 
   return cleanResponse;
@@ -223,13 +269,21 @@ function normalizeCasaPlan(plan) {
  * Obtener día actual para inicio de rutina
  */
 function getCurrentDayInfo() {
+  // Usar UTC para consistencia entre servidor y cliente
   const today = new Date();
+  const utcDate = new Date(today.toISOString());
   const daysOfWeek = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+
+  // Obtener día de la semana en zona horaria local del servidor
+  const localDay = today.getDay();
+
   return {
     date: today,
-    dayName: daysOfWeek[today.getDay()],
+    dayName: daysOfWeek[localDay],
     dateString: today.toLocaleDateString('es-ES'),
-    isoDate: today.toISOString().split('T')[0]
+    isoDate: today.toISOString().split('T')[0],
+    utcTimestamp: today.toISOString(), // Añadir timestamp UTC completo
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone // Zona horaria del servidor
   };
 }
 
@@ -540,6 +594,7 @@ FORMATO DE RESPUESTA:
  */
 router.post('/specialist/calistenia/generate', authenticateToken, async (req, res) => {
   try {
+    const startTime = Date.now();
     const userId = req.user?.userId || req.user?.id;
     const {
       userProfile,
@@ -553,10 +608,14 @@ router.post('/specialist/calistenia/generate', authenticateToken, async (req, re
     const isRegeneration = !!(previousPlan || regenerationReason || additionalInstructions);
 
     logSeparator('CALISTENIA PLAN GENERATION');
-    console.log('Generando plan de calistenia...', {
+    console.log('🎯 [CALISTENIA] Iniciando generación de plan:', {
+      timestamp: new Date().toISOString(),
+      userId,
       selectedLevel,
       isRegeneration,
-      goals: goals?.substring(0, 50)
+      goals: goals?.substring(0, 50),
+      dayOfWeek: new Date().toLocaleDateString('es-ES', { weekday: 'long' }),
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
     });
 
     // Obtener perfil completo si solo se envió ID
@@ -639,26 +698,106 @@ router.post('/specialist/calistenia/generate', authenticateToken, async (req, re
     const client = getModuleOpenAI(AI_MODULES.CALISTENIA_SPECIALIST);
     const config = AI_MODULES.CALISTENIA_SPECIALIST;
 
-    const completion = await client.chat.completions.create({
-      model: config.model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: JSON.stringify(planPayload) }
-      ],
-      temperature: config.temperature,
-      max_tokens: config.max_output_tokens
-    });
+    // Retry logic para resiliencia
+    let attempts = 0;
+    let completion = null;
+    let lastError = null;
+
+    while (attempts < 3) {
+      try {
+        console.log(`🤖 [CALISTENIA] Intento ${attempts + 1}/3 de llamada a OpenAI...`);
+
+        completion = await client.chat.completions.create({
+          model: config.model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: JSON.stringify(planPayload) }
+          ],
+          temperature: config.temperature,
+          max_tokens: config.max_output_tokens
+        });
+
+        console.log('✅ [CALISTENIA] Respuesta recibida de OpenAI');
+        break; // Éxito, salir del loop
+
+      } catch (error) {
+        attempts++;
+        lastError = error;
+        console.error(`❌ [CALISTENIA] Error en intento ${attempts}:`, error.message);
+
+        if (attempts < 3) {
+          const waitTime = 1000 * attempts; // 1s, 2s, 3s
+          console.log(`⏳ [CALISTENIA] Esperando ${waitTime}ms antes de reintentar...`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+        }
+      }
+    }
+
+    if (!completion) {
+      throw new Error(`Fallo después de 3 intentos: ${lastError?.message || 'Error desconocido'}`);
+    }
 
     const aiResponse = completion.choices[0].message.content;
     logAIResponse(aiResponse);
     logTokens(completion.usage);
 
-    // Parsear y guardar plan
+    // Parsear con manejo robusto
     const generatedPlan = JSON.parse(parseAIResponse(aiResponse));
 
-    if (!generatedPlan.semanas || !Array.isArray(generatedPlan.semanas)) {
-      throw new Error('Plan debe contener array de semanas');
+    // Validación estricta del plan de Calistenia
+    console.log('🔍 [CALISTENIA] Validando estructura del plan...');
+
+    const requiredFields = ['semanas', 'nivel_usuario', 'duracion_total_semanas', 'frecuencia_por_semana'];
+    const missingFields = [];
+
+    for (const field of requiredFields) {
+      if (!generatedPlan[field]) {
+        missingFields.push(field);
+      }
     }
+
+    if (missingFields.length > 0) {
+      console.error('❌ [CALISTENIA] Plan incompleto, campos faltantes:', missingFields);
+      throw new Error(`Plan incompleto: faltan campos [${missingFields.join(', ')}]`);
+    }
+
+    if (!Array.isArray(generatedPlan.semanas) || generatedPlan.semanas.length === 0) {
+      throw new Error('Plan debe contener array de semanas con contenido');
+    }
+
+    // Validar estructura de semanas
+    let totalSessions = 0;
+    let totalExercises = 0;
+
+    for (const [index, semana] of generatedPlan.semanas.entries()) {
+      if (!semana.sesiones || !Array.isArray(semana.sesiones)) {
+        throw new Error(`Semana ${index + 1} no tiene sesiones válidas`);
+      }
+
+      totalSessions += semana.sesiones.length;
+
+      for (const sesion of semana.sesiones) {
+        const ejercicios = sesion.ejercicios || [];
+        totalExercises += ejercicios.length;
+
+        if (ejercicios.length < 4) {
+          console.warn(`⚠️ [CALISTENIA] Sesión "${sesion.dia}" tiene solo ${ejercicios.length} ejercicios (mínimo recomendado: 4)`);
+        }
+      }
+    }
+
+    console.log(`✅ [CALISTENIA] Plan validado: ${generatedPlan.semanas.length} semanas, ${totalSessions} sesiones, ${totalExercises} ejercicios total`);
+
+    // 🎯 VALIDACIÓN CRÍTICA: Número correcto de sesiones por semana
+    const expectedSessions = sessionsPerWeek * generatedPlan.duracion_total_semanas;
+
+    if (totalSessions !== expectedSessions) {
+      console.error(`❌ [CALISTENIA] Plan inválido: ${totalSessions} sesiones generadas, esperadas ${expectedSessions}`);
+      console.error(`   📊 Desglose: ${sessionsPerWeek} sesiones/semana × ${generatedPlan.duracion_total_semanas} semanas = ${expectedSessions} esperadas`);
+      throw new Error(`Plan incompleto: esperadas ${expectedSessions} sesiones (${sessionsPerWeek} por semana × ${generatedPlan.duracion_total_semanas} semanas), pero se generaron ${totalSessions}. El plan debe ser regenerado.`);
+    }
+
+    console.log(`✅ [CALISTENIA] Número de sesiones validado: ${totalSessions} sesiones (${sessionsPerWeek}/semana × ${generatedPlan.duracion_total_semanas} semanas)`);
 
     // Guardar en BD
     const dbClient = await pool.connect();
@@ -679,6 +818,18 @@ router.post('/specialist/calistenia/generate', authenticateToken, async (req, re
 
       await dbClient.query('COMMIT');
 
+      const endTime = Date.now();
+      const processingTime = (endTime - startTime) / 1000;
+
+      console.log(`✅ [CALISTENIA] Plan generado exitosamente:`, {
+        methodologyPlanId,
+        processingTime: `${processingTime}s`,
+        planStartDay: generatedPlan.semanas[0]?.sesiones[0]?.dia || 'N/A',
+        totalWeeks: generatedPlan.semanas.length,
+        totalSessions: totalSessions,
+        totalExercises: totalExercises
+      });
+
       res.json({
         success: true,
         plan: generatedPlan,
@@ -689,7 +840,9 @@ router.post('/specialist/calistenia/generate', authenticateToken, async (req, re
           : generatedPlan.justification || 'Plan personalizado generado',
         metadata: {
           model_used: config.model,
-          generation_timestamp: new Date().toISOString()
+          generation_timestamp: new Date().toISOString(),
+          processing_time_seconds: processingTime,
+          plan_start_date: getCurrentDayInfo().isoDate
         }
       });
 

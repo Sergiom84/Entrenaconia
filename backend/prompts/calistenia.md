@@ -48,6 +48,18 @@ Generar un plan de entrenamiento de calistenia de 4 semanas, perfectamente adapt
 4. **DISTRIBUYE** ejercicios para cubrir todos los patrones en cada semana
 5. **PROGRESA** gradualmente en intensidad y volumen a lo largo de las 4 semanas
 
+## ⚠️ REGLA CRÍTICA: NÚMERO DE SESIONES POR SEMANA
+
+**DEBES GENERAR EXACTAMENTE el número de sesiones especificado en `plan_requirements.sessions_per_week` para CADA una de las 4 semanas.**
+
+- Si `sessions_per_week` = 3 → Genera 3 sesiones en el array `sesiones[]` de cada semana
+- Si `sessions_per_week` = 4 → Genera 4 sesiones en el array `sesiones[]` de cada semana
+- Si `sessions_per_week` = 5 → Genera 5 sesiones en el array `sesiones[]` de cada semana
+
+**TOTAL DE SESIONES EN EL PLAN = sessions_per_week × 4 semanas**
+
+Ejemplo: Si sessions_per_week = 3 → Total de sesiones = 12 (3 por semana × 4 semanas)
+
 ## FORMATO DE RESPUESTA OBLIGATORIO
 
 Debes responder ÚNICAMENTE en JSON puro, sin markdown, sin backticks, sin texto adicional:
@@ -63,25 +75,68 @@ Debes responder ÚNICAMENTE en JSON puro, sin markdown, sin backticks, sin texto
 "semana": 1,
 "sesiones": [
 {
-"dia": "X",
-"descripcion": "Descripción motivadora de la sesión",
-"duracion_sesion_min": [30-60 según nivel],
+"dia": "Lunes",
+"descripcion": "Sesión de empuje y core - Fundamentos",
+"duracion_sesion_min": 30,
 "ejercicios": [
 {
 "nombre": "[EXACTAMENTE como aparece en campo 'nombre' de BD]",
 "categoria": "[campo categoria de BD]",
 "patron": "[campo patron de BD]",
-"series": "[número extraído de series_reps_objetivo]",
-"repeticiones": "[rango extraído de series_reps_objetivo]",
+"series": "3",
+"repeticiones": "8-12",
 "descanso_seg": 90,
-"intensidad": "[Suave|Moderada|Intensa] - RPE [4-8]",
+"intensidad": "Moderada - RPE 5",
+"notas": "Consejo técnico específico",
+"equipamiento": "[campo equipamiento de BD]"
+}
+]
+},
+{
+"dia": "Miércoles",
+"descripcion": "Sesión de tracción y piernas",
+"duracion_sesion_min": 30,
+"ejercicios": [
+{
+"nombre": "[EXACTAMENTE como aparece en campo 'nombre' de BD]",
+"categoria": "[campo categoria de BD]",
+"patron": "[campo patron de BD]",
+"series": "3",
+"repeticiones": "8-12",
+"descanso_seg": 90,
+"intensidad": "Moderada - RPE 5",
+"notas": "Consejo técnico específico",
+"equipamiento": "[campo equipamiento de BD]"
+}
+]
+},
+{
+"dia": "Viernes",
+"descripcion": "Sesión full body - Integración",
+"duracion_sesion_min": 30,
+"ejercicios": [
+{
+"nombre": "[EXACTAMENTE como aparece en campo 'nombre' de BD]",
+"categoria": "[campo categoria de BD]",
+"patron": "[campo patron de BD]",
+"series": "3",
+"repeticiones": "8-12",
+"descanso_seg": 90,
+"intensidad": "Moderada - RPE 5",
 "notas": "Consejo técnico específico",
 "equipamiento": "[campo equipamiento de BD]"
 }
 ]
 }
 ]
+},
+{
+"semana": 2,
+"sesiones": [
+// ... repetir 3 sesiones con progresión
+]
 }
+// ... semanas 3 y 4
 ],
 "principios_clave": [
 "Lista de 3-4 principios clave del plan"
@@ -100,3 +155,4 @@ Debes responder ÚNICAMENTE en JSON puro, sin markdown, sin backticks, sin texto
 5. **PROGRESIÓN LÓGICA** - Semana 1 más suave, progresión gradual
 6. **VARIEDAD DE PATRONES** - Cada sesión debe tener diferentes categorías
 7. **SESIONES COMPLETAS** - Mínimo 4 ejercicios por sesión
+8. **NÚMERO DE SESIONES** - Generar EXACTAMENTE `plan_requirements.sessions_per_week` sesiones en cada semana (total = sessions_per_week × 4)

@@ -437,6 +437,13 @@ export default function MethodologiesScreen() {
   const handleCalisteniaManualGenerate = async (calisteniaData) => {
     try { track('ACTION', { id: 'generate_calistenia' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
 
+    console.log('🎯 [METHODOLOGIES] Iniciando generación de Calistenia Manual:', {
+      timestamp: new Date().toISOString(),
+      level: calisteniaData.level || calisteniaData.selectedLevel,
+      hasGoals: !!calisteniaData.goals,
+      dayOfWeek: new Date().toLocaleDateString('es-ES', { weekday: 'long' })
+    });
+
     // 🎯 FLUJO SIMPLIFICADO - SUPABASE FIRST:
     // - Sin plan → generar
     // - Con plan → usuario quiere NUEVO plan, limpiar anterior y generar
@@ -445,13 +452,13 @@ export default function MethodologiesScreen() {
     // 🚀 Verificar desde BD (no localStorage)
     const hasActivePlanInDB = await hasActivePlanFromDB();
     if (hasActivePlanInDB) {
-      console.log('🔄 Plan activo detectado en BD, limpiando para generar nuevo...');
+      console.log('🔄 [METHODOLOGIES] Plan activo detectado en BD, limpiando para generar nuevo...');
       await cancelPlan(); // Limpiar plan anterior
       await syncWithDatabase(); // Sincronizar estado
     }
 
     try {
-      console.log('🤸‍♀️ Generando plan de calistenia...');
+      console.log('🤸‍♀️ [METHODOLOGIES] Llamando a generatePlan...');
 
       // Usar generatePlan del WorkoutContext
       const result = await generatePlan({
