@@ -131,18 +131,33 @@ const logRecentExercises = (exercises) => {
 
 const logAIPayload = (methodology, userData) => {
   logSubSection('PAYLOAD COMPLETO ENVIADO A LA IA', 'blue');
-  
+
   console.log(colors.blue + `🎯 Metodología solicitada: ${methodology}` + colors.reset);
-  
+
   if (userData) {
     try {
       console.log(colors.blue + `📊 Tamaño del payload: ${JSON.stringify(userData).length} caracteres` + colors.reset);
     } catch (e) {
       console.log(colors.blue + `📊 Tamaño del payload: No se pudo calcular (${e.message})` + colors.reset);
     }
-    
-    console.log(colors.blue + '\n📦 Estructura completa del payload:' + colors.reset);
-    logObject(userData, 4);
+
+    // 🎯 OPTIMIZACIÓN: Mostrar solo estructura resumida, no el objeto completo
+    console.log(colors.blue + '\n📦 Keys del payload:' + colors.reset);
+    console.log(colors.dim + `   ${Object.keys(userData).join(', ')}` + colors.reset);
+
+    // Mostrar info específica útil
+    if (userData.available_exercises) {
+      console.log(colors.blue + `💪 Ejercicios disponibles: ${userData.available_exercises.length} ejercicios` + colors.reset);
+    }
+
+    if (userData.selected_level) {
+      console.log(colors.blue + `🎯 Nivel seleccionado: ${userData.selected_level}` + colors.reset);
+    }
+
+    if (userData.plan_requirements) {
+      const req = userData.plan_requirements;
+      console.log(colors.blue + `📋 Plan: ${req.duration_weeks || 4} semanas, ${req.sessions_per_week || 3} sesiones/semana, ${req.session_duration_min || 30}min` + colors.reset);
+    }
   } else {
     console.log(colors.red + '❌ No se recibieron datos del usuario para la IA' + colors.reset);
   }
@@ -150,73 +165,93 @@ const logAIPayload = (methodology, userData) => {
 
 const logAIResponse = (response) => {
   logSubSection('RESPUESTA DE LA IA', 'green');
-  
+
   try {
     const planData = typeof response === 'string' ? JSON.parse(response) : response;
-    
-    console.log(colors.green + `✅ Metodología generada: ${planData.selected_style || 'No especificado'}` + colors.reset);
-    console.log(colors.green + `📅 Duración: ${planData.duracion_total_semanas || 'No especificado'} semanas` + colors.reset);
-    console.log(colors.green + `🔄 Frecuencia: ${planData.frecuencia_por_semana || 'No especificado'} días/semana` + colors.reset);
-    console.log(colors.green + `📈 Progresión: ${planData.progresion?.metodo || 'No especificado'}` + colors.reset);
-    
-    if (planData.semanas && planData.semanas.length > 0) {
-      console.log(colors.green + `\n📊 RESUMEN DEL PLAN GENERADO:` + colors.reset);
-      
-      planData.semanas.forEach((semana) => {
-        console.log(colors.cyan + `\n🗓️  SEMANA ${semana.semana}:` + colors.reset);
-        
-        if (semana.sesiones && semana.sesiones.length > 0) {
-          semana.sesiones.forEach((sesion) => {
-            console.log(colors.yellow + `  📍 ${sesion.dia} (${sesion.duracion_sesion_min}min, ${sesion.intensidad_guia})` + colors.reset);
-            console.log(colors.yellow + `     🎯 ${sesion.objetivo_de_la_sesion}` + colors.reset);
-            
-            if (sesion.ejercicios && sesion.ejercicios.length > 0) {
-              console.log(colors.white + `     💪 ${sesion.ejercicios.length} ejercicios:` + colors.reset);
-              
-              sesion.ejercicios.forEach((ejercicio, ejIdx) => {
-                const reps = ejercicio.repeticiones || 'No especificado';
-                const series = ejercicio.series || 'No especificado';
-                const descanso = ejercicio.descanso_seg || 'No especificado';
-                
-                console.log(colors.dim + `       ${ejIdx + 1}. ${ejercicio.nombre}` + colors.reset);
-                console.log(colors.dim + `          ${series} series x ${reps} reps, ${descanso}s descanso` + colors.reset);
-                
-                if (ejercicio.intensidad) {
-                  console.log(colors.dim + `          Intensidad: ${ejercicio.intensidad}` + colors.reset);
-                }
-                
-                if (ejercicio.notas) {
-                  console.log(colors.dim + `          Notas: ${ejercicio.notas.substring(0, 60)}${ejercicio.notas.length > 60 ? '...' : ''}` + colors.reset);
-                }
-              });
-            }
-          });
+
+    // 🎯 OPTIMIZACIÓN: Detectar tipo de respuesta (evaluación vs generación)
+    const isEvaluation = planData.recommended_level || planData.confidence;
+
+    if (isEvaluation) {
+      // LOGGING PARA EVALUACIÓN
+      console.log(colors.green + `🎯 Nivel recomendado: ${planData.recommended_level || 'No especificado'}` + colors.reset);
+      console.log(colors.green + `📊 Confianza: ${planData.confidence ? (planData.confidence * 100).toFixed(0) + '%' : 'N/A'}` + colors.reset);
+
+      if (planData.reasoning) {
+        console.log(colors.dim + `💭 Razón: ${planData.reasoning.substring(0, 100)}...` + colors.reset);
+      }
+
+      if (planData.suggested_focus_areas && planData.suggested_focus_areas.length > 0) {
+        console.log(colors.yellow + `🎯 Áreas de enfoque: ${planData.suggested_focus_areas.join(', ')}` + colors.reset);
+      }
+    } else {
+      // LOGGING PARA GENERACIÓN DE PLAN
+      console.log(colors.green + `✅ Metodología: ${planData.selected_style || 'No especificado'}` + colors.reset);
+      console.log(colors.green + `📅 Duración: ${planData.duracion_total_semanas || 'No especificado'} semanas` + colors.reset);
+      console.log(colors.green + `🔄 Frecuencia: ${planData.frecuencia_por_semana || 'No especificado'} días/semana` + colors.reset);
+
+      // 🎯 OPTIMIZACIÓN: Resumen comprimido del plan (en lugar de mostrar TODO)
+      if (planData.semanas && planData.semanas.length > 0) {
+        console.log(colors.green + `\n📊 RESUMEN DEL PLAN:` + colors.reset);
+
+        // Calcular totales
+        let totalSessions = 0;
+        let totalExercises = 0;
+        const sessionDays = [];
+
+        planData.semanas.forEach((semana) => {
+          if (semana.sesiones && semana.sesiones.length > 0) {
+            totalSessions += semana.sesiones.length;
+
+            semana.sesiones.forEach((sesion) => {
+              if (sesion.ejercicios) {
+                totalExercises += sesion.ejercicios.length;
+              }
+              // Recoger días de la primera semana como ejemplo
+              if (semana.semana === 1 && !sessionDays.includes(sesion.dia)) {
+                sessionDays.push(sesion.dia);
+              }
+            });
+          }
+        });
+
+        console.log(colors.cyan + `📈 Total: ${totalSessions} sesiones, ${totalExercises} ejercicios` + colors.reset);
+        console.log(colors.cyan + `🗓️ Patrón semanal: ${sessionDays.join(', ')}` + colors.reset);
+
+        // Mostrar solo primera sesión como muestra
+        if (planData.semanas[0] && planData.semanas[0].sesiones && planData.semanas[0].sesiones[0]) {
+          const primeraSession = planData.semanas[0].sesiones[0];
+          const ejerciciosCount = primeraSession.ejercicios ? primeraSession.ejercicios.length : 0;
+
+          console.log(colors.yellow + `\n📍 Ejemplo (Semana 1, ${primeraSession.dia}):` + colors.reset);
+          console.log(colors.dim + `   Duración: ${primeraSession.duracion_sesion_min || 'N/A'}min` + colors.reset);
+          console.log(colors.dim + `   Ejercicios: ${ejerciciosCount}` + colors.reset);
+
+          // Mostrar solo los nombres de los ejercicios, no todo el detalle
+          if (primeraSession.ejercicios && primeraSession.ejercicios.length > 0) {
+            const ejerciciosNombres = primeraSession.ejercicios.map(ej => ej.nombre).join(', ');
+            console.log(colors.dim + `   (${ejerciciosNombres})` + colors.reset);
+          }
         }
-      });
+      }
     }
-    
-    // Validaciones
-    if (planData.validacion) {
-      console.log(colors.blue + '\n🔍 VALIDACIONES:' + colors.reset);
-      logObject(planData.validacion, 1);
-    }
-    
-    // Consideraciones y safety notes
+
+    // Consideraciones y safety notes (mantener)
     if (planData.consideraciones) {
       console.log(colors.yellow + '\n⚠️  CONSIDERACIONES:' + colors.reset);
       console.log(colors.yellow + planData.consideraciones + colors.reset);
     }
-    
+
     if (planData.safety_notes) {
       console.log(colors.red + '\n🚨 NOTAS DE SEGURIDAD:' + colors.reset);
       console.log(colors.red + planData.safety_notes + colors.reset);
     }
-    
+
   } catch (error) {
     console.log(colors.red + '❌ Error parseando respuesta de IA:' + colors.reset);
     console.log(colors.red + error.message + colors.reset);
-    console.log(colors.dim + 'Respuesta raw:' + colors.reset);
-    console.log(response);
+    console.log(colors.dim + 'Respuesta raw (primeros 500 chars):' + colors.reset);
+    console.log(colors.dim + (typeof response === 'string' ? response.substring(0, 500) : JSON.stringify(response).substring(0, 500)) + colors.reset);
   }
 };
 
