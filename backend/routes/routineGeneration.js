@@ -2035,7 +2035,7 @@ router.post('/specialist/crossfit/evaluate', authenticateToken, async (req, res)
       task: 'Determinar nivel de CrossFit (principiante/intermedio/avanzado/elite) basado en las 10 habilidades físicas generales y experiencia en los 3 dominios metabólicos'
     };
 
-    logAIPayload(aiPayload);
+    logAIPayload('CROSSFIT_EVALUATION', aiPayload);
 
     const completion = await client.chat.completions.create({
       model: config.model,
@@ -2237,7 +2237,7 @@ ${availableExercises.map(ex =>
   `- ${ex.nombre} (${ex.dominio}/${ex.categoria}) - Nivel: ${ex.nivel}, WOD: ${ex.tipo_wod}, Equipamiento: ${ex.equipamiento}, Intensidad: ${ex.intensidad}`
 ).join('\n')}
 
-DURACIÓN: ${versionConfig?.customWeeks || 12} semanas
+DURACIÓN: 4 semanas
 
 PRINCIPIOS CROSSFIT OBLIGATORIOS:
 1. Variedad constante: WODs constantemente variados (AMRAP, EMOM, For Time, Tabata, Chipper, Strength)
@@ -2248,29 +2248,54 @@ PRINCIPIOS CROSSFIT OBLIGATORIOS:
 6. Benchmarks: Incluir WODs benchmark (Fran, Helen, Cindy, Murph, etc.) cada 4 semanas
 7. Descansos: ${actualLevel === 'principiante' ? '60-90s' : actualLevel === 'intermedio' ? '30-60s' : '30s o menos'} según capacidad metabólica
 
+⚠️⚠️⚠️ REGLA CRÍTICA OBLIGATORIA ⚠️⚠️⚠️
+CADA DÍA DE ENTRENAMIENTO DEBE TENER ENTRE 3 Y 8 MOVIMIENTOS EN EL ARRAY "movimientos[]".
+NO PUEDES GENERAR DÍAS CON SOLO 1 O 2 MOVIMIENTOS. ESTO ES ABSOLUTAMENTE OBLIGATORIO.
+Verifica ANTES de responder que TODOS los días tengan al menos 3 movimientos.
+
 GENERA un plan completo siguiendo el formato JSON de metodología.`;
 
-    const completion = await client.chat.completions.create({
-      model: config.model,
-      messages: [
-        {
-          role: 'system',
-          content: `Eres un CrossFit Level-2 Trainer certificado. Generas planes de entrenamiento (WODs) basados en la metodología CrossFit oficial: variedad constante, movimientos funcionales, alta intensidad.
+    // Retry logic con 3 intentos (incluye generación + validación)
+    let attempts = 0;
+    let normalizedPlan = null;
+    let lastError = null;
+
+    const MIN_EXERCISES = 3;
+    const MAX_EXERCISES = 8;
+
+    while (attempts < 3) {
+      try {
+        console.log(`🤖 [CROSSFIT] Intento ${attempts + 1}/3 de generación de plan...`);
+
+        const completion = await client.chat.completions.create({
+          model: config.model,
+          messages: [
+            {
+              role: 'system',
+              content: `Eres un CrossFit Level-2 Trainer certificado. Generas planes de entrenamiento (WODs) basados en la metodología CrossFit oficial: variedad constante, movimientos funcionales, alta intensidad.
 
 RESPONDE SOLO EN JSON PURO, SIN MARKDOWN.
+
+⚠️ REGLA OBLIGATORIA CRÍTICA - MÍNIMO DE EJERCICIOS:
+CADA DÍA DE ENTRENAMIENTO DEBE TENER MÍNIMO 3 MOVIMIENTOS Y MÁXIMO 8 MOVIMIENTOS.
+Esta regla es ABSOLUTA y NO puede violarse bajo ninguna circunstancia.
 
 El plan DEBE incluir:
 - calendario: array de semanas con días de entrenamiento
 - cada día tiene un WOD con tipo (AMRAP, EMOM, For Time, Tabata, Chipper, Strength)
+- ⚠️ OBLIGATORIO: CADA WOD debe contener entre 3-8 movimientos en el array "movimientos[]"
+- WODs tipo AMRAP/EMOM: 3-5 movimientos, WODs For Time: 4-6 movimientos
 - cada ejercicio tiene: nombre, reps/tiempo, carga, scaling options
 - balance de dominios G/W/M
 - benchmarks cada 4 semanas
+
+VALIDACIÓN FINAL: Antes de responder, verifica que TODOS los días tengan al menos 3 movimientos en el array "movimientos[]".
 
 FORMATO EXACTO:
 {
   "metodologia": "CrossFit",
   "nivel_crossfit": "${actualLevel}",
-  "duracion_semanas": 12,
+  "duracion_semanas": 4,
   "frecuencia_semanal": ${actualLevel === 'principiante' ? 3 : actualLevel === 'intermedio' ? 4 : actualLevel === 'avanzado' ? 5 : 6},
   "filosofia": "Constantly varied functional movements at high intensity",
   "calendario": [
@@ -2314,44 +2339,108 @@ FORMATO EXACTO:
     }
   ]
 }`
-        },
-        {
-          role: 'user',
-          content: userMessage
+            },
+            {
+              role: 'user',
+              content: userMessage
+            }
+          ],
+          temperature: 0.7,  // Balance entre variedad y consistencia (alineado con Calistenia)
+          max_tokens: config.max_output_tokens  // 16384 tokens (igual que Calistenia)
+        });
+
+        const aiResponse = completion.choices[0].message.content;
+        logAIResponse(aiResponse);
+        logTokens(completion.usage);
+
+        // Parsear respuesta
+        const generatedPlan = JSON.parse(parseAIResponse(aiResponse));
+
+        // Validar estructura del plan
+        if (!generatedPlan.calendario || !Array.isArray(generatedPlan.calendario)) {
+          throw new Error('Plan sin calendario válido');
         }
-      ],
-      temperature: 0.9,  // Alta variedad para WODs constantemente variados
-      max_tokens: config.max_output_tokens  // 16384 tokens (igual que Calistenia)
-    });
 
-    const aiResponse = completion.choices[0].message.content;
-    logAIResponse(aiResponse);
-    logTokens(completion.usage);
+        // 🔥 NORMALIZAR PLAN: Convertir formato calendario → semanas
+        console.log('🔄 Normalizando plan CrossFit (calendario → semanas)...');
+        normalizedPlan = normalizeCrossFitPlan(generatedPlan);
 
-    // Parsear respuesta
-    let generatedPlan;
-    try {
-      generatedPlan = JSON.parse(parseAIResponse(aiResponse));
-    } catch (parseError) {
-      console.error('Error parseando plan:', parseError);
-      throw new Error('Plan generado con formato inválido');
+        // Validar plan normalizado
+        if (!normalizedPlan?.semanas || !Array.isArray(normalizedPlan.semanas) || normalizedPlan.semanas.length === 0) {
+          throw new Error('Plan normalizado sin semanas válidas');
+        }
+
+        console.log(`✅ Plan normalizado: ${normalizedPlan.semanas.length} semanas, ${normalizedPlan.frecuencia_semanal} días/semana`);
+
+        // Validar número total de sesiones
+        const sessionsPerWeek = normalizedPlan.frecuencia_semanal;
+        const totalWeeks = normalizedPlan.semanas.length;
+        const expectedSessions = sessionsPerWeek * totalWeeks;
+
+        let totalSessions = 0;
+        normalizedPlan.semanas.forEach(semana => {
+          if (semana.sesiones && Array.isArray(semana.sesiones)) {
+            totalSessions += semana.sesiones.length;
+          }
+        });
+
+        if (totalSessions !== expectedSessions) {
+          throw new Error(`Plan incompleto: esperadas ${expectedSessions} sesiones (${sessionsPerWeek} sesiones/semana × ${totalWeeks} semanas), pero se generaron ${totalSessions} sesiones`);
+        }
+
+        console.log(`✅ Validación sesiones: ${totalSessions}/${expectedSessions} sesiones correctas`);
+
+        // Validar MÍNIMO de ejercicios por sesión (CrossFit requiere 3-8 movimientos por WOD)
+        const invalidDays = [];
+
+        normalizedPlan.semanas.forEach((semana, sIdx) => {
+          semana.sesiones.forEach((sesion, dIdx) => {
+            const numExercises = sesion.ejercicios ? sesion.ejercicios.length : 0;
+
+            if (numExercises < MIN_EXERCISES) {
+              invalidDays.push({
+                semana: semana.semana,
+                dia: sesion.dia,
+                ejercicios: numExercises,
+                minimo: MIN_EXERCISES
+              });
+            }
+
+            if (numExercises > MAX_EXERCISES) {
+              console.warn(`⚠️ Semana ${semana.semana}, ${sesion.dia}: ${numExercises} ejercicios excede el máximo recomendado (${MAX_EXERCISES})`);
+            }
+          });
+        });
+
+        if (invalidDays.length > 0) {
+          const errorDetails = invalidDays.map(d =>
+            `Semana ${d.semana}, ${d.dia}: ${d.ejercicios} ejercicios (mínimo: ${d.minimo})`
+          ).join('; ');
+
+          throw new Error(`Plan CrossFit inválido: ${invalidDays.length} días con menos de ${MIN_EXERCISES} ejercicios. Detalles: ${errorDetails}`);
+        }
+
+        console.log(`✅ Validación ejercicios: Todos los días tienen entre ${MIN_EXERCISES}-${MAX_EXERCISES} movimientos`);
+        console.log(`✅ [CROSSFIT] Plan generado y validado exitosamente en intento ${attempts + 1}`);
+        break; // Plan válido, salir del loop
+
+      } catch (error) {
+        attempts++;
+        lastError = error;
+        console.error(`❌ [CROSSFIT] Error en intento ${attempts}/3:`, error.message);
+
+        if (attempts < 3) {
+          const waitTime = 1000 * attempts; // Backoff exponencial: 1s, 2s, 3s
+          console.log(`⏳ Esperando ${waitTime}ms antes del siguiente intento...`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+        }
+      }
     }
 
-    // Validar estructura del plan
-    if (!generatedPlan.calendario || !Array.isArray(generatedPlan.calendario)) {
-      throw new Error('Plan sin calendario válido');
+    // Si no se logró generar un plan válido después de 3 intentos
+    if (!normalizedPlan) {
+      throw new Error(`No se pudo generar un plan CrossFit válido después de 3 intentos. Último error: ${lastError?.message || 'Desconocido'}`);
     }
-
-    // 🔥 NORMALIZAR PLAN: Convertir formato calendario → semanas
-    console.log('🔄 Normalizando plan CrossFit (calendario → semanas)...');
-    const normalizedPlan = normalizeCrossFitPlan(generatedPlan);
-
-    // Validar plan normalizado
-    if (!normalizedPlan?.semanas || !Array.isArray(normalizedPlan.semanas) || normalizedPlan.semanas.length === 0) {
-      throw new Error('Plan normalizado sin semanas válidas');
-    }
-
-    console.log(`✅ Plan normalizado: ${normalizedPlan.semanas.length} semanas, ${normalizedPlan.frecuencia_semanal} días/semana`);
 
     const planToPersist = normalizedPlan;
 

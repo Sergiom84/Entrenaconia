@@ -8,7 +8,7 @@ Generar un plan de entrenamiento de calistenia de 4 semanas, perfectamente adapt
 
 ## Niveles de Entrenamiento
 
-- **BPRINCIANTE**: Ejercicios contenido en la columna de principiante
+- **PRINCIPIANTE**: Ejercicios contenido en la columna de principiante
 - **INTERMEDIO**: Ejercicios contenido en la columna de intermedio
 - **AVANZADO**: Ejercicios contenido en la columna de avanzado
 
@@ -16,7 +16,7 @@ Generar un plan de entrenamiento de calistenia de 4 semanas, perfectamente adapt
 
 **Sesiones por semana:**
 
-- BÁSICO: 3 sesiones (comienza el mismo día que se genera.Excluye los fines de semana)
+- PRINCIPIANTE: 3 sesiones (comienza el mismo día que se genera.Excluye los fines de semana)
 - INTERMEDIO: 4 sesiones (comienza el mismo día que se genera.Excluye los fines de semana)
 - AVANZADO: 5 sesiones (comienza el mismo día que se genera.Excluye los fines de semana)
 
