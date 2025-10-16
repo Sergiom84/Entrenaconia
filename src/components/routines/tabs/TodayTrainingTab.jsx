@@ -307,10 +307,18 @@ export default function TodayTrainingTab({
   // ===============================================
 
 
-  // Refrescar resumen del día al cambiar estado de sesión o cerrar el modal
+  // 🎯 CORRECCIÓN CRÍTICA: Refrescar resumen del día al cambiar estado de sesión o cerrar el modal
+  // Agregado: Forzar re-fetch cuando el modal se cierra (showSessionModal false)
   useEffect(() => {
     if (!hasActivePlan) return;
-    fetchTodayStatus();
+
+    // 🎯 IMPORTANTE: Si el modal se acaba de cerrar (showSessionModal === false), forzar actualización
+    if (localState.showSessionModal === false) {
+      console.log('🔄 Modal cerrado, forzando refresh del estado desde BD...');
+      fetchTodayStatus();
+    } else {
+      fetchTodayStatus();
+    }
   }, [hasActivePlan, currentTodayName, session.status, localState.showSessionModal, fetchTodayStatus]);
 
   const wantRoutineModal = localState.showSessionModal || ui.showRoutineSession || ui.showSession;
@@ -1234,7 +1242,7 @@ export default function TodayTrainingTab({
                 <div className="text-center py-6">
                   <Dumbbell className="w-12 h-12 text-yellow-400 mx-auto mb-4" />
                   <h3 className="text-lg font-medium text-white mb-2">
-                    Entrenamiento de hoy: {todaySessionData?.dia || 'Sin información'}
+                    Entrenamiento de {currentTodayName}
                   </h3>
                   <p className="text-gray-400 mb-4">
                     {todaySessionData?.ejercicios?.length || 0} ejercicios programados
@@ -1294,18 +1302,29 @@ export default function TodayTrainingTab({
                     </div>
 
                     <div className="space-y-2">
-                      {todaySessionData.ejercicios.map((ejercicio, index) => {
-                        const status = (() => {
-                          if (todayStatus?.exercises?.[index]?.status) return String(todayStatus.exercises[index].status).toLowerCase();
-                          if (exerciseProgress[index]?.status) return String(exerciseProgress[index].status).toLowerCase();
-                          if (hasActiveSession && (session.currentExerciseIndex === index)) return 'in_progress';
-                          return 'pending';
-                        })();
-                        const ex = { ...ejercicio, status, exercise_name: ejercicio.nombre, series_total: ejercicio.series };
-                        return (
-                          <ExerciseListItem key={index} exercise={ex} index={index} />
-                        );
-                      })}
+                      {(() => {
+                        // Si tenemos todayStatus.exercises (datos del backend con progreso real), usarlos
+                        if (todayStatus?.exercises && todayStatus.exercises.length > 0) {
+                          return todayStatus.exercises.map((ex, index) => (
+                            <ExerciseListItem key={index} exercise={ex} index={index} />
+                          ));
+                        }
+
+                        // Fallback: Mostrar ejercicios del plan sin progreso
+                        return todaySessionData.ejercicios.map((ejercicio, index) => {
+                          const status = exerciseProgress[index]?.status ||
+                                         (hasActiveSession && session.currentExerciseIndex === index ? 'in_progress' : 'pending');
+                          const ex = {
+                            ...ejercicio,
+                            status,
+                            exercise_name: ejercicio.nombre,
+                            series_total: ejercicio.series
+                          };
+                          return (
+                            <ExerciseListItem key={index} exercise={ex} index={index} />
+                          );
+                        });
+                      })()}
                     </div>
                   </Card>
                 )}

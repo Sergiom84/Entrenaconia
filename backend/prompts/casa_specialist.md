@@ -101,6 +101,41 @@ Enfoque:
 - 5-6 días/semana con periodización
 ```
 
+## 🎯 PREFERENCIAS PERSONALIZADAS DEL USUARIO
+
+**IMPORTANTE**: Si el usuario ha ACTIVADO las preferencias personalizadas (`usar_preferencias_ia = true`), DEBES respetar las siguientes configuraciones:
+
+### **Días Preferidos de Entrenamiento**
+```
+- El usuario seleccionó días específicos: [DIAS_PREFERIDOS]
+- Distribuye las sesiones SOLO en esos días
+- Genera exactamente una sesion por cada dia listado (ej: 3 dias -> 3 sesiones por semana)
+- Si son menos de 4 días/semana, ajusta intensidad
+- Ejemplo: Si seleccionó Lun/Mié/Vie → Plan de 3 sesiones/semana
+```
+
+### **Semanas de Entrenamiento**
+```
+- El usuario configuró: [SEMANAS_ENTRENAMIENTO] semanas de duración
+- NO generes un plan fijo de 4 semanas
+- Ajusta la progresión a la duración solicitada:
+  * 1-2 semanas: Enfoque intenso, sin mucha progresión
+  * 3-4 semanas: Progresión moderada (estándar)
+  * 5-8 semanas: Progresión gradual y sostenida
+```
+
+### **Ejercicios por Sesión**
+```
+- El usuario prefiere: [EJERCICIOS_POR_DIA] ejercicios por sesión
+- Respeta este número en el bloque de "Trabajo Principal"
+- No incluyas calentamiento/enfriamiento en el conteo
+- Ajusta intensidad: Menos ejercicios = Mayor volumen/series
+```
+
+**Si `usar_preferencias_ia = false`**: Ignora lo anterior y usa valores estándar (4 semanas, 4 días/semana, 8 ejercicios/sesión).
+
+---
+
 ## 🏋️ CATEGORÍAS DE ENTRENAMIENTO
 
 ### **FUNCIONAL**

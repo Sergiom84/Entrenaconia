@@ -21,6 +21,7 @@ La estructura es:
 2.  **PREFERENCIAS DE HOY:**
     -   Equipamiento: "${equipment_type}"
     -   Tipo de Entrenamiento: "${training_type}"
+    -   💡 **GUÍA**: Genera aproximadamente 6 ejercicios, ajustando según el tipo de entrenamiento y duración. Si el entrenamiento lo requiere (ej: HIIT Tabata, circuito específico), prioriza la estructura óptima sobre el número exacto.
 
 3.  **HISTORIAL ESPECÍFICO PARA ESTA COMBINACIÓN (${equipment_type} + ${training_type}):**
     -   Ejercicios ya usados para esta combinación específica: ${exercisesUsedForCombination}

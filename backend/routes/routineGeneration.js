@@ -84,7 +84,9 @@ async function getUserFullProfile(userId) {
       u.cintura, u.muslos, u.cuello, u.antebrazos, u.cadera,
       u.comidas_por_dia, u.alimentos_excluidos, u.meta_peso,
       u.meta_grasa_corporal, u.enfoque_entrenamiento, u.historial_medico,
-      p.limitaciones_fisicas, p.objetivo_principal, p.metodologia_preferida
+      p.limitaciones_fisicas, p.objetivo_principal, p.metodologia_preferida,
+      p.usar_preferencias_ia, p.dias_preferidos_entrenamiento,
+      p.ejercicios_por_dia_preferido, p.semanas_entrenamiento
     FROM app.users u
     LEFT JOIN app.user_profiles p ON u.id = p.user_id
     WHERE u.id = $1
@@ -121,7 +123,12 @@ function normalizeUserProfile(profile) {
     alergias: profile.alergias || [],
     medicamentos: profile.medicamentos || [],
     suplementacion: profile.suplementacion || [],
-    limitaciones_fisicas: profile.limitaciones_fisicas || null
+    limitaciones_fisicas: profile.limitaciones_fisicas || null,
+    // Preferencias de entrenamiento
+    usar_preferencias_ia: profile.usar_preferencias_ia || false,
+    dias_preferidos_entrenamiento: profile.dias_preferidos_entrenamiento || ['lunes', 'martes', 'miercoles', 'jueves', 'viernes'],
+    ejercicios_por_dia_preferido: profile.ejercicios_por_dia_preferido || 8,
+    semanas_entrenamiento: profile.semanas_entrenamiento || 4
   };
 }
 
@@ -3050,6 +3057,15 @@ CONFIGURACIÓN DEL PLAN:
 - Espacio disponible: ${spaceAvailable || 'medio'}
 - Objetivos personalizados: ${customGoals || 'Ninguno especificado'}
 
+${fullUserProfile.usar_preferencias_ia ? `
+🎯 PREFERENCIAS PERSONALIZADAS ACTIVADAS:
+- Días preferidos de entrenamiento: ${fullUserProfile.dias_preferidos_entrenamiento.join(', ')}
+- Semanas de entrenamiento: ${fullUserProfile.semanas_entrenamiento} semanas
+- Ejercicios por sesión: ${fullUserProfile.ejercicios_por_dia_preferido} ejercicios (solo en bloque de trabajo principal)
+
+⚠️ IMPORTANTE: Reemplaza [DIAS_PREFERIDOS], [SEMANAS_ENTRENAMIENTO], [EJERCICIOS_POR_DIA] en el prompt con estos valores.
+` : '🔓 Preferencias personalizadas DESACTIVADAS: Usa valores estándar (4 semanas, 4 días/semana, 8 ejercicios/sesión).\n'}
+
 ${aiEvaluation ? `EVALUACIÓN PREVIA DE IA:\n${JSON.stringify(aiEvaluation, null, 2)}\n` : ''}
 
 EJERCICIOS DISPONIBLES POR CATEGORÍA:
@@ -3062,12 +3078,29 @@ INSTRUCCIONES ESPECIALES:
 2. Enfoca el plan en la categoría principal: ${categoriaActiva}
 3. Respeta el equipamiento disponible: ${equipmentLevel}
 4. Adapta al espacio: ${spaceAvailable}
-5. Genera un plan de 4 semanas progresivo
-6. Incluye calentamiento, trabajo principal y enfriamiento en cada sesión
-7. Usa creatividad para adaptar objetos domésticos según equipamiento
-8. Especifica claramente qué objetos usar (silla, toalla, pared, etc.)
+5. Genera un plan progresivo de ${fullUserProfile.usar_preferencias_ia ? fullUserProfile.semanas_entrenamiento : 4} semanas
+6. ${fullUserProfile.usar_preferencias_ia ? `Distribuye sesiones SOLO en estos días: ${fullUserProfile.dias_preferidos_entrenamiento.join(', ')}` : 'Distribuye sesiones en 4 días por semana'}
+7. ${fullUserProfile.usar_preferencias_ia ? `Incluye aproximadamente ${fullUserProfile.ejercicios_por_dia_preferido} ejercicios` : 'Incluye aproximadamente 6 ejercicios'} en el bloque de "Trabajo Principal" (calentamiento y enfriamiento NO cuentan)
+8. Incluye calentamiento, trabajo principal y enfriamiento en cada sesión
+9. Usa creatividad para adaptar objetos domésticos según equipamiento
+10. Especifica claramente qué objetos usar (silla, toalla, pared, etc.)
 
 Devuelve un JSON siguiendo EXACTAMENTE la estructura del prompt especialista Casa.`;
+
+    // Log de preferencias para debugging
+    console.log('\n🎯 PREFERENCIAS DE ENTRENAMIENTO:');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    if (fullUserProfile.usar_preferencias_ia) {
+      console.log('✅ Switch de preferencias: ACTIVADO');
+      console.log(`📅 Días preferidos: ${fullUserProfile.dias_preferidos_entrenamiento.join(', ')}`);
+      console.log(`🏋️ Ejercicios por sesión: ${fullUserProfile.ejercicios_por_dia_preferido}`);
+      console.log(`📆 Semanas del plan: ${fullUserProfile.semanas_entrenamiento}`);
+      console.log('➡️  Estas preferencias SE ENVIARÁN a OpenAI');
+    } else {
+      console.log('⏸️  Switch de preferencias: DESACTIVADO');
+      console.log('➡️  Se usarán valores estándar (4 semanas, 4 días/semana, 8 ejercicios)');
+    }
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
     console.log('🤖 Llamando a OpenAI para generación de plan Casa...');
     const completion = await client.chat.completions.create({

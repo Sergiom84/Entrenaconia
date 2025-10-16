@@ -100,7 +100,9 @@ async function getUserProfileForHomeTraining(userId) {
         u.suplementacion,
         p.limitaciones_fisicas,
         p.metodologia_preferida,
-        p.objetivo_principal AS perfil_objetivo
+        p.objetivo_principal AS perfil_objetivo,
+        p.dias_preferidos_entrenamiento,
+        p.ejercicios_por_dia_preferido
      FROM app.users u
      LEFT JOIN app.user_profiles p ON u.id = p.user_id
      WHERE u.id = $1`,
@@ -134,7 +136,9 @@ function buildUserProfileSummary(profile) {
     nivel_actividad: profile.nivel_actividad || 'moderado',
     objetivo_principal: profile.objetivo_principal || 'general',
     metodologia_preferida: profile.metodologia_preferida || null,
-    frecuencia_semanal: profile.frecuencia_semanal != null ? Number(profile.frecuencia_semanal) : null,
+    frecuencia_semanal: profile.frecuencia_semanal != null ? Number(profile.frecuencia_semanal) : 3,
+    dias_preferidos_entrenamiento: profile.dias_preferidos_entrenamiento || ['lunes','martes','miercoles','jueves','viernes'],
+    ejercicios_por_dia_preferido: profile.ejercicios_por_dia_preferido != null ? Number(profile.ejercicios_por_dia_preferido) : 8,
     grasa_corporal: profile.grasa_corporal != null ? Number(profile.grasa_corporal) : null,
     masa_muscular: profile.masa_muscular != null ? Number(profile.masa_muscular) : null,
     alergias: normalizeArrayField(profile.alergias),

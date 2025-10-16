@@ -55,8 +55,10 @@ export const SessionSummaryModal = ({
         console.log('✅ onEndSession completado, estado actualizado');
       }
 
-      // 🎯 PASO 2: Esperar un poco más para asegurar que el estado se propagó
-      await new Promise(resolve => setTimeout(resolve, 300));
+      // 🎯 PASO 2: Esperar más tiempo para asegurar que el estado se propagó completamente
+      // Incrementado de 300ms a 500ms para dar tiempo a la BD
+      console.log('⏳ Esperando propagación del estado (500ms)...');
+      await new Promise(resolve => setTimeout(resolve, 500));
 
       // 🎯 PASO 3: Cerrar modal ANTES de navegar para asegurar limpieza de estado
       console.log('🔒 Cerrando modal antes de navegar');

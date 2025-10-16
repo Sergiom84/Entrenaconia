@@ -221,14 +221,18 @@ export default function MethodologiesScreen() {
             Ver Detalles
           </Button>
           <Button
-            disabled={!manualActive}
             className={`flex-1 ${manualActive
               ? 'bg-yellow-400 text-black hover:bg-yellow-300'
-              : 'bg-gray-700 text-gray-400 cursor-not-allowed'
+              : 'bg-yellow-400/60 text-black hover:bg-yellow-400'
             }`}
             onClick={(e) => {
               e.stopPropagation();
-              if (manualActive) onSelect(methodology);
+              // Si no está en modo manual, activarlo Y seleccionar metodología en un solo clic
+              if (!manualActive) {
+                updateLocalState({ selectionMode: 'manual' });
+              }
+              // Seleccionar metodología inmediatamente
+              onSelect(methodology);
             }}
             aria-label={`Seleccionar metodología ${methodology.name}`}
           >
@@ -312,9 +316,11 @@ export default function MethodologiesScreen() {
     }
   };
 
-  const handleManualCardClick = (methodology) => {
+  const handleManualCardClick = (methodology, forceManual = false) => {
     try { track('CARD_CLICK', { id: methodology?.name, group: 'methodology', mode: 'manual' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
-    if (localState.selectionMode === 'manual') {
+
+    // Permitir ejecución si está en modo manual O si se fuerza (clic en botón Seleccionar)
+    if (localState.selectionMode === 'manual' || forceManual) {
       // Si es Calistenia, mostrar el modal específico
       if (methodology.name === 'Calistenia') {
         ui.showModal('calisteniaManual');

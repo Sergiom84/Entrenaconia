@@ -4,6 +4,7 @@ import process from 'node:process';
 import authenticateToken from '../middleware/auth.js';
 import { pool } from '../db.js';
 import { preSessionCleanup } from '../utils/sessionCleanup.js';
+import { ensureWorkoutScheduleV3, normalizeDayAbbrev } from '../utils/ensureScheduleV3.js';
 
 const router = express.Router();
 
@@ -11,25 +12,7 @@ const router = express.Router();
 function stripDiacritics(str = '') {
   try { return str.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); } catch { return str; }
 }
-function normalizeDayAbbrev(dayName) {
-  if (!dayName) return dayName;
 
-  // Normalizar primero quitando tildes
-  const raw = stripDiacritics(String(dayName).trim());
-  const lower = raw.toLowerCase().replace(/\.$/, '');
-
-  const map = {
-    'lunes': 'Lun', 'lun': 'Lun',
-    'martes': 'Mar', 'mar': 'Mar',
-    'miercoles': 'Mie', 'mie': 'Mie',  // Sin tilde
-    'jueves': 'Jue', 'jue': 'Jue',
-    'viernes': 'Vie', 'vie': 'Vie',
-    'sabado': 'Sab', 'sab': 'Sab',     // Sin tilde
-    'domingo': 'Dom', 'dom': 'Dom',
-  };
-
-  return map[lower] || dayName; // Si ya viene correcto, lo dejamos
-}
 
 /**
  * Helper para buscar una semana en el array de semanas del plan
@@ -182,7 +165,7 @@ async function ensureWorkoutSchedule(client, userId, methodologyPlanId, planData
       // Determinar el día de la semana de esta fecha
       const dow = currentDate.getDay();
       const dayName = dayNames[dow];
-      const dayAbbrev = dayAbbrevs[dow];
+      const dayAbbrev = (dayAbbrevs[dow] === 'MiAc' ? 'Mie' : (dayAbbrevs[dow] === 'SA�b' ? 'Sab' : dayAbbrevs[dow]));
 
       // 🎯 BUSCAR la sesión que corresponde a este día de la semana
       const sesion = semana.sesiones.find(s => {
@@ -1224,13 +1207,50 @@ router.get('/sessions/today-status', authenticateToken, async (req, res) => {
       [methodology_plan_id, week_number, fullDayName]
     );
 
-    const planExercisesFromSchedule = workoutScheduleQuery.rows[0]?.exercises || [];
+    let planExercisesFromSchedule = workoutScheduleQuery.rows[0]?.exercises || [];
 
     console.log('🔍 Ejercicios desde workout_schedule:', {
       fullDayName,
       found: workoutScheduleQuery.rowCount > 0,
       exerciseCount: planExercisesFromSchedule.length
     });
+
+    // 🎯 FALLBACK CRÍTICO: Si workout_schedule está vacío, obtener ejercicios desde plan_data
+    // Esto es necesario para metodologías como Casa que no insertan en workout_schedule
+    if (planExercisesFromSchedule.length === 0) {
+      console.log('⚠️ workout_schedule vacío, obteniendo ejercicios desde plan_data...');
+
+      const planQuery = await pool.query(
+        `SELECT plan_data FROM app.methodology_plans WHERE id = $1`,
+        [methodology_plan_id]
+      );
+
+      if (planQuery.rowCount > 0) {
+        const planData = planQuery.rows[0].plan_data;
+        const semanas = planData?.semanas || [];
+
+        // Buscar la semana y sesión correspondiente
+        const semana = semanas.find(s =>
+          (s.semana || s.numero || s.week || s.week_number) === parseInt(week_number)
+        );
+
+        if (semana && semana.sesiones) {
+          const sesion = semana.sesiones.find(s => {
+            const sesionDia = normalizeDayAbbrev(s.dia);
+            return sesionDia === normalizedDay;
+          });
+
+          if (sesion && sesion.ejercicios) {
+            planExercisesFromSchedule = sesion.ejercicios;
+            console.log(`✅ Ejercicios recuperados desde plan_data: ${planExercisesFromSchedule.length}`);
+          }
+        }
+      }
+
+      if (planExercisesFromSchedule.length === 0) {
+        console.warn('⚠️ No se encontraron ejercicios ni en workout_schedule ni en plan_data');
+      }
+    }
 
     // Obtener progreso de ejercicios con feedback
     const exercisesQuery = await pool.query(
@@ -1315,33 +1335,56 @@ router.get('/sessions/today-status', authenticateToken, async (req, res) => {
     // 🔍 DEBUG: Mostrar datos completos que se envían al frontend
     // ✅ CORRECCIÓN: Construir lista completa de ejercicios combinando plan con progreso
     // Frontend necesita ver TODOS los ejercicios (4), no solo los que tienen progreso (2)
-    const progressMap = new Map(exercisesQuery.rows.map(ex => [ex.exercise_order, ex]));
 
-    const completeExerciseList = planExercisesFromSchedule.map((planEx, index) => {
-      const progressData = progressMap.get(index);
+    // 🎯 FIX PARA CASA: Manejar casos donde los ejercicios existen en progress pero no en plan
+    let completeExerciseList;
 
-      if (progressData) {
-        // Ejercicio con progreso guardado
-        return progressData;
-      } else {
-        // Ejercicio sin progreso = pending
-        return {
-          exercise_order: index,
-          exercise_name: planEx.nombre,
-          series_total: planEx.series,
-          series_completed: 0,
-          repeticiones: planEx.repeticiones,
-          descanso_seg: planEx.descanso_seg,
-          intensidad: planEx.intensidad,
-          tempo: planEx.tempo || null,
-          status: 'pending',
-          time_spent_seconds: 0,
-          notas: planEx.notas || null,
-          sentiment: null,
-          comment: null
-        };
-      }
+    console.log('🏠 CASA FIX DEBUG:', {
+      planExercisesLength: planExercisesFromSchedule.length,
+      exercisesQueryLength: exercisesQuery.rows.length,
+      exercisesQuerySample: exercisesQuery.rows.length > 0 ? exercisesQuery.rows[0] : 'none'
     });
+
+    if (planExercisesFromSchedule.length > 0) {
+      // Original logic: combine plan with progress
+      const progressMap = new Map(exercisesQuery.rows.map(ex => [ex.exercise_order, ex]));
+
+      completeExerciseList = planExercisesFromSchedule.map((planEx, index) => {
+        const progressData = progressMap.get(index);
+
+        if (progressData) {
+          // Ejercicio con progreso guardado
+          return progressData;
+        } else {
+          // Ejercicio sin progreso = pending
+          return {
+            exercise_order: index,
+            exercise_name: planEx.nombre,
+            series_total: planEx.series,
+            series_completed: 0,
+            repeticiones: planEx.repeticiones,
+            descanso_seg: planEx.descanso_seg,
+            intensidad: planEx.intensidad,
+            tempo: planEx.tempo || null,
+            status: 'pending',
+            time_spent_seconds: 0,
+            notas: planEx.notas || null,
+            sentiment: null,
+            comment: null
+          };
+        }
+      });
+    } else if (exercisesQuery.rows.length > 0) {
+      // 🏠 CASA FALLBACK: Si no hay plan pero sí hay ejercicios en progress, usar esos directamente
+      // Esto ocurre con Casa cuando los ejercicios ya fueron creados en la BD pero no están en workout_schedule
+      console.log('📌 Using exercises from methodology_exercise_progress (Casa/methodology fallback)');
+      console.log('📌 Exercises found:', exercisesQuery.rows.length);
+      completeExerciseList = exercisesQuery.rows;
+    } else {
+      // No exercises found anywhere
+      console.log('⚠️ No exercises found in plan or progress table');
+      completeExerciseList = [];
+    }
 
     console.log(`🔍 today-status RESPONSE DATA:`, {
       session: {
@@ -1547,7 +1590,7 @@ router.post('/confirm-plan', authenticateToken, async (req, res) => {
       console.log(`📅 [confirm-plan] Fecha de inicio del plan: ${startDate}`);
 
       // Llamar a ensureWorkoutSchedule para generar la programación completa
-      await ensureWorkoutSchedule(client, userId, methodology_plan_id, plan.plan_data, startDate);
+      await ensureWorkoutScheduleV3(client, userId, methodology_plan_id, plan.plan_data, startDate);
 
       console.log('✅ Programación completa generada (methodology_plan_days + workout_schedule)');
     } catch (scheduleError) {
@@ -2018,7 +2061,7 @@ router.get('/active-plan', authenticateToken, async (req, res) => {
           // 📅 Usar plan_start_date o confirmed_at/created_at como fallback
           const startDate = activePlan.plan_start_date || activePlan.confirmed_at || activePlan.created_at || new Date();
           console.log(`📅 Fecha de inicio del plan: ${startDate}`);
-          await ensureWorkoutSchedule(client, userId, activePlan.methodology_plan_id, activePlan.plan_data, startDate);
+          await ensureWorkoutScheduleV3(client, userId, activePlan.methodology_plan_id, activePlan.plan_data, startDate);
         } finally {
           client.release();
         }
@@ -3001,4 +3044,155 @@ router.post('/sessions/:sessionId/purge', authenticateToken, async (req, res) =>
 });
 
 export default router;
+
+// --- Helper agregado: ensureWorkoutScheduleV2 (preferencias + abreviaturas corregidas)
+async function ensureWorkoutScheduleV2(client, userId, methodologyPlanId, planDataJson, startDate = new Date()) {
+  try {
+    console.log(`📅 [ensureWorkoutScheduleV2] Iniciando para plan ${methodologyPlanId}, usuario ${userId}`);
+
+    const planData = typeof planDataJson === 'string' ? JSON.parse(planDataJson) : planDataJson;
+    if (!planData || !Array.isArray(planData.semanas) || planData.semanas.length === 0) {
+      console.warn(`⚠️ [ensureWorkoutScheduleV2] Plan vacío o sin semanas para plan ${methodologyPlanId}`);
+      return;
+    }
+
+    const normalizedPlan = normalizePlanDays(planData);
+
+    // Limpiar programación existente
+    await client.query(`DELETE FROM app.workout_schedule WHERE methodology_plan_id = $1 AND user_id = $2`, [methodologyPlanId, userId]);
+    await client.query(`DELETE FROM app.methodology_plan_days WHERE plan_id = $1`, [methodologyPlanId]);
+    console.log(`🧹 [ensureWorkoutScheduleV2] Tablas limpiadas para plan ${methodologyPlanId}`);
+
+    const dayNames = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+    const dayAbbrevs = ['Dom','Lun','Mar','Mie','Jue','Vie','Sab'];
+    const planStartDate = new Date(startDate);
+
+    // Preferencias
+    let userPrefs = null;
+    try {
+      const prefsQ = await client.query(
+        `SELECT usar_preferencias_ia, dias_preferidos_entrenamiento, ejercicios_por_dia_preferido FROM app.user_profiles WHERE user_id = $1`,
+        [userId]
+      );
+      userPrefs = prefsQ.rows?.[0] || null;
+    } catch (e) {
+      console.warn('⚠️ [ensureWorkoutScheduleV2] No se pudieron leer preferencias de usuario:', e?.message || e);
+    }
+
+    const preferredAbbrevs = Array.isArray(userPrefs?.dias_preferidos_entrenamiento)
+      ? userPrefs.dias_preferidos_entrenamiento.map(d => normalizeDayAbbrev(d)).filter(Boolean)
+      : null;
+    const limitPerSession = (userPrefs?.usar_preferencias_ia && Number(userPrefs?.ejercicios_por_dia_preferido))
+      ? Number(userPrefs.ejercicios_por_dia_preferido)
+      : null;
+    if (limitPerSession) {
+      console.log('dY"_ [ensureWorkoutScheduleV2] Límite ejercicios por sesión:', limitPerSession);
+    }
+
+    let day_id = 1;
+    let globalSessionOrder = 1;
+
+    for (let weekIndex = 0; weekIndex < normalizedPlan.semanas.length; weekIndex++) {
+      const semana = normalizedPlan.semanas[weekIndex];
+      const weekNumber = weekIndex + 1;
+      if (!semana?.sesiones?.length) continue;
+
+      let weekSessions = Array.isArray(semana.sesiones) ? [...semana.sesiones] : [];
+      if (userPrefs?.usar_preferencias_ia && Array.isArray(preferredAbbrevs) && preferredAbbrevs.length > 0) {
+        weekSessions = weekSessions.map((s, idx) => ({ ...s, dia: preferredAbbrevs[idx % preferredAbbrevs.length] }));
+      }
+
+      let weekSessionOrder = 1;
+      for (let dayInWeek = 0; dayInWeek < 7; dayInWeek++) {
+        const dayOffset = (weekIndex * 7) + dayInWeek;
+        const currentDate = new Date(planStartDate);
+        currentDate.setDate(currentDate.getDate() + dayOffset);
+
+        const dow = currentDate.getDay();
+        const dayName = dayNames[dow];
+        const dayAbbrev = dayAbbrevs[dow];
+
+        const sesion = weekSessions.find(s => normalizeDayAbbrev(s.dia) === dayAbbrev);
+        if (!sesion) {
+          await client.query(
+            `INSERT INTO app.methodology_plan_days (plan_id, day_id, week_number, day_name, date_local, is_rest)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             ON CONFLICT (plan_id, day_id) DO NOTHING`,
+            [methodologyPlanId, day_id, weekNumber, dayAbbrev, currentDate.toISOString().split('T')[0], true]
+          );
+          day_id++;
+          continue;
+        }
+
+        const sessionTitle = sesion?.titulo || sesion?.title || `Sesión ${globalSessionOrder}`;
+        let sessionExercises = [];
+        if (Array.isArray(sesion.ejercicios)) {
+          sessionExercises = sesion.ejercicios;
+        } else if (Array.isArray(sesion.bloques)) {
+          const mainBlock = (sesion.bloques || []).find(b => {
+            const name = stripDiacritics(String(b?.nombre || b?.name || b?.titulo || '').toLowerCase());
+            const tipo = stripDiacritics(String(b?.tipo || '').toLowerCase());
+            return tipo === 'principal' || tipo === 'main' || name.includes('principal') || name.includes('trabajo');
+          });
+          const bloquesFuente = mainBlock ? [mainBlock] : sesion.bloques;
+          sessionExercises = bloquesFuente.flatMap(b => Array.isArray(b?.ejercicios) ? b.ejercicios : []);
+        }
+
+        if (limitPerSession && limitPerSession > 0 && Array.isArray(sessionExercises) && sessionExercises.length > limitPerSession) {
+          console.log('dY"_ [ensureWorkoutScheduleV2] Recortando ejercicios', {
+            before: sessionExercises.length,
+            limit: limitPerSession,
+            planId: methodologyPlanId,
+            weekNumber,
+            dayAbbrev
+          });
+          sessionExercises = sessionExercises.slice(0, limitPerSession);
+        }
+
+        await client.query(
+          `INSERT INTO app.workout_schedule (
+             methodology_plan_id, user_id, week_number, session_order, week_session_order,
+             scheduled_date, day_name, day_abbrev, session_title, exercises, status)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+          [
+            methodologyPlanId,
+            userId,
+            weekNumber,
+            globalSessionOrder,
+            weekSessionOrder,
+            currentDate.toISOString().split('T')[0],
+            dayName,
+            dayAbbrev,
+            sessionTitle,
+            JSON.stringify(sessionExercises),
+            'scheduled'
+          ]
+        );
+
+        await client.query(
+          `INSERT INTO app.methodology_plan_days (plan_id, day_id, week_number, day_name, date_local, is_rest, planned_exercises_count)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           ON CONFLICT (plan_id, day_id) DO NOTHING`,
+          [methodologyPlanId, day_id, weekNumber, dayAbbrev, currentDate.toISOString().split('T')[0], false, Array.isArray(sessionExercises) ? sessionExercises.length : 0]
+        );
+
+        day_id++;
+        globalSessionOrder++;
+        weekSessionOrder++;
+      }
+    }
+
+    const totalSessions = globalSessionOrder - 1;
+    const totalDays = day_id - 1;
+    const restDays = totalDays - totalSessions;
+
+    console.log(`✅ [ensureWorkoutScheduleV2] Programación generada para plan ${methodologyPlanId}:`);
+    console.log(`   📊 Total días: ${totalDays}`);
+    console.log(`   💪 Días de entreno: ${totalSessions}`);
+    console.log(`   💤 Días de descanso: ${restDays}`);
+    console.log(`   📅 Fecha inicio: ${startDate.toISOString().split('T')[0]}`);
+  } catch (e) {
+    console.error('Error en ensureWorkoutScheduleV2:', e?.message || e);
+  }
+}
 

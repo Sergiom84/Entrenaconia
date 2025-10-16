@@ -19,8 +19,15 @@ export const useExerciseTimer = (currentExercise, seriesTotal, timePerSeries = 4
   const intervalRef = useRef(null);
 
   // Cálculos del ejercicio
+  // 🎯 CORRECCIÓN: Verificar primero si es tipo "reps" (tiene series/repeticiones)
+  const hasReps = (currentExercise?.series || currentExercise?.repeticiones);
   const durValue = Number(currentExercise?.duracion_seg ?? currentExercise?.duracion ?? currentExercise?.tiempo_segundos);
-  const isTimeBased = Number.isFinite(durValue) && durValue > 0;
+
+  // Solo es basado en tiempo si:
+  // 1. Tiene duracion_seg/duracion/tiempo_segundos > 0, Y
+  // 2. NO tiene series/repeticiones (es tipo "tiempo", no tipo "reps")
+  const isTimeBased = (Number.isFinite(durValue) && durValue > 0) && !hasReps;
+
   const baseDuration = isTimeBased ? durValue : customTimePerSeries;
   const restDuration = Math.min(120, Math.max(30, Number(currentExercise?.descanso_seg) || 60));
 

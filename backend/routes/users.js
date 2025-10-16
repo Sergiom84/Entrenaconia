@@ -50,12 +50,12 @@ router.get('/:id', authenticateToken, async (req, res) => {
     }
 
     const result = await pool.query(
-      `SELECT 
+      `SELECT
         u.id, u.nombre, u.apellido, u.email, u.created_at,
         u.edad, u.sexo, u.peso, u.altura,
         u.nivel_entrenamiento, u.anos_entrenando, u.frecuencia_semanal,
         u.nivel_actividad, u.cintura, u.pecho, u.brazos,
-        u.muslos, u.cuello, u.antebrazos, u.historial_medico, 
+        u.muslos, u.cuello, u.antebrazos, u.historial_medico,
         u.alergias, u.medicamentos, u.lesiones, u.meta_peso, u.meta_grasa,
         u.fecha_inicio_objetivo, u.fecha_meta_objetivo, u.notas_progreso,
         u.meta_grasa_corporal, u.enfoque_entrenamiento, u.horario_preferido,
@@ -63,6 +63,8 @@ router.get('/:id', authenticateToken, async (req, res) => {
         u.grasa_corporal, u.masa_muscular, u.agua_corporal, u.metabolismo_basal,
         u.cadera,
         p.metodologia_preferida, p.limitaciones_fisicas, p.objetivo_principal,
+        p.usar_preferencias_ia, p.dias_preferidos_entrenamiento, p.ejercicios_por_dia_preferido,
+        p.semanas_entrenamiento,
         u.objetivo_principal as u_objetivo_principal
       FROM app.users u
       LEFT JOIN app.user_profiles p ON u.id = p.user_id
@@ -268,6 +270,167 @@ router.put('/:id', authenticateToken, async (req, res) => {
     await client.query('ROLLBACK');
     console.error('❌ Error actualizando perfil:', error);
     res.status(500).json({ error: 'Error interno del servidor' });
+  } finally {
+    client.release();
+  }
+});
+
+// Actualizar preferencias de entrenamiento (días preferidos, ejercicios por día, frecuencia)
+router.put('/:id/training-preferences', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const { id } = req.params;
+    const {
+      usar_preferencias_ia,
+      dias_preferidos_entrenamiento,
+      ejercicios_por_dia_preferido,
+      semanas_entrenamiento
+    } = req.body;
+
+    // Verificar que el usuario solo pueda actualizar su propio perfil
+    if (req.user.userId !== parseInt(id)) {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    await client.query('BEGIN');
+
+    // Validaciones
+    if (dias_preferidos_entrenamiento) {
+      if (!Array.isArray(dias_preferidos_entrenamiento)) {
+        throw new Error('dias_preferidos_entrenamiento debe ser un array');
+      }
+      if (dias_preferidos_entrenamiento.length === 0) {
+        throw new Error('Debes seleccionar al menos un día de entrenamiento');
+      }
+    }
+
+    if (ejercicios_por_dia_preferido !== undefined) {
+      const num = parseInt(ejercicios_por_dia_preferido);
+      if (num < 4 || num > 15) {
+        throw new Error('ejercicios_por_dia_preferido debe estar entre 4 y 15');
+      }
+    }
+
+    if (semanas_entrenamiento !== undefined) {
+      const num = parseInt(semanas_entrenamiento);
+      if (num < 1 || num > 8) {
+        throw new Error('semanas_entrenamiento debe estar entre 1 y 8');
+      }
+    }
+
+    // 1. Actualizar user_profiles (switch, días, ejercicios por día, semanas)
+    const profileUpdates = [];
+    const profileValues = [];
+    let profileParamCount = 1;
+
+    if (usar_preferencias_ia !== undefined) {
+      profileUpdates.push(`usar_preferencias_ia = $${profileParamCount}`);
+      profileValues.push(usar_preferencias_ia);
+      profileParamCount++;
+    }
+
+    if (dias_preferidos_entrenamiento) {
+      profileUpdates.push(`dias_preferidos_entrenamiento = $${profileParamCount}::jsonb`);
+      profileValues.push(JSON.stringify(dias_preferidos_entrenamiento));
+      profileParamCount++;
+    }
+
+    if (ejercicios_por_dia_preferido !== undefined) {
+      profileUpdates.push(`ejercicios_por_dia_preferido = $${profileParamCount}`);
+      profileValues.push(parseInt(ejercicios_por_dia_preferido));
+      profileParamCount++;
+    }
+
+    if (semanas_entrenamiento !== undefined) {
+      profileUpdates.push(`semanas_entrenamiento = $${profileParamCount}`);
+      profileValues.push(parseInt(semanas_entrenamiento));
+      profileParamCount++;
+    }
+
+    if (profileUpdates.length > 0) {
+      profileValues.push(id);
+
+      // Verificar si existe el registro
+      const existsResult = await client.query(
+        'SELECT id FROM app.user_profiles WHERE user_id = $1',
+        [id]
+      );
+
+      if (existsResult.rows.length > 0) {
+        // UPDATE
+        const updateQuery = `
+          UPDATE app.user_profiles
+          SET ${profileUpdates.join(', ')}, updated_at = NOW()
+          WHERE user_id = $${profileParamCount}
+        `;
+        await client.query(updateQuery, profileValues);
+      } else {
+        // INSERT
+        const fields = ['user_id'];
+        const values = [id];
+
+        if (usar_preferencias_ia !== undefined) {
+          fields.push('usar_preferencias_ia');
+          values.push(usar_preferencias_ia);
+        }
+        if (dias_preferidos_entrenamiento) {
+          fields.push('dias_preferidos_entrenamiento');
+          values.push(JSON.stringify(dias_preferidos_entrenamiento));
+        }
+        if (ejercicios_por_dia_preferido !== undefined) {
+          fields.push('ejercicios_por_dia_preferido');
+          values.push(parseInt(ejercicios_por_dia_preferido));
+        }
+        if (semanas_entrenamiento !== undefined) {
+          fields.push('semanas_entrenamiento');
+          values.push(parseInt(semanas_entrenamiento));
+        }
+
+        const placeholders = values.map((_, index) => {
+          // Detectar si es el valor de dias_preferidos_entrenamiento (JSONB)
+          const fieldIndex = index - 1; // -1 porque el primer elemento es user_id
+          if (fields[fieldIndex + 1] === 'dias_preferidos_entrenamiento') {
+            return `$${index + 1}::jsonb`;
+          }
+          return `$${index + 1}`;
+        });
+
+        const insertQuery = `
+          INSERT INTO app.user_profiles (${fields.join(', ')}, created_at, updated_at)
+          VALUES (${placeholders.join(', ')}, NOW(), NOW())
+        `;
+        await client.query(insertQuery, values);
+      }
+    }
+
+    await client.query('COMMIT');
+
+    // Obtener datos actualizados
+    const result = await client.query(
+      `SELECT
+        p.usar_preferencias_ia,
+        p.dias_preferidos_entrenamiento,
+        p.ejercicios_por_dia_preferido,
+        p.semanas_entrenamiento
+      FROM app.user_profiles p
+      WHERE p.user_id = $1`,
+      [id]
+    );
+
+    console.log(`✅ Preferencias de entrenamiento actualizadas para usuario ${id}:`, result.rows[0]);
+
+    res.json({
+      message: 'Preferencias de entrenamiento actualizadas exitosamente',
+      preferences: result.rows[0]
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('❌ Error actualizando preferencias de entrenamiento:', error);
+    res.status(400).json({
+      error: error.message || 'Error interno del servidor'
+    });
   } finally {
     client.release();
   }
