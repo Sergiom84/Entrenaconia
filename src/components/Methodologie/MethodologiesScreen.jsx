@@ -437,27 +437,35 @@ export default function MethodologiesScreen() {
   const handleCalisteniaManualGenerate = async (calisteniaData) => {
     try { track('ACTION', { id: 'generate_calistenia' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
 
-    console.log('🎯 [METHODOLOGIES] Iniciando generación de Calistenia Manual:', {
-      timestamp: new Date().toISOString(),
-      level: calisteniaData.level || calisteniaData.selectedLevel,
-      hasGoals: !!calisteniaData.goals,
-      dayOfWeek: new Date().toLocaleDateString('es-ES', { weekday: 'long' })
-    });
-
-    // 🎯 FLUJO SIMPLIFICADO - SUPABASE FIRST:
-    // - Sin plan → generar
-    // - Con plan → usuario quiere NUEVO plan, limpiar anterior y generar
-    // - Para continuar plan existente → usar botón "Ir a Entrenamientos"
-
-    // 🚀 Verificar desde BD (no localStorage)
-    const hasActivePlanInDB = await hasActivePlanFromDB();
-    if (hasActivePlanInDB) {
-      console.log('🔄 [METHODOLOGIES] Plan activo detectado en BD, limpiando para generar nuevo...');
-      await cancelPlan(); // Limpiar plan anterior
-      await syncWithDatabase(); // Sincronizar estado
+    // 🛡️ Prevenir múltiples clicks estableciendo loading inmediatamente
+    if (ui.isLoading) {
+      console.warn('⚠️ Ya hay una generación en curso, ignorando click...');
+      return;
     }
 
+    ui.setLoading(true);
+
     try {
+      console.log('🎯 [METHODOLOGIES] Iniciando generación de Calistenia Manual:', {
+        timestamp: new Date().toISOString(),
+        level: calisteniaData.level || calisteniaData.selectedLevel,
+        hasGoals: !!calisteniaData.goals,
+        dayOfWeek: new Date().toLocaleDateString('es-ES', { weekday: 'long' })
+      });
+
+      // 🎯 FLUJO SIMPLIFICADO - SUPABASE FIRST:
+      // - Sin plan → generar
+      // - Con plan → usuario quiere NUEVO plan, limpiar anterior y generar
+      // - Para continuar plan existente → usar botón "Ir a Entrenamientos"
+
+      // 🚀 Verificar desde BD (no localStorage)
+      const hasActivePlanInDB = await hasActivePlanFromDB();
+      if (hasActivePlanInDB) {
+        console.log('🔄 [METHODOLOGIES] Plan activo detectado en BD, limpiando para generar nuevo...');
+        await cancelPlan(); // Limpiar plan anterior
+        await syncWithDatabase(); // Sincronizar estado
+      }
+
       console.log('🤸‍♀️ [METHODOLOGIES] Llamando a generatePlan...');
 
       // Usar generatePlan del WorkoutContext
@@ -486,21 +494,31 @@ export default function MethodologiesScreen() {
     } catch (error) {
       console.error('❌ Error generando plan de calistenia:', error);
       ui.setError(error.message || 'Error al generar el plan de calistenia');
+    } finally {
+      ui.setLoading(false);
     }
   };
 
   const handleHeavyDutyManualGenerate = async (heavyDutyData) => {
     try { track('ACTION', { id: 'generate_heavy_duty' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
 
-    // 🎯 FLUJO SIMPLIFICADO - SUPABASE FIRST
-    const hasActivePlanInDB = await hasActivePlanFromDB();
-    if (hasActivePlanInDB) {
-      console.log('🔄 Plan activo detectado en BD, limpiando para generar nuevo...');
-      await cancelPlan();
-      await syncWithDatabase();
+    // 🛡️ Prevenir múltiples clicks estableciendo loading inmediatamente
+    if (ui.isLoading) {
+      console.warn('⚠️ Ya hay una generación en curso, ignorando click...');
+      return;
     }
 
+    ui.setLoading(true);
+
     try {
+      // 🎯 FLUJO SIMPLIFICADO - SUPABASE FIRST
+      const hasActivePlanInDB = await hasActivePlanFromDB();
+      if (hasActivePlanInDB) {
+        console.log('🔄 Plan activo detectado en BD, limpiando para generar nuevo...');
+        await cancelPlan();
+        await syncWithDatabase();
+      }
+
       console.log('💪 Generando plan de Heavy Duty...');
 
       // Usar generatePlan del WorkoutContext
@@ -529,21 +547,31 @@ export default function MethodologiesScreen() {
     } catch (error) {
       console.error('❌ Error generando plan de Heavy Duty:', error);
       ui.setError(error.message || 'Error al generar el plan de Heavy Duty');
+    } finally {
+      ui.setLoading(false);
     }
   };
 
   const handleHipertrofiaManualGenerate = async (hipertrofiaData) => {
     try { track('ACTION', { id: 'generate_hipertrofia' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
 
-    // 🎯 FLUJO SIMPLIFICADO - SUPABASE FIRST
-    const hasActivePlanInDB = await hasActivePlanFromDB();
-    if (hasActivePlanInDB) {
-      console.log('🔄 Plan activo detectado en BD, limpiando para generar nuevo...');
-      await cancelPlan();
-      await syncWithDatabase();
+    // 🛡️ Prevenir múltiples clicks estableciendo loading inmediatamente
+    if (ui.isLoading) {
+      console.warn('⚠️ Ya hay una generación en curso, ignorando click...');
+      return;
     }
 
+    ui.setLoading(true);
+
     try {
+      // 🎯 FLUJO SIMPLIFICADO - SUPABASE FIRST
+      const hasActivePlanInDB = await hasActivePlanFromDB();
+      if (hasActivePlanInDB) {
+        console.log('🔄 Plan activo detectado en BD, limpiando para generar nuevo...');
+        await cancelPlan();
+        await syncWithDatabase();
+      }
+
       console.log('🏋️ Generando plan de Hipertrofia...');
 
       // Usar generatePlan del WorkoutContext
@@ -572,21 +600,31 @@ export default function MethodologiesScreen() {
     } catch (error) {
       console.error('❌ Error generando plan de Hipertrofia:', error);
       ui.setError(error.message || 'Error al generar el plan de Hipertrofia');
+    } finally {
+      ui.setLoading(false);
     }
   };
 
   const handlePowerliftingManualGenerate = async (powerliftingData) => {
     try { track('ACTION', { id: 'generate_powerlifting' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
 
-    // 🎯 FLUJO SIMPLIFICADO - SUPABASE FIRST
-    const hasActivePlanInDB = await hasActivePlanFromDB();
-    if (hasActivePlanInDB) {
-      console.log('🔄 Plan activo detectado en BD, limpiando para generar nuevo...');
-      await cancelPlan();
-      await syncWithDatabase();
+    // 🛡️ Prevenir múltiples clicks estableciendo loading inmediatamente
+    if (ui.isLoading) {
+      console.warn('⚠️ Ya hay una generación en curso, ignorando click...');
+      return;
     }
 
+    ui.setLoading(true);
+
     try {
+      // 🎯 FLUJO SIMPLIFICADO - SUPABASE FIRST
+      const hasActivePlanInDB = await hasActivePlanFromDB();
+      if (hasActivePlanInDB) {
+        console.log('🔄 Plan activo detectado en BD, limpiando para generar nuevo...');
+        await cancelPlan();
+        await syncWithDatabase();
+      }
+
       console.log('🏋️ Generando plan de Powerlifting...');
 
       // Usar generatePlan del WorkoutContext
@@ -615,21 +653,31 @@ export default function MethodologiesScreen() {
     } catch (error) {
       console.error('❌ Error generando plan de Powerlifting:', error);
       ui.setError(error.message || 'Error al generar el plan de Powerlifting');
+    } finally {
+      ui.setLoading(false);
     }
   };
 
   const handleCrossFitManualGenerate = async (crossfitData) => {
     try { track('ACTION', { id: 'generate_crossfit' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
 
-    // 🎯 FLUJO SIMPLIFICADO - SUPABASE FIRST
-    const hasActivePlanInDB = await hasActivePlanFromDB();
-    if (hasActivePlanInDB) {
-      console.log('🔄 Plan activo detectado en BD, limpiando para generar nuevo...');
-      await cancelPlan();
-      await syncWithDatabase();
+    // 🛡️ Prevenir múltiples clicks estableciendo loading inmediatamente
+    if (ui.isLoading) {
+      console.warn('⚠️ Ya hay una generación en curso, ignorando click...');
+      return;
     }
 
+    ui.setLoading(true);
+
     try {
+      // 🎯 FLUJO SIMPLIFICADO - SUPABASE FIRST
+      const hasActivePlanInDB = await hasActivePlanFromDB();
+      if (hasActivePlanInDB) {
+        console.log('🔄 Plan activo detectado en BD, limpiando para generar nuevo...');
+        await cancelPlan();
+        await syncWithDatabase();
+      }
+
       console.log('🏋️‍♀️ Generando plan de CrossFit...');
 
       // Usar generatePlan del WorkoutContext
@@ -658,21 +706,31 @@ export default function MethodologiesScreen() {
     } catch (error) {
       console.error('❌ Error generando plan de CrossFit:', error);
       ui.setError(error.message || 'Error al generar el plan de CrossFit');
+    } finally {
+      ui.setLoading(false);
     }
   };
 
   const handleFuncionalManualGenerate = async (funcionalData) => {
     try { track('ACTION', { id: 'generate_funcional' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
 
-    // 🎯 FLUJO SIMPLIFICADO - SUPABASE FIRST
-    const hasActivePlanInDB = await hasActivePlanFromDB();
-    if (hasActivePlanInDB) {
-      console.log('🔄 Plan activo detectado en BD, limpiando para generar nuevo...');
-      await cancelPlan();
-      await syncWithDatabase();
+    // 🛡️ Prevenir múltiples clicks estableciendo loading inmediatamente
+    if (ui.isLoading) {
+      console.warn('⚠️ Ya hay una generación en curso, ignorando click...');
+      return;
     }
 
+    ui.setLoading(true);
+
     try {
+      // 🎯 FLUJO SIMPLIFICADO - SUPABASE FIRST
+      const hasActivePlanInDB = await hasActivePlanFromDB();
+      if (hasActivePlanInDB) {
+        console.log('🔄 Plan activo detectado en BD, limpiando para generar nuevo...');
+        await cancelPlan();
+        await syncWithDatabase();
+      }
+
       console.log('⚙️ Generando plan de Entrenamiento Funcional...');
 
       // Usar generatePlan del WorkoutContext
@@ -701,21 +759,31 @@ export default function MethodologiesScreen() {
     } catch (error) {
       console.error('❌ Error generando plan de Funcional:', error);
       ui.setError(error.message || 'Error al generar el plan de Funcional');
+    } finally {
+      ui.setLoading(false);
     }
   };
 
   const handleHalterofíliaManualGenerate = async (halterofíliaData) => {
     try { track('ACTION', { id: 'generate_halterofilia' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
 
-    // 🎯 FLUJO SIMPLIFICADO - SUPABASE FIRST
-    const hasActivePlanInDB = await hasActivePlanFromDB();
-    if (hasActivePlanInDB) {
-      console.log('🔄 Plan activo detectado en BD, limpiando para generar nuevo...');
-      await cancelPlan();
-      await syncWithDatabase();
+    // 🛡️ Prevenir múltiples clicks estableciendo loading inmediatamente
+    if (ui.isLoading) {
+      console.warn('⚠️ Ya hay una generación en curso, ignorando click...');
+      return;
     }
 
+    ui.setLoading(true);
+
     try {
+      // 🎯 FLUJO SIMPLIFICADO - SUPABASE FIRST
+      const hasActivePlanInDB = await hasActivePlanFromDB();
+      if (hasActivePlanInDB) {
+        console.log('🔄 Plan activo detectado en BD, limpiando para generar nuevo...');
+        await cancelPlan();
+        await syncWithDatabase();
+      }
+
       console.log('🏋️ Generando plan de Halterofilia...');
 
       // Usar generatePlan del WorkoutContext
@@ -751,21 +819,31 @@ export default function MethodologiesScreen() {
     } catch (error) {
       console.error('❌ Error generando plan de Halterofilia:', error);
       ui.setError(error.message || 'Error al generar el plan de Halterofilia');
+    } finally {
+      ui.setLoading(false);
     }
   };
 
   const handleCasaManualGenerate = async (casaData) => {
     try { track('ACTION', { id: 'generate_casa' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
 
-    // 🎯 FLUJO SIMPLIFICADO - SUPABASE FIRST
-    const hasActivePlanInDB = await hasActivePlanFromDB();
-    if (hasActivePlanInDB) {
-      console.log('🔄 Plan activo detectado en BD, limpiando para generar nuevo...');
-      await cancelPlan();
-      await syncWithDatabase();
+    // 🛡️ Prevenir múltiples clicks estableciendo loading inmediatamente
+    if (ui.isLoading) {
+      console.warn('⚠️ Ya hay una generación en curso, ignorando click...');
+      return;
     }
 
+    ui.setLoading(true);
+
     try {
+      // 🎯 FLUJO SIMPLIFICADO - SUPABASE FIRST
+      const hasActivePlanInDB = await hasActivePlanFromDB();
+      if (hasActivePlanInDB) {
+        console.log('🔄 Plan activo detectado en BD, limpiando para generar nuevo...');
+        await cancelPlan();
+        await syncWithDatabase();
+      }
+
       console.log('🏠 Generando plan de Entrenamiento en Casa...');
 
       // Usar generatePlan del WorkoutContext
@@ -794,6 +872,8 @@ export default function MethodologiesScreen() {
     } catch (error) {
       console.error('❌ Error generando plan de Casa:', error);
       ui.setError(error.message || 'Error al generar el plan de Entrenamiento en Casa');
+    } finally {
+      ui.setLoading(false);
     }
   };
 

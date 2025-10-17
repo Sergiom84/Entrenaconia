@@ -141,8 +141,17 @@ const initialState = {
     showVersionSelection: false,    // Mostrar modal de selección de versión
     showMethodologyDetails: false,  // Mostrar modal de detalles de metodología
     showActiveTrainingWarning: false, // Mostrar modal de advertencia de entrenamiento activo
+
+    // Modales de metodologías manuales
     showCalisteniaManual: false,    // Mostrar modal de calistenia manual
+    showHeavyDutyManual: false,     // Mostrar modal de Heavy Duty manual
+    showHipertrofiaManual: false,   // Mostrar modal de Hipertrofia manual
+    showPowerliftingManual: false,  // Mostrar modal de Powerlifting manual
     showCrossFitManual: false,      // Mostrar modal de CrossFit manual
+    showFuncionalManual: false,     // Mostrar modal de Funcional manual
+    showHalterofíliaManual: false,  // Mostrar modal de Halterofilia manual
+    showCasaManual: false,          // Mostrar modal de Entrenamiento en Casa manual
+
     showReEvaluation: false         // Mostrar modal de re-evaluación progresiva
   },
 
@@ -318,8 +327,14 @@ function workoutReducer(state, action) {
       const modalKey = `show${action.payload.charAt(0).toUpperCase() + action.payload.slice(1)}`;
       // Convert camelCase to proper modal names
       const mappedKey = modalKey.replace('calisteniaManual', 'CalisteniaManual')
+                              .replace('heavyDutyManual', 'HeavyDutyManual')
+                              .replace('hipertrofiaManual', 'HipertrofiaManual')
+                              .replace('powerliftingManual', 'PowerliftingManual')
                               .replace('crossfitManual', 'CrossFitManual')
                               .replace('CrossfitManual', 'CrossFitManual')
+                              .replace('funcionalManual', 'FuncionalManual')
+                              .replace('halterofíliaManual', 'HalterofíliaManual')
+                              .replace('casaManual', 'CasaManual')
                               .replace('planConfirmation', 'PlanConfirmation')
                               .replace('routineSession', 'RoutineSession')
                               .replace('versionSelection', 'VersionSelection')
@@ -339,8 +354,14 @@ function workoutReducer(state, action) {
       const modalKey = `show${action.payload.charAt(0).toUpperCase() + action.payload.slice(1)}`;
       // Convert camelCase to proper modal names
       const mappedKey = modalKey.replace('calisteniaManual', 'CalisteniaManual')
+                              .replace('heavyDutyManual', 'HeavyDutyManual')
+                              .replace('hipertrofiaManual', 'HipertrofiaManual')
+                              .replace('powerliftingManual', 'PowerliftingManual')
                               .replace('crossfitManual', 'CrossFitManual')
                               .replace('CrossfitManual', 'CrossFitManual')
+                              .replace('funcionalManual', 'FuncionalManual')
+                              .replace('halterofíliaManual', 'HalterofíliaManual')
+                              .replace('casaManual', 'CasaManual')
                               .replace('planConfirmation', 'PlanConfirmation')
                               .replace('routineSession', 'RoutineSession')
                               .replace('versionSelection', 'VersionSelection')
@@ -371,7 +392,13 @@ function workoutReducer(state, action) {
           showMethodologyDetails: false,
           showActiveTrainingWarning: false,
           showCalisteniaManual: false,
+          showHeavyDutyManual: false,
+          showHipertrofiaManual: false,
+          showPowerliftingManual: false,
           showCrossFitManual: false,
+          showFuncionalManual: false,
+          showHalterofíliaManual: false,
+          showCasaManual: false,
           showReEvaluation: false
         }
       };
