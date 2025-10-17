@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Play, Pause, RotateCcw, Info, SkipForward, Star, Target, Square } from 'lucide-react';
 import { getExerciseGifUrl } from '@/config/exerciseGifs.js';
+import { getExerciseVideoUrl } from '@/config/exerciseVideos.js';
 import { formatExerciseName } from '../../../utils/exerciseUtils';
 
 /**
@@ -41,12 +42,23 @@ export const ExerciseSessionView = ({
 }) => {
   const [exerciseGif, setExerciseGif] = useState(null);
 
-  // Actualizar GIF cuando cambia ejercicio
+  // 🎬 Actualizar video/GIF cuando cambia ejercicio
+  // Usa la configuración centralizada de src/config/exerciseVideos.js
   useEffect(() => {
     if (!exercise) return;
-    if (exercise.gif_url) {
-      setExerciseGif(exercise.gif_url);
+
+    // 🎯 PRIORIDAD DE CARGA:
+    // 1. video_url de BD (producción)
+    // 2. Video local (desarrollo según config)
+    // 3. gif_url de BD
+    // 4. GIF por defecto (getExerciseGifUrl)
+
+    const videoUrl = getExerciseVideoUrl(exercise);
+
+    if (videoUrl) {
+      setExerciseGif(videoUrl);
     } else {
+      // Fallback final: GIF por defecto
       setExerciseGif(getExerciseGifUrl(exercise.nombre));
     }
   }, [exercise]);
@@ -257,37 +269,53 @@ export const ExerciseSessionView = ({
           <h4 className="text-white font-semibold mb-2">Demostración del Ejercicio</h4>
           {exerciseGif ? (
             <div className="relative inline-block">
-              <img
-                src={exerciseGif}
-                alt={formatExerciseName(exercise.nombre)}
-                className="mx-auto max-h-64 rounded-md shadow-lg border border-gray-600"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                  e.currentTarget.nextSibling.style.display = 'block';
-                }}
-              />
+              {/* 🎬 Detectar si es video o imagen por extensión */}
+              {exerciseGif.match(/\.(mp4|webm|mov|avi)$/i) ? (
+                <video
+                  src={exerciseGif}
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  className="mx-auto max-h-64 rounded-md shadow-lg border border-gray-600"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                    e.currentTarget.nextElementSibling.style.display = 'block';
+                  }}
+                />
+              ) : (
+                <img
+                  src={exerciseGif}
+                  alt={formatExerciseName(exercise.nombre)}
+                  className="mx-auto max-h-64 rounded-md shadow-lg border border-gray-600"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                    e.currentTarget.nextElementSibling.style.display = 'block';
+                  }}
+                />
+              )}
               <div className="hidden text-center py-8">
                 <Target className="mx-auto mb-2 text-gray-400" size={48} />
-                <p className="text-gray-400">GIF no disponible</p>
+                <p className="text-gray-400">Demostración no disponible</p>
                 <p className="text-sm text-gray-500">({formatExerciseName(exercise.nombre)})</p>
               </div>
             </div>
           ) : (
             <div className="text-center py-8">
               <Target className="mx-auto mb-2 text-gray-400" size={48} />
-              <p className="text-gray-400">GIF no disponible</p>
+              <p className="text-gray-400">Demostración no disponible</p>
               <p className="text-sm text-gray-500">({exercise.nombre})</p>
             </div>
           )}
         </div>
 
-        {/* Input para URL de GIF personalizada */}
+        {/* Input para URL de GIF/Video personalizada */}
         <div className="bg-gray-800/50 rounded-md p-3">
-          <div className="text-xs text-gray-400 mb-2">¿Tienes un GIF mejor? Pégalo aquí:</div>
+          <div className="text-xs text-gray-400 mb-2">¿Tienes un GIF o vídeo mejor? Pégalo aquí:</div>
           <div className="flex items-center gap-2">
             <input
               type="url"
-              placeholder="https://ejemplo.com/ejercicio.gif"
+              placeholder="https://ejemplo.com/ejercicio.mp4 o .gif"
               className="flex-1 bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-white placeholder-gray-400 focus:border-yellow-400 focus:outline-none transition-colors"
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
@@ -311,6 +339,9 @@ export const ExerciseSessionView = ({
             >
               Aplicar
             </button>
+          </div>
+          <div className="text-xs text-gray-500 mt-2">
+            🎬 Soporta: MP4, WebM, GIF, MOV
           </div>
         </div>
       </div>

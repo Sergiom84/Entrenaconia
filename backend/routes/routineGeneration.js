@@ -1506,10 +1506,17 @@ NIVEL: ${actualLevel}
 GRUPOS MUSCULARES: ${selectedMuscleGroups?.join(', ') || 'Todos'}
 OBJETIVOS: ${goals || 'Hipertrofia muscular general'}
 
-EJERCICIOS DISPONIBLES (${availableExercises.length}):
+⚠️ EJERCICIOS DISPONIBLES DE SUPABASE (${availableExercises.length}):
+**REGLA CRÍTICA:** SOLO usa ejercicios de esta lista. Los ejercicios provienen de la tabla app."Ejercicios_Hipertrofia" filtrados por nivel:
+- ${actualLevel === 'principiante' ? 'Solo ejercicios de nivel Principiante' : ''}
+- ${actualLevel === 'intermedio' ? 'Ejercicios de nivel Principiante + Intermedio' : ''}
+- ${actualLevel === 'avanzado' ? 'Ejercicios de nivel Principiante + Intermedio + Avanzado' : ''}
+
 ${availableExercises.map(ex =>
   `- ${ex.nombre} (${ex.grupo_muscular}) - Nivel: ${ex.nivel}, Equipamiento: ${ex.equipamiento}, Series/Reps: ${ex.series_reps_objetivo}, Descanso: ${ex.descanso_seg}s`
 ).join('\n')}
+
+⚠️ NUNCA inventes ejercicios que no estén en la lista anterior. Usa los nombres EXACTAMENTE como aparecen.
 
 DURACIÓN: ${versionConfig?.customWeeks || 4} semanas
 
@@ -1596,6 +1603,60 @@ FORMATO EXACTO:
       throw new Error('Plan sin semanas válidas');
     }
 
+    // 🔥 VALIDACIÓN 1: Número de semanas
+    if (generatedPlan.semanas.length !== 4) {
+      throw new Error(`Plan debe tener exactamente 4 semanas, pero tiene ${generatedPlan.semanas.length}`);
+    }
+
+    // 🔥 VALIDACIÓN 2: Número de sesiones según nivel
+    const expectedSessionsPerWeek = dbLevel === 'Avanzado' ? 6 : (dbLevel === 'Intermedio' ? 5 : 4);
+    const expectedTotalSessions = expectedSessionsPerWeek * 4;
+
+    let totalSessions = 0;
+    generatedPlan.semanas.forEach(semana => {
+      if (semana.sesiones && Array.isArray(semana.sesiones)) {
+        totalSessions += semana.sesiones.length;
+      }
+    });
+
+    if (totalSessions !== expectedTotalSessions) {
+      throw new Error(
+        `Plan incompleto para nivel ${dbLevel}: esperadas ${expectedTotalSessions} sesiones ` +
+        `(${expectedSessionsPerWeek} días/semana × 4 semanas), pero se generaron ${totalSessions}`
+      );
+    }
+
+    console.log(`✅ Validación sesiones: ${totalSessions}/${expectedTotalSessions} sesiones correctas`);
+
+    // 🔥 VALIDACIÓN 3: Solo días laborables (NO sábado/domingo)
+    const weekendDays = [];
+    const diasLaborables = ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes'];
+
+    generatedPlan.semanas.forEach((semana, sIdx) => {
+      semana.sesiones.forEach((sesion, dIdx) => {
+        const diaName = sesion.dia;
+        if (!diasLaborables.includes(diaName)) {
+          weekendDays.push({
+            semana: semana.numero || (sIdx + 1),
+            dia: diaName
+          });
+        }
+      });
+    });
+
+    if (weekendDays.length > 0) {
+      const errorDetails = weekendDays.map(d =>
+        `Semana ${d.semana}: ${d.dia}`
+      ).join('; ');
+
+      throw new Error(
+        `Plan Hipertrofia inválido: ${weekendDays.length} sesiones en fin de semana (solo Lun-Vie permitidos). ` +
+        `Detalles: ${errorDetails}`
+      );
+    }
+
+    console.log(`✅ Validación días laborables: Todas las sesiones están en Lun-Vie`);
+
     // Guardar plan en BD
     const client_db = await pool.connect();
     try {
@@ -1679,7 +1740,7 @@ router.post('/specialist/powerlifting/evaluate', authenticateToken, async (req, 
       task: 'Determinar nivel de powerlifting (novato, intermedio, avanzado, elite) basado en experiencia, fuerza relativa y objetivos competitivos'
     };
 
-    logAIPayload(aiPayload);
+    logAIPayload('POWERLIFTING_EVALUATION', aiPayload);
 
     const completion = await client.chat.completions.create({
       model: config.model,
@@ -1728,6 +1789,38 @@ FORMATO EXACTO:
     } catch (parseError) {
       console.error('Error parseando respuesta IA:', parseError);
       throw new Error('Respuesta de IA inválida');
+    }
+
+    // 🔥 VALIDACIÓN: Verificar datos de fuerza para niveles avanzados
+    const hasStrengthData =
+      userProfile.squat_1rm ||
+      userProfile.bench_press_1rm ||
+      userProfile.deadlift_1rm ||
+      userProfile.sentadilla_1rm ||
+      userProfile.press_banca_1rm ||
+      userProfile.peso_muerto_1rm;
+
+    const recommendedLevel = evaluation.recommended_level.toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+    // Si el nivel es Elite o Avanzado pero NO hay datos de fuerza, downgrade a Intermedio
+    if ((recommendedLevel === 'elite' || recommendedLevel === 'avanzado') && !hasStrengthData) {
+      console.log(`⚠️ [POWERLIFTING] Downgrade de nivel: ${recommendedLevel} → intermedio (sin datos de fuerza verificados)`);
+      console.log('📊 Datos de fuerza disponibles:', {
+        squat_1rm: userProfile.squat_1rm || 'null',
+        bench_press_1rm: userProfile.bench_press_1rm || 'null',
+        deadlift_1rm: userProfile.deadlift_1rm || 'null'
+      });
+
+      evaluation.recommended_level = 'intermedio';
+      evaluation.confidence = Math.max(0.5, evaluation.confidence * 0.65); // Reducir confianza
+      evaluation.reasoning += '\n\n⚠️ [Ajustado a Intermedio]: Se requieren datos verificados de 1RM en los 3 levantamientos principales (Sentadilla, Press Banca, Peso Muerto) para niveles Avanzado o Elite. Por favor, registra tus marcas personales en el perfil para obtener una evaluación más precisa.';
+
+      if (!evaluation.safety_considerations) {
+        evaluation.safety_considerations = [];
+      }
+      evaluation.safety_considerations.unshift('Registra tus 1RM actuales en el perfil para obtener programación optimizada');
     }
 
     // Validar respuesta
@@ -1870,20 +1963,44 @@ router.post('/specialist/powerlifting/generate', authenticateToken, async (req, 
     const dayAbbrevMap = { 'Lunes': 'Lun', 'Martes': 'Mar', 'Miercoles': 'Mie', 'Jueves': 'Jue', 'Viernes': 'Vie', 'Sabado': 'Sab', 'Domingo': 'Dom' };
     const todayAbbrev = dayAbbrevMap[todayNormalized] || todayNormalized;
 
-    // Construir mensaje para IA
+    // Determinar frecuencia según nivel
+    const frecuenciaObligatoria = dbLevel === 'Elite' ? 6 : (dbLevel === 'Avanzado' ? 5 : (dbLevel === 'Intermedio' ? 4 : 3));
+    const sesionesTotales = frecuenciaObligatoria * 4;
+
+    // userMessage YA NO SE USA - Ahora usamos planPayload estructurado
+    // El mensaje anterior se mantiene comentado por referencia histórica
+    /*
     const userMessage = `GENERACIÓN DE PLAN POWERLIFTING
+    DÍA DE GENERACIÓN: ${todayAbbrev} (HOY)
+    NIVEL: ${actualLevel}
+    FRECUENCIA OBLIGATORIA: ${frecuenciaObligatoria} días por semana (${sesionesTotales} sesiones en total)
+    LEVANTAMIENTOS PRIORITARIOS: ${selectedMuscleGroups?.join(', ') || 'Sentadilla, Press Banca, Peso Muerto'}
+    OBJETIVOS: ${goals || 'Maximizar fuerza en los 3 levantamientos'}
 
-📅 DÍA DE GENERACIÓN: ${todayAbbrev} (HOY)
-⚠️ IMPORTANTE: Si ${todayAbbrev} es un día laborable (Lun-Vie), considera incluirlo en la primera semana del plan para que el usuario pueda empezar hoy mismo.
+⚠️ REQUISITOS CRÍTICOS PARA NIVEL ${actualLevel.toUpperCase()}:
+- DEBES generar EXACTAMENTE ${frecuenciaObligatoria} días de entrenamiento por semana
+- DEBES generar un total de ${sesionesTotales} sesiones (${frecuenciaObligatoria} días × 4 semanas)
+- El campo "frecuencia_por_semana" en tu JSON DEBE ser ${frecuenciaObligatoria}
+- NUNCA generes menos o más sesiones, el sistema rechazará el plan
 
-NIVEL: ${actualLevel}
-LEVANTAMIENTOS PRIORITARIOS: ${selectedMuscleGroups?.join(', ') || 'Sentadilla, Press Banca, Peso Muerto'}
-OBJETIVOS: ${goals || 'Maximizar fuerza en los 3 levantamientos'}
+🚫 RESTRICCIÓN ABSOLUTA DE DÍAS:
+- SOLO puedes usar: Lun, Mar, Mie, Jue, Vie (Lunes a Viernes)
+- NUNCA uses: Sab o Dom (Sábado o Domingo)
+- Si incluyes Sábado o Domingo, el plan será RECHAZADO AUTOMÁTICAMENTE
+- Para ${frecuenciaObligatoria} días/semana, distribuye las sesiones SOLO entre Lun-Vie
 
-EJERCICIOS DISPONIBLES (${availableExercises.length}):
+⚠️ EJERCICIOS DISPONIBLES DE SUPABASE (${availableExercises.length}):
+**REGLA CRÍTICA:** SOLO usa ejercicios de esta lista. Los ejercicios provienen de la tabla app."Ejercicios_Powerlifting" filtrados por nivel:
+- ${actualLevel === 'principiante' ? 'Solo ejercicios de nivel Principiante' : ''}
+- ${actualLevel === 'intermedio' ? 'Ejercicios de nivel Principiante + Intermedio' : ''}
+- ${actualLevel === 'avanzado' ? 'Ejercicios de nivel Principiante + Intermedio + Avanzado' : ''}
+- ${actualLevel === 'elite' ? 'TODOS los ejercicios (Principiante + Intermedio + Avanzado + Elite)' : ''}
+
 ${availableExercises.map(ex =>
   `- ${ex.nombre} (${ex.categoria}) - Nivel: ${ex.nivel}, Equipamiento: ${ex.equipamiento}, Intensidad: ${ex.intensidad}`
 ).join('\n')}
+
+⚠️ NUNCA inventes ejercicios que no estén en la lista anterior. Usa los nombres EXACTAMENTE como aparecen.
 
 DURACIÓN: ${versionConfig?.customWeeks || 4} semanas
 
@@ -1894,83 +2011,240 @@ PRINCIPIOS POWERLIFTING OBLIGATORIOS:
 4. Especificidad: Sentadilla, Press Banca y Peso Muerto son prioritarios
 5. Periodización: ${actualLevel === 'novato' ? 'Linear' : actualLevel === 'intermedio' ? 'Ondulante' : actualLevel === 'avanzado' ? 'Bloques' : 'Conjugate'}
 
-GENERA un plan completo siguiendo el formato JSON de metodología.`;
+🚨 RECORDATORIO FINAL CRÍTICO:
+- Nivel ${actualLevel.toUpperCase()} = ${frecuenciaObligatoria} días/semana
+- Total de sesiones OBLIGATORIO = ${sesionesTotales} sesiones
+- Cada semana DEBE tener ${frecuenciaObligatoria} sesiones
+- Campo JSON "frecuencia_por_semana": ${frecuenciaObligatoria}
+- SOLO usa días Lun, Mar, Mie, Jue, Vie (NUNCA Sab/Dom)
 
-    const completion = await client.chat.completions.create({
-      model: config.model,
-      messages: [
-        {
-          role: 'system',
-          content: `Eres un especialista en Powerlifting. Generas planes de entrenamiento para maximizar fuerza en Sentadilla, Press Banca y Peso Muerto.
+${actualLevel === 'intermedio' ? `
+EJEMPLO DE DISTRIBUCIÓN VÁLIDA PARA INTERMEDIO (4 días):
+✅ Semana 1: Lun, Mar, Jue, Vie
+✅ Semana 2: Lun, Mie, Jue, Vie
+✅ Semana 3: Mar, Mie, Jue, Vie
+✅ Semana 4: Lun, Mar, Mie, Vie
 
-RESPONDE SOLO EN JSON PURO, SIN MARKDOWN.
+❌ NUNCA: Vie, Sab, Lun, Mar (incluye Sábado = RECHAZADO)
+❌ NUNCA: Jue, Vie, Sab, Dom (incluye fin de semana = RECHAZADO)
+` : ''}
 
-El plan DEBE incluir:
-- semanas: array de semanas
-- cada semana tiene sesiones (días de entrenamiento)
-- cada sesión tiene ejercicios con: nombre, series (3-10), repeticiones (1-10), intensidad (% 1RM), descanso_seg (180-420), tempo, notas
+GENERA un plan completo siguiendo el formato JSON de metodología con EXACTAMENTE ${sesionesTotales} sesiones usando SOLO días laborables.`;
+    */
 
-FORMATO EXACTO:
-{
-  "metodologia": "Powerlifting",
-  "nivel_powerlifting": "${actualLevel}",
-  "periodizacion_tipo": "${actualLevel === 'novato' ? 'linear' : actualLevel === 'intermedio' ? 'ondulante' : actualLevel === 'avanzado' ? 'bloques' : 'conjugate'}",
-  "objetivos_fuerza": {
-    "sentadilla_objetivo_kg": <número>,
-    "press_banca_objetivo_kg": <número>,
-    "peso_muerto_objetivo_kg": <número>
-  },
-  "semanas": [
-    {
-      "semana": 1,
-      "fase": "Adaptación|Acumulación|Intensificación",
-      "sesiones": [
-        {
-          "dia": "Lunes",
-          "enfoque_principal": "Sentadilla|Press Banca|Peso Muerto",
-          "ejercicios": [
-            {
-              "nombre": "<nombre exacto de BD>",
-              "tipo": "principal|variante|asistencia",
-              "series": <número>,
-              "repeticiones": "<rango>",
-              "intensidad": "<%% 1RM>",
-              "descanso_seg": <180-420>,
-              "tempo": "X-0-X-0",
-              "notas": "<cues técnicos>"
-            }
-          ]
-        }
-      ]
-    }
-  ]
-}`
-        },
-        {
-          role: 'user',
-          content: userMessage
-        }
-      ],
-      temperature: 0.4,
-      max_tokens: config.max_output_tokens  // 16384 tokens para planes completos
+    // Loggear el payload antes de enviar a IA
+    logAIPayload('POWERLIFTING_PLAN', {
+      selected_level: actualLevel,
+      available_exercises_count: availableExercises.length,
+      muscle_groups: selectedMuscleGroups || ['Sentadilla', 'Press Banca', 'Peso Muerto'],
+      goals: goals,
+      is_regeneration: isRegeneration,
+      plan_duration_weeks: versionConfig?.customWeeks || 4,
+      user_profile: fullUserProfile
     });
 
-    const aiResponse = completion.choices[0].message.content;
-    logAIResponse(aiResponse);
-    logTokens(completion.usage);
+    // 🔥 RETRY LOGIC: 3 intentos con validaciones completas
+    const expectedSessionsPerWeek = dbLevel === 'Elite' ? 6 : (dbLevel === 'Avanzado' ? 5 : (dbLevel === 'Intermedio' ? 4 : 3));
+    const expectedTotalSessions = expectedSessionsPerWeek * 4;
 
-    // Parsear respuesta
-    let generatedPlan;
-    try {
-      generatedPlan = JSON.parse(parseAIResponse(aiResponse));
-    } catch (parseError) {
-      console.error('Error parseando plan:', parseError);
-      throw new Error('Plan generado con formato inválido');
+    // 🔄 CAMBIO CRÍTICO: Cargar prompt desde archivo (como Calistenia)
+    clearPromptCache(FeatureKey.POWERLIFTING_SPECIALIST);
+    const systemPrompt = await getPrompt(FeatureKey.POWERLIFTING_SPECIALIST);
+
+    if (!systemPrompt) {
+      throw new Error('Prompt no disponible para Powerlifting Specialist');
     }
 
-    // Validar estructura del plan
-    if (!generatedPlan.semanas || !Array.isArray(generatedPlan.semanas)) {
-      throw new Error('Plan sin semanas válidas');
+    // Crear payload estructurado (como Calistenia)
+    const planPayload = {
+      task: isRegeneration ? 'regenerate_powerlifting_plan' : 'generate_powerlifting_plan',
+      user_profile: fullUserProfile,
+      selected_level: actualLevel,
+      goals: goals || 'Maximizar fuerza en Sentadilla, Press Banca y Peso Muerto',
+      selected_muscle_groups: selectedMuscleGroups || ['Sentadilla', 'Press Banca', 'Peso Muerto'],
+      available_exercises: availableExercises,
+      plan_requirements: {
+        duration_weeks: 4,
+        sessions_per_week: frecuenciaObligatoria,
+        session_duration_min: 90,
+        start_day: todayAbbrev,
+        start_date: new Date().toISOString().split('T')[0],
+        training_days_only: ['Lun', 'Mar', 'Mie', 'Jue', 'Vie'],
+        forbidden_days: ['Sab', 'Dom']
+      },
+      ...(isRegeneration && {
+        previous_plan: previousPlan,
+        user_feedback: {
+          reasons: regenerationReason || [],
+          additional_instructions: additionalInstructions || null
+        }
+      })
+    };
+
+    // Log del payload estructurado
+    logAIPayload('POWERLIFTING_PLAN', planPayload);
+
+    let attempts = 0;
+    let generatedPlan = null;
+    let lastError = null;
+
+    while (attempts < 3) {
+      try {
+        console.log(`🤖 [POWERLIFTING] Intento ${attempts + 1}/3 de generar plan válido...`);
+
+        const completion = await client.chat.completions.create({
+          model: config.model,
+          messages: [
+            { role: 'system', content: systemPrompt },  // ✅ USA PROMPT DEL ARCHIVO
+            { role: 'user', content: JSON.stringify(planPayload) }  // ✅ PAYLOAD ESTRUCTURADO
+          ],
+          temperature: config.temperature || 0.7,  // Usa config del módulo
+          max_tokens: config.max_output_tokens  // 16384 tokens para planes completos
+        });
+
+        const aiResponse = completion.choices[0].message.content;
+        logAIResponse(aiResponse);
+        logTokens(completion.usage);
+
+        // Parsear respuesta
+        let parsedPlan;
+        try {
+          parsedPlan = JSON.parse(parseAIResponse(aiResponse));
+        } catch (parseError) {
+          console.error('❌ Error parseando plan:', parseError);
+          throw new Error('Plan generado con formato inválido');
+        }
+
+        // Validar estructura del plan
+        if (!parsedPlan.semanas || !Array.isArray(parsedPlan.semanas)) {
+          throw new Error('Plan sin semanas válidas');
+        }
+
+        // 🔥 VALIDACIÓN 1: Número de semanas
+        if (parsedPlan.semanas.length !== 4) {
+          throw new Error(`Plan debe tener exactamente 4 semanas, pero tiene ${parsedPlan.semanas.length}`);
+        }
+
+        // 🔥 VALIDACIÓN 2: Número de sesiones según nivel
+        let totalSessions = 0;
+        parsedPlan.semanas.forEach(semana => {
+          if (semana.sesiones && Array.isArray(semana.sesiones)) {
+            totalSessions += semana.sesiones.length;
+          }
+        });
+
+        if (totalSessions !== expectedTotalSessions) {
+          // Analizar distribución de sesiones por semana para más detalle
+          const sessionsByWeek = parsedPlan.semanas.map((semana, idx) => ({
+            semana: idx + 1,
+            sesiones: semana.sesiones?.length || 0,
+            dias: semana.sesiones?.map(s => s.dia).join(', ') || 'Ninguno'
+          }));
+
+          console.error(`❌ [POWERLIFTING] Error de validación de sesiones:`);
+          console.error(`   Nivel: ${dbLevel} (${actualLevel})`);
+          console.error(`   Esperadas: ${expectedTotalSessions} sesiones (${expectedSessionsPerWeek} días/semana × 4 semanas)`);
+          console.error(`   Generadas: ${totalSessions} sesiones`);
+          console.error(`   Distribución por semana:`, sessionsByWeek);
+
+          throw new Error(
+            `Plan incompleto para nivel ${dbLevel}: esperadas ${expectedTotalSessions} sesiones ` +
+            `(${expectedSessionsPerWeek} días/semana × 4 semanas), pero se generaron ${totalSessions}. ` +
+            `La IA debe generar EXACTAMENTE ${expectedSessionsPerWeek} sesiones por semana.`
+          );
+        }
+
+        console.log(`✅ Validación sesiones: ${totalSessions}/${expectedTotalSessions} sesiones correctas`);
+
+        // 🔥 VALIDACIÓN 2.5: Campo frecuencia_por_semana debe coincidir
+        if (parsedPlan.frecuencia_por_semana !== expectedSessionsPerWeek) {
+          console.warn(`⚠️ [POWERLIFTING] Campo frecuencia_por_semana incorrecto:`);
+          console.warn(`   Esperado: ${expectedSessionsPerWeek}`);
+          console.warn(`   Recibido: ${parsedPlan.frecuencia_por_semana || 'undefined'}`);
+          // Corregir automáticamente si es posible
+          parsedPlan.frecuencia_por_semana = expectedSessionsPerWeek;
+        }
+
+        // 🔥 VALIDACIÓN 3: Solo días laborables (NO sábado/domingo)
+        // Powerlifting usa abreviaturas: Lun, Mar, Mie, Jue, Vie
+        const weekendDays = [];
+        const diasLaborablesAbrev = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie'];
+        const diasLaborablesCompletos = ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes'];
+
+        parsedPlan.semanas.forEach((semana, sIdx) => {
+          semana.sesiones.forEach((sesion, dIdx) => {
+            const diaName = sesion.dia;
+            // Verificar tanto abreviaturas como nombres completos
+            const isWeekday = diasLaborablesAbrev.includes(diaName) || diasLaborablesCompletos.includes(diaName);
+
+            if (!isWeekday) {
+              weekendDays.push({
+                semana: semana.semana || (sIdx + 1),
+                dia: diaName
+              });
+            }
+          });
+        });
+
+        if (weekendDays.length > 0) {
+          const errorDetails = weekendDays.map(d =>
+            `Semana ${d.semana}: ${d.dia}`
+          ).join('; ');
+
+          throw new Error(
+            `Plan Powerlifting inválido: ${weekendDays.length} sesiones en fin de semana (solo Lun-Vie permitidos). ` +
+            `Detalles: ${errorDetails}`
+          );
+        }
+
+        console.log(`✅ Validación días laborables: Todas las sesiones están en Lun-Vie`);
+
+        // ✅ TODAS LAS VALIDACIONES PASARON
+        generatedPlan = parsedPlan;
+        console.log(`✅ [POWERLIFTING] Plan válido generado en intento ${attempts + 1}/3`);
+        break; // Salir del loop
+
+      } catch (error) {
+        attempts++;
+        lastError = error;
+        console.error(`❌ [POWERLIFTING] Intento ${attempts}/3 falló:`, error.message);
+
+        // Si el error es por días de fin de semana, modificar el mensaje para el siguiente intento
+        if (error.message.includes('fin de semana') && attempts < 3) {
+          // Agregar advertencia adicional al mensaje
+          const warningPrefix = `
+⚠️ ERROR EN INTENTO ANTERIOR: Incluiste Sábado o Domingo, lo cual está PROHIBIDO.
+
+🚫 RECORDATORIO CRÍTICO:
+- NUNCA uses Sab o Dom en ninguna sesión
+- SOLO puedes usar: Lun, Mar, Mie, Jue, Vie
+- Para ${frecuenciaObligatoria} días/semana, distribúyelos SOLO entre Lun-Vie
+
+Ejemplos válidos para ${frecuenciaObligatoria} días:
+- Lun, Mar, Jue, Vie ✅
+- Lun, Mie, Jue, Vie ✅
+- Mar, Mie, Jue, Vie ✅
+NUNCA: Vie, Sab, Lun, Mar ❌ (incluye Sábado)
+
+`;
+          userMessage = warningPrefix + userMessage;
+        }
+
+        if (attempts < 3) {
+          const waitTime = 1000 * attempts; // Exponential backoff: 1s, 2s
+          console.log(`⏳ Esperando ${waitTime}ms antes del siguiente intento...`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+        }
+      }
+    }
+
+    // Verificar si logramos generar un plan válido
+    if (!generatedPlan) {
+      console.error('❌ [POWERLIFTING] No se pudo generar plan válido después de 3 intentos');
+      throw new Error(
+        `No se pudo generar un plan válido de Powerlifting después de 3 intentos. ` +
+        `Último error: ${lastError?.message || 'Desconocido'}`
+      );
     }
 
     // Guardar plan en BD
@@ -3202,10 +3476,17 @@ NIVEL: ${actualLevel} (${dbLevel})
 ENFOQUE PRIORITARIO: ${selectedMuscleGroups?.join(', ') || 'Snatch, Clean & Jerk, Fuerza Base'}
 OBJETIVOS: ${goals || 'Desarrollar técnica olímpica y potencia explosiva'}
 
-EJERCICIOS DISPONIBLES (${availableExercises.length}):
+⚠️ EJERCICIOS DISPONIBLES DE SUPABASE (${availableExercises.length}):
+**REGLA CRÍTICA:** SOLO usa ejercicios de esta lista. Los ejercicios provienen de la tabla app."Ejercicios_Halterofilia" filtrados por nivel:
+- ${actualLevel === 'principiante' ? 'Solo ejercicios de nivel Principiante (hang, muscle, técnica básica)' : ''}
+- ${actualLevel === 'intermedio' ? 'Ejercicios de nivel Principiante + Intermedio (power lifts, hang work)' : ''}
+- ${actualLevel === 'avanzado' ? 'Ejercicios de nivel Principiante + Intermedio + Avanzado (full lifts, complejos)' : ''}
+
 ${availableExercises.map(ex =>
   `- ${ex.nombre} (${ex.categoria}) - Nivel: ${ex.nivel}, Series/Reps: ${ex.series_reps_objetivo}, Descanso: ${ex.descanso_seg}s, Tempo: ${ex.tempo || 'Explosivo'}`
 ).join('\n')}
+
+⚠️ NUNCA inventes ejercicios que no estén en la lista anterior. Usa los nombres EXACTAMENTE como aparecen.
 
 DURACIÓN: ${versionConfig?.customWeeks || 4} semanas
 

@@ -10,9 +10,10 @@
     "postinstall": "echo \"(backend) postinstall ok\""
   },
   "engines": {
-    "node": ">=18 <23"
+    "node": ">=18"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.75.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",

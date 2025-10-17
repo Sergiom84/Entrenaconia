@@ -53,7 +53,11 @@
       "Bash(git restore:*)",
       "Bash(for:*)",
       "Bash(grep:*)",
-      "Bash(done)"
+      "Bash(done)",
+      "Bash(npm install:*)",
+      "Bash(fnm install:*)",
+      "Bash(fnm:*)",
+      "Read(//c//**)"
     ],
     "deny": [],
     "ask": []
