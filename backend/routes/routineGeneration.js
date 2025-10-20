@@ -3449,8 +3449,21 @@ function normalizeHalterofiliaPlan(generatedPlan) {
     normalized.frecuencia_por_semana = inferredSessionsPerWeek;
   }
 
-  if (!normalized.nivel_usuario && generatedPlan.nivel) {
-    normalized.nivel_usuario = generatedPlan.nivel;
+  // 🔥 MAPEAR nivel_halterofilia_detectado → nivel_usuario (requerido por validación)
+  if (!normalized.nivel_usuario) {
+    normalized.nivel_usuario = generatedPlan.nivel_halterofilia_detectado ||
+                                generatedPlan.nivel ||
+                                'intermedio';
+  }
+
+  // 🔥 ASEGURAR CAMPOS OBLIGATORIOS PARA VISUALIZACIÓN EN FRONTEND
+  // Estos campos son necesarios para que getMethodologyName() funcione correctamente
+  if (!normalized.selected_style) {
+    normalized.selected_style = 'Halterofilia';
+  }
+
+  if (!normalized.metodologia_solicitada) {
+    normalized.metodologia_solicitada = 'Halterofilia';
   }
 
   console.log(`✅ Plan normalizado: ${normalized.semanas.length} semanas, ${normalized.frecuencia_por_semana || 'N/A'} sesiones/semana`);

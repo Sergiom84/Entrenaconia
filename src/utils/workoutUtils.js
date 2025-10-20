@@ -20,6 +20,8 @@ export const getMethodologyDescription = (methodology) => {
 export const getMethodologyName = (plan, session) => {
   return plan?.selected_style ||
          plan?.metodologia ||
+         plan?.methodologyType ||      // camelCase del WorkoutContext
+         plan?.methodology_type ||     // snake_case de BD
          session?.methodology_type ||
          'Entrenamiento de Hoy';
 };

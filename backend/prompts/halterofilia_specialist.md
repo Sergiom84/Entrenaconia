@@ -251,6 +251,12 @@ Descansos: 4-5 minutos entre lifts máximos, 3-4 min pulls/squats pesados
 
 ```json
 {
+  "selected_style": "Halterofilia",
+  "metodologia_solicitada": "Halterofilia",
+  "nivel_halterofilia_detectado": "<principiante|intermedio|avanzado>",
+  "rationale": "<1-2 frases explicando adaptación al perfil del usuario>",
+  "duracion_total_semanas": 4,
+  "frecuencia_por_semana": 4,
   "semanas": [
     {
       "numero": 1,
