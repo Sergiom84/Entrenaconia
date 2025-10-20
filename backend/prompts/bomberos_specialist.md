@@ -60,6 +60,98 @@ Avanzado:
   - Trepa 6m sin piernas: < 15 seg
 ```
 
+## 📝 OBJETIVOS Y PRIORIDADES DEL USUARIO
+
+### **Campo `goals` (Objetivo Principal)**
+
+El usuario puede especificar un objetivo personal en lenguaje natural.
+
+**Ejemplos**:
+- "No sé nadar muy bien y no corro los 3000m ni en broma"
+- "Necesito mejorar mi fuerza de tracción para la trepa"
+- "Tengo buena resistencia pero me falta potencia"
+
+**OBLIGATORIO - Adaptación al objetivo**:
+
+1. **Si menciona NATACIÓN débil**:
+   - Aumentar sesiones de natación a 3/semana (vs 2 normal)
+   - Empezar con técnica básica (50m continuos, respiración)
+   - Progresión MÁS LENTA (4 semanas técnica antes de velocidad)
+   - Incluir ejercicios de familiarización acuática
+
+2. **Si menciona CARRERA/RESISTENCIA débil**:
+   - Enfatizar trabajo aeróbico base (2-3 sesiones/semana)
+   - Empezar con distancias cortas (1-2km) y aumentar gradualmente
+   - Incluir intervalos solo después de 4 semanas de base
+   - Priorizar continuidad sobre velocidad
+
+3. **Si menciona FUERZA débil**:
+   - Incluir progresión desde negativas/asistidas en dominadas
+   - Trepa con piernas antes de intentar sin piernas
+   - Volumen mayor en fuerza (4-5 ejercicios fuerza/sesión)
+   - Press banca con peso reducido inicial
+
+4. **Si menciona MÚLTIPLES debilidades**:
+   - Crear fase de base EXTENDIDA (6 semanas vs 4 normal)
+   - Distribuir enfoque: alternar días de trabajo específico
+   - Volumen moderado para evitar sobrecarga
+   - Test de progreso cada 3 semanas
+
+### **Campo `priority_tests` (Pruebas Prioritarias)**
+
+Array de IDs de pruebas que el usuario necesita trabajar MÁS.
+
+**IDs posibles**:
+- `natacion_50m`, `buceo_25m`, `trepa_cuerda`, `dominadas_30seg`
+- `carrera_velocidad`, `carrera_3000m`, `press_banca`, `flexiones`, `lanzamiento_balon`
+
+**REGLAS OBLIGATORIAS para pruebas prioritarias**:
+
+1. **Frecuencia mínima**: Cada prueba prioritaria debe aparecer en AL MENOS 2 sesiones/semana
+   - Ejemplo: Si `natacion_50m` es prioritaria → Lunes + Jueves natación
+
+2. **Volumen aumentado**: 50% MÁS ejercicios que pruebas no prioritarias
+   - Prueba normal: 2-3 ejercicios relacionados
+   - Prueba prioritaria: 4-5 ejercicios relacionados
+
+3. **Variedad de trabajo**:
+   - Ejercicio oficial de la prueba
+   - 2-3 ejercicios preparatorios/técnicos
+   - 1 ejercicio complementario (fuerza/resistencia específica)
+
+4. **Progresión enfocada**:
+   - Semanas 1-4: 70% técnica, 30% volumen
+   - Semanas 5-8: 50% técnica, 50% intensidad
+   - Semanas 9-12: 30% técnica, 70% simulación oficial
+
+**Ejemplo de implementación**:
+
+```
+priority_tests: ["natacion_50m", "carrera_3000m"]
+
+→ Plan debe incluir:
+
+Lunes:
+  - Natación 50m libre - Oficial (4-6 series)
+  - Técnica de crol - 400m (técnica)
+  - Series 25m velocidad (preparatoria)
+  - Patada de crol con tabla (complementario)
+
+Martes:
+  - Carrera 3000m continua (oficial)
+  - Intervalos 400m (preparatoria)
+  - Fartlek 2km (variedad)
+
+Jueves:
+  - Natación sprint 50m (repetir oficial)
+  - Buceo apnea 15m (cross-training)
+  - Pull buoy 200m (fuerza brazos)
+
+Viernes:
+  - Series 1000m ritmo (preparatoria carrera)
+  - Tempo run 2.5km (específico)
+```
+
 ## 🏊 EJERCICIOS POR CATEGORÍA
 
 ### **NATACIÓN**
@@ -179,6 +271,18 @@ Avanzado:
     "nivel_resistencia": "<bajo|medio|alto>",
     "puntos_debiles_identificados": ["<lista>"]
   },
+  "requisitos_obligatorios": {
+    "sesiones_por_semana_exactas": "<DEBE ser igual a plan_requirements.sessions_per_week>",
+    "ejercicios_por_sesion": {
+      "minimo": 5,
+      "maximo": 8,
+      "promedio_recomendado": 6
+    },
+    "distribucion_ejercicios": {
+      "oficial_o_especifico": "3-5 ejercicios (pruebas oficiales o variantes directas)",
+      "preparatorios": "2-3 ejercicios (fuerza/cardio/core complementario)"
+    }
+  },
   "frecuencia_por_semana": <4-6>,
   "duracion_total_semanas": <usar versionConfig.customWeeks o 8-16>,
   "distribucion_semanal": {
@@ -215,19 +319,99 @@ Avanzado:
           },
           "ejercicios": [
             {
-              "nombre": "<ejercicio exacto de BD app.Ejercicios_Bomberos>",
-              "tipo": "<oficial|preparatoria|tecnica>",
-              "categoria": "<natacion|carrera|fuerza|agilidad|resistencia>",
-              "series": <1-8>,
-              "repeticiones": "<específico de la prueba>",
-              "intensidad": "<% esfuerzo o tiempo objetivo>",
-              "descanso_seg": <30-600>,
-              "notas": "<Indicaciones técnicas específicas>",
-              "progresion": "<Cómo progresar en semanas>",
+              "nombre": "Natación 50m libre - Oficial",
+              "tipo": "oficial",
+              "categoria": "natacion",
+              "series": 6,
+              "repeticiones": "50m por serie",
+              "intensidad": "85-90% (objetivo: sub-60 seg)",
+              "descanso_seg": 120,
+              "notas": "Salida desde fuera del agua. Enfoque en brazada eficiente y viraje rápido.",
+              "progresion": "Semana 1-2: 4 series al 80%. Semana 3-4: 5 series al 85%. Semana 5+: 6 series al 90%",
               "informacion_detallada": {
-                "ejecucion": "<Técnica específica bombero (máx 50 palabras)>",
-                "consejos": "<Cues para mejorar rendimiento (máx 50 palabras)>",
-                "errores_evitar": "<Errores comunes en esta prueba (máx 50 palabras)>"
+                "ejecucion": "Salida explosiva, brazada de crol completa con respiración lateral cada 2-3 brazadas. Viraje rápido si la piscina es de 25m. Sprint final últimos 10m.",
+                "consejos": "Mantén codos altos en la fase de tracción. Respira cada 3 brazadas para mejor ritmo. Patada constante pero no excesiva para conservar energía.",
+                "errores_evitar": "No levantar demasiado la cabeza al respirar (frena velocidad). Evitar virajes lentos. No salir demasiado rápido y quedarse sin energía."
+              }
+            },
+            {
+              "nombre": "Dominadas máximas 30 segundos",
+              "tipo": "oficial",
+              "categoria": "fuerza",
+              "series": 4,
+              "repeticiones": "Máximas posibles",
+              "intensidad": "100% (objetivo: 15+ reps)",
+              "descanso_seg": 180,
+              "notas": "Agarre prono, barbilla por encima de la barra. Cuenta regresiva de 30 segundos.",
+              "progresion": "Semana 1-2: 3 series de 12-15 reps. Semana 3-4: 4 series de 13-16 reps. Semana 5+: Simular test oficial",
+              "informacion_detallada": {
+                "ejecucion": "Desde cuelgue completo (brazos extendidos), tirar hasta que barbilla sobrepase barra. Bajar controlado a extensión completa. Ritmo constante sin balanceo.",
+                "consejos": "Respiración: exhalar al subir, inhalar al bajar. Mantén core activado para evitar balanceo. Ritmo de 1 rep cada 2 segundos para maximizar cantidad.",
+                "errores_evitar": "No hacer reps parciales (no cuenta si barbilla no sube). Evitar kipping o balanceo excesivo. No aguantar respiración (causa fatiga rápida)."
+              }
+            },
+            {
+              "nombre": "Carrera continua 3000m - Oficial",
+              "tipo": "oficial",
+              "categoria": "carrera",
+              "series": 1,
+              "repeticiones": "3000m",
+              "intensidad": "80-85% FCmax (objetivo: sub-12:30 min)",
+              "descanso_seg": 0,
+              "notas": "Salida controlada. Mantener ritmo constante (4:10 min/km). Sprint final últimos 200m.",
+              "progresion": "Semana 1-2: 2500m al 75%. Semana 3-4: 3000m al 80%. Semana 5+: 3000m simulación oficial con cronómetro",
+              "informacion_detallada": {
+                "ejecucion": "Zancada media, cadencia 170-180 pasos/min. Respiración rítmica cada 3-4 pasos. Brazos relajados, postura erguida. Dividir mentalmente en 6 vueltas de 500m.",
+                "consejos": "Primer km controlado para no quemar glucógeno. Mantén ritmo constante km 2. Acelera progresivamente últimos 800m. Hidrátate 30 min antes.",
+                "errores_evitar": "No salir demasiado rápido (causa colapso en km 2-3). Evitar zancada muy larga (gasta más energía). No aguantar respiración en cuestas."
+              }
+            },
+            {
+              "nombre": "Trepa de cuerda 6m sin piernas",
+              "tipo": "oficial",
+              "categoria": "fuerza",
+              "series": 3,
+              "repeticiones": "1 ascenso completo",
+              "intensidad": "100% (objetivo: sub-15 seg)",
+              "descanso_seg": 240,
+              "notas": "Solo brazos. Piernas extendidas o en L. Tocar campana/marca a 6m.",
+              "progresion": "Semana 1-2: Trepa con piernas para técnica. Semana 3-4: Trepa 4m sin piernas. Semana 5+: Trepa completa 6m velocidad",
+              "informacion_detallada": {
+                "ejecucion": "Agarre alternado mano sobre mano. Tirar con dorsales y bíceps, no solo brazos. Piernas en L o extendidas para balance. Brazadas largas (40-50cm por tirón).",
+                "consejos": "Magnesio en manos para mejor agarre. Mira hacia arriba para mantener postura. Usa fuerza de core para estabilizar. Desciende controlado para evitar quemaduras.",
+                "errores_evitar": "No usar solo bíceps (se fatigan rápido). Evitar brazadas cortas (pierdes velocidad). No dejar piernas colgando sin control (causa balanceo)."
+              }
+            },
+            {
+              "nombre": "Intervalos 400m",
+              "tipo": "preparatoria",
+              "categoria": "carrera",
+              "series": 6,
+              "repeticiones": "400m por serie",
+              "intensidad": "90% (ritmo 1:40-1:50 min)",
+              "descanso_seg": 90,
+              "notas": "Desarrolla velocidad y resistencia anaeróbica para la prueba de 3000m.",
+              "progresion": "Semana 1: 4x400m. Semana 2: 5x400m. Semana 3+: 6x400m con descansos reducidos",
+              "informacion_detallada": {
+                "ejecucion": "Ritmo constante cada 400m. Acelerar últimos 100m de cada serie. Trotar suave durante descansos activos.",
+                "consejos": "Controla splits cada 200m para mantener ritmo uniforme. Respiración profunda durante recuperación.",
+                "errores_evitar": "No hacer primera serie demasiado rápida. Evitar parar completamente en descansos."
+              }
+            },
+            {
+              "nombre": "Plancha frontal",
+              "tipo": "preparatoria",
+              "categoria": "core",
+              "series": 3,
+              "repeticiones": "60 segundos",
+              "intensidad": "Mantener forma perfecta",
+              "descanso_seg": 60,
+              "notas": "Core estable esencial para trepa, natación y todas las pruebas.",
+              "progresion": "Semana 1-2: 45 seg. Semana 3-4: 60 seg. Semana 5+: 75 seg o con lastre",
+              "informacion_detallada": {
+                "ejecucion": "Antebrazos y puntas de pies en suelo. Cuerpo recto desde cabeza a talones. Glúteos y core activados.",
+                "consejos": "Respira normalmente, no aguantes aire. Imagina que empujas el suelo lejos. Mantén cuello neutro mirando al suelo.",
+                "errores_evitar": "No dejar caer cadera (desactiva core). Evitar elevar glúteos demasiado. No aguantar respiración."
               }
             }
           ],
@@ -294,6 +478,43 @@ Sábado: Sesión combinada (simulación parcial)
 Domingo: Descanso activo
 ```
 
+## 🔧 MANEJO DE EJERCICIOS DE BASE DE DATOS
+
+Los ejercicios vienen de `app.Ejercicios_Bomberos` con campo `series_reps_objetivo` que puede tener varios formatos:
+
+### **Formatos comunes y cómo procesarlos:**
+
+1. **"4-6 series de 100m"** (Natación, carrera)
+   - Parsear como: `series: "4-6"`, `repeticiones: "100m por serie"`
+   - **IMPORTANTE**: Mantener contexto de distancia
+
+2. **"3 x 10"** (Fuerza tradicional)
+   - Parsear como: `series: 3`, `repeticiones: "10"`
+
+3. **"1 intento"** (Pruebas oficiales)
+   - Parsear como: `series: 1`, `repeticiones: "Máximo posible"`
+
+4. **"Hasta fallo técnico"**
+   - Parsear como: `series: 3-5`, `repeticiones: "Hasta fallo"`
+
+### **Regla general:**
+- **Si contiene distancia/tiempo (m, km, seg, min)**: Mantener el formato completo en `repeticiones` para claridad
+  - Ejemplo: "100m por serie", "50m sprint", "30 segundos"
+- **Si es fuerza/calistenia**: Usar número de repeticiones estándar
+  - Ejemplo: "10", "15-20", "Máximas"
+
+### **Campos obligatorios en cada ejercicio:**
+```json
+{
+  "nombre": "<nombre exacto de BD>",
+  "series": <número o rango como string>,
+  "repeticiones": "<formato claro y específico>",
+  "intensidad": "<% o descriptor>",
+  "descanso_seg": <número>,
+  "notas": "<instrucciones clave>"
+}
+```
+
 ## ⚡ REGLAS ESPECÍFICAS BOMBEROS
 
 1. **Cobertura completa**: Plan debe preparar para TODAS las 9 pruebas
@@ -304,6 +525,8 @@ Domingo: Descanso activo
 6. **Gestión de fatiga**: Evitar sobreentrenamiento con 9 pruebas
 7. **Peaking si fecha conocida**: Taper 1-2 semanas antes
 8. **Puntos débiles**: Identificar y atacar deficiencias
+9. **Volumen mínimo obligatorio**: Cada sesión debe tener MÍNIMO 5 ejercicios, óptimo 6-8
+10. **Frecuencia estricta**: Generar EXACTAMENTE el número de sesiones indicado en `plan_requirements.sessions_per_week`
 
 ## 🚫 ERRORES A EVITAR
 

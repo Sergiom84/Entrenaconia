@@ -39,6 +39,7 @@ import bodyCompositionRoutes from './routes/bodyComposition.js';
 import uploadsRoutes from './routes/uploads.js';
 import techniqueRoutes from './routes/technique.js';
 import nutritionRoutes from './routes/nutrition.js';
+import nutritionV2Routes from './routes/nutritionV2.js';
 import musicRoutes from './routes/music.js';
 import analyticsRoutes from './routes/analytics.js';
 
@@ -386,6 +387,7 @@ app.use('/api/home-training', homeTrainingRoutes);
 app.use('/api/ia-home-training', homeTrainingRoutes); // Alias para IA home training
 app.use('/api/technique', techniqueRoutes);
 app.use('/api/nutrition', nutritionRoutes);
+app.use('/api/nutrition-v2', nutritionV2Routes); // Sistema determinista normalizado
 app.use('/api/music', musicRoutes);
 app.use('/api/analytics', analyticsRoutes);
 

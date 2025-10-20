@@ -429,10 +429,16 @@ export default function NutritionCalendar({ nutritionPlan, userMacros, onPlanUpd
           return (
             <Card
               key={day.dateString}
-              className={`border-gray-600 cursor-pointer transition-all duration-200 ${
-                !day.isWithinPlan ? 'bg-gray-900/50 opacity-50' : 'bg-gray-800/70 hover:bg-gray-700/70'
+              className={`cursor-pointer transition-all duration-200 ${
+                !day.isWithinPlan
+                  ? 'bg-gray-900/50 border-gray-700 opacity-60'
+                  : progress.percentage === 100
+                    ? 'bg-green-900/20 border-green-500/40 hover:bg-green-900/30'
+                    : progress.percentage > 0
+                      ? 'bg-gray-800/70 border-yellow-600/40 hover:bg-gray-700/70'
+                      : 'bg-gray-800/70 border-gray-600 hover:bg-gray-700/70'
               } ${
-                day.isToday ? 'ring-2 ring-yellow-400' : ''
+                day.isToday ? 'ring-2 ring-yellow-400 shadow-lg shadow-yellow-400/20' : ''
               } ${
                 selectedDay === day.dateString ? 'ring-2 ring-blue-400' : ''
               }`}
@@ -450,22 +456,50 @@ export default function NutritionCalendar({ nutritionPlan, userMacros, onPlanUpd
                     )}
                   </div>
                   <div className="text-right">
-                    <div className="text-lg font-bold text-yellow-400">
-                      {progress.percentage}%
-                    </div>
-                    <div className="w-16 h-2 bg-gray-600 rounded-full overflow-hidden">
-                      <div 
-                        className="h-full bg-yellow-400 transition-all duration-300"
-                        style={{ width: `${progress.percentage}%` }}
-                      />
-                    </div>
+                    {day.isWithinPlan && (
+                      <>
+                        <div className={`text-lg font-bold ${
+                          progress.percentage === 100
+                            ? 'text-green-400'
+                            : progress.percentage > 0
+                              ? 'text-yellow-400'
+                              : 'text-gray-400'
+                        }`}>
+                          {progress.percentage}%
+                        </div>
+                        <div className="w-16 h-2 bg-gray-600 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full transition-all duration-300 ${
+                              progress.percentage === 100
+                                ? 'bg-green-400'
+                                : progress.percentage > 0
+                                  ? 'bg-yellow-400'
+                                  : 'bg-gray-500'
+                            }`}
+                            style={{ width: `${progress.percentage}%` }}
+                          />
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
-                {day.isToday && (
-                  <Badge className="bg-yellow-400 text-black text-xs w-fit">
-                    Hoy
-                  </Badge>
-                )}
+                <div className="flex gap-1 mt-2">
+                  {day.isToday && (
+                    <Badge className="bg-yellow-400 text-black text-xs w-fit">
+                      Hoy
+                    </Badge>
+                  )}
+                  {day.isWithinPlan && progress.percentage === 100 && (
+                    <Badge className="bg-green-500 text-white text-xs w-fit">
+                      Completo
+                    </Badge>
+                  )}
+                  {!day.isWithinPlan && (
+                    <Badge className="bg-gray-700 text-gray-400 text-xs w-fit">
+                      Sin plan
+                    </Badge>
+                  )}
+                </div>
               </CardHeader>
 
               <CardContent>

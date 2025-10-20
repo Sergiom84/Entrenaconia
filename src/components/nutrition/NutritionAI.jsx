@@ -180,9 +180,11 @@ El plan debe ser práctico, realista y adaptado específicamente a los objetivos
               >
                 <option value={3}>3 días</option>
                 <option value={7}>1 semana</option>
-                <option value={14}>2 semanas</option>
-                <option value={30}>1 mes</option>
+                <option value={14}>2 semanas (máximo)</option>
               </select>
+              <p className="text-xs text-gray-400 mt-1">
+                Limitado a 14 días para optimizar la generación
+              </p>
             </div>
 
             {/* Número de comidas */}

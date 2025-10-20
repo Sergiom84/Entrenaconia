@@ -3322,20 +3322,38 @@ function normalizeDayName(dayName) {
 }
 
 /**
- * Helper: Parsea repeticiones desde string de series (ej: "3x10" → "10", "5 x 3" → "3")
- * @param {string} seriesString - String tipo "3x10", "5 x 3 @ 70%", "3 x 8 con PVC"
+ * Helper: Parsea repeticiones desde string de series
+ * @param {string} seriesString - String tipo "3x10", "5 x 3 @ 70%", "4-6 series de 100m"
  * @returns {string} Número de repeticiones o string original
+ *
+ * Soporta múltiples formatos:
+ * - "3x10" → "10"
+ * - "5 x 3" → "3"
+ * - "4-6 series de 100m" → "4-6 series de 100m" (mantener formato completo para distancias)
+ * - "4-6 x 100m" → "4-6 x 100m" (mantener formato completo)
  */
 function parseRepsFromSeries(seriesString) {
   if (!seriesString || typeof seriesString !== 'string') return '';
 
-  // Buscar patrón: número x número (con o sin espacios)
+  // Para formatos con "series de" (natación, carrera), mantener el formato completo
+  // Ejemplos: "4-6 series de 100m", "3 series de 50m"
+  if (seriesString.toLowerCase().includes('series de')) {
+    return seriesString; // Mantener el formato completo para mejor comprensión
+  }
+
+  // Para formatos con distancias/tiempos sin "series de", también mantener completo
+  // Ejemplos: "4-6 x 100m", "3 x 400m"
+  if (seriesString.match(/\d+\s*x\s*\d+\s*(m|km|seg|min|metros)/i)) {
+    return seriesString;
+  }
+
+  // Buscar patrón: número x número (con o sin espacios) - formato tradicional de fuerza
   const match = seriesString.match(/(\d+)\s*x\s*(\d+)/i);
   if (match) {
     return match[2]; // Segundo número es las repeticiones
   }
 
-  // Si no hay patrón, devolver el string original
+  // Si no hay patrón reconocido, devolver el string original
   return seriesString;
 }
 
@@ -5202,6 +5220,7 @@ router.post('/specialist/bomberos/generate', authenticateToken, async (req, res)
       user_profile: fullUserProfile,
       selected_level: selectedLevel,
       goals: goals || 'Superar todas las pruebas físicas de oposición de Bombero',
+      priority_tests: req.body.priorityTests || [], // Pruebas que necesitan más trabajo
       available_exercises: availableExercises,
       plan_requirements: {
         duration_weeks: durationWeeks,
@@ -5250,6 +5269,45 @@ router.post('/specialist/bomberos/generate', authenticateToken, async (req, res)
 
     if (!generatedPlan.semanas || !Array.isArray(generatedPlan.semanas)) {
       throw new Error('Plan debe contener array de semanas');
+    }
+
+    // 🔍 VALIDACIÓN: Verificar que tiene estructura mínima adecuada
+    console.log(`📊 Validando plan de Bomberos generado...`);
+    let warningCount = 0;
+
+    generatedPlan.semanas.forEach((semana, idx) => {
+      const semanaNum = idx + 1;
+
+      // Validar que tiene sesiones
+      if (!semana.sesiones || semana.sesiones.length < sessionsPerWeek - 1) {
+        console.warn(`⚠️ Semana ${semanaNum} tiene solo ${semana.sesiones?.length || 0} sesiones, esperado: ${sessionsPerWeek}`);
+        warningCount++;
+      }
+
+      // Validar ejercicios por sesión
+      semana.sesiones?.forEach((sesion, sidx) => {
+        const sesionNum = sidx + 1;
+        const ejerciciosCount = sesion.ejercicios?.length || 0;
+
+        if (ejerciciosCount < 5) {
+          console.warn(`⚠️ Semana ${semanaNum}, Sesión ${sesionNum} (${sesion.dia}) tiene solo ${ejerciciosCount} ejercicios (mínimo recomendado: 5)`);
+          warningCount++;
+        }
+
+        // Validar que cada ejercicio tiene campos obligatorios
+        sesion.ejercicios?.forEach((ej, eidx) => {
+          if (!ej.nombre || !ej.series || !ej.repeticiones) {
+            console.warn(`⚠️ Semana ${semanaNum}, Sesión ${sesionNum}, Ejercicio ${eidx + 1} le faltan campos obligatorios`);
+            warningCount++;
+          }
+        });
+      });
+    });
+
+    if (warningCount > 0) {
+      console.warn(`⚠️ Plan generado con ${warningCount} warnings. Puede necesitar mejoras en el prompt.`);
+    } else {
+      console.log(`✅ Plan validado correctamente: ${generatedPlan.semanas.length} semanas, estructura completa`);
     }
 
     // Guardar en BD

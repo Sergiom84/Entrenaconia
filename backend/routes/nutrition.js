@@ -161,6 +161,15 @@ router.post('/generate-plan', authenticateToken, async (req, res) => {
     `;
     const exerciseHistory = await pool.query(exerciseHistoryQuery, [userId]);
 
+    // Validar duración del plan (máximo 14 días para evitar límite de tokens)
+    const requestedDuration = options.duration || 7;
+    if (requestedDuration > 14) {
+      return res.status(400).json({
+        success: false,
+        error: 'La duración máxima del plan es de 14 días para optimizar la generación.'
+      });
+    }
+
     // Crear cliente OpenAI para nutrición
     console.log('🆕 Creando cliente OpenAI para feature: nutrition');
     const client = getNutritionClient();
@@ -202,7 +211,7 @@ ${JSON.stringify({
   macros_objetivo: userMacros,
   ejercicios_recientes: exerciseHistory.rows.map(ex => ex.exercise_name),
   configuracion_plan: {
-    duracion_dias: options.duration || 7,
+    duracion_dias: Math.min(options.duration || 7, 14),
     comidas_por_dia: options.mealCount || 4,
     estilo_alimentario: options.dietary || 'none',
     presupuesto: options.budget || 'medium',
@@ -212,7 +221,7 @@ ${JSON.stringify({
 }, null, 2)}
 
 INSTRUCCIONES ESPECÍFICAS:
-1. Crea un plan de ${options.duration || 7} días completamente personalizado
+1. Crea un plan de ${Math.min(options.duration || 7, 14)} días completamente personalizado (MÁXIMO 14 días)
 2. ${options.mealCount || 4} comidas por día optimizadas para ${userData.objetivo_principal || 'mantenimiento'}
 3. Integra perfectamente con metodología de entrenamiento: ${currentRoutine?.metodologia || userData.metodologia_preferida || 'general'}
 4. Respeta ESTRICTAMENTE las alergias y restricciones médicas
@@ -425,44 +434,78 @@ router.post('/daily', authenticateToken, async (req, res) => {
     const userId = req.user?.userId || req.user?.id;
     const { date, dailyLog, mealProgress } = req.body;
 
+    // Validación de entrada
+    if (!date || !date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Fecha inválida. Formato esperado: YYYY-MM-DD'
+      });
+    }
+
     console.log(`📥 POST /api/nutrition/daily - Usuario: ${userId}, Fecha: ${date}`);
     console.log(`📦 Body recibido:`, JSON.stringify({ dailyLog, mealProgress }, null, 2));
 
-    // Si viene mealProgress, construir dailyLog con él
-    const logData = dailyLog || {
-      mealProgress: mealProgress || {},
+    // Obtener datos existentes primero para hacer merge inteligente
+    const existingQuery = `
+      SELECT daily_log FROM app.daily_nutrition_log
+      WHERE user_id = $1 AND log_date = $2
+    `;
+    const existingResult = await pool.query(existingQuery, [userId, date]);
+
+    // Inicializar con estructura completa
+    let finalLogData = {
+      mealProgress: {},
       calories: 0,
       protein: 0,
       carbs: 0,
-      fat: 0
+      fat: 0,
+      meals: [],
+      lastUpdated: new Date().toISOString()
     };
 
-    // Si solo viene mealProgress, combinarlo con datos existentes
-    if (mealProgress && !dailyLog) {
-      console.log(`🔍 Solo viene mealProgress, buscando datos existentes...`);
-      // Intentar obtener el log existente
-      const existingQuery = `
-        SELECT daily_log FROM app.daily_nutrition_log
-        WHERE user_id = $1 AND log_date = $2
-      `;
-      const existingResult = await pool.query(existingQuery, [userId, date]);
+    // Si hay datos existentes, preservarlos como base
+    if (existingResult.rows.length > 0 && existingResult.rows[0].daily_log) {
+      const existing = existingResult.rows[0].daily_log;
+      console.log(`✅ Datos existentes encontrados, haciendo merge...`);
+      finalLogData = {
+        ...existing,
+        lastUpdated: new Date().toISOString()
+      };
+    }
 
-      if (existingResult.rows.length > 0) {
-        const existing = existingResult.rows[0].daily_log;
-        console.log(`✅ Datos existentes encontrados:`, JSON.stringify(existing, null, 2));
-        logData.mealProgress = mealProgress;
-        logData.calories = existing.calories || 0;
-        logData.protein = existing.protein || 0;
-        logData.carbs = existing.carbs || 0;
-        logData.fat = existing.fat || 0;
-      } else {
-        console.log(`⚠️ No hay datos existentes para esta fecha`);
+    // Actualizar con nuevos datos (merge inteligente)
+    if (mealProgress) {
+      // Merge de mealProgress preservando valores anteriores
+      finalLogData.mealProgress = {
+        ...finalLogData.mealProgress,
+        ...mealProgress
+      };
+      console.log(`📊 MealProgress actualizado:`, finalLogData.mealProgress);
+    }
+
+    if (dailyLog) {
+      // Solo actualizar campos que vengan definidos
+      if (dailyLog.calories !== undefined) finalLogData.calories = dailyLog.calories;
+      if (dailyLog.protein !== undefined) finalLogData.protein = dailyLog.protein;
+      if (dailyLog.carbs !== undefined) finalLogData.carbs = dailyLog.carbs;
+      if (dailyLog.fat !== undefined) finalLogData.fat = dailyLog.fat;
+      if (dailyLog.meals && Array.isArray(dailyLog.meals)) {
+        finalLogData.meals = dailyLog.meals;
+      }
+      if (dailyLog.mealProgress) {
+        finalLogData.mealProgress = {
+          ...finalLogData.mealProgress,
+          ...dailyLog.mealProgress
+        };
       }
     }
 
-    const query = `
-      INSERT INTO app.daily_nutrition_log (user_id, log_date, daily_log, calories, protein, carbs, fat)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+    // Guardar con UPSERT
+    const upsertQuery = `
+      INSERT INTO app.daily_nutrition_log
+        (user_id, log_date, daily_log, calories, protein, carbs, fat, created_at, updated_at)
+      VALUES
+        ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
       ON CONFLICT (user_id, log_date)
       DO UPDATE SET
         daily_log = EXCLUDED.daily_log,
@@ -471,31 +514,47 @@ router.post('/daily', authenticateToken, async (req, res) => {
         carbs = EXCLUDED.carbs,
         fat = EXCLUDED.fat,
         updated_at = NOW()
+      RETURNING *
     `;
 
-    await pool.query(query, [
+    const result = await pool.query(upsertQuery, [
       userId,
       date,
-      JSON.stringify(logData),
-      logData.calories || 0,
-      logData.protein || 0,
-      logData.carbs || 0,
-      logData.fat || 0
+      JSON.stringify(finalLogData),
+      finalLogData.calories || 0,
+      finalLogData.protein || 0,
+      finalLogData.carbs || 0,
+      finalLogData.fat || 0
     ]);
 
-    console.log(`✅ Progreso nutricional guardado - Usuario: ${userId}, Fecha: ${date}`);
-    console.log(`💾 Datos guardados en BD:`, JSON.stringify(logData, null, 2));
+    console.log(`✅ Progreso nutricional guardado exitosamente para ${date}`);
+    console.log(`💾 Datos finales guardados:`, {
+      mealProgressCount: Object.keys(finalLogData.mealProgress).length,
+      totalCalories: finalLogData.calories,
+      lastUpdated: finalLogData.lastUpdated
+    });
 
     res.json({
       success: true,
-      message: 'Registro guardado exitosamente'
+      message: 'Registro guardado exitosamente',
+      data: {
+        date,
+        mealProgress: finalLogData.mealProgress,
+        macros: {
+          calories: finalLogData.calories,
+          protein: finalLogData.protein,
+          carbs: finalLogData.carbs,
+          fat: finalLogData.fat
+        }
+      }
     });
 
   } catch (error) {
-    console.error('Error guardando registro diario:', error);
+    console.error('❌ Error guardando registro diario:', error);
     res.status(500).json({
       success: false,
-      error: 'Error interno del servidor'
+      error: 'Error interno del servidor',
+      details: error.message
     });
   }
 });

@@ -114,9 +114,10 @@ export default function OposicionesScreen() {
   const [showRoutineSessionModal, setShowRoutineSessionModal] = useState(false);
   const [sessionId, setSessionId] = useState(null);
   const [sessionData, setSessionData] = useState(null);
+  const [methodologyPlanId, setMethodologyPlanId] = useState(null);
 
   // Contexts
-  const { generatePlan, ui: { isLoading } } = useWorkout();
+  const { generatePlan, startSession, ui: { isLoading } } = useWorkout();
   const { user } = useAuth();
   const navigate = useNavigate();
 
@@ -169,6 +170,13 @@ export default function OposicionesScreen() {
       if (result.success && result.plan) {
         console.log('✅ Plan de Bomberos generado exitosamente:', result);
         setGeneratedPlan(result.plan);
+
+        // Guardar el ID del plan para iniciar la sesión después
+        if (result.methodology_plan_id) {
+          setMethodologyPlanId(result.methodology_plan_id);
+          console.log('📝 Guardado methodology_plan_id:', result.methodology_plan_id);
+        }
+
         setShowBomberosModal(false);
         setShowConfirmation(true);
       } else {
@@ -185,18 +193,89 @@ export default function OposicionesScreen() {
     try {
       console.log('🚀 Iniciando sesión de entrenamiento de oposiciones...');
 
-      // Aquí deberías llamar a la API para iniciar la sesión
-      // Por ahora simularemos el flujo
-      setShowConfirmation(false);
+      if (!methodologyPlanId) {
+        throw new Error('No hay plan confirmado para iniciar');
+      }
 
-      // Simular ID de sesión (en producción viene del backend)
-      const mockSessionId = Date.now().toString();
-      setSessionId(mockSessionId);
+      console.log('🎯 PASO 1: Confirmando plan con ID:', methodologyPlanId);
 
-      // Abrir modal de calentamiento
-      setShowWarmupModal(true);
+      // Confirmar el plan (draft → active)
+      const confirmResponse = await fetch('/api/routines/confirm-plan', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+        },
+        body: JSON.stringify({
+          methodology_plan_id: methodologyPlanId
+        })
+      });
+
+      if (!confirmResponse.ok) {
+        const errorData = await confirmResponse.json();
+        throw new Error(errorData.error || 'Error al confirmar el plan');
+      }
+
+      console.log('✅ Plan confirmado exitosamente');
+
+      console.log('🎯 PASO 2: Iniciando sesión...');
+
+      // Obtener el nombre del día actual en español
+      const todayName = new Date().toLocaleDateString('es-ES', { weekday: 'long' });
+      const dayNameEs = todayName.charAt(0).toUpperCase() + todayName.slice(1);
+
+      // Iniciar sesión usando WorkoutContext
+      const result = await startSession({
+        methodologyPlanId: methodologyPlanId,
+        dayName: dayNameEs
+      });
+
+      if (result.success) {
+        console.log('✅ Sesión iniciada, session_id:', result.session_id);
+
+        // Cargar los ejercicios de la sesión
+        const { getSessionProgress } = await import('../routines/api');
+        const progressData = await getSessionProgress(result.session_id);
+        console.log('✅ Ejercicios cargados para la sesión:', progressData);
+
+        if (!progressData.exercises || progressData.exercises.length === 0) {
+          throw new Error('La sesión no tiene ejercicios disponibles');
+        }
+
+        console.log('✅ Ejercicios disponibles:', progressData.exercises.length);
+
+        // Mapear exercise_name → nombre para compatibilidad con el modal
+        const mappedExercises = progressData.exercises.map(ex => ({
+          ...ex,
+          nombre: ex.exercise_name || ex.nombre,
+          series: ex.series_total || ex.series,
+          repeticiones: ex.repeticiones,
+          descanso_seg: ex.descanso_seg,
+          intensidad: ex.intensidad,
+          tempo: ex.tempo,
+          notas: ex.notas,
+          status: ex.status,
+          series_completed: ex.series_completed || 0,
+          time_spent_seconds: ex.time_spent_seconds || 0
+        }));
+
+        setSessionData({
+          ejercicios: mappedExercises,
+          session_id: result.session_id,
+          sessionId: result.session_id,
+          currentExerciseIndex: 0
+        });
+
+        setSessionId(result.session_id);
+        setShowConfirmation(false);
+        setShowWarmupModal(true);
+
+        console.log('🔥 Iniciando calentamiento...');
+      } else {
+        throw new Error(result.error || 'Error al iniciar el entrenamiento');
+      }
     } catch (error) {
-      console.error('Error iniciando entrenamiento:', error);
+      console.error('❌ Error iniciando entrenamiento:', error);
       setError(error.message);
     }
   };
@@ -205,13 +284,6 @@ export default function OposicionesScreen() {
   const handleWarmupComplete = () => {
     console.log('✅ Calentamiento completado');
     setShowWarmupModal(false);
-
-    // Preparar datos de sesión (en producción viene del backend)
-    setSessionData({
-      ejercicios: generatedPlan?.semanas?.[0]?.sesiones?.[0]?.ejercicios || [],
-      sessionId: sessionId
-    });
-
     setShowRoutineSessionModal(true);
   };
 
@@ -225,7 +297,8 @@ export default function OposicionesScreen() {
   const handleCompleteSession = () => {
     console.log('🎯 Sesión completada, navegando a TodayTrainingTab');
     setShowRoutineSessionModal(false);
-    navigate('/routines'); // Navegar a rutinas donde estará TodayTrainingTab
+    // Navegar a rutinas con el tab activo de "today" para ver el progreso
+    navigate('/routines', { state: { activeTab: 'today', fromSession: true } });
   };
 
   // Handler para generar otro plan
@@ -524,6 +597,7 @@ export default function OposicionesScreen() {
             console.log('Ejercicio saltado:', exerciseIndex, progressData);
           }}
           onCompleteSession={handleCompleteSession}
+          navigateToRoutines={() => navigate('/routines', { state: { activeTab: 'today', fromSession: true } })}
         />
       )}
     </div>

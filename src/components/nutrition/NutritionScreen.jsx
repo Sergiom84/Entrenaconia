@@ -15,13 +15,19 @@ import {
   Apple
 } from 'lucide-react';
 
-// Importar componentes individuales
+// Importar componentes individuales (Legacy)
 import NutritionCalendar from './NutritionCalendar';
 import FoodDatabase from './FoodDatabase';
 import MacroTracker from './MacroTracker';
 import SupplementsSection from './SupplementsSection';
 import NutritionAI from './NutritionAI';
 import MealPlanner from './MealPlanner';
+import ShoppingList from './ShoppingList';
+
+// Importar componentes V2 (Sistema Determinista)
+import NutritionProfileSetup from './NutritionProfileSetup';
+import NutritionPlanGenerator from './NutritionPlanGenerator';
+import NutritionCalendarView from './NutritionCalendarView';
 
 export default function NutritionScreen() {
   const { currentUser, user } = useAuth();
@@ -231,6 +237,29 @@ export default function NutritionScreen() {
   if (!userData?.edad) missingProfile.push('edad');
 
   const nutritionTabs = [
+    // ===== SISTEMA V2 (DETERMINISTA) =====
+    {
+      id: 'profile-v2',
+      label: '🆕 Perfil V2',
+      icon: Target,
+      description: 'Configuración de perfil nutricional determinista',
+      isV2: true
+    },
+    {
+      id: 'generate-plan',
+      label: '🆕 Generar Plan',
+      icon: TrendingUp,
+      description: 'Generador de planes nutricionales con cálculos científicos',
+      isV2: true
+    },
+    {
+      id: 'calendar-v2',
+      label: '🆕 Calendario V2',
+      icon: Calendar,
+      description: 'Vista semanal del plan determinista',
+      isV2: true
+    },
+    // ===== SISTEMA LEGACY (IA COMPLETA) =====
     {
       id: 'overview',
       label: 'Resumen',
@@ -239,15 +268,21 @@ export default function NutritionScreen() {
     },
     {
       id: 'calendar',
-      label: 'Calendario',
+      label: 'Calendario Legacy',
       icon: Calendar,
-      description: 'Plan semanal de comidas'
+      description: 'Plan semanal de comidas (sistema anterior)'
     },
     {
       id: 'planner',
       label: 'Planificador',
       icon: Utensils,
       description: 'Crear planes de comidas'
+    },
+    {
+      id: 'shopping',
+      label: 'Lista Compras',
+      icon: ShoppingCart,
+      description: 'Lista de compras del plan'
     },
     {
       id: 'tracker',
@@ -589,6 +624,33 @@ export default function NutritionScreen() {
 
           )}
 
+          {/* ===== SISTEMA V2 (DETERMINISTA) ===== */}
+          {activeTab === 'profile-v2' && (
+            <NutritionProfileSetup
+              onProfileSaved={(data) => {
+                console.log('✅ Perfil V2 guardado:', data);
+                // Actualizar estado si es necesario
+                fetchUserNutritionData();
+              }}
+            />
+          )}
+
+          {activeTab === 'generate-plan' && (
+            <NutritionPlanGenerator
+              onPlanGenerated={(data) => {
+                console.log('✅ Plan V2 generado:', data);
+                setNutritionPlan(data.plan);
+                // Cambiar automáticamente a la vista de calendario
+                setActiveTab('calendar-v2');
+              }}
+            />
+          )}
+
+          {activeTab === 'calendar-v2' && (
+            <NutritionCalendarView />
+          )}
+
+          {/* ===== SISTEMA LEGACY (IA COMPLETA) ===== */}
           {activeTab === 'calendar' && (
             <NutritionCalendar
               nutritionPlan={nutritionPlan}
@@ -603,6 +665,12 @@ export default function NutritionScreen() {
               userData={userData}
               onPlanCreated={setNutritionPlan}
               initialPlan={nutritionPlan?.plan_data ?? nutritionPlan}
+            />
+          )}
+
+          {activeTab === 'shopping' && (
+            <ShoppingList
+              nutritionPlan={nutritionPlan}
             />
           )}
 

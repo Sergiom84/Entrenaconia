@@ -59,7 +59,13 @@
       "Bash(fnm:*)",
       "Read(//c//**)",
       "Bash(taskkill:*)",
-      "Bash(git log -1 --format='%s')"
+      "Bash(git log -1 --format='%s')",
+      "Bash(psql \"postgresql://postgres.lhsnmjgdtjalfcsurxvg:Xe05Klm563kkjL@aws-0-eu-north-1.pooler.supabase.com:6543/postgres?sslmode=require\" -f scripts/insert-bomberos-exercises.sql)",
+      "Bash(git reset HEAD)",
+      "Bash(ss -tlnp)",
+      "Bash(lsof -i :3010)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjI4LCJlbWFpbCI6InRlc3QtbnV0cml0aW9uQHRlc3QuY29tIiwiaWF0IjoxNzYwOTgwOTE3LCJleHAiOjE3NjE1ODU3MTd9.8Y8LQ0CoCrzzXR2X5INAX6hmo1_jhgezmGuhcKMUunU\")",
+      "Bash(git rm:*)"
     ],
     "deny": [],
     "ask": []
