@@ -30,3 +30,4 @@ backend/.env.local
 *.njsproj
 *.sln
 *.sw?
+# Hooks corregidos y funcionales
