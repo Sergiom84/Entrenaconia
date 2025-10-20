@@ -21,9 +21,10 @@ import {
   Shield,
   Award,
   TrendingUp,
-  Swimming,
+  Waves,
   Heart,
-  Activity
+  Activity,
+  Calendar
 } from 'lucide-react';
 
 // Configuraciones centralizadas
@@ -666,6 +667,3 @@ export default function BomberosManualCard({ onGenerate, isLoading: externalLoad
     </div>
   );
 }
-
-// Importación faltante
-import { Calendar } from 'lucide-react';
