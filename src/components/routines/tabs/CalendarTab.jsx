@@ -38,11 +38,9 @@ import { getSentimentIcon } from '../../../utils/exerciseUtils';
 import { CalendarExerciseCard } from './components/CalendarExerciseCard';
 
 import { useTrace } from '@/contexts/TraceContext.jsx';
-import { getMethodologyName } from '@/utils/workoutUtils';
 
 export default function CalendarTab({ plan, planStartDate, methodologyPlanId, ensureMethodologyPlan, refreshTrigger }) {
   const { track } = useTrace();
-  const methodologyLabel = useMemo(() => getMethodologyName(plan), [plan]);
 
   // Calcular qué semana mostrar inicialmente basándose en la fecha actual
   const getInitialWeek = useCallback(() => {
@@ -366,7 +364,7 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
           <div>
             <h2 className="text-2xl font-bold text-white mb-2">Calendario de Entrenamiento</h2>
             <Badge variant="secondary" className="bg-yellow-400/20 text-yellow-300">
-              {methodologyLabel || 'Plan personalizado'}
+              {plan.selected_style}
             </Badge>
           </div>
 

@@ -1110,102 +1110,202 @@ router.post('/specialist/heavy-duty/generate', authenticateToken, async (req, re
 
     console.log(`✅ Ejercicios Heavy Duty cargados: ${availableExercises.length} para nivel ${dbLevel}`);
 
+    // 🔄 CAMBIO CRÍTICO: Cargar prompt desde archivo (como Calistenia, Powerlifting, Hipertrofia)
+    clearPromptCache(FeatureKey.HEAVY_DUTY_SPECIALIST);
+    const systemPrompt = await getPrompt(FeatureKey.HEAVY_DUTY_SPECIALIST);
+
+    if (!systemPrompt) {
+      throw new Error('Prompt no disponible para Heavy Duty Specialist');
+    }
+
     // Llamar a IA con prompt especializado
     const client = getModuleOpenAI(AI_MODULES.HEAVY_DUTY_SPECIALIST);
     const config = AI_MODULES.HEAVY_DUTY_SPECIALIST;
 
-    // Construir mensaje para IA
-    const userMessage = `GENERACIÓN DE PLAN HEAVY DUTY (Mike Mentzer)
+    // Calcular frecuencia según nivel (Heavy Duty usa baja frecuencia)
+    const frecuenciaObligatoria = dbLevel === 'Intermedio' ? 3 : 2; // Intermedio: 3 días, Principiante/Avanzado: 2 días
 
-NIVEL: ${actualLevel}
-GRUPOS MUSCULARES: ${selectedMuscleGroups?.join(', ') || 'No especificado'}
-OBJETIVOS: ${goals || 'No especificado'}
+    // Obtener día actual
+    const today = new Date();
+    const daysOfWeek = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+    const todayName = daysOfWeek[today.getDay()];
+    const todayNormalized = normalizeDayName(todayName);
 
-EJERCICIOS DISPONIBLES (${availableExercises.length}):
-${availableExercises.map(ex =>
-  `- ${ex.nombre} (${ex.categoria}) - Nivel: ${ex.nivel}, Equipamiento: ${ex.equipamiento}, Descanso: ${ex.descanso_seg}s`
-).join('\n')}
+    // Crear payload estructurado (como Calistenia, Powerlifting, Hipertrofia)
+    const planPayload = {
+      task: isRegeneration ? 'regenerate_heavy_duty_plan' : 'generate_heavy_duty_plan',
+      user_profile: fullUserProfile,
+      selected_level: actualLevel,
+      goals: goals || 'Maximizar intensidad con mínimo volumen (Mike Mentzer)',
+      selected_muscle_groups: selectedMuscleGroups || ['Todos'],
+      available_exercises: availableExercises,
+      plan_requirements: {
+        duration_weeks: 4,
+        sessions_per_week: frecuenciaObligatoria,
+        session_duration_min: 30, // Heavy Duty son sesiones cortas
+        start_day: todayNormalized,
+        start_date: new Date().toISOString().split('T')[0],
+        training_days_only: ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes'],
+        forbidden_days: ['Sabado', 'Domingo']
+      },
+      methodology_specifics: {
+        max_series_per_exercise: dbLevel === 'Principiante' ? 2 : 1,
+        max_exercises_per_session: 6,
+        rest_between_sets: '240-360 segundos',
+        intensity: 'RPE 10 - Fallo absoluto',
+        tempo: '4-1-2 (énfasis negativas)'
+      },
+      ...(isRegeneration && {
+        previous_plan: previousPlan,
+        user_feedback: {
+          reasons: regenerationReason || [],
+          additional_instructions: additionalInstructions || null
+        }
+      })
+    };
 
-VERSIÓN: ${versionConfig?.version === 'strict' ? 'ESTRICTA (Mike Mentzer puro)' : 'ADAPTADA (4 semanas)'}
-DURACIÓN: ${versionConfig?.customWeeks || 4} semanas
+    // Log del payload estructurado
+    logAIPayload('HEAVY_DUTY_PLAN', planPayload);
 
-PRINCIPIOS HEAVY DUTY OBLIGATORIOS:
-1. Máxima intensidad: 1-2 series al fallo absoluto por ejercicio
-2. Mínimo volumen: NO más de 4-6 ejercicios por sesión
-3. Descansos prolongados: 4-7 días entre mismo grupo muscular
-4. RPE 10/10: Cada serie es al límite absoluto
-5. Tempo lento: Énfasis en negativas (4-6 segundos)
-6. IMPORTANTE: Usa los valores de descanso_seg especificados para cada ejercicio (240-360s según nivel)
+    let attempts = 0;
+    let generatedPlan = null;
+    let lastError = null;
 
-GENERA un plan completo siguiendo el formato JSON de metodología.`;
+    while (attempts < 3) {
+      try {
+        console.log(`🤖 [HEAVY DUTY] Intento ${attempts + 1}/3 de generar plan válido...`);
 
-    const completion = await client.chat.completions.create({
-      model: config.model,
-      messages: [
-        {
-          role: 'system',
-          content: `Eres un especialista en Heavy Duty de Mike Mentzer. Generas planes de entrenamiento de alta intensidad y bajo volumen.
+        const completion = await client.chat.completions.create({
+          model: config.model,
+          messages: [
+            { role: 'system', content: systemPrompt },  // ✅ USA PROMPT DEL ARCHIVO
+            { role: 'user', content: JSON.stringify(planPayload) }  // ✅ PAYLOAD ESTRUCTURADO
+          ],
+          temperature: config.temperature || 0.7,  // Usa config del módulo (más alto que 0.4)
+          max_tokens: config.max_output_tokens  // 16384 tokens para planes completos
+        });
 
-RESPONDE SOLO EN JSON PURO, SIN MARKDOWN.
+        const aiResponse = completion.choices[0].message.content;
+        logAIResponse(aiResponse);
+        logTokens(completion.usage);
 
-El plan DEBE incluir:
-- semanas: array de semanas
-- cada semana tiene sesiones (días de entrenamiento)
-- cada sesión tiene ejercicios con: nombre, series (1-2), repeticiones, intensidad (RPE 10), descanso_seg (180-300), tempo, notas
+        // Parsear respuesta
+        let parsedPlan;
+        try {
+          parsedPlan = JSON.parse(parseAIResponse(aiResponse));
+        } catch (parseError) {
+          console.error('❌ Error parseando plan:', parseError);
+          throw new Error('Plan generado con formato inválido');
+        }
 
-FORMATO EXACTO:
-{
-  "metodologia": "Heavy Duty",
-  "nivel": "${selectedLevel}",
-  "semanas": [
-    {
-      "numero": 1,
-      "sesiones": [
-        {
-          "dia": "Lunes",
-          "grupos_musculares": ["Pecho", "Tríceps"],
-          "ejercicios": [
-            {
-              "nombre": "Press de banca",
-              "series": 1,
-              "repeticiones": "6-10",
-              "intensidad": "RPE 10 - Fallo absoluto",
-              "descanso_seg": 300,
-              "tempo": "4-1-2",
-              "notas": "Serie única al fallo absoluto"
+        // Validar estructura del plan
+        if (!parsedPlan.semanas || !Array.isArray(parsedPlan.semanas)) {
+          throw new Error('Plan sin semanas válidas');
+        }
+
+        // 🔥 VALIDACIÓN 1: Número de semanas
+        if (parsedPlan.semanas.length !== 4) {
+          throw new Error(`Plan debe tener exactamente 4 semanas, pero tiene ${parsedPlan.semanas.length}`);
+        }
+
+        // 🔥 VALIDACIÓN 2: Número de sesiones según nivel
+        const expectedSessionsPerWeek = frecuenciaObligatoria;
+        const expectedTotalSessions = expectedSessionsPerWeek * 4;
+
+        let totalSessions = 0;
+        parsedPlan.semanas.forEach(semana => {
+          if (semana.sesiones && Array.isArray(semana.sesiones)) {
+            totalSessions += semana.sesiones.length;
+          }
+        });
+
+        if (totalSessions !== expectedTotalSessions) {
+          // Analizar distribución de sesiones por semana para más detalle
+          const sessionsByWeek = parsedPlan.semanas.map((semana, idx) => ({
+            semana: idx + 1,
+            sesiones: semana.sesiones?.length || 0,
+            dias: semana.sesiones?.map(s => s.dia).join(', ') || 'Ninguno'
+          }));
+
+          console.error(`❌ [HEAVY DUTY] Error de validación de sesiones:`);
+          console.error(`   Nivel: ${dbLevel} (${actualLevel})`);
+          console.error(`   Esperadas: ${expectedTotalSessions} sesiones (${expectedSessionsPerWeek} días/semana × 4 semanas)`);
+          console.error(`   Generadas: ${totalSessions} sesiones`);
+          console.error(`   Distribución por semana:`, sessionsByWeek);
+
+          throw new Error(
+            `Plan incompleto para nivel ${dbLevel}: esperadas ${expectedTotalSessions} sesiones ` +
+            `(${expectedSessionsPerWeek} días/semana × 4 semanas), pero se generaron ${totalSessions}. ` +
+            `La IA debe generar EXACTAMENTE ${expectedSessionsPerWeek} sesiones por semana.`
+          );
+        }
+
+        console.log(`✅ Validación sesiones: ${totalSessions}/${expectedTotalSessions} sesiones correctas`);
+
+        // 🔥 VALIDACIÓN 2.5: Campo frecuencia_por_semana debe coincidir
+        if (parsedPlan.frecuencia_por_semana !== expectedSessionsPerWeek) {
+          console.warn(`⚠️ [HEAVY DUTY] Campo frecuencia_por_semana incorrecto:`);
+          console.warn(`   Esperado: ${expectedSessionsPerWeek}`);
+          console.warn(`   Recibido: ${parsedPlan.frecuencia_por_semana || 'undefined'}`);
+          // Corregir automáticamente si es posible
+          parsedPlan.frecuencia_por_semana = expectedSessionsPerWeek;
+        }
+
+        // 🔥 VALIDACIÓN 3: Solo días laborables (NO sábado/domingo)
+        const weekendDays = [];
+        const diasLaborables = ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes'];
+
+        parsedPlan.semanas.forEach((semana, sIdx) => {
+          semana.sesiones.forEach((sesion, dIdx) => {
+            const diaName = sesion.dia;
+            if (!diasLaborables.includes(diaName)) {
+              weekendDays.push({
+                semana: semana.numero || (sIdx + 1),
+                dia: diaName
+              });
             }
-          ]
+          });
+        });
+
+        if (weekendDays.length > 0) {
+          const errorDetails = weekendDays.map(d =>
+            `Semana ${d.semana}: ${d.dia}`
+          ).join('; ');
+
+          throw new Error(
+            `Plan Heavy Duty inválido: ${weekendDays.length} sesiones en fin de semana (solo Lun-Vie permitidos). ` +
+            `Detalles: ${errorDetails}`
+          );
         }
-      ]
-    }
-  ]
-}`
-        },
-        {
-          role: 'user',
-          content: userMessage
+
+        console.log(`✅ Validación días laborables: Todas las sesiones están en Lun-Vie`);
+
+        // ✅ TODAS LAS VALIDACIONES PASARON
+        generatedPlan = parsedPlan;
+        console.log(`✅ [HEAVY DUTY] Plan válido generado en intento ${attempts + 1}/3`);
+        break; // Salir del loop
+
+      } catch (error) {
+        attempts++;
+        lastError = error;
+        console.error(`❌ [HEAVY DUTY] Intento ${attempts}/3 falló:`, error.message);
+
+        // Si el error es por días de fin de semana, modificar el mensaje para el siguiente intento
+        if (error.message.includes('fin de semana') && attempts < 3) {
+          console.warn(`⚠️ [HEAVY DUTY] Reintentando sin días de fin de semana...`);
+          await new Promise(resolve => setTimeout(resolve, attempts * 1000)); // Esperar 1s, 2s, 3s
+        } else if (attempts < 3) {
+          await new Promise(resolve => setTimeout(resolve, attempts * 1000)); // Backoff exponencial
         }
-      ],
-      temperature: 0.4,
-      max_tokens: config.max_output_tokens  // 16384 tokens para planes completos
-    });
-
-    const aiResponse = completion.choices[0].message.content;
-    logAIResponse(aiResponse);
-    logTokens(completion.usage);
-
-    // Parsear respuesta
-    let generatedPlan;
-    try {
-      generatedPlan = JSON.parse(parseAIResponse(aiResponse));
-    } catch (parseError) {
-      console.error('Error parseando plan:', parseError);
-      throw new Error('Plan generado con formato inválido');
+      }
     }
 
-    // Validar estructura del plan
-    if (!generatedPlan.semanas || !Array.isArray(generatedPlan.semanas)) {
-      throw new Error('Plan sin semanas válidas');
+    // Si después de 3 intentos no hay plan válido, lanzar error
+    if (!generatedPlan) {
+      throw new Error(
+        `No se pudo generar un plan válido después de 3 intentos. ` +
+        `Último error: ${lastError?.message || 'Desconocido'}`
+      );
     }
 
     // Guardar plan en BD
@@ -1472,7 +1572,7 @@ router.post('/specialist/hipertrofia/generate', authenticateToken, async (req, r
       SELECT exercise_id, nombre, nivel, categoria as grupo_muscular, patron,
              equipamiento, series_reps_objetivo, descanso_seg,
              criterio_de_progreso, progresion_desde, progresion_hacia,
-             notas, ejecucion, consejos, errores_evitar
+             notas, "Cómo_hacerlo" as ejecucion, "Consejos" as consejos, "Errores_comunes" as errores_evitar
       FROM app."Ejercicios_Hipertrofia"
       WHERE ${levelCondition}
       ORDER BY RANDOM()
@@ -1496,166 +1596,186 @@ router.post('/specialist/hipertrofia/generate', authenticateToken, async (req, r
     const todayName = daysOfWeek[today.getDay()];
     const todayNormalized = normalizeDayName(todayName);
 
-    // Construir mensaje para IA
-    const userMessage = `GENERACIÓN DE PLAN DE HIPERTROFIA
+    // 🔄 CAMBIO CRÍTICO: Cargar prompt desde archivo (como Calistenia y Powerlifting)
+    clearPromptCache(FeatureKey.HIPERTROFIA_SPECIALIST);
+    const systemPrompt = await getPrompt(FeatureKey.HIPERTROFIA_SPECIALIST);
 
-📅 DÍA DE GENERACIÓN: ${todayNormalized} (HOY)
-⚠️ IMPORTANTE: Si ${todayNormalized} es un día laborable (Lun-Vie), considera incluirlo en la primera semana del plan para que el usuario pueda empezar hoy mismo.
+    if (!systemPrompt) {
+      throw new Error('Prompt no disponible para Hipertrofia Specialist');
+    }
 
-NIVEL: ${actualLevel}
-GRUPOS MUSCULARES: ${selectedMuscleGroups?.join(', ') || 'Todos'}
-OBJETIVOS: ${goals || 'Hipertrofia muscular general'}
+    // Calcular frecuencia correcta según nivel (Avanzado = 5 días)
+    const frecuenciaObligatoria = dbLevel === 'Avanzado' ? 5 : (dbLevel === 'Intermedio' ? 5 : 4);
 
-⚠️ EJERCICIOS DISPONIBLES DE SUPABASE (${availableExercises.length}):
-**REGLA CRÍTICA:** SOLO usa ejercicios de esta lista. Los ejercicios provienen de la tabla app."Ejercicios_Hipertrofia" filtrados por nivel:
-- ${actualLevel === 'principiante' ? 'Solo ejercicios de nivel Principiante' : ''}
-- ${actualLevel === 'intermedio' ? 'Ejercicios de nivel Principiante + Intermedio' : ''}
-- ${actualLevel === 'avanzado' ? 'Ejercicios de nivel Principiante + Intermedio + Avanzado' : ''}
+    // Crear payload estructurado (como Calistenia y Powerlifting)
+    const planPayload = {
+      task: isRegeneration ? 'regenerate_hipertrofia_plan' : 'generate_hipertrofia_plan',
+      user_profile: fullUserProfile,
+      selected_level: actualLevel,
+      goals: goals || 'Hipertrofia muscular general',
+      selected_muscle_groups: selectedMuscleGroups || ['Todos'],
+      available_exercises: availableExercises,
+      plan_requirements: {
+        duration_weeks: 4,
+        sessions_per_week: frecuenciaObligatoria,
+        session_duration_min: 60,
+        start_day: todayNormalized,
+        start_date: new Date().toISOString().split('T')[0],
+        training_days_only: ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes'],
+        forbidden_days: ['Sabado', 'Domingo']
+      },
+      ...(isRegeneration && {
+        previous_plan: previousPlan,
+        user_feedback: {
+          reasons: regenerationReason || [],
+          additional_instructions: additionalInstructions || null
+        }
+      })
+    };
 
-${availableExercises.map(ex =>
-  `- ${ex.nombre} (${ex.grupo_muscular}) - Nivel: ${ex.nivel}, Equipamiento: ${ex.equipamiento}, Series/Reps: ${ex.series_reps_objetivo}, Descanso: ${ex.descanso_seg}s`
-).join('\n')}
+    // Log del payload estructurado
+    logAIPayload('HIPERTROFIA_PLAN', planPayload);
 
-⚠️ NUNCA inventes ejercicios que no estén en la lista anterior. Usa los nombres EXACTAMENTE como aparecen.
+    let attempts = 0;
+    let generatedPlan = null;
+    let lastError = null;
 
-DURACIÓN: ${versionConfig?.customWeeks || 4} semanas
+    while (attempts < 3) {
+      try {
+        console.log(`🤖 [HIPERTROFIA] Intento ${attempts + 1}/3 de generar plan válido...`);
 
-PRINCIPIOS DE HIPERTROFIA OBLIGATORIOS:
-1. Volumen óptimo: ${actualLevel === 'principiante' ? '10-15' : actualLevel === 'intermedio' ? '15-20' : '20-25'} series por grupo muscular/semana
-2. Intensidad: ${actualLevel === 'principiante' ? '60-75% 1RM' : actualLevel === 'intermedio' ? '70-85% 1RM' : '75-90% 1RM'}
-3. Rangos de repeticiones: ${actualLevel === 'principiante' ? '8-12 reps' : actualLevel === 'intermedio' ? '6-15 reps' : '4-20 reps'}
-4. Frecuencia: ${actualLevel === 'principiante' ? '3-4' : actualLevel === 'intermedio' ? '4-5' : '5-6'} días/semana
-5. Descanso entre series: Usa los valores de descanso_seg especificados para cada ejercicio (60-90s según patrón)
-6. Progresión: Sobrecarga progresiva en peso y/o volumen
+        const completion = await client.chat.completions.create({
+          model: config.model,
+          messages: [
+            { role: 'system', content: systemPrompt },  // ✅ USA PROMPT DEL ARCHIVO
+            { role: 'user', content: JSON.stringify(planPayload) }  // ✅ PAYLOAD ESTRUCTURADO
+          ],
+          temperature: config.temperature || 0.8,  // Usa config del módulo (0.8)
+          max_tokens: config.max_output_tokens  // 16384 tokens para planes completos
+        });
 
-GENERA un plan completo siguiendo el formato JSON de metodología.`;
+        const aiResponse = completion.choices[0].message.content;
+        logAIResponse(aiResponse);
+        logTokens(completion.usage);
 
-    const completion = await client.chat.completions.create({
-      model: config.model,
-      messages: [
-        {
-          role: 'system',
-          content: `Eres un especialista en hipertrofia muscular. Generas planes de entrenamiento basados en principios científicos de volumen, intensidad y frecuencia óptima.
+        // Parsear respuesta
+        let parsedPlan;
+        try {
+          parsedPlan = JSON.parse(parseAIResponse(aiResponse));
+        } catch (parseError) {
+          console.error('❌ Error parseando plan:', parseError);
+          throw new Error('Plan generado con formato inválido');
+        }
 
-RESPONDE SOLO EN JSON PURO, SIN MARKDOWN.
+        // Validar estructura del plan
+        if (!parsedPlan.semanas || !Array.isArray(parsedPlan.semanas)) {
+          throw new Error('Plan sin semanas válidas');
+        }
 
-El plan DEBE incluir:
-- semanas: array de semanas
-- cada semana tiene sesiones (días de entrenamiento)
-- cada sesión tiene ejercicios con: nombre, series, repeticiones, intensidad (% 1RM o RPE), descanso_seg, tempo, notas
+        // 🔥 VALIDACIÓN 1: Número de semanas
+        if (parsedPlan.semanas.length !== 4) {
+          throw new Error(`Plan debe tener exactamente 4 semanas, pero tiene ${parsedPlan.semanas.length}`);
+        }
 
-FORMATO EXACTO:
-{
-  "metodologia": "Hipertrofia",
-  "nivel": "${actualLevel}",
-  "duracion_semanas": 4,
-  "frecuencia_semanal": 4,
-  "tipo_split": "upper_lower",
-  "semanas": [
-    {
-      "numero": 1,
-      "sesiones": [
-        {
-          "dia": "Lunes",
-          "tipo": "Upper",
-          "grupos_musculares": ["Pecho", "Espalda", "Hombros"],
-          "ejercicios": [
-            {
-              "nombre": "Press banca plano",
-              "series": 4,
-              "repeticiones": "8-12",
-              "intensidad": "75% 1RM",
-              "descanso_seg": 90,
-              "tempo": "3-0-1-0",
-              "notas": "Enfoque en contracción del pecho"
+        // 🔥 VALIDACIÓN 2: Número de sesiones según nivel
+        const expectedSessionsPerWeek = frecuenciaObligatoria;
+        const expectedTotalSessions = expectedSessionsPerWeek * 4;
+
+        let totalSessions = 0;
+        parsedPlan.semanas.forEach(semana => {
+          if (semana.sesiones && Array.isArray(semana.sesiones)) {
+            totalSessions += semana.sesiones.length;
+          }
+        });
+
+        if (totalSessions !== expectedTotalSessions) {
+          // Analizar distribución de sesiones por semana para más detalle
+          const sessionsByWeek = parsedPlan.semanas.map((semana, idx) => ({
+            semana: idx + 1,
+            sesiones: semana.sesiones?.length || 0,
+            dias: semana.sesiones?.map(s => s.dia).join(', ') || 'Ninguno'
+          }));
+
+          console.error(`❌ [HIPERTROFIA] Error de validación de sesiones:`);
+          console.error(`   Nivel: ${dbLevel} (${actualLevel})`);
+          console.error(`   Esperadas: ${expectedTotalSessions} sesiones (${expectedSessionsPerWeek} días/semana × 4 semanas)`);
+          console.error(`   Generadas: ${totalSessions} sesiones`);
+          console.error(`   Distribución por semana:`, sessionsByWeek);
+
+          throw new Error(
+            `Plan incompleto para nivel ${dbLevel}: esperadas ${expectedTotalSessions} sesiones ` +
+            `(${expectedSessionsPerWeek} días/semana × 4 semanas), pero se generaron ${totalSessions}. ` +
+            `La IA debe generar EXACTAMENTE ${expectedSessionsPerWeek} sesiones por semana.`
+          );
+        }
+
+        console.log(`✅ Validación sesiones: ${totalSessions}/${expectedTotalSessions} sesiones correctas`);
+
+        // 🔥 VALIDACIÓN 2.5: Campo frecuencia_por_semana debe coincidir
+        if (parsedPlan.frecuencia_por_semana !== expectedSessionsPerWeek) {
+          console.warn(`⚠️ [HIPERTROFIA] Campo frecuencia_por_semana incorrecto:`);
+          console.warn(`   Esperado: ${expectedSessionsPerWeek}`);
+          console.warn(`   Recibido: ${parsedPlan.frecuencia_por_semana || 'undefined'}`);
+          // Corregir automáticamente si es posible
+          parsedPlan.frecuencia_por_semana = expectedSessionsPerWeek;
+        }
+
+        // 🔥 VALIDACIÓN 3: Solo días laborables (NO sábado/domingo)
+        const weekendDays = [];
+        const diasLaborables = ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes'];
+
+        parsedPlan.semanas.forEach((semana, sIdx) => {
+          semana.sesiones.forEach((sesion, dIdx) => {
+            const diaName = sesion.dia;
+            if (!diasLaborables.includes(diaName)) {
+              weekendDays.push({
+                semana: semana.numero || (sIdx + 1),
+                dia: diaName
+              });
             }
-          ]
-        }
-      ]
-    }
-  ]
-}`
-        },
-        {
-          role: 'user',
-          content: userMessage
-        }
-      ],
-      temperature: 0.4,
-      max_tokens: config.max_output_tokens  // 16384 tokens para planes completos
-    });
-
-    const aiResponse = completion.choices[0].message.content;
-    logAIResponse(aiResponse);
-    logTokens(completion.usage);
-
-    // Parsear respuesta
-    let generatedPlan;
-    try {
-      generatedPlan = JSON.parse(parseAIResponse(aiResponse));
-    } catch (parseError) {
-      console.error('Error parseando plan:', parseError);
-      throw new Error('Plan generado con formato inválido');
-    }
-
-    // Validar estructura del plan
-    if (!generatedPlan.semanas || !Array.isArray(generatedPlan.semanas)) {
-      throw new Error('Plan sin semanas válidas');
-    }
-
-    // 🔥 VALIDACIÓN 1: Número de semanas
-    if (generatedPlan.semanas.length !== 4) {
-      throw new Error(`Plan debe tener exactamente 4 semanas, pero tiene ${generatedPlan.semanas.length}`);
-    }
-
-    // 🔥 VALIDACIÓN 2: Número de sesiones según nivel
-    const expectedSessionsPerWeek = dbLevel === 'Avanzado' ? 6 : (dbLevel === 'Intermedio' ? 5 : 4);
-    const expectedTotalSessions = expectedSessionsPerWeek * 4;
-
-    let totalSessions = 0;
-    generatedPlan.semanas.forEach(semana => {
-      if (semana.sesiones && Array.isArray(semana.sesiones)) {
-        totalSessions += semana.sesiones.length;
-      }
-    });
-
-    if (totalSessions !== expectedTotalSessions) {
-      throw new Error(
-        `Plan incompleto para nivel ${dbLevel}: esperadas ${expectedTotalSessions} sesiones ` +
-        `(${expectedSessionsPerWeek} días/semana × 4 semanas), pero se generaron ${totalSessions}`
-      );
-    }
-
-    console.log(`✅ Validación sesiones: ${totalSessions}/${expectedTotalSessions} sesiones correctas`);
-
-    // 🔥 VALIDACIÓN 3: Solo días laborables (NO sábado/domingo)
-    const weekendDays = [];
-    const diasLaborables = ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes'];
-
-    generatedPlan.semanas.forEach((semana, sIdx) => {
-      semana.sesiones.forEach((sesion, dIdx) => {
-        const diaName = sesion.dia;
-        if (!diasLaborables.includes(diaName)) {
-          weekendDays.push({
-            semana: semana.numero || (sIdx + 1),
-            dia: diaName
           });
+        });
+
+        if (weekendDays.length > 0) {
+          const errorDetails = weekendDays.map(d =>
+            `Semana ${d.semana}: ${d.dia}`
+          ).join('; ');
+
+          throw new Error(
+            `Plan Hipertrofia inválido: ${weekendDays.length} sesiones en fin de semana (solo Lun-Vie permitidos). ` +
+            `Detalles: ${errorDetails}`
+          );
         }
-      });
-    });
 
-    if (weekendDays.length > 0) {
-      const errorDetails = weekendDays.map(d =>
-        `Semana ${d.semana}: ${d.dia}`
-      ).join('; ');
+        console.log(`✅ Validación días laborables: Todas las sesiones están en Lun-Vie`);
 
-      throw new Error(
-        `Plan Hipertrofia inválido: ${weekendDays.length} sesiones en fin de semana (solo Lun-Vie permitidos). ` +
-        `Detalles: ${errorDetails}`
-      );
+        // ✅ TODAS LAS VALIDACIONES PASARON
+        generatedPlan = parsedPlan;
+        console.log(`✅ [HIPERTROFIA] Plan válido generado en intento ${attempts + 1}/3`);
+        break; // Salir del loop
+
+      } catch (error) {
+        attempts++;
+        lastError = error;
+        console.error(`❌ [HIPERTROFIA] Intento ${attempts}/3 falló:`, error.message);
+
+        // Si el error es por días de fin de semana, modificar el mensaje para el siguiente intento
+        if (error.message.includes('fin de semana') && attempts < 3) {
+          console.warn(`⚠️ [HIPERTROFIA] Reintentando sin días de fin de semana...`);
+          await new Promise(resolve => setTimeout(resolve, attempts * 1000)); // Esperar 1s, 2s, 3s
+        } else if (attempts < 3) {
+          await new Promise(resolve => setTimeout(resolve, attempts * 1000)); // Backoff exponencial
+        }
+      }
     }
 
-    console.log(`✅ Validación días laborables: Todas las sesiones están en Lun-Vie`);
+    // Si después de 3 intentos no hay plan válido, lanzar error
+    if (!generatedPlan) {
+      throw new Error(
+        `No se pudo generar un plan válido después de 3 intentos. ` +
+        `Último error: ${lastError?.message || 'Desconocido'}`
+      );
+    }
 
     // Guardar plan en BD
     const client_db = await pool.connect();
@@ -2979,79 +3099,134 @@ router.post('/specialist/funcional/generate', authenticateToken, async (req, res
 
     console.log(`✅ Ejercicios Funcionales cargados: ${availableExercises.length} para nivel ${dbLevel}`);
 
-    // Llamar a IA con prompt especializado
-    console.log('🔧 Inicializando cliente OpenAI...');
-    const client = getModuleOpenAI(AI_MODULES.FUNCIONAL_SPECIALIST);
-    const config = AI_MODULES.FUNCIONAL_SPECIALIST;
-
-    console.log('📄 Cargando system prompt...');
+    // 🔄 CAMBIO CRÍTICO: Cargar prompt desde archivo (como Calistenia, Powerlifting, Hipertrofia, Heavy Duty, Halterofilia)
+    clearPromptCache(FeatureKey.FUNCIONAL_SPECIALIST);
     const systemPrompt = await getPrompt(FeatureKey.FUNCIONAL_SPECIALIST);
     console.log(`✅ System prompt cargado (${systemPrompt.length} caracteres)`);
 
-    // Construir mensaje para IA
-    console.log('📝 Construyendo mensaje para IA...');
-    const userMessage = `GENERACIÓN DE PLAN ENTRENAMIENTO FUNCIONAL
+    // 🔢 Calcular frecuencia según nivel (Funcional)
+    const sessionsPerWeek = dbLevel === 'Avanzado' ? 5 : (dbLevel === 'Intermedio' ? 4 : 3);
+    console.log(`📅 Frecuencia calculada: ${sessionsPerWeek} días/semana para nivel ${dbLevel}`);
 
-NIVEL: ${actualLevel} (${dbLevel})
-GRUPOS MUSCULARES PRIORITARIOS: ${selectedMuscleGroups?.join(', ') || 'Empuje, Tracción, Piernas, Core'}
-OBJETIVOS: ${goals || 'Desarrollar fuerza funcional y movilidad'}
+    // 📦 Crear payload estructurado (como Calistenia, Powerlifting, Hipertrofia, Heavy Duty, Halterofilia)
+    const planPayload = {
+      task: isRegeneration ? 'regenerate_funcional_plan' : 'generate_funcional_plan',
+      user_profile: fullUserProfile,
+      selected_level: actualLevel,
+      goals: goals || 'Desarrollar fuerza funcional y movilidad',
+      selected_patterns: selectedMuscleGroups || ['Squat', 'Hinge', 'Push', 'Pull', 'Core'],
+      available_exercises: availableExercises,
+      plan_requirements: {
+        duration_weeks: versionConfig?.customWeeks || 4,
+        sessions_per_week: sessionsPerWeek,
+        training_days_only: ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes'],
+        forbidden_days: ['Sabado', 'Domingo']
+      },
+      methodology_specifics: {
+        main_patterns: ['Squat', 'Hinge', 'Push', 'Pull', 'Rotation', 'Anti-rotation', 'Locomotion', 'Carry'],
+        progression_model: 'Bilateral → Unilateral, Estable → Inestable',
+        rest_between_sets: actualLevel === 'principiante' ? '60-75s' : actualLevel === 'intermedio' ? '45-60s' : '45s',
+        intensity_guide: 'RPE 6-8'
+      },
+      previous_plan: previousPlan,
+      regeneration_reason: regenerationReason,
+      additional_instructions: additionalInstructions
+    };
 
-EJERCICIOS DISPONIBLES (${availableExercises.length}):
-${availableExercises.map(ex =>
-  `- ${ex.nombre} (${ex.patron}/${ex.categoria}) - Nivel: ${ex.nivel}, Series/Reps: ${ex.series_reps_objetivo}, Equipamiento: ${Array.isArray(ex.equipamiento) ? ex.equipamiento.join(', ') : ex.equipamiento}, Tempo: ${ex.tempo || 'Controlado'}`
-).join('\n')}
+    console.log('📦 Payload estructurado creado');
 
-DURACIÓN: ${versionConfig?.customWeeks || 4} semanas
+    // 🔄 Retry logic con 3 intentos (como Calistenia, Powerlifting, Hipertrofia, Heavy Duty, Halterofilia)
+    const client = getModuleOpenAI(AI_MODULES.FUNCIONAL_SPECIALIST);
+    const config = AI_MODULES.FUNCIONAL_SPECIALIST;
 
-PRINCIPIOS FUNCIONALES OBLIGATORIOS:
-1. Patrones de movimiento: Squat, Hinge, Push, Pull, Rotation, Anti-rotation, Locomotion, Carry
-2. Multiarticular: Integración de múltiples grupos musculares
-3. Transferencia real: Aplicación a vida diaria
-4. Movilidad y estabilidad: Core activo en todos los ejercicios
-5. Progresión gradual: De bilateral a unilateral, de estable a inestable
-6. Descansos: ${actualLevel === 'principiante' ? '60-75s' : actualLevel === 'intermedio' ? '45-60s' : '45s'} según nivel
-7. Calentamiento específico: Movilidad articular + activación de patrones
+    let generatedPlan = null;
+    let lastError = null;
+    const MAX_RETRIES = 3;
 
-GENERA un plan completo siguiendo el formato JSON de metodología.`;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        console.log(`🤖 [Intento ${attempt}/${MAX_RETRIES}] Llamando a OpenAI para generación Funcional...`);
+        const startTime = Date.now();
 
-    console.log(`📏 Mensaje construido (${userMessage.length} caracteres)`);
+        const completion = await client.chat.completions.create({
+          model: config.model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: JSON.stringify(planPayload) }
+          ],
+          temperature: config.temperature,
+          max_tokens: config.max_output_tokens,
+          response_format: { type: 'json_object' }
+        });
 
-    const startTime = Date.now();
-    console.log('🤖 Iniciando llamada a OpenAI para generación Funcional...');
-    console.log(`📊 Config: model=${config.model}, max_tokens=${config.max_output_tokens}, temp=${config.temperature}`);
+        const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(2);
+        console.log(`⏱️  OpenAI respondió en ${elapsedTime}s (intento ${attempt})`);
 
-    const completion = await client.chat.completions.create({
-      model: config.model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage }
-      ],
-      temperature: config.temperature,
-      max_tokens: config.max_output_tokens,
-      response_format: { type: 'json_object' }
-    });
+        const rawContent = completion.choices[0].message.content;
+        const cleanedResponse = parseAIResponse(rawContent);
+        generatedPlan = JSON.parse(cleanedResponse);
 
-    const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(2);
-    console.log(`⏱️  OpenAI respondió en ${elapsedTime}s`);
+        // ✅ Validación de estructura básica
+        if (!generatedPlan.semanas || !Array.isArray(generatedPlan.semanas)) {
+          throw new Error('Plan no tiene estructura válida (falta semanas)');
+        }
 
-    console.log('🔄 Parseando respuesta de IA...');
-    const rawContent = completion.choices[0].message.content;
-    console.log(`📦 Contenido recibido (${rawContent.length} caracteres)`);
+        // ✅ Validación de semanas
+        const expectedWeeks = versionConfig?.customWeeks || 4;
+        if (generatedPlan.semanas.length !== expectedWeeks) {
+          throw new Error(`Plan tiene ${generatedPlan.semanas.length} semanas, esperadas ${expectedWeeks}`);
+        }
 
-    const cleanedResponse = parseAIResponse(rawContent);
-    console.log(`🧹 Respuesta limpiada (${cleanedResponse.length} caracteres)`);
+        // ✅ Validación de sesiones totales
+        const totalSessions = generatedPlan.semanas.reduce((sum, week) =>
+          sum + (week.sesiones?.length || 0), 0
+        );
+        const expectedSessions = sessionsPerWeek * expectedWeeks;
 
-    const generatedPlan = JSON.parse(cleanedResponse);
-    console.log(`✅ JSON parseado correctamente`);
+        if (totalSessions !== expectedSessions) {
+          throw new Error(
+            `Plan tiene ${totalSessions} sesiones totales, esperadas ${expectedSessions} ` +
+            `(${sessionsPerWeek} días × ${expectedWeeks} semanas)`
+          );
+        }
 
-    console.log(`✅ Plan Funcional generado por IA (${elapsedTime}s total)`);
+        // ✅ Validación de días de fin de semana
+        const weekendDays = ['Sabado', 'Sábado', 'Domingo'];
+        const hasWeekendSessions = generatedPlan.semanas.some(week =>
+          week.sesiones?.some(session =>
+            weekendDays.some(day => session.dia?.includes(day))
+          )
+        );
 
-    // Validar estructura del plan
-    console.log('🔍 Validando estructura del plan...');
-    if (!generatedPlan.semanas || !Array.isArray(generatedPlan.semanas)) {
-      throw new Error('Plan generado no tiene estructura válida (falta semanas)');
+        if (hasWeekendSessions) {
+          throw new Error('❌ Plan contiene sesiones en fin de semana (Sábado/Domingo) - PROHIBIDO');
+        }
+
+        console.log(`✅ Plan Funcional validado correctamente (intento ${attempt})`);
+        console.log(`   - ${expectedWeeks} semanas`);
+        console.log(`   - ${totalSessions} sesiones totales`);
+        console.log(`   - Solo días laborables`);
+        break; // Éxito, salir del loop
+
+      } catch (error) {
+        lastError = error;
+        console.error(`❌ Error en intento ${attempt}/${MAX_RETRIES}:`, error.message);
+
+        if (attempt < MAX_RETRIES) {
+          const waitTime = attempt * 1000;
+          console.log(`⏳ Reintentando en ${waitTime}ms...`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+        }
+      }
     }
-    console.log(`✅ Estructura válida: ${generatedPlan.semanas.length} semanas`);
+
+    // Si después de todos los intentos no se generó un plan válido, lanzar error
+    if (!generatedPlan) {
+      throw new Error(
+        `No se pudo generar un plan válido después de ${MAX_RETRIES} intentos. ` +
+        `Último error: ${lastError?.message || 'Desconocido'}`
+      );
+    }
 
     // Guardar en BD con transacción
     console.log('💾 Conectando a base de datos...');
@@ -3458,7 +3633,14 @@ router.post('/specialist/halterofilia/generate', authenticateToken, async (req, 
     // Llamar a IA con prompt especializado
     const client = getModuleOpenAI(AI_MODULES.HALTEROFILIA_SPECIALIST);
     const config = AI_MODULES.HALTEROFILIA_SPECIALIST;
+
+    // 🔄 Limpiar cache y cargar prompt actualizado
+    clearPromptCache(FeatureKey.HALTEROFILIA_SPECIALIST);
     const systemPrompt = await getPrompt(FeatureKey.HALTEROFILIA_SPECIALIST);
+
+    if (!systemPrompt) {
+      throw new Error('Prompt no disponible para Halterofilia Specialist');
+    }
 
     // Obtener día actual para incluirlo en la generación
     const today = new Date();
@@ -3466,52 +3648,56 @@ router.post('/specialist/halterofilia/generate', authenticateToken, async (req, 
     const todayName = daysOfWeek[today.getDay()];
     const todayNormalized = normalizeDayName(todayName);
 
-    // Construir mensaje para IA
-    const userMessage = `GENERACIÓN DE PLAN HALTEROFILIA (OLYMPIC WEIGHTLIFTING)
+    // 🔄 Definir parámetros de validación según nivel (ajustado para evitar fines de semana)
+    // Halterofilia necesita alta frecuencia pero mantenemos 5 días máximo
+    const sessionsPerWeek = dbLevel === 'Avanzado' ? 5 : (dbLevel === 'Intermedio' ? 4 : 3);
+    const MIN_EXERCISES = dbLevel === 'Avanzado' ? 5 : (dbLevel === 'Intermedio' ? 4 : 3);
+    const MAX_EXERCISES = 8;
 
-📅 DÍA DE GENERACIÓN: ${todayNormalized} (HOY)
-⚠️ IMPORTANTE: Si ${todayNormalized} es un día laborable (Lun-Vie), considera incluirlo en la primera semana del plan para que el usuario pueda empezar hoy mismo.
+    // Crear payload estructurado (como las otras metodologías)
+    const planPayload = {
+      task: isRegeneration ? 'regenerate_halterofilia_plan' : 'generate_halterofilia_plan',
+      user_profile: fullUserProfile,
+      selected_level: actualLevel,
+      goals: goals || 'Desarrollar técnica olímpica y potencia explosiva',
+      selected_focus: selectedMuscleGroups || ['Snatch', 'Clean & Jerk', 'Fuerza Base'],
+      available_exercises: availableExercises,
+      plan_requirements: {
+        duration_weeks: 4,
+        sessions_per_week: sessionsPerWeek,
+        session_duration_min: dbLevel === 'Avanzado' ? 90 : (dbLevel === 'Intermedio' ? 75 : 60),
+        start_day: todayNormalized,
+        start_date: new Date().toISOString().split('T')[0],
+        training_days_only: ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes'],
+        forbidden_days: ['Sabado', 'Domingo']
+      },
+      methodology_specifics: {
+        main_lifts: ['Snatch', 'Clean & Jerk'],
+        progression_model: 'Hang → Bloques → Suelo',
+        overload_work: 'Pulls 100-120% del lift',
+        strength_base: ['Front Squat', 'Back Squat', 'Overhead Squat'],
+        rest_between_sets: actualLevel === 'principiante' ? '2-3 min' : actualLevel === 'intermedio' ? '3-4 min' : '4-5 min',
+        periodization: 'Semana 1-2 volume, Semana 3 intensity, Semana 4 deload',
+        min_exercises_per_session: MIN_EXERCISES,
+        max_exercises_per_session: MAX_EXERCISES
+      },
+      ...(isRegeneration && {
+        previous_plan: previousPlan,
+        user_feedback: {
+          reasons: regenerationReason || [],
+          additional_instructions: additionalInstructions || null
+        }
+      })
+    };
 
-NIVEL: ${actualLevel} (${dbLevel})
-ENFOQUE PRIORITARIO: ${selectedMuscleGroups?.join(', ') || 'Snatch, Clean & Jerk, Fuerza Base'}
-OBJETIVOS: ${goals || 'Desarrollar técnica olímpica y potencia explosiva'}
-
-⚠️ EJERCICIOS DISPONIBLES DE SUPABASE (${availableExercises.length}):
-**REGLA CRÍTICA:** SOLO usa ejercicios de esta lista. Los ejercicios provienen de la tabla app."Ejercicios_Halterofilia" filtrados por nivel:
-- ${actualLevel === 'principiante' ? 'Solo ejercicios de nivel Principiante (hang, muscle, técnica básica)' : ''}
-- ${actualLevel === 'intermedio' ? 'Ejercicios de nivel Principiante + Intermedio (power lifts, hang work)' : ''}
-- ${actualLevel === 'avanzado' ? 'Ejercicios de nivel Principiante + Intermedio + Avanzado (full lifts, complejos)' : ''}
-
-${availableExercises.map(ex =>
-  `- ${ex.nombre} (${ex.categoria}) - Nivel: ${ex.nivel}, Series/Reps: ${ex.series_reps_objetivo}, Descanso: ${ex.descanso_seg}s, Tempo: ${ex.tempo || 'Explosivo'}`
-).join('\n')}
-
-⚠️ NUNCA inventes ejercicios que no estén en la lista anterior. Usa los nombres EXACTAMENTE como aparecen.
-
-DURACIÓN: ${versionConfig?.customWeeks || 4} semanas
-
-PRINCIPIOS OLÍMPICOS OBLIGATORIOS:
-1. Técnica sobre carga SIEMPRE
-2. Snatch y Clean & Jerk como lifts principales
-3. Progresión: Hang → Bloques → Suelo
-4. Trabajo de potencia: Pulls overload (100-120% del lift)
-5. Fuerza base: Squats (front, back, overhead)
-6. Movilidad específica: Overhead squat, front rack
-7. Descansos adecuados: ${actualLevel === 'principiante' ? '2-3 min' : actualLevel === 'intermedio' ? '3-4 min' : '4-5 min'} en lifts principales
-8. Periodización: Semana 1-2 volume, Semana 3 intensity, Semana 4 deload
-
-GENERA un plan completo siguiendo el formato JSON de metodología.`;
+    // Log del payload estructurado
+    logAIPayload('HALTEROFILIA_PLAN', planPayload);
 
     // 🔥 RETRY LOGIC CON VALIDACIONES COMPLETAS
     let attempts = 0;
     let completion = null;
     let lastError = null;
     let normalizedPlan = null;
-
-    // Definir parámetros de validación según nivel
-    const sessionsPerWeek = dbLevel === 'Avanzado' ? 5 : (dbLevel === 'Intermedio' ? 4 : 3);
-    const MIN_EXERCISES = dbLevel === 'Avanzado' ? 5 : (dbLevel === 'Intermedio' ? 4 : 3);
-    const MAX_EXERCISES = 8;
 
     while (attempts < 3) {
       try {
@@ -3521,7 +3707,7 @@ GENERA un plan completo siguiendo el formato JSON de metodología.`;
           model: config.model,
           messages: [
             { role: 'system', content: systemPrompt },
-            { role: 'user', content: userMessage }
+            { role: 'user', content: JSON.stringify(planPayload) }  // ✅ PAYLOAD ESTRUCTURADO
           ],
           temperature: config.temperature,
           max_tokens: config.max_output_tokens,

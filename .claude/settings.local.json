@@ -57,7 +57,9 @@
       "Bash(npm install:*)",
       "Bash(fnm install:*)",
       "Bash(fnm:*)",
-      "Read(//c//**)"
+      "Read(//c//**)",
+      "Bash(taskkill:*)",
+      "Bash(git log -1 --format='%s')"
     ],
     "deny": [],
     "ask": []

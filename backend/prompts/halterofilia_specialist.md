@@ -232,13 +232,13 @@ Descansos: 4-5 minutos entre lifts máximos, 3-4 min pulls/squats pesados
 - Día 4: Clean variants + Jerk practice
 - Día 5 (opt): Technique + Light squats
 
-#### Avanzado (5-6 días)
+#### Avanzado (5 días)
 - Día 1: Snatch @ 80-85% + BS heavy
 - Día 2: C&J @ 85-90% + Pulls overload
 - Día 3: Snatch variants + OHS + Technique
 - Día 4: Clean work + FS heavy
 - Día 5: Positional work + Complexes
-- Día 6 (opt): Recovery / Light technique
+- ⚠️ NOTA: Máximo 5 días para respetar días laborables (Lun-Vie)
 
 ### **Progresión de intensidad (4 semanas)**
 

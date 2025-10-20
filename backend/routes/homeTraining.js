@@ -1530,8 +1530,16 @@ async function findExerciseInTables(exerciseName) {
 
   for (const table of EXERCISE_TABLES) {
     try {
+      // Tablas actualizadas con nuevos nombres de columnas
+      const updatedTables = ['Ejercicios_Calistenia', 'Ejercicios_Halterofilia', 'Ejercicios_Heavy_duty',
+                             'Ejercicios_Powerlifting', 'Ejercicios_CrossFit', 'Ejercicios_Hipertrofia'];
+
+      const selectQuery = updatedTables.includes(table)
+        ? `SELECT nombre, "Cómo_hacerlo" as ejecucion, "Consejos" as consejos, "Errores_comunes" as errores_evitar`
+        : `SELECT nombre, ejecucion, consejos, errores_evitar`;
+
       const result = await pool.query(
-        `SELECT nombre, ejecucion, consejos, errores_evitar
+        `${selectQuery}
          FROM app."${table}"
          WHERE LOWER(TRIM(nombre)) = $1
          LIMIT 1`,
@@ -1567,20 +1575,30 @@ async function findExerciseInTables(exerciseName) {
  */
 async function saveExerciseInfoToTable(tableName, exerciseName, exerciseInfo) {
   try {
-    await pool.query(
-      `UPDATE app."${tableName}"
-       SET ejecucion = $1,
-           consejos = $2,
-           errores_evitar = $3,
-           updated_at = NOW()
-       WHERE LOWER(TRIM(nombre)) = $4`,
-      [
-        exerciseInfo.ejecucion,
-        exerciseInfo.consejos,
-        exerciseInfo.errores_evitar,
-        exerciseName.toLowerCase().trim()
-      ]
-    );
+    // Tablas actualizadas con nuevos nombres de columnas
+    const updatedTables = ['Ejercicios_Calistenia', 'Ejercicios_Halterofilia', 'Ejercicios_Heavy_duty',
+                           'Ejercicios_Powerlifting', 'Ejercicios_CrossFit', 'Ejercicios_Hipertrofia'];
+
+    const updateQuery = updatedTables.includes(tableName)
+      ? `UPDATE app."${tableName}"
+         SET "Cómo_hacerlo" = $1,
+             "Consejos" = $2,
+             "Errores_comunes" = $3,
+             updated_at = NOW()
+         WHERE LOWER(TRIM(nombre)) = $4`
+      : `UPDATE app."${tableName}"
+         SET ejecucion = $1,
+             consejos = $2,
+             errores_evitar = $3,
+             updated_at = NOW()
+         WHERE LOWER(TRIM(nombre)) = $4`;
+
+    await pool.query(updateQuery, [
+      exerciseInfo.ejecucion,
+      exerciseInfo.consejos,
+      exerciseInfo.errores_evitar,
+      exerciseName.toLowerCase().trim()
+    ]);
 
     console.log(`💾 Información guardada en ${tableName} para: ${exerciseName}`);
     return true;

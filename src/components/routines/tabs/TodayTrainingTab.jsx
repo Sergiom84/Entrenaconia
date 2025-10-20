@@ -40,7 +40,6 @@ import { UserProfileDisplay } from '../summary/UserProfileDisplay.jsx';
 import { ProgressBar } from '../summary/ProgressBar.jsx';
 
 import { useNavigate } from 'react-router-dom';
-import { getMethodologyName } from '@/utils/workoutUtils';
 
 
 
@@ -159,51 +158,6 @@ export default function TodayTrainingTab({
     getTodayStatusCached
   } = useWorkout();
 
-  const currentPlanData = plan?.currentPlan;
-  const activePlanData = useMemo(
-    () => routinePlan || currentPlanData || null,
-    [routinePlan, currentPlanData]
-  );
-  const planMethodology = plan?.methodology;
-  const sessionMethodology = session?.methodology_type;
-  const summaryPlan = useMemo(() => {
-    if (!activePlanData && !planMethodology && !sessionMethodology) {
-      return activePlanData;
-    }
-
-    const fallback =
-      activePlanData?.selected_style ||
-      activePlanData?.metodologia ||
-      activePlanData?.methodology_type ||
-      planMethodology ||
-      sessionMethodology ||
-      null;
-
-    if (!activePlanData) {
-      if (!fallback) {
-        return null;
-      }
-      return {
-        selected_style: fallback,
-        metodologia: fallback,
-        methodology_type: fallback
-      };
-    }
-
-    return {
-      ...activePlanData,
-      selected_style: activePlanData.selected_style || fallback || '',
-      metodologia: activePlanData.metodologia || fallback || '',
-      methodology_type: activePlanData.methodology_type || fallback || ''
-    };
-  }, [activePlanData, planMethodology, sessionMethodology]);
-
-  const displayPlan = summaryPlan || activePlanData;
-  const methodologyDisplayName = useMemo(
-    () => getMethodologyName(displayPlan, session),
-    [displayPlan, session]
-  );
-
   // ===============================================
   // 🎯 ESTADO LOCAL
   // ===============================================
@@ -308,14 +262,15 @@ export default function TodayTrainingTab({
   // ===============================================
 
   useEffect(() => {
-    const effectivePlan = activePlanData;
+    // Usar el plan de props si existe, sino el del contexto
+    const effectivePlan = routinePlan || plan.currentPlan;
 
     console.log('🔍 DEBUG TodayTrainingTab - Estado inicial:', {
       hasActivePlan,
       effectivePlan: effectivePlan,
       currentTodayName,
       routinePlan: routinePlan,
-      planFromContext: currentPlanData
+      planFromContext: plan.currentPlan
     });
 
     if (hasActivePlan && effectivePlan) {
@@ -344,7 +299,7 @@ export default function TodayTrainingTab({
         loadExerciseProgress();
       }
     }
-  }, [hasActivePlan, activePlanData, routinePlan, currentPlanData, currentTodayName, hasActiveSession, session, plan.planStartDate, planStartDate, loadExerciseProgress]);
+  }, [hasActivePlan, routinePlan, plan.currentPlan, currentTodayName, hasActiveSession, session, plan.planStartDate, planStartDate, loadExerciseProgress]);
 
 
   // ===============================================
@@ -1263,7 +1218,7 @@ export default function TodayTrainingTab({
 
                 {/* Header enriquecido con metodología, fuente, perfil y progreso */}
                 <section className="mt-4">
-                  <SummaryHeader plan={displayPlan || plan?.currentPlan || plan} session={session} planSource={{ label: 'OpenAI' }} />
+                  <SummaryHeader plan={plan?.currentPlan || plan} session={session} planSource={{ label: 'OpenAI' }} />
                   <UserProfileDisplay />
                   <ProgressBar progressStats={headerProgressStats} />
                 </section>
@@ -1341,7 +1296,7 @@ export default function TodayTrainingTab({
                         </div>
                         <div className="flex items-center gap-1">
                           <Target className="h-4 w-4" />
-                          <span>{methodologyDisplayName || 'Rutina'}</span>
+                          <span>{plan.methodologyType || 'Rutina'}</span>
                         </div>
                       </div>
                     </div>

@@ -245,6 +245,29 @@ Nivel 4-5: Avanzado → Movimientos explosivos, carga significativa
 - Rotaciones torácicas, Hip 90/90
 - Shoulder dislocations
 
+## 📅 DÍAS DE ENTRENAMIENTO Y FRECUENCIA
+
+### **Días Permitidos**
+
+- ✅ **SOLO** días laborables: Lunes, Martes, Miércoles, Jueves, Viernes
+- ❌ **NUNCA** usar Sábado o Domingo para sesiones de entrenamiento
+
+### **Frecuencia por Nivel**
+
+- **Principiante**: 3 días/semana (ej: Lunes + Miércoles + Viernes)
+  - Enfoque: Fundamentos de patrones, adaptación neuromuscular
+  - Descanso: 1-2 días entre sesiones
+
+- **Intermedio**: 4 días/semana (ej: Lunes + Martes + Jueves + Viernes)
+  - Enfoque: Patrones complejos, trabajo unilateral
+  - Descanso: Mínimo 1 día entre sesiones intensas
+
+- **Avanzado**: 5 días/semana (Lunes a Viernes)
+  - Enfoque: Movimientos explosivos, carga significativa
+  - Descanso: Gestión activa de recuperación
+
+⚠️ **IMPORTANTE**: El máximo absoluto es 5 días/semana para respetar días laborables únicamente.
+
 ## ⚡ REGLAS ESPECÍFICAS FUNCIONAL
 
 1. **Calidad de movimiento > Cantidad**: Patrón perfecto siempre
@@ -253,6 +276,7 @@ Nivel 4-5: Avanzado → Movimientos explosivos, carga significativa
 4. **Progresión lógica**: De bilateral a unilateral, de estable a inestable
 5. **Multiplanar**: Incluir movimientos en todos los planos
 6. **Transferencia real**: Pensar en aplicación a vida diaria
+7. **Solo días laborables**: NUNCA generar entrenamientos en fin de semana
 
 ## 🚫 ERRORES A EVITAR
 

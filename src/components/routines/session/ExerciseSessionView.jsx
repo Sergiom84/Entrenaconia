@@ -192,6 +192,32 @@ export const ExerciseSessionView = ({
             <h4 className="text-blue-200 font-semibold text-sm">Consejos de Ejecución</h4>
           </div>
           <p className="text-blue-200 text-sm leading-relaxed">{exercise.notas}</p>
+
+          {/* Equipamiento necesario */}
+          {exercise?.equipamiento && (
+            <div className="mt-4 pt-4 border-t border-blue-700/30">
+              <div className="flex items-start mb-2">
+                <Square className="w-4 h-4 text-blue-400 mr-2 mt-1 flex-shrink-0" />
+                <h4 className="text-blue-200 font-semibold text-sm">Equipamiento</h4>
+              </div>
+              <p className="text-blue-200 text-sm leading-relaxed capitalize">
+                {String(exercise.equipamiento).replaceAll('_', ' ')}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Solo equipamiento si no hay notas */}
+      {!exercise?.notas && exercise?.equipamiento && (
+        <div className="bg-blue-900/20 border border-blue-700/50 rounded-lg p-4 mb-6">
+          <div className="flex items-start mb-3">
+            <Square className="w-4 h-4 text-blue-400 mr-2 mt-1 flex-shrink-0" />
+            <h4 className="text-blue-200 font-semibold text-sm">Equipamiento</h4>
+          </div>
+          <p className="text-blue-200 text-sm leading-relaxed capitalize">
+            {String(exercise.equipamiento).replaceAll('_', ' ')}
+          </p>
         </div>
       )}
 
