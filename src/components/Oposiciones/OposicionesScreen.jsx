@@ -22,6 +22,12 @@ import { useWorkout } from '@/contexts/WorkoutContext.jsx';
 import { useAuth } from '@/contexts/AuthContext.jsx';
 import { useNavigate } from 'react-router-dom';
 
+// Importar componentes de metodologías específicas
+import BomberosManualCard from './methodologies/Bomberos/BomberosManualCard.jsx';
+import TrainingPlanConfirmationModal from '../routines/TrainingPlanConfirmationModal.jsx';
+import WarmupModal from '../routines/WarmupModal.jsx';
+import RoutineSessionModal from '../routines/RoutineSessionModal.jsx';
+
 // Configuración de oposiciones
 const OPOSICIONES = [
   {
@@ -102,6 +108,13 @@ export default function OposicionesScreen() {
   const [generatedPlan, setGeneratedPlan] = useState(null);
   const [error, setError] = useState(null);
 
+  // Estados para modales específicos
+  const [showBomberosModal, setShowBomberosModal] = useState(false);
+  const [showWarmupModal, setShowWarmupModal] = useState(false);
+  const [showRoutineSessionModal, setShowRoutineSessionModal] = useState(false);
+  const [sessionId, setSessionId] = useState(null);
+  const [sessionData, setSessionData] = useState(null);
+
   // Contexts
   const { generatePlan, ui: { isLoading } } = useWorkout();
   const { user } = useAuth();
@@ -112,38 +125,117 @@ export default function OposicionesScreen() {
     setShowDetails(oposicion);
   };
 
-  // Handler para seleccionar oposición y generar plan
-  const handleSelectOposicion = async (oposicion) => {
+  // Handler para seleccionar oposición y abrir modal correspondiente
+  const handleSelectOposicion = (oposicion) => {
     setSelectedOposicion(oposicion);
     setError(null);
 
-    try {
-      console.log(`🎯 Generando plan para: ${oposicion.name} (${oposicion.id})`);
+    console.log(`🎯 Abriendo modal para: ${oposicion.name} (${oposicion.id})`);
 
-      // Llamar a generatePlan con el id de la oposición como methodology
+    // Abrir modal específico según la oposición
+    switch(oposicion.id) {
+      case 'bomberos':
+        setShowBomberosModal(true);
+        break;
+      case 'guardia-civil':
+        // TODO: Implementar GuardiaCivilManualCard
+        alert('Guardia Civil próximamente disponible');
+        break;
+      case 'policia-nacional':
+        // TODO: Implementar PoliciaNacionalManualCard
+        alert('Policía Nacional próximamente disponible');
+        break;
+      case 'policia-local':
+        // TODO: Implementar PoliciaLocalManualCard
+        alert('Policía Local próximamente disponible');
+        break;
+      default:
+        setError('Oposición no reconocida');
+    }
+  };
+
+  // Handler para generar plan de Bomberos desde el modal
+  const handleBomberosGenerate = async (bomberosData) => {
+    try {
+      console.log('🚒 Generando plan de Bomberos con datos completos:', bomberosData);
+
+      // Generar plan con los datos del modal (incluye selectedLevel)
       const result = await generatePlan({
         mode: 'manual',
-        methodology: oposicion.id, // 'bomberos', 'guardia-civil', etc.
-        userProfile: { id: user?.id }
+        methodology: 'bomberos',
+        ...bomberosData // Incluye selectedLevel, userProfile, goals, etc.
       });
 
       if (result.success && result.plan) {
-        console.log('✅ Plan generado exitosamente:', result);
+        console.log('✅ Plan de Bomberos generado exitosamente:', result);
         setGeneratedPlan(result.plan);
+        setShowBomberosModal(false);
         setShowConfirmation(true);
       } else {
         throw new Error(result.error || 'No se pudo generar el plan');
       }
     } catch (err) {
-      console.error('❌ Error generando plan de oposición:', err);
+      console.error('❌ Error generando plan de Bomberos:', err);
       setError(err.message || 'Error generando el plan de entrenamiento');
     }
   };
 
-  // Handler para confirmar y comenzar entrenamiento
-  const handleConfirmPlan = () => {
+  // Handler para cuando el usuario acepta el plan y quiere comenzar el entrenamiento
+  const handleStartTraining = async () => {
+    try {
+      console.log('🚀 Iniciando sesión de entrenamiento de oposiciones...');
+
+      // Aquí deberías llamar a la API para iniciar la sesión
+      // Por ahora simularemos el flujo
+      setShowConfirmation(false);
+
+      // Simular ID de sesión (en producción viene del backend)
+      const mockSessionId = Date.now().toString();
+      setSessionId(mockSessionId);
+
+      // Abrir modal de calentamiento
+      setShowWarmupModal(true);
+    } catch (error) {
+      console.error('Error iniciando entrenamiento:', error);
+      setError(error.message);
+    }
+  };
+
+  // Handler cuando se completa el calentamiento
+  const handleWarmupComplete = () => {
+    console.log('✅ Calentamiento completado');
+    setShowWarmupModal(false);
+
+    // Preparar datos de sesión (en producción viene del backend)
+    setSessionData({
+      ejercicios: generatedPlan?.semanas?.[0]?.sesiones?.[0]?.ejercicios || [],
+      sessionId: sessionId
+    });
+
+    setShowRoutineSessionModal(true);
+  };
+
+  // Handler para saltar calentamiento
+  const handleSkipWarmup = () => {
+    console.log('⭕ Calentamiento saltado');
+    handleWarmupComplete();
+  };
+
+  // Handler cuando se completa la sesión de rutina
+  const handleCompleteSession = () => {
+    console.log('🎯 Sesión completada, navegando a TodayTrainingTab');
+    setShowRoutineSessionModal(false);
+    navigate('/routines'); // Navegar a rutinas donde estará TodayTrainingTab
+  };
+
+  // Handler para generar otro plan
+  const handleGenerateAnother = async (feedbackData) => {
+    console.log('🔄 Generando otro plan con feedback:', feedbackData);
     setShowConfirmation(false);
-    navigate('/routines'); // Navegar a la pantalla de rutinas
+    // Reabrir modal de la oposición seleccionada
+    if (selectedOposicion?.id === 'bomberos') {
+      setShowBomberosModal(true);
+    }
   };
 
   // Obtener color para iconos y bordes
@@ -375,81 +467,64 @@ export default function OposicionesScreen() {
         </div>
       )}
 
-      {/* Confirmation Modal */}
-      {showConfirmation && generatedPlan && (
-        <Dialog open={showConfirmation} onOpenChange={() => setShowConfirmation(false)}>
-          <DialogContent className="sm:max-w-2xl bg-gray-900 text-white border-gray-700">
-            <DialogHeader>
-              <DialogTitle className="text-2xl flex items-center gap-3">
-                <Sparkles className="w-8 h-8 text-yellow-400" />
-                Plan de Entrenamiento Generado
-              </DialogTitle>
+      {/* Modal de confirmación del plan - Reutilizando el componente existente */}
+      <TrainingPlanConfirmationModal
+        isOpen={showConfirmation}
+        onClose={() => setShowConfirmation(false)}
+        onStartTraining={handleStartTraining}
+        onGenerateAnother={handleGenerateAnother}
+        plan={generatedPlan}
+        methodology={selectedOposicion?.name}
+        isLoading={isLoading}
+        error={error}
+        isConfirming={isLoading}
+      />
+
+      {/* Modal de Bomberos */}
+      {showBomberosModal && (
+        <Dialog open={showBomberosModal} onOpenChange={() => setShowBomberosModal(false)}>
+          <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto bg-gray-900 text-white border-gray-700">
+            <DialogHeader className="sr-only">
+              <DialogTitle>Evaluación Bomberos</DialogTitle>
             </DialogHeader>
-
-            <div className="space-y-4">
-              <Alert className="bg-green-900/20 border-green-500/50">
-                <Info className="w-5 h-5 text-green-400" />
-                <AlertDescription className="text-green-300">
-                  ✅ Tu plan de preparación para <strong>{selectedOposicion?.name}</strong> ha sido creado exitosamente.
-                </AlertDescription>
-              </Alert>
-
-              <div>
-                <h3 className="font-semibold text-yellow-400 mb-3">Resumen del Plan</h3>
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="bg-black/60 p-4 rounded-lg">
-                    <p className="text-gray-400 text-sm mb-1">Duración del Plan</p>
-                    <p className="text-white font-semibold">
-                      {generatedPlan.semanas?.length || generatedPlan.weeks?.length || '8-12'} semanas
-                    </p>
-                  </div>
-                  <div className="bg-black/60 p-4 rounded-lg">
-                    <p className="text-gray-400 text-sm mb-1">Metodología</p>
-                    <p className="text-white font-semibold">{selectedOposicion?.name}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="font-semibold text-yellow-400 mb-2">¿Qué incluye?</h3>
-                <ul className="space-y-2">
-                  <li className="text-gray-300 flex items-start gap-2">
-                    <span className="text-yellow-400">✓</span>
-                    <span>Ejercicios específicos para las pruebas oficiales</span>
-                  </li>
-                  <li className="text-gray-300 flex items-start gap-2">
-                    <span className="text-yellow-400">✓</span>
-                    <span>Progresión adaptada a tu nivel actual</span>
-                  </li>
-                  <li className="text-gray-300 flex items-start gap-2">
-                    <span className="text-yellow-400">✓</span>
-                    <span>Seguimiento de tu evolución hacia los baremos oficiales</span>
-                  </li>
-                  <li className="text-gray-300 flex items-start gap-2">
-                    <span className="text-yellow-400">✓</span>
-                    <span>Calendario de entrenamiento estructurado</span>
-                  </li>
-                </ul>
-              </div>
-
-              <div className="flex gap-3 pt-4 border-t border-gray-700">
-                <Button
-                  variant="outline"
-                  className="flex-1 border-gray-600 text-gray-300 hover:bg-gray-800"
-                  onClick={() => setShowConfirmation(false)}
-                >
-                  Revisar Más Tarde
-                </Button>
-                <Button
-                  className="flex-1 bg-yellow-400 text-black hover:bg-yellow-300"
-                  onClick={handleConfirmPlan}
-                >
-                  Ir a Mi Plan de Entrenamiento →
-                </Button>
-              </div>
-            </div>
+            <BomberosManualCard
+              onGenerate={handleBomberosGenerate}
+              isLoading={isLoading}
+              error={error}
+            />
           </DialogContent>
         </Dialog>
+      )}
+
+      {/* Modal de calentamiento */}
+      {showWarmupModal && sessionId && (
+        <WarmupModal
+          sessionId={sessionId}
+          level={generatedPlan?.level || 'básico'}
+          onComplete={handleWarmupComplete}
+          onSkip={handleSkipWarmup}
+          onClose={() => setShowWarmupModal(false)}
+        />
+      )}
+
+      {/* Modal de sesión de rutina */}
+      {showRoutineSessionModal && sessionData && (
+        <RoutineSessionModal
+          isOpen={showRoutineSessionModal}
+          session={sessionData}
+          sessionId={sessionId}
+          onClose={() => {
+            setShowRoutineSessionModal(false);
+            handleCompleteSession();
+          }}
+          onFinishExercise={(exerciseIndex, progressData) => {
+            console.log('Ejercicio terminado:', exerciseIndex, progressData);
+          }}
+          onSkipExercise={(exerciseIndex, progressData) => {
+            console.log('Ejercicio saltado:', exerciseIndex, progressData);
+          }}
+          onCompleteSession={handleCompleteSession}
+        />
       )}
     </div>
   );
