@@ -20,7 +20,10 @@ export const getMethodologyDescription = (methodology) => {
 export const getMethodologyName = (plan, session) => {
   return plan?.selected_style ||
          plan?.metodologia ||
+         plan?.methodology_type ||
+         plan?.methodology ||
          session?.methodology_type ||
+         session?.metodologia ||
          'Entrenamiento de Hoy';
 };
 
