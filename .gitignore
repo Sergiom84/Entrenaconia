@@ -20,6 +20,10 @@ dist-ssr
 backend/.env
 backend/.env.local
 
+# Render CLI credentials (NEVER commit)
+.render/
+**/.render/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

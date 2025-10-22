@@ -23,6 +23,7 @@ import { pool } from '../db.js';
 import { AI_MODULES } from '../config/aiConfigs.js';
 import { getModuleOpenAI, getOpenAIClient } from '../lib/openaiClient.js';
 import { getPrompt, FeatureKey, clearPromptCache } from '../lib/promptRegistry.js';
+import { buildHipertrofiaPlan, HIPERTROFIA_LEVEL_RULES } from '../services/hipertrofiaPlanGenerator.js';
 import {
   logSeparator,
   logUserProfile,
@@ -191,6 +192,7 @@ function parseAIResponse(response) {
     .replace(/^[`\s]*/, '')
     .replace(/[`\s]*$/, '')
     .replace(/^\s*json\s*/i, '')
+    // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u001F\u007F-\u009F]/g, '') // Eliminar caracteres de control
     .trim();
 
@@ -1026,11 +1028,11 @@ router.post('/specialist/heavy-duty/generate', authenticateToken, async (req, re
   try {
     const userId = req.user?.userId || req.user?.id;
 
-    // ✅ EXTRACCIÓN FLEXIBLE: Soporte para heavyDutyData (anidado) o datos en root
+    // G�� EXTRACCI+�N FLEXIBLE: Soporte para heavyDutyData (anidado) o datos en root
     const heavyDutyData = req.body.heavyDutyData || req.body;
     const {
       userProfile,
-      level,              // Heavy Duty envía "level"
+      level,              // Heavy Duty env+�a "level"
       selectedLevel,      // Fallback por si viene selectedLevel
       goals,
       selectedMuscleGroups,
@@ -1040,7 +1042,7 @@ router.post('/specialist/heavy-duty/generate', authenticateToken, async (req, re
       versionConfig
     } = heavyDutyData;
 
-    // Mapear level → selectedLevel (Heavy Duty usa "level" en lugar de "selectedLevel")
+    // Mapear level G�� selectedLevel (Heavy Duty usa "level" en lugar de "selectedLevel")
     const actualLevel = selectedLevel || level;
 
     const isRegeneration = !!(previousPlan || regenerationReason || additionalInstructions);
@@ -1053,7 +1055,7 @@ router.post('/specialist/heavy-duty/generate', authenticateToken, async (req, re
       goals: goals?.substring(0, 50)
     });
 
-    // Obtener perfil completo si solo se envió ID
+    // Obtener perfil completo si solo se envi+� ID
     let fullUserProfile = userProfile;
     if (userProfile && Object.keys(userProfile).length === 1 && userProfile.id) {
       fullUserProfile = await getUserFullProfile(userId);
@@ -1070,27 +1072,27 @@ router.post('/specialist/heavy-duty/generate', authenticateToken, async (req, re
       });
     }
 
-    // Mapear nivel - Corregido según niveles reales en BD
+    // Mapear nivel - Corregido seg+�n niveles reales en BD
     const levelMapping = {
       'novato': 'Principiante',      // 11 ejercicios
       'principiante': 'Principiante', // Alias
       'intermedio': 'Intermedio',     // 14 ejercicios
-      'avanzado': 'Intermedio'        // Avanzados usan ejercicios Intermedios + Básicos
+      'avanzado': 'Intermedio'        // Avanzados usan ejercicios Intermedios + B+�sicos
     };
     const dbLevel = levelMapping[actualLevel.toLowerCase()] || 'Principiante';
 
-    // Obtener ejercicios disponibles - Corregido según niveles reales en BD
-    // Niveles en BD: Principiante (11), Básico (38), Intermedio (14) = 63 total
+    // Obtener ejercicios disponibles - Corregido seg+�n niveles reales en BD
+    // Niveles en BD: Principiante (11), B+�sico (38), Intermedio (14) = 63 total
     let levelCondition;
     if (dbLevel === 'Intermedio') {
       // Intermedio y Avanzado: Acceso a TODOS los ejercicios (63)
-      levelCondition = "nivel IN ('Principiante', 'Básico', 'Intermedio')";
+      levelCondition = "nivel IN ('Principiante', 'B+�sico', 'Intermedio')";
     } else if (dbLevel === 'Principiante') {
-      // Principiantes: Solo Principiante + Básico (11 + 38 = 49 ejercicios)
-      levelCondition = "nivel IN ('Principiante', 'Básico')";
+      // Principiantes: Solo Principiante + B+�sico (11 + 38 = 49 ejercicios)
+      levelCondition = "nivel IN ('Principiante', 'B+�sico')";
     } else {
       // Fallback: Principiante
-      levelCondition = "nivel IN ('Principiante', 'Básico')";
+      levelCondition = "nivel IN ('Principiante', 'B+�sico')";
     }
 
     const exercisesResult = await pool.query(`
@@ -1108,9 +1110,9 @@ router.post('/specialist/heavy-duty/generate', authenticateToken, async (req, re
       throw new Error(`No hay ejercicios disponibles para el nivel ${dbLevel}`);
     }
 
-    console.log(`✅ Ejercicios Heavy Duty cargados: ${availableExercises.length} para nivel ${dbLevel}`);
+    console.log(`G�� Ejercicios Heavy Duty cargados: ${availableExercises.length} para nivel ${dbLevel}`);
 
-    // 🔄 CAMBIO CRÍTICO: Cargar prompt desde archivo (como Calistenia, Powerlifting, Hipertrofia)
+    // =��� CAMBIO CR+�TICO: Cargar prompt desde archivo (como Calistenia, Powerlifting, Hipertrofia)
     clearPromptCache(FeatureKey.HEAVY_DUTY_SPECIALIST);
     const systemPrompt = await getPrompt(FeatureKey.HEAVY_DUTY_SPECIALIST);
 
@@ -1122,12 +1124,12 @@ router.post('/specialist/heavy-duty/generate', authenticateToken, async (req, re
     const client = getModuleOpenAI(AI_MODULES.HEAVY_DUTY_SPECIALIST);
     const config = AI_MODULES.HEAVY_DUTY_SPECIALIST;
 
-    // Calcular frecuencia según nivel (Heavy Duty usa baja frecuencia)
-    const frecuenciaObligatoria = dbLevel === 'Intermedio' ? 3 : 2; // Intermedio: 3 días, Principiante/Avanzado: 2 días
+    // Calcular frecuencia seg+�n nivel (Heavy Duty usa baja frecuencia)
+    const frecuenciaObligatoria = dbLevel === 'Intermedio' ? 3 : 2; // Intermedio: 3 d+�as, Principiante/Avanzado: 2 d+�as
 
-    // Obtener día actual
+    // Obtener d+�a actual
     const today = new Date();
-    const daysOfWeek = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+    const daysOfWeek = ['Domingo', 'Lunes', 'Martes', 'Mi+�rcoles', 'Jueves', 'Viernes', 'S+�bado'];
     const todayName = daysOfWeek[today.getDay()];
     const todayNormalized = normalizeDayName(todayName);
 
@@ -1136,7 +1138,7 @@ router.post('/specialist/heavy-duty/generate', authenticateToken, async (req, re
       task: isRegeneration ? 'regenerate_heavy_duty_plan' : 'generate_heavy_duty_plan',
       user_profile: fullUserProfile,
       selected_level: actualLevel,
-      goals: goals || 'Maximizar intensidad con mínimo volumen (Mike Mentzer)',
+      goals: goals || 'Maximizar intensidad con m+�nimo volumen (Mike Mentzer)',
       selected_muscle_groups: selectedMuscleGroups || ['Todos'],
       available_exercises: availableExercises,
       plan_requirements: {
@@ -1153,7 +1155,7 @@ router.post('/specialist/heavy-duty/generate', authenticateToken, async (req, re
         max_exercises_per_session: 6,
         rest_between_sets: '240-360 segundos',
         intensity: 'RPE 10 - Fallo absoluto',
-        tempo: '4-1-2 (énfasis negativas)'
+        tempo: '4-1-2 (+�nfasis negativas)'
       },
       ...(isRegeneration && {
         previous_plan: previousPlan,
@@ -1173,15 +1175,15 @@ router.post('/specialist/heavy-duty/generate', authenticateToken, async (req, re
 
     while (attempts < 3) {
       try {
-        console.log(`🤖 [HEAVY DUTY] Intento ${attempts + 1}/3 de generar plan válido...`);
+        console.log(`=��� [HEAVY DUTY] Intento ${attempts + 1}/3 de generar plan v+�lido...`);
 
         const completion = await client.chat.completions.create({
           model: config.model,
           messages: [
-            { role: 'system', content: systemPrompt },  // ✅ USA PROMPT DEL ARCHIVO
-            { role: 'user', content: JSON.stringify(planPayload) }  // ✅ PAYLOAD ESTRUCTURADO
+            { role: 'system', content: systemPrompt },  // G�� USA PROMPT DEL ARCHIVO
+            { role: 'user', content: JSON.stringify(planPayload) }  // G�� PAYLOAD ESTRUCTURADO
           ],
-          temperature: config.temperature || 0.7,  // Usa config del módulo (más alto que 0.4)
+          temperature: config.temperature || 0.7,  // Usa config del m+�dulo (m+�s alto que 0.4)
           max_tokens: config.max_output_tokens  // 16384 tokens para planes completos
         });
 
@@ -1194,21 +1196,21 @@ router.post('/specialist/heavy-duty/generate', authenticateToken, async (req, re
         try {
           parsedPlan = JSON.parse(parseAIResponse(aiResponse));
         } catch (parseError) {
-          console.error('❌ Error parseando plan:', parseError);
-          throw new Error('Plan generado con formato inválido');
+          console.error('G�� Error parseando plan:', parseError);
+          throw new Error('Plan generado con formato inv+�lido');
         }
 
         // Validar estructura del plan
         if (!parsedPlan.semanas || !Array.isArray(parsedPlan.semanas)) {
-          throw new Error('Plan sin semanas válidas');
+          throw new Error('Plan sin semanas v+�lidas');
         }
 
-        // 🔥 VALIDACIÓN 1: Número de semanas
+        // =��� VALIDACI+�N 1: N+�mero de semanas
         if (parsedPlan.semanas.length !== 4) {
           throw new Error(`Plan debe tener exactamente 4 semanas, pero tiene ${parsedPlan.semanas.length}`);
         }
 
-        // 🔥 VALIDACIÓN 2: Número de sesiones según nivel
+        // =��� VALIDACI+�N 2: N+�mero de sesiones seg+�n nivel
         const expectedSessionsPerWeek = frecuenciaObligatoria;
         const expectedTotalSessions = expectedSessionsPerWeek * 4;
 
@@ -1220,38 +1222,38 @@ router.post('/specialist/heavy-duty/generate', authenticateToken, async (req, re
         });
 
         if (totalSessions !== expectedTotalSessions) {
-          // Analizar distribución de sesiones por semana para más detalle
+          // Analizar distribuci+�n de sesiones por semana para m+�s detalle
           const sessionsByWeek = parsedPlan.semanas.map((semana, idx) => ({
             semana: idx + 1,
             sesiones: semana.sesiones?.length || 0,
             dias: semana.sesiones?.map(s => s.dia).join(', ') || 'Ninguno'
           }));
 
-          console.error(`❌ [HEAVY DUTY] Error de validación de sesiones:`);
+          console.error(`G�� [HEAVY DUTY] Error de validaci+�n de sesiones:`);
           console.error(`   Nivel: ${dbLevel} (${actualLevel})`);
-          console.error(`   Esperadas: ${expectedTotalSessions} sesiones (${expectedSessionsPerWeek} días/semana × 4 semanas)`);
+          console.error(`   Esperadas: ${expectedTotalSessions} sesiones (${expectedSessionsPerWeek} d+�as/semana +� 4 semanas)`);
           console.error(`   Generadas: ${totalSessions} sesiones`);
-          console.error(`   Distribución por semana:`, sessionsByWeek);
+          console.error(`   Distribuci+�n por semana:`, sessionsByWeek);
 
           throw new Error(
             `Plan incompleto para nivel ${dbLevel}: esperadas ${expectedTotalSessions} sesiones ` +
-            `(${expectedSessionsPerWeek} días/semana × 4 semanas), pero se generaron ${totalSessions}. ` +
+            `(${expectedSessionsPerWeek} d+�as/semana +� 4 semanas), pero se generaron ${totalSessions}. ` +
             `La IA debe generar EXACTAMENTE ${expectedSessionsPerWeek} sesiones por semana.`
           );
         }
 
-        console.log(`✅ Validación sesiones: ${totalSessions}/${expectedTotalSessions} sesiones correctas`);
+        console.log(`G�� Validaci+�n sesiones: ${totalSessions}/${expectedTotalSessions} sesiones correctas`);
 
-        // 🔥 VALIDACIÓN 2.5: Campo frecuencia_por_semana debe coincidir
+        // =��� VALIDACI+�N 2.5: Campo frecuencia_por_semana debe coincidir
         if (parsedPlan.frecuencia_por_semana !== expectedSessionsPerWeek) {
-          console.warn(`⚠️ [HEAVY DUTY] Campo frecuencia_por_semana incorrecto:`);
+          console.warn(`G��n+� [HEAVY DUTY] Campo frecuencia_por_semana incorrecto:`);
           console.warn(`   Esperado: ${expectedSessionsPerWeek}`);
           console.warn(`   Recibido: ${parsedPlan.frecuencia_por_semana || 'undefined'}`);
-          // Corregir automáticamente si es posible
+          // Corregir autom+�ticamente si es posible
           parsedPlan.frecuencia_por_semana = expectedSessionsPerWeek;
         }
 
-        // 🔥 VALIDACIÓN 3: Solo días laborables (NO sábado/domingo)
+        // =��� VALIDACI+�N 3: Solo d+�as laborables (NO s+�bado/domingo)
         const weekendDays = [];
         const diasLaborables = ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes'];
 
@@ -1273,26 +1275,26 @@ router.post('/specialist/heavy-duty/generate', authenticateToken, async (req, re
           ).join('; ');
 
           throw new Error(
-            `Plan Heavy Duty inválido: ${weekendDays.length} sesiones en fin de semana (solo Lun-Vie permitidos). ` +
+            `Plan Heavy Duty inv+�lido: ${weekendDays.length} sesiones en fin de semana (solo Lun-Vie permitidos). ` +
             `Detalles: ${errorDetails}`
           );
         }
 
-        console.log(`✅ Validación días laborables: Todas las sesiones están en Lun-Vie`);
+        console.log(`G�� Validaci+�n d+�as laborables: Todas las sesiones est+�n en Lun-Vie`);
 
-        // ✅ TODAS LAS VALIDACIONES PASARON
+        // G�� TODAS LAS VALIDACIONES PASARON
         generatedPlan = parsedPlan;
-        console.log(`✅ [HEAVY DUTY] Plan válido generado en intento ${attempts + 1}/3`);
+        console.log(`G�� [HEAVY DUTY] Plan v+�lido generado en intento ${attempts + 1}/3`);
         break; // Salir del loop
 
       } catch (error) {
         attempts++;
         lastError = error;
-        console.error(`❌ [HEAVY DUTY] Intento ${attempts}/3 falló:`, error.message);
+        console.error(`G�� [HEAVY DUTY] Intento ${attempts}/3 fall+�:`, error.message);
 
-        // Si el error es por días de fin de semana, modificar el mensaje para el siguiente intento
+        // Si el error es por d+�as de fin de semana, modificar el mensaje para el siguiente intento
         if (error.message.includes('fin de semana') && attempts < 3) {
-          console.warn(`⚠️ [HEAVY DUTY] Reintentando sin días de fin de semana...`);
+          console.warn(`G��n+� [HEAVY DUTY] Reintentando sin d+�as de fin de semana...`);
           await new Promise(resolve => setTimeout(resolve, attempts * 1000)); // Esperar 1s, 2s, 3s
         } else if (attempts < 3) {
           await new Promise(resolve => setTimeout(resolve, attempts * 1000)); // Backoff exponencial
@@ -1300,11 +1302,11 @@ router.post('/specialist/heavy-duty/generate', authenticateToken, async (req, re
       }
     }
 
-    // Si después de 3 intentos no hay plan válido, lanzar error
+    // Si despu+�s de 3 intentos no hay plan v+�lido, lanzar error
     if (!generatedPlan) {
       throw new Error(
-        `No se pudo generar un plan válido después de 3 intentos. ` +
-        `Último error: ${lastError?.message || 'Desconocido'}`
+        `No se pudo generar un plan v+�lido despu+�s de 3 intentos. ` +
+        `+�ltimo error: ${lastError?.message || 'Desconocido'}`
       );
     }
 
@@ -1329,7 +1331,7 @@ router.post('/specialist/heavy-duty/generate', authenticateToken, async (req, re
 
       await client_db.query('COMMIT');
 
-      console.log(`✅ Plan Heavy Duty guardado con ID: ${methodologyPlanId}`);
+      console.log(`G�� Plan Heavy Duty guardado con ID: ${methodologyPlanId}`);
 
       res.json({
         success: true,
@@ -1337,7 +1339,7 @@ router.post('/specialist/heavy-duty/generate', authenticateToken, async (req, re
         methodologyPlanId,
         planId: methodologyPlanId,
         metadata: {
-          model_used: config.model,
+          generator: 'hipertrofia_plan_generator_v1',
           generation_timestamp: new Date().toISOString()
         }
       });
@@ -1362,12 +1364,12 @@ router.post('/specialist/heavy-duty/generate', authenticateToken, async (req, re
 });
 
 // =========================================
-// 🏋️ HIPERTROFIA SPECIALIST
+// =���n+� HIPERTROFIA SPECIALIST
 // =========================================
 
 /**
  * POST /api/routine-generation/specialist/hipertrofia/evaluate
- * Evaluación de perfil para Hipertrofia con IA
+ * Evaluaci+�n de perfil para Hipertrofia con IA
  */
 router.post('/specialist/hipertrofia/evaluate', authenticateToken, async (req, res) => {
   try {
@@ -1502,7 +1504,7 @@ router.post('/specialist/hipertrofia/generate', authenticateToken, async (req, r
   try {
     const userId = req.user?.userId || req.user?.id;
 
-    // Extracción flexible: Soporte para hipertrofiaData (anidado) o datos en root
+    // Extracci+�n flexible: Soporte para hipertrofiaData (anidado) o datos en root
     const hipertrofiaData = req.body.hipertrofiaData || req.body;
     const {
       userProfile,
@@ -1516,7 +1518,7 @@ router.post('/specialist/hipertrofia/generate', authenticateToken, async (req, r
       versionConfig
     } = hipertrofiaData;
 
-    // Mapear level → selectedLevel
+    // Mapear level G�� selectedLevel
     const actualLevel = selectedLevel || level;
 
     const isRegeneration = !!(previousPlan || regenerationReason || additionalInstructions);
@@ -1529,7 +1531,7 @@ router.post('/specialist/hipertrofia/generate', authenticateToken, async (req, r
       goals: goals?.substring(0, 50)
     });
 
-    // Obtener perfil completo si solo se envió ID
+    // Obtener perfil completo si solo se envi+� ID
     let fullUserProfile = userProfile;
     if (userProfile && Object.keys(userProfile).length === 1 && userProfile.id) {
       fullUserProfile = await getUserFullProfile(userId);
@@ -1555,7 +1557,7 @@ router.post('/specialist/hipertrofia/generate', authenticateToken, async (req, r
     const dbLevel = levelMapping[actualLevel.toLowerCase()] || 'Principiante';
 
     // Obtener ejercicios disponibles
-    // Sistema de acceso progresivo: cada nivel accede a ejercicios de niveles inferiores también
+    // Sistema de acceso progresivo: cada nivel accede a ejercicios de niveles inferiores tambi+�n
     let levelCondition;
     if (dbLevel === 'Avanzado') {
       // Avanzado: Acceso a TODOS los ejercicios
@@ -1572,7 +1574,7 @@ router.post('/specialist/hipertrofia/generate', authenticateToken, async (req, r
       SELECT exercise_id, nombre, nivel, categoria as grupo_muscular, patron,
              equipamiento, series_reps_objetivo, descanso_seg,
              criterio_de_progreso, progresion_desde, progresion_hacia,
-             notas, "Cómo_hacerlo" as ejecucion, "Consejos" as consejos, "Errores_comunes" as errores_evitar
+             notas, "C�mo_hacerlo" as ejecucion, "Consejos" as consejos, "Errores_comunes" as errores_evitar
       FROM app."Ejercicios_Hipertrofia"
       WHERE ${levelCondition}
       ORDER BY RANDOM()
@@ -1584,200 +1586,93 @@ router.post('/specialist/hipertrofia/generate', authenticateToken, async (req, r
       throw new Error(`No hay ejercicios disponibles para el nivel ${dbLevel}`);
     }
 
-    console.log(`✅ Ejercicios Hipertrofia cargados: ${availableExercises.length} para nivel ${dbLevel}`);
+    console.log(`OK. Ejercicios Hipertrofia cargados: ${availableExercises.length} para nivel ${dbLevel}`);
 
-    // Llamar a IA con prompt especializado
-    const client = getModuleOpenAI(AI_MODULES.HIPERTROFIA_SPECIALIST);
-    const config = AI_MODULES.HIPERTROFIA_SPECIALIST;
+    const normalizedLevelKey = actualLevel?.toLowerCase?.() || 'principiante';
+    const levelRule = HIPERTROFIA_LEVEL_RULES[normalizedLevelKey] || HIPERTROFIA_LEVEL_RULES.principiante;
+    const filteredMuscleGroups = Array.isArray(selectedMuscleGroups)
+      ? selectedMuscleGroups
+          .filter(group => typeof group === 'string' && group.trim().length > 0)
+          .filter(group => group.toLowerCase() !== 'todos')
+      : [];
 
-    // Obtener día actual para incluirlo en la generación
-    const today = new Date();
-    const daysOfWeek = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
-    const todayName = daysOfWeek[today.getDay()];
-    const todayNormalized = normalizeDayName(todayName);
+    const evaluationResult =
+      hipertrofiaData.evaluation ||
+      hipertrofiaData.aiEvaluation ||
+      hipertrofiaData.evaluationResult ||
+      null;
 
-    // 🔄 CAMBIO CRÍTICO: Cargar prompt desde archivo (como Calistenia y Powerlifting)
-    clearPromptCache(FeatureKey.HIPERTROFIA_SPECIALIST);
-    const systemPrompt = await getPrompt(FeatureKey.HIPERTROFIA_SPECIALIST);
+    const startDate = new Date().toISOString().split('T')[0];
+    const preferredDays = Array.isArray(fullUserProfile?.dias_preferidos_entrenamiento)
+      ? fullUserProfile.dias_preferidos_entrenamiento
+      : [];
 
-    if (!systemPrompt) {
-      throw new Error('Prompt no disponible para Hipertrofia Specialist');
+    const generatedPlan = buildHipertrofiaPlan({
+      levelKey: normalizedLevelKey,
+      dbLevel,
+      selectedMuscleGroups: filteredMuscleGroups,
+      availableExercises,
+      goals,
+      evaluation: evaluationResult,
+      startDate,
+      preferredDays
+    });
+
+    if (!generatedPlan || !Array.isArray(generatedPlan.semanas)) {
+      throw new Error('Plan de Hipertrofia generado sin estructura de semanas valida');
     }
 
-    // Calcular frecuencia correcta según nivel (Avanzado = 5 días)
-    const frecuenciaObligatoria = dbLevel === 'Avanzado' ? 5 : (dbLevel === 'Intermedio' ? 5 : 4);
-
-    // Crear payload estructurado (como Calistenia y Powerlifting)
-    const planPayload = {
-      task: isRegeneration ? 'regenerate_hipertrofia_plan' : 'generate_hipertrofia_plan',
-      user_profile: fullUserProfile,
-      selected_level: actualLevel,
-      goals: goals || 'Hipertrofia muscular general',
-      selected_muscle_groups: selectedMuscleGroups || ['Todos'],
-      available_exercises: availableExercises,
-      plan_requirements: {
-        duration_weeks: 4,
-        sessions_per_week: frecuenciaObligatoria,
-        session_duration_min: 60,
-        start_day: todayNormalized,
-        start_date: new Date().toISOString().split('T')[0],
-        training_days_only: ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes'],
-        forbidden_days: ['Sabado', 'Domingo']
-      },
-      ...(isRegeneration && {
-        previous_plan: previousPlan,
-        user_feedback: {
-          reasons: regenerationReason || [],
-          additional_instructions: additionalInstructions || null
-        }
-      })
-    };
-
-    // Log del payload estructurado
-    logAIPayload('HIPERTROFIA_PLAN', planPayload);
-
-    let attempts = 0;
-    let generatedPlan = null;
-    let lastError = null;
-
-    while (attempts < 3) {
-      try {
-        console.log(`🤖 [HIPERTROFIA] Intento ${attempts + 1}/3 de generar plan válido...`);
-
-        const completion = await client.chat.completions.create({
-          model: config.model,
-          messages: [
-            { role: 'system', content: systemPrompt },  // ✅ USA PROMPT DEL ARCHIVO
-            { role: 'user', content: JSON.stringify(planPayload) }  // ✅ PAYLOAD ESTRUCTURADO
-          ],
-          temperature: config.temperature || 0.8,  // Usa config del módulo (0.8)
-          max_tokens: config.max_output_tokens  // 16384 tokens para planes completos
-        });
-
-        const aiResponse = completion.choices[0].message.content;
-        logAIResponse(aiResponse);
-        logTokens(completion.usage);
-
-        // Parsear respuesta
-        let parsedPlan;
-        try {
-          parsedPlan = JSON.parse(parseAIResponse(aiResponse));
-        } catch (parseError) {
-          console.error('❌ Error parseando plan:', parseError);
-          throw new Error('Plan generado con formato inválido');
-        }
-
-        // Validar estructura del plan
-        if (!parsedPlan.semanas || !Array.isArray(parsedPlan.semanas)) {
-          throw new Error('Plan sin semanas válidas');
-        }
-
-        // 🔥 VALIDACIÓN 1: Número de semanas
-        if (parsedPlan.semanas.length !== 4) {
-          throw new Error(`Plan debe tener exactamente 4 semanas, pero tiene ${parsedPlan.semanas.length}`);
-        }
-
-        // 🔥 VALIDACIÓN 2: Número de sesiones según nivel
-        const expectedSessionsPerWeek = frecuenciaObligatoria;
-        const expectedTotalSessions = expectedSessionsPerWeek * 4;
-
-        let totalSessions = 0;
-        parsedPlan.semanas.forEach(semana => {
-          if (semana.sesiones && Array.isArray(semana.sesiones)) {
-            totalSessions += semana.sesiones.length;
-          }
-        });
-
-        if (totalSessions !== expectedTotalSessions) {
-          // Analizar distribución de sesiones por semana para más detalle
-          const sessionsByWeek = parsedPlan.semanas.map((semana, idx) => ({
-            semana: idx + 1,
-            sesiones: semana.sesiones?.length || 0,
-            dias: semana.sesiones?.map(s => s.dia).join(', ') || 'Ninguno'
-          }));
-
-          console.error(`❌ [HIPERTROFIA] Error de validación de sesiones:`);
-          console.error(`   Nivel: ${dbLevel} (${actualLevel})`);
-          console.error(`   Esperadas: ${expectedTotalSessions} sesiones (${expectedSessionsPerWeek} días/semana × 4 semanas)`);
-          console.error(`   Generadas: ${totalSessions} sesiones`);
-          console.error(`   Distribución por semana:`, sessionsByWeek);
-
-          throw new Error(
-            `Plan incompleto para nivel ${dbLevel}: esperadas ${expectedTotalSessions} sesiones ` +
-            `(${expectedSessionsPerWeek} días/semana × 4 semanas), pero se generaron ${totalSessions}. ` +
-            `La IA debe generar EXACTAMENTE ${expectedSessionsPerWeek} sesiones por semana.`
-          );
-        }
-
-        console.log(`✅ Validación sesiones: ${totalSessions}/${expectedTotalSessions} sesiones correctas`);
-
-        // 🔥 VALIDACIÓN 2.5: Campo frecuencia_por_semana debe coincidir
-        if (parsedPlan.frecuencia_por_semana !== expectedSessionsPerWeek) {
-          console.warn(`⚠️ [HIPERTROFIA] Campo frecuencia_por_semana incorrecto:`);
-          console.warn(`   Esperado: ${expectedSessionsPerWeek}`);
-          console.warn(`   Recibido: ${parsedPlan.frecuencia_por_semana || 'undefined'}`);
-          // Corregir automáticamente si es posible
-          parsedPlan.frecuencia_por_semana = expectedSessionsPerWeek;
-        }
-
-        // 🔥 VALIDACIÓN 3: Solo días laborables (NO sábado/domingo)
-        const weekendDays = [];
-        const diasLaborables = ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes'];
-
-        parsedPlan.semanas.forEach((semana, sIdx) => {
-          semana.sesiones.forEach((sesion, dIdx) => {
-            const diaName = sesion.dia;
-            if (!diasLaborables.includes(diaName)) {
-              weekendDays.push({
-                semana: semana.numero || (sIdx + 1),
-                dia: diaName
-              });
-            }
-          });
-        });
-
-        if (weekendDays.length > 0) {
-          const errorDetails = weekendDays.map(d =>
-            `Semana ${d.semana}: ${d.dia}`
-          ).join('; ');
-
-          throw new Error(
-            `Plan Hipertrofia inválido: ${weekendDays.length} sesiones en fin de semana (solo Lun-Vie permitidos). ` +
-            `Detalles: ${errorDetails}`
-          );
-        }
-
-        console.log(`✅ Validación días laborables: Todas las sesiones están en Lun-Vie`);
-
-        // ✅ TODAS LAS VALIDACIONES PASARON
-        generatedPlan = parsedPlan;
-        console.log(`✅ [HIPERTROFIA] Plan válido generado en intento ${attempts + 1}/3`);
-        break; // Salir del loop
-
-      } catch (error) {
-        attempts++;
-        lastError = error;
-        console.error(`❌ [HIPERTROFIA] Intento ${attempts}/3 falló:`, error.message);
-
-        // Si el error es por días de fin de semana, modificar el mensaje para el siguiente intento
-        if (error.message.includes('fin de semana') && attempts < 3) {
-          console.warn(`⚠️ [HIPERTROFIA] Reintentando sin días de fin de semana...`);
-          await new Promise(resolve => setTimeout(resolve, attempts * 1000)); // Esperar 1s, 2s, 3s
-        } else if (attempts < 3) {
-          await new Promise(resolve => setTimeout(resolve, attempts * 1000)); // Backoff exponencial
-        }
-      }
-    }
-
-    // Si después de 3 intentos no hay plan válido, lanzar error
-    if (!generatedPlan) {
+    if (generatedPlan.semanas.length !== levelRule.weeks) {
       throw new Error(
-        `No se pudo generar un plan válido después de 3 intentos. ` +
-        `Último error: ${lastError?.message || 'Desconocido'}`
+        `Plan de Hipertrofia invalido: se esperaban ${levelRule.weeks} semanas y se recibieron ${generatedPlan.semanas.length}`
       );
     }
 
-    // Guardar plan en BD
+    const expectedSessionsPerWeek = levelRule.sessionsPerWeek;
+    const diasLaborables = ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes'];
+
+    generatedPlan.semanas.forEach((semana, indexSemana) => {
+      const sesionesSemana = Array.isArray(semana.sesiones) ? semana.sesiones : [];
+
+      if (sesionesSemana.length !== expectedSessionsPerWeek) {
+        throw new Error(
+          `Plan de Hipertrofia invalido: la semana ${indexSemana + 1} contiene ${sesionesSemana.length} sesiones y se esperaban ${expectedSessionsPerWeek}`
+        );
+      }
+
+      sesionesSemana.forEach((sesion) => {
+        if (!diasLaborables.includes(sesion.dia)) {
+          throw new Error(
+            `Plan de Hipertrofia invalido: dia ${sesion.dia} fuera de los permitidos (Lunes-Viernes)`
+          );
+        }
+
+        const ejerciciosSesion = Array.isArray(sesion.ejercicios) ? sesion.ejercicios : [];
+        if (ejerciciosSesion.length < levelRule.exercisesPerSession.min) {
+          throw new Error(
+            `Plan de Hipertrofia invalido: la sesion del ${sesion.dia} debe incluir al menos ${levelRule.exercisesPerSession.min} ejercicios`
+          );
+        }
+      });
+    });
+
+    const totalSessions = generatedPlan.semanas.reduce(
+      (acc, semana) => acc + (semana.sesiones?.length || 0),
+      0
+    );
+
+    const expectedTotalSessions = expectedSessionsPerWeek * levelRule.weeks;
+    if (totalSessions !== expectedTotalSessions) {
+      throw new Error(
+        `Plan de Hipertrofia invalido: se esperaban ${expectedTotalSessions} sesiones y se recibieron ${totalSessions}`
+      );
+    }
+
+    generatedPlan.frecuencia_por_semana = expectedSessionsPerWeek;
+
+    console.log(
+      `[HIPERTROFIA] Plan generado con ${totalSessions} sesiones totales (${expectedSessionsPerWeek} por semana)`
+    );    // Guardar plan en BD
     const client_db = await pool.connect();
     try {
       await client_db.query('BEGIN');
@@ -1798,7 +1693,7 @@ router.post('/specialist/hipertrofia/generate', authenticateToken, async (req, r
 
       await client_db.query('COMMIT');
 
-      console.log(`✅ Plan Hipertrofia guardado con ID: ${methodologyPlanId}`);
+      console.log(`G�� Plan Hipertrofia guardado con ID: ${methodologyPlanId}`);
 
       res.json({
         success: true,
@@ -1806,7 +1701,7 @@ router.post('/specialist/hipertrofia/generate', authenticateToken, async (req, r
         methodologyPlanId,
         planId: methodologyPlanId,
         metadata: {
-          model_used: config.model,
+          generator: 'hipertrofia_plan_generator_v1',
           generation_timestamp: new Date().toISOString()
         }
       });
@@ -1836,7 +1731,7 @@ router.post('/specialist/hipertrofia/generate', authenticateToken, async (req, r
 
 /**
  * POST /api/routine-generation/specialist/powerlifting/evaluate
- * Evaluación automática del perfil para powerlifting
+ * Evaluaci+�n autom+�tica del perfil para powerlifting
  */
 router.post('/specialist/powerlifting/evaluate', authenticateToken, async (req, res) => {
   try {
@@ -2329,10 +2224,9 @@ GENERA un plan completo siguiendo el formato JSON de metodología con EXACTAMENT
         lastError = error;
         console.error(`❌ [POWERLIFTING] Intento ${attempts}/3 falló:`, error.message);
 
-        // Si el error es por días de fin de semana, modificar el mensaje para el siguiente intento
+        // Si el error es por días de fin de semana, mostrar advertencia
         if (error.message.includes('fin de semana') && attempts < 3) {
-          // Agregar advertencia adicional al mensaje
-          const warningPrefix = `
+          console.warn(`
 ⚠️ ERROR EN INTENTO ANTERIOR: Incluiste Sábado o Domingo, lo cual está PROHIBIDO.
 
 🚫 RECORDATORIO CRÍTICO:
@@ -2345,9 +2239,7 @@ Ejemplos válidos para ${frecuenciaObligatoria} días:
 - Lun, Mie, Jue, Vie ✅
 - Mar, Mie, Jue, Vie ✅
 NUNCA: Vie, Sab, Lun, Mar ❌ (incluye Sábado)
-
-`;
-          userMessage = warningPrefix + userMessage;
+`);
         }
 
         if (attempts < 3) {

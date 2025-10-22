@@ -49,6 +49,35 @@ npm run dev:backend
 cd backend && npm start
 ```
 
+### 📊 Production Monitoring (Render CLI)
+
+```bash
+# Login to Render (first time only)
+npm run render:login
+
+# List all services
+npm run render:services
+
+# View logs in real-time
+npm run render:tail
+
+# View recent logs (Linux/WSL)
+npm run render:logs view backend
+
+# Filter errors only
+npm run render:logs errors backend
+
+# Windows
+npm run render:logs:win view backend
+```
+
+**📚 Documentación completa**:
+
+- 🚀 **Inicio rápido**: [`docs/QUICK_START_RENDER_LOGS.md`](docs/QUICK_START_RENDER_LOGS.md)
+- 📖 **Guía completa**: [`docs/RENDER_CLI_GUIDE.md`](docs/RENDER_CLI_GUIDE.md)
+- 🔐 **Troubleshooting**: [`docs/RENDER_AUTH_TROUBLESHOOTING.md`](docs/RENDER_AUTH_TROUBLESHOOTING.md)
+- ✅ **Estado**: [`docs/RENDER_SETUP_COMPLETE.md`](docs/RENDER_SETUP_COMPLETE.md)
+
 ### 🔧 Scripts de Sincronización de Puertos
 
 ```bash
@@ -278,26 +307,26 @@ CONVERGENCE POINT: Both modes end up calling generatePlan() from WorkoutContext
 
 ```javascript
 // 🎯 SMART METHODOLOGY ROUTING
-app.use('/api/methodology', (req, res, next) => {
-  if (req.path.includes('generate')) {
+app.use("/api/methodology", (req, res, next) => {
+  if (req.path.includes("generate")) {
     const { mode, metodologia_solicitada } = req.body;
 
     // MANUAL: User chose specific methodology
-    if (mode === 'manual' || metodologia_solicitada) {
-      const metodologia = (metodologia_solicitada || mode || '').toLowerCase();
+    if (mode === "manual" || metodologia_solicitada) {
+      const metodologia = (metodologia_solicitada || mode || "").toLowerCase();
 
-      if (metodologia === 'calistenia') {
-        req.url = '/api/routine-generation/manual/calistenia';
-      } else if (metodologia === 'oposicion') {
-        req.url = '/api/routine-generation/specialist/oposicion';
-      } else if (metodologia === 'hipertrofia') {
-        req.url = '/api/routine-generation/specialist/hipertrofia';
+      if (metodologia === "calistenia") {
+        req.url = "/api/routine-generation/manual/calistenia";
+      } else if (metodologia === "oposicion") {
+        req.url = "/api/routine-generation/specialist/oposicion";
+      } else if (metodologia === "hipertrofia") {
+        req.url = "/api/routine-generation/specialist/hipertrofia";
       } else {
-        req.url = '/api/routine-generation/manual/methodology';
+        req.url = "/api/routine-generation/manual/methodology";
       }
     } else {
       // AUTOMATIC: AI decides methodology
-      req.url = '/api/routine-generation/ai/methodology';
+      req.url = "/api/routine-generation/ai/methodology";
     }
   }
   next();
@@ -326,6 +355,7 @@ app.use('/api/methodology', (req, res, next) => {
 ### Methodology Types
 
 #### Specialist Routes (Advanced AI)
+
 - **Calistenia**: `/api/routine-generation/specialist/calistenia/*`
 - **Oposiciones**: `/api/routine-generation/specialist/oposicion/*`
 - **Hipertrofia**: `/api/routine-generation/specialist/hipertrofia/*`
@@ -333,16 +363,19 @@ app.use('/api/methodology', (req, res, next) => {
 - **Powerlifting**: `/api/routine-generation/specialist/powerlifting/*`
 
 #### Manual Routes (User-driven)
+
 - **Generic Manual**: `/api/routine-generation/manual/methodology`
 - **Calistenia Manual**: `/api/routine-generation/manual/calistenia`
 
 #### AI Routes (Automatic)
+
 - **AI Decision**: `/api/routine-generation/ai/methodology`
 - **Gym Routines**: `/api/routine-generation/ai/gym-routine`
 
 ### Frontend Integration
 
 **Component Flow**:
+
 1. `MethodologiesScreen.jsx` - Main selection interface
 2. `handleManualCardClick()` - Detects methodology and calls modal
 3. `handleActivateIA()` - For automatic mode
@@ -365,8 +398,11 @@ app.use('/api/methodology', (req, res, next) => {
 ### Debug & Monitoring
 
 The system includes comprehensive logging:
+
 ```javascript
-console.log(`🔀 Redirección metodología: mode=${mode}, metodologia=${metodologia_solicitada}`);
+console.log(
+  `🔀 Redirección metodología: mode=${mode}, metodologia=${metodologia_solicitada}`,
+);
 console.log(`🎯 Redirigiendo a: ${req.url}`);
 ```
 

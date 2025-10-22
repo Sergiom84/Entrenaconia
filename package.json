@@ -21,7 +21,18 @@
     "pre-commit": "lint-staged",
     "preview": "vite preview",
     "dev:helper": "scripts\\dev-helper.bat",
-    "ports:fix": "scripts\\dev-helper.bat"
+    "ports:fix": "scripts\\dev-helper.bat",
+    "render:auth": "bash scripts/render-auth.sh",
+    "render:auth:win": "scripts\\render-auth.bat",
+    "render:apikey": "bash scripts/render-set-apikey.sh",
+    "render:install:win": "scripts\\install-render-windows.bat",
+    "render:wsl": "scripts\\render-from-windows.bat",
+    "render:whoami": "scripts\\render-whoami.bat",
+    "render:services": "scripts\\render-services.bat",
+    "render:logs": "bash scripts/render-logs.sh",
+    "render:logs:win": "scripts\\render-logs.bat",
+    "render:tail": "render logs --tail",
+    "render:deploy": "render services"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.61.0",
