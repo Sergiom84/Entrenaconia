@@ -87,7 +87,10 @@
       "Bash(do file=\"backend/$import#../\" if [ ! -f \"$file\" ])",
       "Bash(then echo \"❌ FALTA: $file\" fi done)",
       "Bash(timeout 5 npm start:*)",
-      "Bash(timeout 8 npm start)"
+      "Bash(timeout 8 npm start)",
+      "Bash(wsl:*)",
+      "Bash(where claude)",
+      "Bash(claude --version)"
     ],
     "deny": [],
     "ask": []

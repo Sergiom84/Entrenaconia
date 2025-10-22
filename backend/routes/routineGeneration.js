@@ -1574,7 +1574,7 @@ router.post('/specialist/hipertrofia/generate', authenticateToken, async (req, r
       SELECT exercise_id, nombre, nivel, categoria as grupo_muscular, patron,
              equipamiento, series_reps_objetivo, descanso_seg,
              criterio_de_progreso, progresion_desde, progresion_hacia,
-             notas, "C�mo_hacerlo" as ejecucion, "Consejos" as consejos, "Errores_comunes" as errores_evitar
+             notas, "Cómo_hacerlo" as ejecucion, "Consejos" as consejos, "Errores_comunes" as errores_evitar
       FROM app."Ejercicios_Hipertrofia"
       WHERE ${levelCondition}
       ORDER BY RANDOM()
