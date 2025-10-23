@@ -24,6 +24,10 @@ backend/.env.local
 .render/
 **/.render/
 
+# Claude Code settings with credentials (NEVER commit)
+.claude/mcp_settings.json
+.claude/settings.local.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

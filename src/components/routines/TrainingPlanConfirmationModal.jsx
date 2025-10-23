@@ -27,6 +27,68 @@ import {
 } from 'lucide-react';
 import { useTrace } from '@/contexts/TraceContext.jsx';
 
+// 📅 FUNCIÓN GENÉRICA: Calcular fecha real de una sesión
+const DAY_NAMES_MAP = {
+  'Domingo': 0, 'Dom': 0,
+  'Lunes': 1, 'Lun': 1,
+  'Martes': 2, 'Mar': 2,
+  'Miercoles': 3, 'Mie': 3, 'Miércoles': 3,
+  'Jueves': 4, 'Jue': 4,
+  'Viernes': 5, 'Vie': 5,
+  'Sabado': 6, 'Sab': 6, 'Sábado': 6
+};
+
+const MONTH_NAMES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+
+// Función mejorada con soporte para sesiones reorganizadas en primera semana
+const calculateSessionDate = (weekIndex, sessionDay, startDate, sessionIndex = null) => {
+  if (!startDate || !sessionDay) return sessionDay || 'Día';
+
+  try {
+    const start = new Date(startDate);
+    const startDayNum = start.getDay();
+
+    // 🔧 PRIMERA SEMANA: Usar días consecutivos basados en el índice de sesión
+    if (weekIndex === 0 && sessionIndex !== null) {
+      // Para la primera semana, si tenemos sessionIndex, usamos días consecutivos desde hoy
+      const sessionDate = new Date(start);
+      sessionDate.setDate(start.getDate() + sessionIndex);
+
+      const day = sessionDate.getDate();
+      const month = MONTH_NAMES[sessionDate.getMonth()];
+
+      // Obtenemos el nombre del día correcto basado en la fecha calculada
+      const dayOfWeekNum = sessionDate.getDay();
+      const correctDayName = Object.keys(DAY_NAMES_MAP).find(key =>
+        DAY_NAMES_MAP[key] === dayOfWeekNum && key.length > 3
+      ) || sessionDay;
+
+      return `${correctDayName} ${day} ${month}`;
+    }
+
+    // 🔧 SEMANAS POSTERIORES: Usar la lógica normal basada en días fijos del plan
+    const targetDayNum = DAY_NAMES_MAP[sessionDay];
+    if (targetDayNum === undefined) return sessionDay;
+
+    let daysOffset = (targetDayNum - startDayNum + 7) % 7;
+
+    if (weekIndex > 0) {
+      daysOffset += weekIndex * 7;
+    }
+
+    const sessionDate = new Date(start);
+    sessionDate.setDate(start.getDate() + daysOffset);
+
+    const day = sessionDate.getDate();
+    const month = MONTH_NAMES[sessionDate.getMonth()];
+    const dayName = sessionDay;
+
+    return `${dayName} ${day} ${month}`;
+  } catch (error) {
+    console.error('Error calculando fecha de sesión:', error);
+    return sessionDay;
+  }
+};
 
 export default function TrainingPlanConfirmationModal({
   isOpen,
@@ -42,6 +104,7 @@ export default function TrainingPlanConfirmationModal({
   error = null // NUEVO: Error del modal
 }) {
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [expandedSessions, setExpandedSessions] = useState(new Set());
   const { track } = useTrace();
 
   // Referencias para evitar loops infinitos en tracking
@@ -65,6 +128,19 @@ export default function TrainingPlanConfirmationModal({
   }, [showFeedbackModal, track]);
 
   const [isGeneratingAnother, setIsGeneratingAnother] = useState(false);
+
+  // Función para toggle expansión de sesión
+  const toggleSession = (weekIndex, sessionIndex) => {
+    const key = `${weekIndex}-${sessionIndex}`;
+    const newExpanded = new Set(expandedSessions);
+    if (newExpanded.has(key)) {
+      newExpanded.delete(key);
+    } else {
+      newExpanded.add(key);
+    }
+    setExpandedSessions(newExpanded);
+    track('SESSION_TOGGLE', { weekIndex, sessionIndex, expanded: !expandedSessions.has(key) }, { component: 'TrainingPlanConfirmationModal' });
+  };
 
   if (!isOpen || !plan) return null;
 
@@ -102,13 +178,16 @@ export default function TrainingPlanConfirmationModal({
   const totalWeeks = plan.semanas?.length || 0;
   const totalSessions = plan.semanas?.reduce((acc, week) => acc + (week.sesiones?.length || 0), 0) || 0;
 
-  // Contar ejercicios únicos
+  // 🔢 CONTEO TOTAL DE EJERCICIOS (no únicos)
   // Soportar dos estructuras: sesion.ejercicios[] o sesion.bloques[].ejercicios[]
+  let totalExercises = 0;
   const uniqueExercises = new Set();
+
   plan.semanas?.forEach(week => {
     week.sesiones?.forEach(session => {
       // Estructura directa: session.ejercicios
       if (Array.isArray(session.ejercicios)) {
+        totalExercises += session.ejercicios.length;
         session.ejercicios.forEach(exercise => {
           uniqueExercises.add(exercise.nombre || exercise.name);
         });
@@ -117,6 +196,7 @@ export default function TrainingPlanConfirmationModal({
       if (Array.isArray(session.bloques)) {
         session.bloques.forEach(bloque => {
           if (Array.isArray(bloque.ejercicios)) {
+            totalExercises += bloque.ejercicios.length;
             bloque.ejercicios.forEach(exercise => {
               uniqueExercises.add(exercise.nombre || exercise.name);
             });
@@ -128,7 +208,7 @@ export default function TrainingPlanConfirmationModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-gray-900 border-yellow-500/20 z-50">
+      <DialogContent className="max-w-3xl max-h-[95vh] overflow-y-auto bg-gray-900 border-yellow-500/20 z-50">
         <DialogHeader className="pb-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -183,7 +263,7 @@ export default function TrainingPlanConfirmationModal({
             </div>
             <div className="text-center p-3 bg-gray-800/50 rounded-lg">
               <Dumbbell className="w-5 h-5 text-purple-400 mx-auto mb-1" />
-              <div className="text-lg font-semibold text-white">{uniqueExercises.size}</div>
+              <div className="text-lg font-semibold text-white">{totalExercises}</div>
               <div className="text-xs text-gray-400">Ejercicios</div>
             </div>
             <div className="text-center p-3 bg-gray-800/50 rounded-lg">
@@ -199,22 +279,22 @@ export default function TrainingPlanConfirmationModal({
               <Calendar className="w-5 h-5 text-yellow-400" />
               Resumen del Plan
             </h4>
-            <div className="space-y-4 max-h-80 overflow-y-auto">
+            <div className="space-y-4 max-h-[400px] overflow-y-auto">
               {plan.semanas?.length === 0 && (
                 <p className="text-gray-400 text-sm">No hay semanas para mostrar.</p>
               )}
-              {plan.semanas?.map((semana) => (
+              {plan.semanas?.map((semana, weekIndex) => (
                 <div key={semana.semana} className="bg-gray-800/60 border border-gray-700 rounded-lg">
                   <div className="px-3 sm:px-4 py-2 border-b border-gray-700 flex items-center justify-between">
                     <span className="text-gray-200 font-medium text-sm sm:text-base">
-                      Semana {semana.semana}
+                      Semana {semana.numero || semana.semana}
                     </span>
                     <Badge variant="secondary" className="bg-yellow-500/10 text-yellow-400 text-xs">
                       {semana.sesiones?.length || 0} sesiones
                     </Badge>
                   </div>
-                  <div className="p-3 sm:p-4 grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
-                    {(semana.sesiones || []).map((sesion, idx) => {
+                  <div className="p-3 sm:p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {(semana.sesiones || []).map((sesion, sessionIndex) => {
                       // Soportar dos estructuras:
                       // 1. sesion.ejercicios[] (directo)
                       // 2. sesion.bloques[].ejercicios[] (con bloques, como en Halterofilia)
@@ -228,20 +308,63 @@ export default function TrainingPlanConfirmationModal({
                         );
                       }
 
-                      const preview = ejercicios.slice(0, 3).map((e) => e.nombre || e.name).filter(Boolean).join(', ');
+                      const sessionKey = `${weekIndex}-${sessionIndex}`;
+                      const isExpanded = expandedSessions.has(sessionKey);
+                      const displayExercises = isExpanded ? ejercicios : ejercicios.slice(0, 3);
+                      const hasMore = ejercicios.length > 3;
+
+                      // 📅 Calcular fecha real de la sesión
+                      const sessionDate = calculateSessionDate(
+                        weekIndex,
+                        sesion.dia || sesion.dia_semana,
+                        plan.fecha_inicio,
+                        sessionIndex // Pasar índice para primera semana
+                      );
+
                       return (
                         <div
-                          key={idx}
-                          className="bg-black/40 rounded-md p-2 sm:p-3 border border-gray-700 hover:border-gray-600 transition-colors"
+                          key={sessionIndex}
+                          onClick={() => hasMore && toggleSession(weekIndex, sessionIndex)}
+                          className={`bg-black/40 rounded-md p-3 sm:p-4 border border-gray-700 transition-colors min-h-[150px] flex flex-col ${
+                            hasMore ? 'cursor-pointer hover:border-yellow-500/50 hover:bg-black/60' : ''
+                          }`}
                         >
-                          <div className="text-yellow-300 font-semibold text-xs sm:text-sm mb-1">
-                            {sesion.dia || sesion.dia_semana || `Día ${idx + 1}`}
+                          <div className="text-yellow-300 font-semibold text-sm sm:text-base mb-3">
+                            {sessionDate}
                           </div>
-                          <div className="text-gray-300 text-xs sm:text-sm line-clamp-2">
-                            {preview || 'Ver detalles en la sesión'}
+
+                          {/* Lista de ejercicios */}
+                          <div className="space-y-1.5 mb-3 flex-grow">
+                            {displayExercises.map((ejercicio, exIdx) => (
+                              <div key={exIdx} className="text-gray-300 text-xs sm:text-sm flex items-start gap-2">
+                                <span className="text-yellow-500 flex-shrink-0 mt-0.5">•</span>
+                                <span className={`${isExpanded ? '' : 'line-clamp-1'}`}>
+                                  {ejercicio.nombre || ejercicio.name}
+                                </span>
+                              </div>
+                            ))}
                           </div>
-                          <div className="text-gray-500 text-xs mt-1">
-                            {ejercicios.length} ejercicios
+
+                          {/* Footer con contador y botón expandir */}
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-gray-500">
+                              {ejercicios.length} ejercicio{ejercicios.length !== 1 ? 's' : ''}
+                            </span>
+                            {hasMore && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleSession(weekIndex, sessionIndex);
+                                }}
+                                className="text-yellow-400 hover:text-yellow-300 font-medium flex items-center gap-1"
+                              >
+                                {isExpanded ? (
+                                  <>▲ Ver menos</>
+                                ) : (
+                                  <>▼ Ver {ejercicios.length - 3} más</>
+                                )}
+                              </button>
+                            )}
                           </div>
                         </div>
                       );

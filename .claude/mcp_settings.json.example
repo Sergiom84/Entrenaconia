@@ -4,7 +4,7 @@
       "command": "npx",
       "args": ["@modelcontextprotocol/server-postgres"],
       "env": {
-        "POSTGRES_CONNECTION_STRING": "postgresql://postgres.lhsnmjgdtjalfcsurxvg:Xe05Klm563kkjL@aws-1-eu-north-1.pooler.supabase.com:6543/postgres?sslmode=require",
+        "POSTGRES_CONNECTION_STRING": "postgresql://YOUR_USER:YOUR_PASSWORD@YOUR_HOST:YOUR_PORT/YOUR_DB?sslmode=require",
         "POSTGRES_SCHEMA": "app"
       }
     },
@@ -12,11 +12,11 @@
       "command": "npx",
       "args": ["@modelcontextprotocol/server-filesystem"],
       "env": {
-        "ALLOWED_DIRECTORIES": "C:\\Users\\Sergio\\Desktop\\Entrenaconia"
+        "ALLOWED_DIRECTORIES": "/path/to/your/project"
       }
     },
     "github-repo": {
-      "command": "npx", 
+      "command": "npx",
       "args": ["@modelcontextprotocol/server-github"],
       "env": {
         "GITHUB_PERSONAL_ACCESS_TOKEN": "your_github_token_here"

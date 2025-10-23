@@ -11,11 +11,14 @@ const { Pool } = pkg;
 // --- 1) Fuente única de verdad: DATABASE_URL ---
 // Render: usa conexión directa (DATABASE_URL definida en variables de entorno)
 // Local: usa pooler con puerto 6543 para compatibilidad IPv4/IPv6
-const DEFAULT_LOCAL_POOLER =
-  "postgresql://postgres.lhsnmjgdtjalfcsurxvg:Xe05Klm563kkjL@aws-1-eu-north-1.pooler.supabase.com:6543/postgres?sslmode=require";
+// IMPORTANTE: DATABASE_URL debe estar definida en .env
+const rawConnStr = process.env.DATABASE_URL;
 
-const rawConnStr =
-  process.env.DATABASE_URL || DEFAULT_LOCAL_POOLER;
+if (!rawConnStr) {
+  throw new Error(
+    "❌ DATABASE_URL no está definida. Por favor, configura la variable de entorno DATABASE_URL en tu archivo .env"
+  );
+}
 
 // --- 2) Parseo robusto de la URL ---
 let parsed;

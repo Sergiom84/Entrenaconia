@@ -429,7 +429,7 @@ router.post('/sessions/start', authenticateToken, async (req, res) => {
     }
 
     // Si viene day_id, resolver week_number y day_name desde calendario del plan
-    if (day_id && (!week_number || !day_name)) {
+    if (!req.query.session_date && day_id && (!week_number || !day_name)) {
       const dayInfoQ = await client.query(
         `SELECT week_number, day_name FROM app.methodology_plan_days WHERE plan_id = $1 AND day_id = $2`,
         [methodology_plan_id, day_id]
@@ -1102,6 +1102,20 @@ router.get('/sessions/today-status', authenticateToken, async (req, res) => {
     }
 
     // Resolver week/day de forma robusta
+    // PRIORIDAD 0: Si viene session_date, usar workout_schedule por fecha (más confiable)
+    if (req.query.session_date && (!week_number || !day_name)) {
+      const sched = await pool.query(
+        `SELECT week_number, day_name FROM app.workout_schedule
+         WHERE methodology_plan_id = $1 AND user_id = $2 AND scheduled_date::date = $3::date
+         LIMIT 1`,
+        [methodology_plan_id, userId, req.query.session_date]
+      );
+      if (sched.rowCount > 0) {
+        week_number = sched.rows[0].week_number;
+        day_name = sched.rows[0].day_name;
+        console.log('🗓️ today-status usa programación por fecha (workout_schedule)', { week_number, day_name });
+      }
+    }
     // 🎯 PRIORIDAD 1: Si viene day_id, usar methodology_plan_days (más confiable)
     if (day_id && (!week_number || !day_name)) {
       const dres = await pool.query(
@@ -1970,6 +1984,98 @@ router.get('/sessions/:sessionId/feedback', authenticateToken, async (req, res) 
 // GET /api/routines/active-plan
 // Obtiene la rutina activa del usuario para restaurar después del login
 // Busca plan de metodología activo del usuario
+// GET /api/routines/calendar-schedule/:planId
+// Obtiene el calendario real desde la BD con días redistribuidos
+router.get('/calendar-schedule/:planId', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    const planId = req.params.planId;
+
+    // Verificar que el plan pertenece al usuario
+    const planCheck = await pool.query(
+      `SELECT id, plan_data, plan_start_date
+       FROM app.methodology_plans
+       WHERE id = $1 AND user_id = $2`,
+      [planId, userId]
+    );
+
+    if (planCheck.rowCount === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Plan no encontrado'
+      });
+    }
+
+    const plan = planCheck.rows[0];
+    const planData = typeof plan.plan_data === 'string' ? JSON.parse(plan.plan_data) : plan.plan_data;
+
+    // Obtener el calendario real desde workout_schedule
+    const scheduleQuery = await pool.query(
+      `SELECT
+        week_number,
+        day_abbrev as dia,
+        scheduled_date,
+        session_title as titulo,
+        exercises as ejercicios,
+        status
+       FROM app.workout_schedule
+       WHERE methodology_plan_id = $1 AND user_id = $2
+       ORDER BY week_number, session_order`,
+      [planId, userId]
+    );
+
+    // Reorganizar por semanas
+    const semanasMap = new Map();
+
+    for (const row of scheduleQuery.rows) {
+      const weekNum = row.week_number;
+
+      if (!semanasMap.has(weekNum)) {
+        // Obtener la semana original del plan para mantener metadata
+        const originalWeek = planData.semanas?.[weekNum - 1] || {};
+        semanasMap.set(weekNum, {
+          semana: weekNum,
+          nombre: originalWeek.nombre || `Semana ${weekNum}`,
+          sesiones: []
+        });
+      }
+
+      // Agregar sesión con el día real asignado
+      semanasMap.get(weekNum).sesiones.push({
+        dia: row.dia,
+        fecha: row.scheduled_date,
+        titulo: row.titulo || `Sesión del ${row.dia}`,
+        ejercicios: row.ejercicios || []
+      });
+    }
+
+    // Convertir a array y mantener estructura del plan original
+    const updatedPlan = {
+      ...planData,
+      semanas: Array.from(semanasMap.values())
+    };
+
+    console.log('[calendar-schedule] Plan actualizado con días redistribuidos:', {
+      planId,
+      totalWeeks: updatedPlan.semanas.length,
+      firstWeek: updatedPlan.semanas[0]?.sesiones?.map(s => s.dia)
+    });
+
+    res.json({
+      success: true,
+      plan: updatedPlan,
+      planStartDate: plan.plan_start_date
+    });
+
+  } catch (error) {
+    console.error('Error obteniendo calendario:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error interno del servidor'
+    });
+  }
+});
+
 router.get('/active-plan', authenticateToken, async (req, res) => {
   try {
     const userId = req.user?.userId || req.user?.id;

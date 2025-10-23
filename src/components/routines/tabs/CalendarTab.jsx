@@ -42,6 +42,44 @@ import { useTrace } from '@/contexts/TraceContext.jsx';
 export default function CalendarTab({ plan, planStartDate, methodologyPlanId, ensureMethodologyPlan, refreshTrigger }) {
   const { track } = useTrace();
 
+  // Estado para el plan actualizado desde la BD
+  const [updatedPlan, setUpdatedPlan] = useState(plan);
+  const [isLoadingCalendar, setIsLoadingCalendar] = useState(false);
+
+  // Cargar el calendario real desde la BD cuando el componente se monta o cambia el planId
+  useEffect(() => {
+    const loadCalendarSchedule = async () => {
+      if (!methodologyPlanId) return;
+
+      setIsLoadingCalendar(true);
+      try {
+        const token = localStorage.getItem('authToken');
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/routines/calendar-schedule/${methodologyPlanId}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.plan) {
+            console.log('[CalendarTab] Plan actualizado con días redistribuidos:', {
+              firstWeek: data.plan.semanas[0]?.sesiones?.map(s => s.dia)
+            });
+            setUpdatedPlan(data.plan);
+          }
+        }
+      } catch (error) {
+        console.error('[CalendarTab] Error cargando calendario:', error);
+      } finally {
+        setIsLoadingCalendar(false);
+      }
+    };
+
+    loadCalendarSchedule();
+  }, [methodologyPlanId]);
+
   // Calcular qué semana mostrar inicialmente basándose en la fecha actual
   const getInitialWeek = useCallback(() => {
     if (!planStartDate) return 0;
@@ -60,9 +98,9 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
     const currentWeek = Math.floor(daysSinceStart / 7);
 
     // Asegurar que no excedemos el total de semanas
-    const totalWeeks = plan?.duracion_total_semanas || 4;
+    const totalWeeks = updatedPlan?.duracion_total_semanas || 4;
     return Math.min(currentWeek, totalWeeks - 1);
-  }, [planStartDate, plan]);
+  }, [planStartDate, updatedPlan]);
 
 
   const [currentWeek, setCurrentWeek] = useState(getInitialWeek);
@@ -99,27 +137,31 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
 
   // Procesar el plan para crear estructura de calendario
   const calendarData = useMemo(() => {
-    if (!plan?.semanas?.length || !planStartDate) return [];
+    if (!updatedPlan?.semanas?.length || !planStartDate) return [];
 
     const startDate = new Date(planStartDate);
     startDate.setHours(0, 0, 0, 0);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const totalWeeks = plan.duracion_total_semanas || plan.semanas.length;
+    const totalWeeks = updatedPlan.duracion_total_semanas || updatedPlan.semanas.length;
 
     // IMPORTANTE: El plan comienza desde el día actual en que se genera, no desde el lunes
     // Si el usuario genera la rutina un sábado, el sábado es el Día 1 de entrenamiento
     const firstWeekStart = new Date(startDate);
     firstWeekStart.setHours(0, 0, 0, 0);
+    const startDow = firstWeekStart.getDay(); // 0=Dom,1=Lun,...,6=Sab
+    const daysToMonday = startDow === 0 ? -6 : 1 - startDow;
+    const firstWeekMonday = new Date(firstWeekStart);
+    firstWeekMonday.setDate(firstWeekStart.getDate() + daysToMonday);
 
     // Crear semanas basadas en períodos de 7 días desde la fecha de inicio
     return Array.from({ length: totalWeeks }, (_, weekIndex) => {
-      const semana = plan.semanas[weekIndex] || plan.semanas[0];
+      const semana = updatedPlan.semanas[weekIndex] || updatedPlan.semanas[0];
 
       // Calcular el primer día de esta semana del plan
-      const weekStartDate = new Date(firstWeekStart);
-      weekStartDate.setDate(firstWeekStart.getDate() + (weekIndex * 7));
+      const weekStartDate = new Date(firstWeekMonday);
+      weekStartDate.setDate(firstWeekMonday.getDate() + (weekIndex * 7));
       weekStartDate.setHours(0, 0, 0, 0);
 
       // Usar la función de mapeo inteligente
@@ -167,7 +209,7 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
         days: weekDays
       };
     });
-  }, [plan, planStartDate]);
+  }, [updatedPlan, planStartDate]);
 
   const currentWeekData = calendarData[currentWeek] || null;
 
@@ -356,6 +398,18 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
     );
   }
 
+  // Mostrar loading mientras se cargan los datos
+  if (isLoadingCalendar) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-yellow-400 mx-auto mb-4"></div>
+          <p className="text-gray-400">Cargando calendario actualizado...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Header del calendario */}
@@ -364,7 +418,7 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
           <div>
             <h2 className="text-2xl font-bold text-white mb-2">Calendario de Entrenamiento</h2>
             <Badge variant="secondary" className="bg-yellow-400/20 text-yellow-300">
-              {plan.selected_style}
+              {updatedPlan?.selected_style || plan?.selected_style}
             </Badge>
           </div>
 

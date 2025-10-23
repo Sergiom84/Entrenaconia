@@ -1603,7 +1603,8 @@ router.post('/specialist/hipertrofia/generate', authenticateToken, async (req, r
       null;
 
     const startDate = new Date().toISOString().split('T')[0];
-    const preferredDays = Array.isArray(fullUserProfile?.dias_preferidos_entrenamiento)
+    // Usar días preferidos SOLO si el usuario activó preferencias IA
+    const preferredDays = (fullUserProfile?.usar_preferencias_ia && Array.isArray(fullUserProfile?.dias_preferidos_entrenamiento))
       ? fullUserProfile.dias_preferidos_entrenamiento
       : [];
 
@@ -1634,10 +1635,27 @@ router.post('/specialist/hipertrofia/generate', authenticateToken, async (req, r
     generatedPlan.semanas.forEach((semana, indexSemana) => {
       const sesionesSemana = Array.isArray(semana.sesiones) ? semana.sesiones : [];
 
-      if (sesionesSemana.length !== expectedSessionsPerWeek) {
-        throw new Error(
-          `Plan de Hipertrofia invalido: la semana ${indexSemana + 1} contiene ${sesionesSemana.length} sesiones y se esperaban ${expectedSessionsPerWeek}`
-        );
+      // 🔧 PRIMERA SEMANA: Permitir menos sesiones si inicia a mitad de semana
+      // Las demás semanas deben tener exactamente el número esperado
+      if (indexSemana === 0) {
+        // Primera semana: puede tener hasta expectedSessionsPerWeek sesiones
+        if (sesionesSemana.length > expectedSessionsPerWeek) {
+          throw new Error(
+            `Plan de Hipertrofia invalido: la semana 1 contiene ${sesionesSemana.length} sesiones y el máximo es ${expectedSessionsPerWeek}`
+          );
+        }
+        if (sesionesSemana.length === 0) {
+          throw new Error(
+            `Plan de Hipertrofia invalido: la semana 1 debe contener al menos 1 sesión`
+          );
+        }
+      } else {
+        // Semanas 2-4: deben tener exactamente el número esperado
+        if (sesionesSemana.length !== expectedSessionsPerWeek) {
+          throw new Error(
+            `Plan de Hipertrofia invalido: la semana ${indexSemana + 1} contiene ${sesionesSemana.length} sesiones y se esperaban ${expectedSessionsPerWeek}`
+          );
+        }
       }
 
       sesionesSemana.forEach((sesion) => {
@@ -1661,10 +1679,19 @@ router.post('/specialist/hipertrofia/generate', authenticateToken, async (req, r
       0
     );
 
-    const expectedTotalSessions = expectedSessionsPerWeek * levelRule.weeks;
-    if (totalSessions !== expectedTotalSessions) {
+    // 🔧 VALIDACIÓN FLEXIBLE: Si la primera semana tiene menos sesiones (inicio a mitad de semana),
+    // el total puede ser menor que expectedSessionsPerWeek * weeks
+    const primeraSemanaSesiones = generatedPlan.semanas[0]?.sesiones?.length || 0;
+    const esperadoConPrimeraSemanaCompleta = expectedSessionsPerWeek * levelRule.weeks;
+    const esperadoConPrimeraSemanaParcial = primeraSemanaSesiones + (expectedSessionsPerWeek * (levelRule.weeks - 1));
+
+    // Validar que el total esté dentro del rango esperado
+    const minSessions = expectedSessionsPerWeek * (levelRule.weeks - 1) + 1; // Al menos 1 sesión en primera semana
+    const maxSessions = esperadoConPrimeraSemanaCompleta;
+
+    if (totalSessions < minSessions || totalSessions > maxSessions) {
       throw new Error(
-        `Plan de Hipertrofia invalido: se esperaban ${expectedTotalSessions} sesiones y se recibieron ${totalSessions}`
+        `Plan de Hipertrofia invalido: se esperaban entre ${minSessions} y ${maxSessions} sesiones y se recibieron ${totalSessions}`
       );
     }
 

@@ -39,12 +39,17 @@ export function mapSessionsToWeekDays(sesiones, weekStartDate, planStartDate, we
   const firstSessionDay = sesiones[0]?.dia?.toLowerCase();
   const usesWeekDayNames = firstSessionDay && isWeekDayName(firstSessionDay);
 
+  // ✅ MODO ACTUAL: Siempre mapear por nombre del día
+  // Las sesiones vienen con su día asignado desde la BD (Lun, Mar, Mié, etc.)
+  // Este enfoque respeta las semanas de calendario (Lun→Dom) y funciona con
+  // la redistribución de días que hace el backend para la primera semana
   if (usesWeekDayNames) {
-    // MODO LEGACY: Mapear por nombre del día
     mapByDayNames(weekDays, sesiones);
   } else {
-    // MODO NUEVO: Distribuir secuencialmente
-    distributeSessionsEvenly(weekDays, sesiones, weekIndex);
+    // FALLBACK: Si por alguna razón las sesiones no tienen nombres de día,
+    // usar el mapeo por nombres de todas formas (asume que vienen desde BD)
+    console.warn('[calendarMapping] Sesiones sin nombres de día detectadas, usando mapByDayNames');
+    mapByDayNames(weekDays, sesiones);
   }
 
   return weekDays;
@@ -103,7 +108,17 @@ function mapByDayNames(weekDays, sesiones) {
 }
 
 /**
- * Distribuye las sesiones uniformemente en la semana (modo nuevo)
+ * @deprecated Esta función está deprecada y ya no se usa.
+ *
+ * PROBLEMA: Usaba índices fijos (0, 2, 4) que asumían que las semanas empezaban
+ * en lunes desde el día de inicio del plan, lo cual causaba problemas cuando
+ * el plan empezaba mid-semana (ej: miércoles).
+ *
+ * SOLUCIÓN ACTUAL: Usar `mapByDayNames` que mapea por nombre de día y respeta
+ * las semanas de calendario (Lun→Dom). El backend ya redistribuye los días
+ * correctamente para la primera semana.
+ *
+ * Se mantiene el código como referencia histórica.
  */
 function distributeSessionsEvenly(weekDays, sesiones, weekIndex) {
   const sessionsPerWeek = sesiones.length;

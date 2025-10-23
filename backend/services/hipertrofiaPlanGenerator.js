@@ -409,6 +409,11 @@ export function buildHipertrofiaPlan({
   const sessionDays = resolveSessionDays(rule, preferredDays);
   const groupCursors = new Map();
 
+  // 🔧 NUEVA LÓGICA: Detectar si comenzamos a mitad de semana
+  const startDateObj = new Date(startDate);
+  const startDayOfWeek = startDateObj.getDay(); // 0=Dom, 1=Lun, ..., 5=Vie, 6=Sab
+  const isStartingMidWeek = startDayOfWeek > 1 && startDayOfWeek < 6; // Martes a Viernes
+
   const weeks = [];
   let globalExerciseIndex = 0;
 
@@ -416,8 +421,22 @@ export function buildHipertrofiaPlan({
     const weekSessions = [];
     const usedExercisesThisWeek = new Set();
 
-    for (let session = 0; session < rule.sessionsPerWeek; session += 1) {
-      const dayName = sessionDays[session % sessionDays.length] || WEEKDAY_ORDER[session];
+    // 🔧 PRIMERA SEMANA: Usar días consecutivos si empezamos a mitad de semana
+    let actualSessionDays = sessionDays;
+    if (week === 0 && isStartingMidWeek) {
+      // Calcular días consecutivos disponibles desde hoy hasta viernes
+      actualSessionDays = [];
+      for (let d = startDayOfWeek; d <= 5 && actualSessionDays.length < rule.sessionsPerWeek; d++) {
+        actualSessionDays.push(WEEKDAY_ORDER[d - 1]); // d-1 porque WEEKDAY_ORDER es 0-indexed (Lunes=0)
+      }
+      console.log('🔧 Primera semana ajustada para inicio a mitad de semana:', {
+        startDay: WEEKDAY_ORDER[startDayOfWeek - 1],
+        actualDays: actualSessionDays
+      });
+    }
+
+    for (let session = 0; session < Math.min(rule.sessionsPerWeek, actualSessionDays.length); session += 1) {
+      const dayName = actualSessionDays[session] || sessionDays[session % sessionDays.length] || WEEKDAY_ORDER[session];
       const sessionGroups = chooseSessionGroups({
         weekIndex: week,
         sessionIndex: session,

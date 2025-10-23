@@ -922,7 +922,7 @@ export function WorkoutProvider({ children }) {
     const s = fmt.format(new Date()); // YYYY-MM-DD
     const todayISODate = s; // ya est  en formato yyyy-mm-dd
 
-    const params = new URLSearchParams({ methodology_plan_id: String(methodologyPlanId), day_id: String(dayId), session_date: todayISODate });
+    const params = new URLSearchParams({ methodology_plan_id: String(methodologyPlanId), session_date: todayISODate });
     console.log('🔍 [WorkoutContext] Llamando a today-status con:', { methodologyPlanId, dayId, session_date: todayISODate });
     const promise = apiClient.get(`/routines/sessions/today-status?${params.toString()}`)
       .then((data) => {
