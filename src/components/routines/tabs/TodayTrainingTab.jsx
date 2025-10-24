@@ -388,15 +388,29 @@ export default function TodayTrainingTab({
     const filteredExercises = [];
     const originalIndexMapping = [];
 
-    // Filtrar ejercicios que NO estén completados
+    // 🎯 CORRECCIÓN: Para "Reanudar Entrenamiento", solo mostrar ejercicios saltados/cancelados
+    // Detectar si estamos en modo "retry" (cuando hay ejercicios saltados o cancelados)
+    const hasSkippedOrCancelled = todayStatus?.exercises?.some(ex => {
+      const status = String(ex?.status || '').toLowerCase();
+      return status === 'skipped' || status === 'cancelled';
+    }) || Object.values(exerciseProgress || {}).some(p => {
+      const status = String(p?.status || '').toLowerCase();
+      return status === 'skipped' || status === 'cancelled';
+    });
+
     allExercises.forEach((ejercicio, originalIndex) => {
       // Verificar estado desde backend (prioritario) o estado local
       const backendStatus = todayStatus?.exercises?.[originalIndex]?.status;
       const localStatus = exerciseProgress?.[originalIndex]?.status;
       const effectiveStatus = String(backendStatus || localStatus || 'pending').toLowerCase();
 
-      // Incluir ejercicios: pending, in_progress, skipped, cancelled (excluir solo completed)
-      if (effectiveStatus !== 'completed') {
+      // Si hay ejercicios saltados/cancelados, SOLO incluir esos
+      // Si no hay saltados/cancelados, incluir todos los no completados (comportamiento normal)
+      const shouldInclude = hasSkippedOrCancelled
+        ? (effectiveStatus === 'skipped' || effectiveStatus === 'cancelled')
+        : (effectiveStatus !== 'completed');
+
+      if (shouldInclude) {
         filteredExercises.push({
           ...ejercicio,
           originalIndex, // Mantener referencia al índice original
@@ -407,11 +421,13 @@ export default function TodayTrainingTab({
     });
 
     console.log('🔍 DEBUG Filtrado de ejercicios para modal:', {
+      modoRetry: hasSkippedOrCancelled,
       totalEjercicios: allExercises.length,
       ejerciciosFiltrados: filteredExercises.length,
       indicesOriginales: originalIndexMapping,
       ejerciciosExcluidos: allExercises.length - filteredExercises.length,
-      ejerciciosIncluidos: filteredExercises.map((e, i) => `${i} (orig: ${e.originalIndex}) - ${e.nombre} [${e.currentStatus}]`)
+      ejerciciosIncluidos: filteredExercises.map((e, i) => `${i} (orig: ${e.originalIndex}) - ${e.nombre} [${e.currentStatus}]`),
+      filtro: hasSkippedOrCancelled ? 'Solo saltados/cancelados' : 'Todos los no completados'
     });
 
     return {
@@ -654,7 +670,14 @@ export default function TodayTrainingTab({
       return;
     }
 
-    if (!warmupAlreadyShown && !sessionStarted) {
+    // Verificar si ya hay progreso real (ejercicios completados/saltados/cancelados)
+    const hasRealProgress = statusSource?.exercises?.some(ex => {
+      const status = String(ex?.status || '').toLowerCase();
+      return status !== 'pending';
+    }) || false;
+
+    // Solo mostrar calentamiento si: NO se ha mostrado, NO hay progreso real, y NO ha comenzado la sesión
+    if (!warmupAlreadyShown && !sessionStarted && !hasRealProgress) {
       console.log('[TodayTrainingTab] Existing session without warmup, showing warmup modal');
       if (sessionKey) {
         warmupShownSessionsRef.current.add(sessionKey);
@@ -1083,23 +1106,20 @@ export default function TodayTrainingTab({
     // 3. Estado desde backend (para validación adicional)
     const isFinishedToday = todayStatus?.session?.session_status === 'completed';
 
-    // Calcular primero canRetry antes de usarlo
-    const allSkippedToday = totalCountForGate > 0 && (todayStatus?.summary?.skipped ?? 0) === totalCountForGate;
-    const allCancelledToday = totalCountForGate > 0 && (todayStatus?.summary?.cancelled ?? 0) === totalCountForGate;
-    const canRetryToday = Boolean(todayStatus?.summary?.canRetry) || allSkippedToday || allCancelledToday;
+    // 4. Calcular si puede reintentar - simplificado
+    const hasSkipped = (todayStatus?.summary?.skipped ?? 0) > 0;
+    const hasCancelled = (todayStatus?.summary?.cancelled ?? 0) > 0;
+    const canRetryToday = Boolean(todayStatus?.summary?.canRetry) || hasSkipped || hasCancelled;
 
-    // 4. Sesión completada exitosamente: session_status = 'completed' Y NO hay ejercicios para reintentar
-    //    O todos los ejercicios están completed
-    const hasCompletedSession = (isFinishedToday && !canRetryToday) || (totalCountForGate > 0 && completedCountForGate === totalCountForGate);
+    // 5. Sesión completada exitosamente: todos los ejercicios están completados
+    const hasCompletedSession = totalCountForGate > 0 && completedCountForGate === totalCountForGate;
 
-    // 5. Sesión finalizada incompleta: todos procesados pero no todos completados
-    // Ejemplo: 3 completed + 1 skipped + 1 cancelled (como en Halterofilia)
-    // O sesión marcada como completed pero con ejercicios para reintentar
-    const allProcessedIncomplete = (allProcessedToday && hasIncompleteExercises && !hasCompletedSession) || (isFinishedToday && canRetryToday);
+    // 6. Mostrar CTA de comenzar/reanudar: hay ejercicios sin completar
+    // Incluye: pending, in_progress, skipped, cancelled
+    const hasUnfinishedWorkToday = totalCountForGate > 0 && completedCountForGate < totalCountForGate;
 
-    // 6. Mostrar CTA de comenzar/reanudar: hay ejercicios incompletos Y NO todos están procesados
-    // Esta lógica asegura que el botón aparezca cuando hay pending/in_progress
-    const hasUnfinishedWorkToday = hasIncompleteExercises && !allProcessedToday;
+    // 7. Para compatibilidad con código existente (simplificado)
+    const allProcessedIncomplete = false;
 
     return {
       hasIncompleteExercises,
@@ -1432,69 +1452,6 @@ export default function TodayTrainingTab({
               </section>
             ) : null}
 
-            {/* =============================================== */}
-            {/* ⚠️ SESIÓN FINALIZADA INCOMPLETA */}
-            {/* =============================================== */}
-
-            {/* Sección 2: Sesión finalizada pero NO completada (algunos skipped/cancelled) */}
-            {hasActivePlan && hasToday && allProcessedIncomplete && todayStatus && (
-              <Card className="p-6 border-yellow-500/30 bg-yellow-900/10">
-                <div className="flex items-center justify-between mb-6">
-                  <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <AlertTriangle className="w-6 h-6 text-yellow-400" />
-                      <h3 className="text-xl font-semibold text-white">Sesión Finalizada - Incompleta</h3>
-                    </div>
-                    <p className="text-gray-300 mt-1">
-                      {todayStatus.summary.completed} completados - {todayStatus.summary.skipped} saltados - {todayStatus.summary.cancelled} cancelados
-                    </p>
-                    <p className="text-sm text-yellow-300 mt-2">
-                      Algunos ejercicios no fueron completados. Puedes reintentarlos si lo deseas.
-                    </p>
-                  </div>
-                  <div className="text-sm text-gray-400">
-                    Duración: {(todayStatus.summary.total > 0 && todayStatus.session?.total_duration_seconds)
-                      ? Math.round((todayStatus.session.total_duration_seconds + (todayStatus.session.warmup_time_seconds || 0)) / 60)
-                      : 0} min
-                  </div>
-                </div>
-
-                {/* Lista de ejercicios con sus estados */}
-                <div className="space-y-2 mb-6">
-                  {todaySessionData.ejercicios.map((ejercicio, index) => {
-                    // Combinar datos del plan con estado desde backend
-                    const backendExercise = todayStatus?.exercises?.[index];
-                    const status = backendExercise?.status || 'pending';
-                    const ex = {
-                      ...ejercicio,
-                      status: String(status).toLowerCase(),
-                      exercise_name: ejercicio.nombre,
-                      series_total: ejercicio.series,
-                      // 🎯 NUEVO: Agregar feedback desde backend
-                      sentiment: backendExercise?.sentiment,
-                      comment: backendExercise?.comment
-                    };
-                    return (
-                      <ExerciseListItem key={index} exercise={ex} index={index} />
-                    );
-                  })}
-                </div>
-
-                {/* Botón para reintentar ejercicios saltados/cancelados */}
-                {canRetryToday && (
-                  <div className="flex justify-center pt-4 border-t border-gray-700">
-                    <Button
-                      onClick={() => handleResumeSession()}
-                      className="bg-yellow-500 hover:bg-yellow-600 text-black font-medium"
-                      disabled={ui.isLoading || isLoadingSession}
-                    >
-                      <Play className="h-5 w-5 mr-2" />
-                      Reintentar Ejercicios Pendientes
-                    </Button>
-                  </div>
-                )}
-              </Card>
-            )}
 
             {/* =============================================== */}
             {/* ✅ SESIÓN COMPLETADA EXITOSAMENTE */}
