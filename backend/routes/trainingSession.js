@@ -1027,6 +1027,10 @@ router.get('/today-status', authenticateToken, async (req, res) => {
         decision: canResume ? 'REANUDAR ⚠️' : 'COMENZAR ✅'
       });
 
+      // Calcular si puede reintentar ejercicios (skipped/cancelled)
+      const cancelledExercises = exercisesQuery.rows.filter(ex => ex.status === 'cancelled').length;
+      const canRetry = (skippedExercises > 0 || cancelledExercises > 0) && session.session_status === 'completed';
+
       res.json({
         success: true,
         session_type: 'methodology',
@@ -1039,8 +1043,10 @@ router.get('/today-status', authenticateToken, async (req, res) => {
           total: totalExercises,
           completed: completedExercises,
           skipped: skippedExercises,
-          pending: totalExercises - completedExercises - skippedExercises,
-          isComplete: session.session_status === 'completed'
+          cancelled: cancelledExercises,
+          pending: totalExercises - completedExercises - skippedExercises - cancelledExercises,
+          isComplete: session.session_status === 'completed',
+          canRetry  // ✅ NUEVO: Permite reintentar skipped/cancelled
         }
       });
 
