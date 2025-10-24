@@ -443,6 +443,15 @@ export default function TodayTrainingTab({
   }, [todayStatus?.exercises, exerciseProgress, todaySessionData?.ejercicios]);
 
   const handleStartSession = useCallback(async (exerciseIndex = 0) => {
+    console.log('🟢 handleStartSession called', {
+      exerciseIndex,
+      isStarting,
+      isLoadingSession,
+      hasTodaySessionData: !!todaySessionData,
+      exercisesCount: todaySessionData?.ejercicios?.length,
+      todayStatusSessionId: todayStatus?.session?.id
+    });
+
     // 🚫 Prevenir doble ejecución
     if (isStarting || isLoadingSession) {
       console.log('⚠️ handleStartSession ya en progreso, evitando doble ejecución');
@@ -495,9 +504,10 @@ export default function TodayTrainingTab({
         if (sessionKey) {
           warmupShownSessionsRef.current.add(sessionKey);
         }
+        // 🎯 CORRECCIÓN: Pasar todaySessionData para que effectiveSession tenga datos
         updateLocalState({
           pendingSessionData: {
-            session: null,
+            session: todaySessionData ? { ...todaySessionData, sessionId: existingSid } : null,
             sessionId: existingSid
           },
           showWarmupModal: false,
@@ -666,16 +676,20 @@ export default function TodayTrainingTab({
       warmupShownSessionsRef.current.add(sessionKey);
     }
 
+    // 🎯 CORRECCIÓN: Pasar todaySessionData para que effectiveSession tenga datos
     updateLocalState({
       pendingSessionData: {
-        session: null,
+        session: todaySessionData ? { ...todaySessionData, sessionId: existingSessionId } : null,
         sessionId: existingSessionId
       },
       showWarmupModal: false,
       showSessionModal: true
     });
 
-    console.log('[TodayTrainingTab] Resuming session with pending exercises');
+    console.log('[TodayTrainingTab] Resuming session with pending exercises', {
+      hasTodaySessionData: !!todaySessionData,
+      exercisesCount: todaySessionData?.ejercicios?.length
+    });
   }, [todaySessionData, hasActiveSession, handleStartSession, currentExerciseIndex, session.sessionId, localState.pendingSessionData?.sessionId, todayStatus, track, fetchTodayStatus]);
 
   const handleCompleteSession = useCallback(async () => {
@@ -1314,7 +1328,22 @@ export default function TodayTrainingTab({
                   ) : (
                     // Decidir si debemos reanudar (hay sesión activa o ya hay ejercicios realizados)
                     <Button
-                      onClick={() => ((shouldResume || hasUnfinishedWorkToday) ? handleResumeSession() : handleStartSession(0))}
+                      onClick={() => {
+                        console.log('🔍 DEBUG Button Click Decision:', {
+                          shouldResume,
+                          hasUnfinishedWorkToday,
+                          willCallResume: (shouldResume || hasUnfinishedWorkToday),
+                          todayStatusCanResume: todayStatus?.session?.canResume,
+                          sessionStatus: todayStatus?.session?.session_status,
+                          hasActiveSession
+                        });
+
+                        if (shouldResume || hasUnfinishedWorkToday) {
+                          handleResumeSession();
+                        } else {
+                          handleStartSession(0);
+                        }
+                      }}
                       className="bg-yellow-500 hover:bg-yellow-600 text-black font-medium"
                       disabled={ui.isLoading || isLoadingSession || isStarting}
                     >
