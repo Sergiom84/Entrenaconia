@@ -188,6 +188,14 @@ export default function TodayTrainingTab({
 
     setLoadingTodayStatus(true);
     try {
+      // Verificar que tenemos un token válido
+      const token = localStorage.getItem('authToken');
+      if (!token) {
+        console.error('❌ No hay token de autenticación');
+        setTodayStatus(null);
+        return null;
+      }
+
       // Calcular semana actual desde el inicio del plan
       const startISO = (plan.planStartDate || planStartDate || new Date().toISOString());
       const dayId = computeDayId(startISO, 'Europe/Madrid');
@@ -202,41 +210,57 @@ export default function TodayTrainingTab({
         weekNumber,
         dayName,
         dayId,
-        startISO
+        startISO,
+        hasToken: !!token
       });
 
-      // Llamar directamente al endpoint con los parámetros correctos
-      const response = await apiClient.get('/training-session/today-status', {
-        params: {
-          methodology_plan_id: currentMethodologyPlanId,
-          week_number: weekNumber,
-          day_name: dayName
+      // Construir URL con query params manualmente
+      const url = `/training-session/today-status?methodology_plan_id=${currentMethodologyPlanId}&week_number=${weekNumber}&day_name=${dayName}`;
+
+      // Usar fetch directo para tener más control
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3010'}/api${url}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
         }
       });
 
-      if (response.success) {
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Error en today-status:', response.status, errorText);
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+
+      const data = await response.json();
+
+      console.log('📥 Respuesta completa de today-status:', data);
+
+      if (data.success) {
         const normalized = {
-          session: response.session,
-          exercises: response.exercises,
-          summary: response.summary
+          session: data.session,
+          exercises: data.exercises,
+          summary: data.summary
         };
         setTodayStatus(normalized);
 
         console.log('✅ todayStatus actualizado:', {
-          session_id: response.session?.id,
-          exercises_count: response.exercises?.length,
-          completed: response.summary?.completed,
-          skipped: response.summary?.skipped,
-          cancelled: response.summary?.cancelled
+          session_id: data.session?.id,
+          session_status: data.session?.session_status,
+          exercises_count: data.exercises?.length,
+          completed: data.summary?.completed,
+          skipped: data.summary?.skipped,
+          cancelled: data.summary?.cancelled
         });
 
         return normalized;
       }
 
+      console.warn('⚠️ Respuesta sin success=true:', data);
       setTodayStatus(null);
       return null;
     } catch (error) {
-      console.error('Error obteniendo estado del día:', error);
+      console.error('❌ Error obteniendo estado del día:', error);
       setTodayStatus(null);
       return null;
     } finally {
