@@ -152,10 +152,7 @@ export default function TodayTrainingTab({
     setError,
     showSuccess,
     goToMethodologies,
-    cancelPlan,
-
-    // Cache compartida
-    getTodayStatusCached
+    cancelPlan
   } = useWorkout();
 
   // ===============================================
@@ -191,12 +188,48 @@ export default function TodayTrainingTab({
 
     setLoadingTodayStatus(true);
     try {
+      // Calcular semana actual desde el inicio del plan
       const startISO = (plan.planStartDate || planStartDate || new Date().toISOString());
       const dayId = computeDayId(startISO, 'Europe/Madrid');
-      const data = await getTodayStatusCached({ methodologyPlanId: currentMethodologyPlanId, dayId });
-      if (data?.success) {
-        const normalized = { session: data.session, exercises: data.exercises, summary: data.summary };
+      const weekNumber = Math.max(1, Math.ceil(dayId / 7));
+
+      // Normalizar nombre del día actual
+      const dayNames = ['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab'];
+      const dayName = dayNames[new Date().getDay()];
+
+      console.log('🔍 fetchTodayStatus params:', {
+        methodologyPlanId: currentMethodologyPlanId,
+        weekNumber,
+        dayName,
+        dayId,
+        startISO
+      });
+
+      // Llamar directamente al endpoint con los parámetros correctos
+      const response = await apiClient.get('/training-session/today-status', {
+        params: {
+          methodology_plan_id: currentMethodologyPlanId,
+          week_number: weekNumber,
+          day_name: dayName
+        }
+      });
+
+      if (response.success) {
+        const normalized = {
+          session: response.session,
+          exercises: response.exercises,
+          summary: response.summary
+        };
         setTodayStatus(normalized);
+
+        console.log('✅ todayStatus actualizado:', {
+          session_id: response.session?.id,
+          exercises_count: response.exercises?.length,
+          completed: response.summary?.completed,
+          skipped: response.summary?.skipped,
+          cancelled: response.summary?.cancelled
+        });
+
         return normalized;
       }
 
@@ -209,7 +242,7 @@ export default function TodayTrainingTab({
     } finally {
       setLoadingTodayStatus(false);
     }
-  }, [methodologyPlanId, plan.methodologyPlanId, plan.planStartDate, planStartDate, hasActivePlan, getTodayStatusCached]);
+  }, [methodologyPlanId, plan.methodologyPlanId, plan.planStartDate, planStartDate, hasActivePlan]);
 
 
   const mountedRef = useRef(true);
