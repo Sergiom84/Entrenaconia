@@ -699,14 +699,16 @@ export default function TodayTrainingTab({
       warmupShownSessionsRef.current.add(sessionKey);
     }
 
-    // 🎯 CORRECCIÓN: Pasar todaySessionData para que effectiveSession tenga datos
+    // 🎯 CORRECCIÓN: Pasar filteredSessionData para que solo muestre ejercicios saltados/cancelados
+    // Primero activar el modal para que filteredSessionData se compute
     updateLocalState({
       pendingSessionData: {
-        session: todaySessionData ? { ...todaySessionData, sessionId: existingSessionId } : null,
+        session: null, // Será llenado por effectiveSession usando filteredSessionData
         sessionId: existingSessionId
       },
       showWarmupModal: false,
-      showSessionModal: true
+      showSessionModal: true,
+      wantRoutineModal: true // Activar para que filteredSessionData se compute
     });
 
     console.log('[TodayTrainingTab] Resuming session with pending exercises', {
