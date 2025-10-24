@@ -1361,10 +1361,12 @@ export default function TodayTrainingTab({
                     <div className="space-y-2">
                       {todaySessionData.ejercicios.map((ejercicio, index) => {
                         // 🎯 CORRECCIÓN: Combinar datos del plan con estado desde backend
+                        const backendExercise = todayStatus?.exercises?.[index];
+
                         const status = (() => {
                           // Prioridad 1: Estado desde backend (todayStatus.exercises)
-                          if (todayStatus?.exercises?.[index]?.status) {
-                            return String(todayStatus.exercises[index].status).toLowerCase();
+                          if (backendExercise?.status) {
+                            return String(backendExercise.status).toLowerCase();
                           }
                           // Prioridad 2: Estado local (exerciseProgress)
                           if (exerciseProgress[index]?.status) {
@@ -1382,7 +1384,10 @@ export default function TodayTrainingTab({
                           ...ejercicio,
                           status,
                           exercise_name: ejercicio.nombre,
-                          series_total: ejercicio.series
+                          series_total: ejercicio.series,
+                          // 🎯 NUEVO: Agregar feedback desde backend
+                          sentiment: backendExercise?.sentiment,
+                          comment: backendExercise?.comment
                         };
 
                         return (
@@ -1426,12 +1431,16 @@ export default function TodayTrainingTab({
                 <div className="space-y-2 mb-6">
                   {todaySessionData.ejercicios.map((ejercicio, index) => {
                     // Combinar datos del plan con estado desde backend
-                    const status = todayStatus?.exercises?.[index]?.status || 'pending';
+                    const backendExercise = todayStatus?.exercises?.[index];
+                    const status = backendExercise?.status || 'pending';
                     const ex = {
                       ...ejercicio,
                       status: String(status).toLowerCase(),
                       exercise_name: ejercicio.nombre,
-                      series_total: ejercicio.series
+                      series_total: ejercicio.series,
+                      // 🎯 NUEVO: Agregar feedback desde backend
+                      sentiment: backendExercise?.sentiment,
+                      comment: backendExercise?.comment
                     };
                     return (
                       <ExerciseListItem key={index} exercise={ex} index={index} />
@@ -1483,12 +1492,16 @@ export default function TodayTrainingTab({
                 <div className="space-y-2">
                   {todaySessionData.ejercicios.map((ejercicio, index) => {
                     // Combinar datos del plan con estado desde backend
-                    const status = todayStatus?.exercises?.[index]?.status || 'completed';
+                    const backendExercise = todayStatus?.exercises?.[index];
+                    const status = backendExercise?.status || 'completed';
                     const ex = {
                       ...ejercicio,
                       status: String(status).toLowerCase(),
                       exercise_name: ejercicio.nombre,
-                      series_total: ejercicio.series
+                      series_total: ejercicio.series,
+                      // 🎯 NUEVO: Agregar feedback desde backend
+                      sentiment: backendExercise?.sentiment,
+                      comment: backendExercise?.comment
                     };
                     return (
                       <ExerciseListItem key={index} exercise={ex} index={index} />
