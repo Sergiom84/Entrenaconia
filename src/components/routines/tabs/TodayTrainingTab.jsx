@@ -1386,7 +1386,7 @@ export default function TodayTrainingTab({
                 </div>
 
                 {/* Lista de ejercicios */}
-                {todaySessionData?.ejercicios && todaySessionData.ejercicios.length > 0 && !isFinishedToday && (
+                {todaySessionData?.ejercicios && todaySessionData.ejercicios.length > 0 && !hasCompletedSession && (
                   <Card className="p-6">
                     <div className="flex items-center justify-between mb-6">
                       <div>
