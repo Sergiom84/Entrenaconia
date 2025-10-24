@@ -1302,29 +1302,36 @@ export default function TodayTrainingTab({
                     </div>
 
                     <div className="space-y-2">
-                      {(() => {
-                        // Si tenemos todayStatus.exercises (datos del backend con progreso real), usarlos
-                        if (todayStatus?.exercises && todayStatus.exercises.length > 0) {
-                          return todayStatus.exercises.map((ex, index) => (
-                            <ExerciseListItem key={index} exercise={ex} index={index} />
-                          ));
-                        }
+                      {todaySessionData.ejercicios.map((ejercicio, index) => {
+                        // 🎯 CORRECCIÓN: Combinar datos del plan con estado desde backend
+                        const status = (() => {
+                          // Prioridad 1: Estado desde backend (todayStatus.exercises)
+                          if (todayStatus?.exercises?.[index]?.status) {
+                            return String(todayStatus.exercises[index].status).toLowerCase();
+                          }
+                          // Prioridad 2: Estado local (exerciseProgress)
+                          if (exerciseProgress[index]?.status) {
+                            return String(exerciseProgress[index].status).toLowerCase();
+                          }
+                          // Prioridad 3: Si es el ejercicio actual en sesión activa
+                          if (hasActiveSession && session.currentExerciseIndex === index) {
+                            return 'in_progress';
+                          }
+                          // Por defecto: pendiente
+                          return 'pending';
+                        })();
 
-                        // Fallback: Mostrar ejercicios del plan sin progreso
-                        return todaySessionData.ejercicios.map((ejercicio, index) => {
-                          const status = exerciseProgress[index]?.status ||
-                                         (hasActiveSession && session.currentExerciseIndex === index ? 'in_progress' : 'pending');
-                          const ex = {
-                            ...ejercicio,
-                            status,
-                            exercise_name: ejercicio.nombre,
-                            series_total: ejercicio.series
-                          };
-                          return (
-                            <ExerciseListItem key={index} exercise={ex} index={index} />
-                          );
-                        });
-                      })()}
+                        const ex = {
+                          ...ejercicio,
+                          status,
+                          exercise_name: ejercicio.nombre,
+                          series_total: ejercicio.series
+                        };
+
+                        return (
+                          <ExerciseListItem key={index} exercise={ex} index={index} />
+                        );
+                      })}
                     </div>
                   </Card>
                 )}
@@ -1360,9 +1367,19 @@ export default function TodayTrainingTab({
 
                 {/* Lista de ejercicios con sus estados */}
                 <div className="space-y-2 mb-6">
-                  {todayStatus.exercises.map((ex, index) => (
-                    <ExerciseListItem key={index} exercise={ex} index={index} />
-                  ))}
+                  {todaySessionData.ejercicios.map((ejercicio, index) => {
+                    // Combinar datos del plan con estado desde backend
+                    const status = todayStatus?.exercises?.[index]?.status || 'pending';
+                    const ex = {
+                      ...ejercicio,
+                      status: String(status).toLowerCase(),
+                      exercise_name: ejercicio.nombre,
+                      series_total: ejercicio.series
+                    };
+                    return (
+                      <ExerciseListItem key={index} exercise={ex} index={index} />
+                    );
+                  })}
                 </div>
 
                 {/* Botón para reintentar ejercicios saltados/cancelados */}
@@ -1407,9 +1424,19 @@ export default function TodayTrainingTab({
                 </div>
 
                 <div className="space-y-2">
-                  {todayStatus.exercises.map((ex, index) => (
-                    <ExerciseListItem key={index} exercise={ex} index={index} />
-                  ))}
+                  {todaySessionData.ejercicios.map((ejercicio, index) => {
+                    // Combinar datos del plan con estado desde backend
+                    const status = todayStatus?.exercises?.[index]?.status || 'completed';
+                    const ex = {
+                      ...ejercicio,
+                      status: String(status).toLowerCase(),
+                      exercise_name: ejercicio.nombre,
+                      series_total: ejercicio.series
+                    };
+                    return (
+                      <ExerciseListItem key={index} exercise={ex} index={index} />
+                    );
+                  })}
                 </div>
               </Card>
             )}
