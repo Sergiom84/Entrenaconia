@@ -1083,16 +1083,19 @@ export default function TodayTrainingTab({
     // 3. Estado desde backend (para validación adicional)
     const isFinishedToday = todayStatus?.session?.session_status === 'completed';
 
-    // 4. Sesión completada exitosamente: session_status = 'completed' O todos los ejercicios completed
-    const hasCompletedSession = isFinishedToday || (totalCountForGate > 0 && completedCountForGate === totalCountForGate);
-
-    // 5. Sesión finalizada incompleta: todos procesados pero no todos completados
-    // Ejemplo: 3 completed + 1 skipped + 1 cancelled (como en Halterofilia)
-    const allProcessedIncomplete = allProcessedToday && hasIncompleteExercises && !hasCompletedSession;
-
+    // Calcular primero canRetry antes de usarlo
     const allSkippedToday = totalCountForGate > 0 && (todayStatus?.summary?.skipped ?? 0) === totalCountForGate;
     const allCancelledToday = totalCountForGate > 0 && (todayStatus?.summary?.cancelled ?? 0) === totalCountForGate;
     const canRetryToday = Boolean(todayStatus?.summary?.canRetry) || allSkippedToday || allCancelledToday;
+
+    // 4. Sesión completada exitosamente: session_status = 'completed' Y NO hay ejercicios para reintentar
+    //    O todos los ejercicios están completed
+    const hasCompletedSession = (isFinishedToday && !canRetryToday) || (totalCountForGate > 0 && completedCountForGate === totalCountForGate);
+
+    // 5. Sesión finalizada incompleta: todos procesados pero no todos completados
+    // Ejemplo: 3 completed + 1 skipped + 1 cancelled (como en Halterofilia)
+    // O sesión marcada como completed pero con ejercicios para reintentar
+    const allProcessedIncomplete = (allProcessedToday && hasIncompleteExercises && !hasCompletedSession) || (isFinishedToday && canRetryToday);
 
     // 6. Mostrar CTA de comenzar/reanudar: hay ejercicios incompletos Y NO todos están procesados
     // Esta lógica asegura que el botón aparezca cuando hay pending/in_progress
