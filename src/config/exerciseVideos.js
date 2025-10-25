@@ -38,15 +38,20 @@ export const LOCAL_VIDEO_MAPPING = {
  * - 'mapping': Usar el mapping LOCAL_VIDEO_MAPPING (videos específicos por ejercicio)
  * - 'off': Desactivado (usar solo videos de BD o GIFs)
  *
- * AUTO-DETECTA: En producción (Render) automáticamente se pone en 'off'
+ * PRODUCCIÓN: Siempre usa 'single' para mostrar el mismo video en todos los ejercicios
  */
-const IS_PRODUCTION = import.meta.env.PROD || import.meta.env.MODE === 'production';
-export const DEV_VIDEO_MODE = IS_PRODUCTION ? 'off' : 'single'; // 'single' | 'mapping' | 'off'
+export const DEV_VIDEO_MODE = 'single'; // 'single' | 'mapping' | 'off'
 
 /**
- * Video a usar en modo 'single' (para pruebas)
+ * Video a usar en modo 'single'
+ *
+ * DESARROLLO: Usa video local (/exercise-videos/...)
+ * PRODUCCIÓN: Usa URL pública de Supabase Storage
  */
-export const DEV_SINGLE_VIDEO = '/exercise-videos/Press de pecho inclinado.mp4';
+const IS_PRODUCTION = import.meta.env.PROD || import.meta.env.MODE === 'production';
+export const DEV_SINGLE_VIDEO = IS_PRODUCTION
+  ? 'https://lhsnmjgdtjalfcsurxvg.supabase.co/storage/v1/object/public/exercise-videos/Press%20de%20pecho%20inclinado.mp4'
+  : '/exercise-videos/Press de pecho inclinado.mp4';
 
 /**
  * Buscar video local para un ejercicio
