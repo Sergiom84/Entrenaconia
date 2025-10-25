@@ -37,8 +37,11 @@ export const LOCAL_VIDEO_MAPPING = {
  * - 'single': Mostrar SIEMPRE el mismo video en todos los ejercicios (para pruebas rápidas)
  * - 'mapping': Usar el mapping LOCAL_VIDEO_MAPPING (videos específicos por ejercicio)
  * - 'off': Desactivado (usar solo videos de BD o GIFs)
+ *
+ * AUTO-DETECTA: En producción (Render) automáticamente se pone en 'off'
  */
-export const DEV_VIDEO_MODE = 'single'; // 'single' | 'mapping' | 'off'
+const IS_PRODUCTION = import.meta.env.PROD || import.meta.env.MODE === 'production';
+export const DEV_VIDEO_MODE = IS_PRODUCTION ? 'off' : 'single'; // 'single' | 'mapping' | 'off'
 
 /**
  * Video a usar en modo 'single' (para pruebas)
