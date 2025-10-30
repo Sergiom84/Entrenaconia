@@ -11,6 +11,14 @@ export const Alert = ({ className = '', children, ...props }) => {
   );
 };
 
+export const AlertTitle = ({ className = '', children, ...props }) => {
+  return (
+    <h5 className={`mb-1 font-medium leading-none tracking-tight ${className}`} {...props}>
+      {children}
+    </h5>
+  );
+};
+
 export const AlertDescription = ({ className = '', children, ...props }) => {
   return (
     <div className={`text-sm ${className}`} {...props}>

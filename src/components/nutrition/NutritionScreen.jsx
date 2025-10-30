@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUserContext } from '@/contexts/UserContext';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -25,7 +25,7 @@ import MealPlanner from './MealPlanner';
 import ShoppingList from './ShoppingList';
 
 // Importar componentes V2 (Sistema Determinista)
-import NutritionProfileSetup from './NutritionProfileSetup';
+
 import NutritionPlanGenerator from './NutritionPlanGenerator';
 import NutritionCalendarView from './NutritionCalendarView';
 
@@ -239,22 +239,15 @@ export default function NutritionScreen() {
   const nutritionTabs = [
     // ===== SISTEMA V2 (DETERMINISTA) =====
     {
-      id: 'profile-v2',
-      label: '🆕 Perfil V2',
-      icon: Target,
-      description: 'Configuración de perfil nutricional determinista',
-      isV2: true
-    },
-    {
       id: 'generate-plan',
-      label: '🆕 Generar Plan',
+      label: 'Generar Plan',
       icon: TrendingUp,
-      description: 'Generador de planes nutricionales con cálculos científicos',
+      description: 'Configura y genera tu plan determinista',
       isV2: true
     },
     {
       id: 'calendar-v2',
-      label: '🆕 Calendario V2',
+      label: 'Calendario V2',
       icon: Calendar,
       description: 'Vista semanal del plan determinista',
       isV2: true
@@ -625,16 +618,6 @@ export default function NutritionScreen() {
           )}
 
           {/* ===== SISTEMA V2 (DETERMINISTA) ===== */}
-          {activeTab === 'profile-v2' && (
-            <NutritionProfileSetup
-              onProfileSaved={(data) => {
-                console.log('✅ Perfil V2 guardado:', data);
-                // Actualizar estado si es necesario
-                fetchUserNutritionData();
-              }}
-            />
-          )}
-
           {activeTab === 'generate-plan' && (
             <NutritionPlanGenerator
               onPlanGenerated={(data) => {
@@ -705,3 +688,4 @@ export default function NutritionScreen() {
     </div>
   );
 }
+

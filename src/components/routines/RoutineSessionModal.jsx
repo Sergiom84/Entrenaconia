@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import { X as IconX } from 'lucide-react';
+import { X as IconX, TrendingUp } from 'lucide-react';
 import { formatExerciseName } from '../../utils/exerciseUtils';
 import ExerciseFeedbackModal from '../HomeTraining/ExerciseFeedbackModal';
 import ExerciseInfoModal from './ExerciseInfoModal';
 import { saveExerciseFeedback, getSessionFeedback } from './api';
+import SeriesTrackingModal from '../Methodologie/methodologies/HipertrofiaV2/components/SeriesTrackingModal';
 
 // Componentes refactorizados
 import { useExerciseTimer } from './session/useExerciseTimer';
@@ -58,6 +59,11 @@ export default function RoutineSessionModal({
   const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
   const [showExerciseToast, setShowExerciseToast] = useState(false);
   const [showEndModal, setShowEndModal] = useState(false);
+
+  // 🎯 Estados para tracking RIR (HipertrofiaV2)
+  const [showSeriesTracking, setShowSeriesTracking] = useState(false);
+  const [seriesTrackingData, setSeriesTrackingData] = useState([]);
+  const [exerciseProgression, setExerciseProgression] = useState({});
   // Guards y refs
   const closingRef = useRef(false);
   const toastTimeoutRef = useRef(null);
@@ -69,6 +75,35 @@ export default function RoutineSessionModal({
     onClose?.();
   }, [onClose]);
 
+  // 🎯 Obtener progresión previa del ejercicio (para sugerencias) - MOVIDO AQUÍ PARA EVITAR ERROR DE INICIALIZACIÓN
+  const fetchExerciseProgression = useCallback(async (exerciseId) => {
+    if (!exerciseId) return null;
+
+    try {
+      const token = localStorage.getItem('authToken');
+      const userId = JSON.parse(localStorage.getItem('userProfile'))?.id;
+
+      if (!userId || !token) return null;
+
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL || 'http://localhost:3010'}/api/hipertrofiav2/progression/${userId}/${exerciseId}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        return data.progression;
+      }
+    } catch (error) {
+      console.error('Error obteniendo progresión:', error);
+    }
+
+    return null;
+  }, []);
 
   // Gestionar timeout del toast de ejercicio completado con cleanup
   useEffect(() => {
@@ -113,6 +148,25 @@ export default function RoutineSessionModal({
     loadExistingFeedback();
     return () => { cancelled = true; };
   }, [sessionId, isOpen]);
+
+  // 🎯 Cargar progresión del ejercicio actual (para sugerencias de peso)
+  useEffect(() => {
+    if (!progressState.currentExercise?.exercise_id) return;
+
+    const loadProgression = async () => {
+      const progression = await fetchExerciseProgression(progressState.currentExercise.exercise_id);
+      if (progression) {
+        setExerciseProgression(prev => ({
+          ...prev,
+          [progressState.currentExercise.exercise_id]: progression
+        }));
+        console.log('📊 Progresión cargada:', progression);
+      }
+    };
+
+    loadProgression();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [progressState.currentExercise?.exercise_id]);
 
   // Detectar si hay ejercicio en progreso
   const isCurrentExerciseInProgress = useCallback(() => {
@@ -237,6 +291,81 @@ export default function RoutineSessionModal({
     safeClose();
   }, [isCurrentExerciseInProgress, timerState.series, timerState.spent, progressState.currentIndex, progressState.currentExercise, progressState.actions, onFinishExercise, onSkipExercise, onCancelExercise, safeClose]);
 
+  // 🎯 Guardar datos de tracking RIR
+  const handleSaveSeriesTracking = useCallback(async (trackingData) => {
+    try {
+      console.log('💾 Guardando tracking RIR:', trackingData);
+      console.log('🔍 DEBUG - trackingData.exercise_id:', trackingData.exercise_id);
+
+      const token = localStorage.getItem('authToken');
+      const userId = JSON.parse(localStorage.getItem('userProfile'))?.id;
+
+      if (!userId || !sessionId || !token) {
+        throw new Error('Faltan datos para guardar tracking');
+      }
+
+      const payload = {
+        userId,
+        methodologyPlanId: session?.methodologyPlanId,
+        sessionId,
+        ...trackingData
+      };
+
+      console.log('🔍 DEBUG - Payload completo a enviar:', payload);
+      console.log('🔍 DEBUG - Payload.exercise_id:', payload.exercise_id);
+
+      // Guardar en backend
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL || 'http://localhost:3010'}/api/hipertrofiav2/save-set`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify(payload)
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Error guardando serie');
+      }
+
+      const result = await response.json();
+      console.log('✅ Serie guardada:', result);
+
+      // Guardar en estado local
+      setSeriesTrackingData(prev => [...prev, trackingData]);
+
+      // Actualizar progresión
+      if (trackingData.exercise_id) {
+        const progression = await fetchExerciseProgression(trackingData.exercise_id);
+        if (progression) {
+          setExerciseProgression(prev => ({
+            ...prev,
+            [trackingData.exercise_id]: progression
+          }));
+        }
+      }
+
+      // Cerrar modal y mostrar toast
+      setShowSeriesTracking(false);
+      setShowExerciseToast(true);
+
+      // Si completó todas las series, avanzar
+      if (trackingData.set_number >= progressState.seriesTotal) {
+        setTimeout(() => {
+          handleCompleteExercise();
+        }, 1000);
+      }
+
+    } catch (error) {
+      console.error('❌ Error guardando tracking:', error);
+      alert('Error al guardar la serie. Por favor, intenta de nuevo.');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, session?.methodologyPlanId, progressState.seriesTotal]);
+
   // Guardar feedback de ejercicio
   const handleSaveFeedback = useCallback(async (payload) => {
     try {
@@ -289,10 +418,25 @@ export default function RoutineSessionModal({
           {/* Header */}
           <div className="p-4 border-b border-gray-700 flex items-center justify-between">
             <div>
-              <h2 className="text-xl text-white font-bold">
+              <h2 className="text-xl text-white font-bold flex items-center gap-2">
                 {formatExerciseName(progressState.currentExercise?.nombre) || 'Ejercicio'}
+                {/* 🎯 NUEVO: Indicador de volumen ajustado */}
+                {progressState.currentExercise?.intensity_adjusted && (
+                  <span className="inline-flex items-center gap-1 px-2 py-1 bg-orange-500/20 text-orange-400 rounded-md text-xs font-normal">
+                    <span className="text-lg">⚡</span>
+                    Volumen ajustado
+                  </span>
+                )}
               </h2>
-              <p className="text-sm text-gray-400">{progressState.progressText}</p>
+              <p className="text-sm text-gray-400">
+                {progressState.progressText}
+                {/* 🎯 NUEVO: Mostrar nota de ajuste si existe */}
+                {progressState.currentExercise?.adjustment_note && (
+                  <span className="ml-2 text-xs text-orange-300">
+                    ({progressState.currentExercise.adjustment_note})
+                  </span>
+                )}
+              </p>
             </div>
             <button
               onClick={handleSmartExit}
@@ -314,6 +458,10 @@ export default function RoutineSessionModal({
               progressState={progressState}
               onShowFeedback={() => setShowFeedback(true)}
               onShowExerciseInfo={() => setShowExerciseInfo(true)}
+              onShowSeriesTracking={() => {
+                // 🎯 Abrir modal de tracking con datos del ejercicio actual
+                setShowSeriesTracking(true);
+              }}
               onComplete={handleCompleteExercise}
               onSkip={handleSkipExercise}
               onCancel={handleCancelExercise}
@@ -342,6 +490,30 @@ export default function RoutineSessionModal({
           onClose={() => setShowExerciseInfo(false)}
         />
       )}
+
+      {/* 🎯 Modal de Tracking RIR (HipertrofiaV2) */}
+      {showSeriesTracking && progressState.currentExercise && (() => {
+        // 🐛 Debug: Verificar estructura del ejercicio
+        console.log('🔍 DEBUG - currentExercise:', progressState.currentExercise);
+        console.log('🔍 DEBUG - exercise_id:', progressState.currentExercise?.exercise_id);
+        console.log('🔍 DEBUG - id:', progressState.currentExercise?.id);
+
+        const exerciseId = progressState.currentExercise?.exercise_id || progressState.currentExercise?.id;
+        console.log('🔍 DEBUG - exerciseId final:', exerciseId);
+
+        return (
+          <SeriesTrackingModal
+            exerciseName={formatExerciseName(progressState.currentExercise?.nombre)}
+            exerciseId={exerciseId}
+            seriesNumber={timerState.series}
+            totalSeries={timerState.seriesTotal}
+            previousPR={exerciseProgression[exerciseId]?.current_pr}
+            suggestedWeight={exerciseProgression[exerciseId]?.target_weight_80}
+            onSave={handleSaveSeriesTracking}
+            onClose={() => setShowSeriesTracking(false)}
+          />
+        );
+      })()}
 
       {/* Toast: Ejercicio completado */}
       {showExerciseToast && (

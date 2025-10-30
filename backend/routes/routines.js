@@ -594,19 +594,23 @@ router.post('/sessions/start', authenticateToken, async (req, res) => {
     for (let i = 0; i < ejercicios.length; i++) {
       const ej = ejercicios[i] || {};
       const order = i; // 0-based
+
+      // 🎯 Extraer exercise_id si está disponible
+      const exerciseId = ej.exercise_id || ej.id || null;
+
       // Insertar si no existe
       await client.query(
         `INSERT INTO app.methodology_exercise_progress (
-           methodology_session_id, user_id, exercise_order, exercise_name,
+           methodology_session_id, user_id, exercise_order, exercise_id, exercise_name,
            series_total, repeticiones, descanso_seg, intensidad, tempo, notas,
            series_completed, status
          )
-         SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0, 'pending'
+         SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 0, 'pending'
          WHERE NOT EXISTS (
            SELECT 1 FROM app.methodology_exercise_progress
             WHERE methodology_session_id = $1 AND exercise_order = $3
          )`,
-        [session.id, userId, order, ej.nombre || `Ejercicio ${i + 1}`,
+        [session.id, userId, order, exerciseId, ej.nombre || `Ejercicio ${i + 1}`,
          String(ej.series || '3'), String(ej.repeticiones || '0'), Number(ej.descanso_seg) || 60,
          ej.intensidad || null, ej.tempo || null, ej.notas || null]
       );
@@ -1607,6 +1611,118 @@ router.post('/confirm-plan', authenticateToken, async (req, res) => {
       await ensureWorkoutScheduleV3(client, userId, methodology_plan_id, plan.plan_data, startDate);
 
       console.log('✅ Programación completa generada (methodology_plan_days + workout_schedule)');
+
+      // 🎯 NUEVO: Pre-crear sesiones de la primera semana si hay redistribución
+      try {
+        // Verificar si existe configuración de redistribución
+        const configCheck = await client.query(
+          `SELECT * FROM app.plan_start_config WHERE methodology_plan_id = $1`,
+          [methodology_plan_id]
+        );
+
+        if (configCheck.rowCount > 0) {
+          const config = configCheck.rows[0];
+          console.log('🔄 [confirm-plan] Detectada configuración de redistribución:', {
+            firstWeekPattern: config.first_week_pattern,
+            isConsecutive: config.is_consecutive_days,
+            startDayOfWeek: config.start_day_of_week
+          });
+
+          // Pre-crear sesiones de la primera semana
+          const firstWeekSchedule = await client.query(
+            `SELECT * FROM app.workout_schedule
+             WHERE methodology_plan_id = $1 AND user_id = $2 AND week_number = 1
+             ORDER BY session_order`,
+            [methodology_plan_id, userId]
+          );
+
+          console.log(`📋 Pre-creando ${firstWeekSchedule.rowCount} sesiones de la primera semana...`);
+
+          for (const scheduleRow of firstWeekSchedule.rows) {
+            // Verificar si ya existe la sesión
+            const existingSession = await client.query(
+              `SELECT id FROM app.methodology_exercise_sessions
+               WHERE user_id = $1 AND methodology_plan_id = $2
+               AND week_number = $3 AND day_name = $4`,
+              [userId, methodology_plan_id, scheduleRow.week_number, scheduleRow.day_abbrev]
+            );
+
+            if (existingSession.rowCount === 0) {
+              // Crear la sesión
+              const sessionResult = await client.query(
+                `INSERT INTO app.methodology_exercise_sessions (
+                  user_id,
+                  methodology_plan_id,
+                  session_date,
+                  week_number,
+                  day_name,
+                  session_status,
+                  created_at
+                ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
+                RETURNING id`,
+                [
+                  userId,
+                  methodology_plan_id,
+                  scheduleRow.scheduled_date,
+                  scheduleRow.week_number,
+                  scheduleRow.day_abbrev,
+                  'not_started'
+                ]
+              );
+
+              const sessionId = sessionResult.rows[0].id;
+              console.log(`✅ Sesión pre-creada: ID ${sessionId} para ${scheduleRow.day_abbrev}`);
+
+              // Pre-crear ejercicios con progreso inicial
+              const exercises = typeof scheduleRow.exercises === 'string'
+                ? JSON.parse(scheduleRow.exercises)
+                : scheduleRow.exercises || [];
+
+              for (let i = 0; i < exercises.length; i++) {
+                const exercise = exercises[i];
+
+                // 🎯 Guardar también el exercise_id para tracking RIR
+                const exerciseId = exercise.exercise_id || exercise.id || null;
+
+                await client.query(
+                  `INSERT INTO app.methodology_exercise_progress (
+                    methodology_session_id,
+                    exercise_order,
+                    exercise_id,
+                    exercise_name,
+                    series_total,
+                    series_completed,
+                    repeticiones,
+                    descanso_seg,
+                    status,
+                    notas
+                  ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                  ON CONFLICT (methodology_session_id, exercise_order) DO NOTHING`,
+                  [
+                    sessionId,
+                    i,
+                    exerciseId,
+                    exercise.nombre || exercise.name || `Ejercicio ${i + 1}`,
+                    parseInt(exercise.series || exercise.sets || 3),
+                    0,
+                    exercise.repeticiones || exercise.reps || '8-12',
+                    parseInt(exercise.descanso || exercise.descanso_seg || exercise.rest || 60),
+                    'pending',
+                    exercise.notas || exercise.notes || exercise.adjustment_note || null
+                  ]
+                );
+              }
+
+              console.log(`✅ ${exercises.length} ejercicios pre-creados para sesión ${sessionId}`);
+            }
+          }
+
+          console.log('✅ Todas las sesiones de la primera semana han sido pre-creadas');
+        }
+      } catch (preCreateError) {
+        console.warn('⚠️ No se pudieron pre-crear sesiones:', preCreateError.message);
+        // No fallar, continuar sin pre-crear
+      }
     } catch (scheduleError) {
       console.error('❌ Error generando programación completa:', scheduleError.message);
       console.error('Stack:', scheduleError.stack);
@@ -1974,6 +2090,73 @@ router.get('/sessions/:sessionId/feedback', authenticateToken, async (req, res) 
 
   } catch (error) {
     console.error('Error obteniendo feedback de sesión:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error interno del servidor'
+    });
+  }
+});
+
+// GET /api/routines/plan-config/:planId
+// Obtiene la configuración de redistribución del plan
+router.get('/plan-config/:planId', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    const { planId } = req.params;
+
+    // Verificar que el plan pertenece al usuario
+    const planCheck = await pool.query(
+      `SELECT id FROM app.methodology_plans WHERE id = $1 AND user_id = $2`,
+      [planId, userId]
+    );
+
+    if (planCheck.rowCount === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Plan no encontrado'
+      });
+    }
+
+    // Obtener configuración de redistribución
+    const configQuery = await pool.query(
+      `SELECT * FROM app.plan_start_config WHERE methodology_plan_id = $1`,
+      [planId]
+    );
+
+    if (configQuery.rowCount === 0) {
+      return res.json({
+        success: true,
+        config: null,
+        message: 'No hay configuración de redistribución para este plan'
+      });
+    }
+
+    const config = configQuery.rows[0];
+
+    // Parsear JSONs
+    if (config.warnings && typeof config.warnings === 'string') {
+      try {
+        config.warnings = JSON.parse(config.warnings);
+      } catch (e) {
+        config.warnings = [];
+      }
+    }
+
+    if (config.day_mappings && typeof config.day_mappings === 'string') {
+      try {
+        config.day_mappings = JSON.parse(config.day_mappings);
+      } catch (e) {
+        config.day_mappings = {};
+      }
+    }
+
+    res.json({
+      success: true,
+      config
+    });
+
+  } catch (error) {
+    console.error('Error obteniendo configuración del plan:', error);
     res.status(500).json({
       success: false,
       error: 'Error interno del servidor'

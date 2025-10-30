@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Play, Pause, RotateCcw, Info, SkipForward, Star, Target, Square } from 'lucide-react';
+import { Play, Pause, RotateCcw, Info, SkipForward, Star, Target, Square, TrendingUp } from 'lucide-react';
 import { getExerciseGifUrl } from '@/config/exerciseGifs.js';
 import { getExerciseVideoUrl } from '@/config/exerciseVideos.js';
 import { formatExerciseName } from '../../../utils/exerciseUtils';
@@ -27,6 +27,7 @@ export const ExerciseSessionView = ({
   // Callbacks de acciones
   onShowFeedback,
   onShowExerciseInfo,
+  onShowSeriesTracking, // 🎯 Nuevo: Callback para tracking RIR
   onComplete,
   onSkip,
   onCancel,
@@ -371,6 +372,27 @@ export const ExerciseSessionView = ({
           </div>
         </div>
       </div>
+
+      {/* 🎯 BOTÓN DE TRACKING RIR - Aparece durante descanso o al completar serie */}
+      {onShowSeriesTracking && (phase === 'rest' || (phase === 'exercise' && !isRunning)) && (
+        <div className="mb-4 p-4 bg-gradient-to-r from-yellow-600/20 to-orange-600/20 rounded-lg border border-yellow-400/30">
+          <div className="text-center">
+            <p className="text-yellow-300 text-sm mb-2 font-semibold">
+              {phase === 'rest' ? '💪 Serie completada - Registra tus datos' : '📊 Registra tu serie'}
+            </p>
+            <button
+              onClick={onShowSeriesTracking}
+              className="inline-flex items-center gap-2 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-bold py-3 px-6 rounded-lg shadow-lg transform transition-all hover:scale-105"
+            >
+              <TrendingUp className="w-5 h-5" />
+              Registrar Serie (RIR)
+            </button>
+            <p className="text-gray-400 text-xs mt-2">
+              Peso, Repeticiones y RIR para tracking de progreso
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Controles principales */}
       <div className="flex flex-wrap gap-2 justify-center mb-4">

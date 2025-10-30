@@ -49,12 +49,19 @@ function normalizePlanDays(planDataJson) {
   }
 }
 
+import { adjustWorkoutIntensity, shouldAdjustIntensity } from './adjustWorkoutIntensity.js';
+
 /**
  * Genera workout_schedule y methodology_plan_days respetando preferencias del usuario.
+ * VERSIÓN MEJORADA: Implementa redistribución inteligente según el día de inicio
  */
 export async function ensureWorkoutScheduleV3(client, userId, methodologyPlanId, planDataJson, startDate = new Date()) {
   try {
-    console.log('[ensureWorkoutScheduleV3] Iniciando', { planId: methodologyPlanId, userId });
+    console.log('[ensureWorkoutScheduleV3] Iniciando con redistribución inteligente', {
+      planId: methodologyPlanId,
+      userId,
+      startDate: startDate.toISOString().split('T')[0]
+    });
 
     const planData = typeof planDataJson === 'string' ? JSON.parse(planDataJson) : planDataJson;
     if (!planData || !Array.isArray(planData.semanas) || planData.semanas.length === 0) {
@@ -75,6 +82,191 @@ export async function ensureWorkoutScheduleV3(client, userId, methodologyPlanId,
     console.log('[ensureWorkoutScheduleV3] Tablas limpiadas', { planId: methodologyPlanId });
 
     const planStartDate = new Date(startDate);
+
+    // 🎯 NUEVO: LÓGICA DE REDISTRIBUCIÓN INTELIGENTE
+    const startDayOfWeek = planStartDate.getDay(); // 0=Dom, 1=Lun, ..., 6=Sáb
+    const dayName = DAY_NAMES[startDayOfWeek];
+
+    console.log(`📅 [Redistribución Inteligente] Generando plan en ${dayName} (día ${startDayOfWeek})`);
+
+    // Detectar el nivel del usuario (principiante, intermedio, avanzado)
+    const userLevel = planData?.nivel || planData?.level || 'principiante';
+    const isPrincipiante = userLevel.toLowerCase().includes('princip');
+
+    // Obtener el patrón original del nivel (típicamente Lun-Mié-Vie para principiantes)
+    const originalPattern = 'Lun-Mié-Vie'; // TODO: Extraer del plan
+    let firstWeekPattern = null;
+    let isConsecutiveDays = false;
+    let isExtendedWeeks = false;
+    let intensityAdjusted = false;
+    let totalWeeks = planData.semanas.length;
+    let warnings = [];
+    let dayMappings = {};
+
+    // 🔄 APLICAR REDISTRIBUCIÓN SEGÚN EL DÍA DE INICIO
+    if (isPrincipiante) {
+      switch (startDayOfWeek) {
+        case 1: // LUNES
+          console.log('✅ Lunes: Patrón estándar sin cambios');
+          firstWeekPattern = 'Lun-Mié-Vie';
+          break;
+
+        case 2: // MARTES
+          console.log('📝 Martes: Mapeando como día 1');
+          firstWeekPattern = 'Mar-Mié-Vie';
+          dayMappings = {
+            'Mar': 'sesion_1',
+            'Mié': 'sesion_2',
+            'Vie': 'sesion_3'
+          };
+          warnings.push({
+            type: 'info',
+            message: 'Tu plan comienza hoy martes. Las sesiones seguirán el patrón Mar-Mié-Vie esta semana.'
+          });
+          break;
+
+        case 3: // MIÉRCOLES
+          console.log('⚡ Miércoles: 3 días consecutivos con ajuste de volumen');
+          firstWeekPattern = 'Mié-Jue-Vie';
+          isConsecutiveDays = true;
+          intensityAdjusted = true;
+          dayMappings = {
+            'Mié': 'sesion_1',
+            'Jue': 'sesion_2',
+            'Vie': 'sesion_3'
+          };
+          warnings.push({
+            type: 'warning',
+            message: 'Al comenzar miércoles, entrenarás 3 días consecutivos. El volumen se ha ajustado automáticamente para permitir una recuperación adecuada.',
+            icon: '⚡'
+          });
+          break;
+
+        case 4: // JUEVES
+          console.log('📊 Jueves: Extendiendo a 5 semanas');
+          firstWeekPattern = 'Jue-Vie';
+          isExtendedWeeks = true;
+          totalWeeks = 5;
+          dayMappings = {
+            'Jue': 'sesion_1',
+            'Vie': 'sesion_2'
+          };
+          warnings.push({
+            type: 'info',
+            message: 'Tu plan se extiende a 5 semanas para completar las 12 sesiones, comenzando con Jue-Vie esta semana.'
+          });
+          break;
+
+        case 5: // VIERNES
+          console.log('📊 Viernes: Extendiendo a 5 semanas');
+          firstWeekPattern = 'Vie';
+          isExtendedWeeks = true;
+          totalWeeks = 5;
+          dayMappings = {
+            'Vie': 'sesion_1'
+          };
+          warnings.push({
+            type: 'info',
+            message: 'Tu plan se extiende a 5 semanas para completar las 12 sesiones, comenzando solo con viernes esta semana.'
+          });
+          break;
+
+        case 6: // SÁBADO
+        case 0: // DOMINGO
+          console.log('🚨 Fin de semana: Se requiere Full Body especial');
+
+          // Para fines de semana, generar warning y configuración especial
+          firstWeekPattern = 'Full Body';
+          dayMappings = {
+            [dayName]: 'fullbody_session'
+          };
+
+          warnings.push({
+            type: 'important',
+            icon: '💪',
+            title: 'Generación en Fin de Semana',
+            message: 'Has generado tu plan en fin de semana. Se recomienda una rutina Full Body especial para hoy. El plan regular comenzará el lunes.'
+          });
+
+          warnings.push({
+            type: 'warning',
+            icon: '⚠️',
+            title: 'Rutina Alternativa Recomendada',
+            message: 'Para el fin de semana, considera generar una rutina Full Body que trabaje todos los grupos musculares en una sesión.'
+          });
+          break;
+
+        default:
+          firstWeekPattern = originalPattern;
+      }
+    } else {
+      // Para niveles intermedios/avanzados, usar el patrón original
+      firstWeekPattern = originalPattern;
+    }
+
+    // Guardar configuración de redistribución en la base de datos
+    const configResult = await client.query(`
+      INSERT INTO app.plan_start_config (
+        methodology_plan_id,
+        user_id,
+        start_day_of_week,
+        start_date,
+        is_consecutive_days,
+        intensity_adjusted,
+        is_extended_weeks,
+        original_pattern,
+        first_week_pattern,
+        regular_pattern,
+        total_weeks,
+        expected_sessions,
+        day_mappings,
+        warnings
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      ON CONFLICT (methodology_plan_id)
+      DO UPDATE SET
+        start_day_of_week = EXCLUDED.start_day_of_week,
+        start_date = EXCLUDED.start_date,
+        is_consecutive_days = EXCLUDED.is_consecutive_days,
+        intensity_adjusted = EXCLUDED.intensity_adjusted,
+        first_week_pattern = EXCLUDED.first_week_pattern,
+        day_mappings = EXCLUDED.day_mappings,
+        warnings = EXCLUDED.warnings,
+        updated_at = NOW()
+      RETURNING *
+    `, [
+      methodologyPlanId,
+      userId,
+      startDayOfWeek,
+      planStartDate.toISOString().split('T')[0],
+      isConsecutiveDays,
+      intensityAdjusted,
+      isExtendedWeeks,
+      originalPattern,
+      firstWeekPattern,
+      originalPattern, // regular_pattern (semanas 2+)
+      totalWeeks,
+      isPrincipiante ? 12 : planData.semanas.length * 3, // expected_sessions
+      JSON.stringify(dayMappings),
+      JSON.stringify(warnings)
+    ]).catch(err => {
+      console.warn('⚠️ No se pudo guardar plan_start_config (tabla puede no existir aún):', err.message);
+      return null;
+    });
+
+    const planConfig = configResult?.rows?.[0] || {
+      is_consecutive_days: isConsecutiveDays,
+      intensity_adjusted: intensityAdjusted,
+      first_week_pattern: firstWeekPattern,
+      day_mappings: dayMappings
+    };
+
+    console.log('📋 Configuración de redistribución:', {
+      firstWeekPattern,
+      isConsecutiveDays,
+      isExtendedWeeks,
+      totalWeeks,
+      warnings: warnings.length
+    });
 
     let userPrefs = null;
     try {
@@ -103,7 +295,7 @@ export async function ensureWorkoutScheduleV3(client, userId, methodologyPlanId,
 
     // Calcular total esperado de sesiones para compensación en última semana
     const firstWeekSessions = normalizedPlan.semanas[0]?.sesiones?.length || 0;
-    const totalWeeks = normalizedPlan.semanas.length;
+    // totalWeeks ya fue declarado arriba en el bloque de redistribución (línea 102)
     const totalExpectedSessions = firstWeekSessions * totalWeeks;
     // Ajuste del objetivo: usar frecuencia_por_semana si está disponible
     const __expectedPerWeek = Number(planData?.frecuencia_por_semana) || Math.max(
@@ -120,7 +312,42 @@ export async function ensureWorkoutScheduleV3(client, userId, methodologyPlanId,
       }
 
       let sessionsToSchedule;
-      if (usePreferences) {
+
+      // 🎯 NUEVO: Aplicar redistribución para la primera semana
+      if (weekIndex === 0 && firstWeekPattern && isPrincipiante) {
+        // Para la primera semana, usar el patrón redistribuido
+        const redistributedDays = firstWeekPattern.split('-').map(d => d.trim());
+
+        console.log(`🔄 [Semana 1] Aplicando redistribución: ${firstWeekPattern}`);
+
+        sessionsToSchedule = [];
+        for (let i = 0; i < redistributedDays.length; i++) {
+          const targetDay = redistributedDays[i];
+          const sourceSession = baseSessions[i % baseSessions.length];
+
+          // Aplicar ajuste de intensidad si es necesario
+          let adjustedSession = { ...sourceSession, dia: targetDay };
+
+          if (isConsecutiveDays && intensityAdjusted) {
+            const dayInSequence = i + 1;
+            const adjustmentResult = adjustWorkoutIntensity(
+              sourceSession.ejercicios || [],
+              {
+                dayInSequence,
+                consecutiveDays: 3,
+                isFirstWeek: true
+              }
+            );
+
+            adjustedSession.ejercicios = adjustmentResult.exercises;
+            adjustedSession.intensity_metadata = adjustmentResult.metadata;
+
+            console.log(`⚡ Ajustando intensidad para ${targetDay} (día ${dayInSequence} de 3 consecutivos)`);
+          }
+
+          sessionsToSchedule.push(adjustedSession);
+        }
+      } else if (usePreferences) {
         const targetCount = preferredAbbrevs.length;
         sessionsToSchedule = [];
         for (let i = 0; i < targetCount; i++) {

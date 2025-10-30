@@ -15,7 +15,6 @@
 
 import { createContext, useContext, useReducer, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from './AuthContext';
-
 import apiClient from '../lib/apiClient';
 
 // =============================================================================
@@ -146,6 +145,7 @@ const initialState = {
     showCalisteniaManual: false,    // Mostrar modal de calistenia manual
     showHeavyDutyManual: false,     // Mostrar modal de Heavy Duty manual
     showHipertrofiaManual: false,   // Mostrar modal de Hipertrofia manual
+    showHipertrofiaV2Manual: false, // Mostrar modal de Hipertrofia V2 con tracking RIR
     showPowerliftingManual: false,  // Mostrar modal de Powerlifting manual
     showCrossFitManual: false,      // Mostrar modal de CrossFit manual
     showFuncionalManual: false,     // Mostrar modal de Funcional manual
@@ -562,22 +562,10 @@ export function WorkoutProvider({ children }) {
       }
 
       // Determinar el endpoint correcto según el modo
-      const endpoint = '/api/methodology/generate';
+      const endpoint = '/methodology/generate';
 
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-        },
-        body: JSON.stringify(requestBody)
-      });
-
-      if (!response.ok) {
-        throw new Error(`Error ${response.status}: ${response.statusText}`);
-      }
-
-      const result = await response.json();
+      // Usar apiClient que ya maneja la URL base y los headers
+      const result = await apiClient.post(endpoint, requestBody);
 
       // Log detallado para debug
       console.log('📦 [WORKOUT] Respuesta del servidor:', {

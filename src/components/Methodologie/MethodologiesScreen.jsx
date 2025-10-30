@@ -18,6 +18,7 @@ import MethodologyVersionSelectionModal from './shared/MethodologyVersionSelecti
 import CalisteniaManualCard from './methodologies/CalisteniaManual/CalisteniaManualCard.jsx';
 import HeavyDutyManualCard from './methodologies/HeavyDuty/HeavyDutyManualCard.jsx';
 import HipertrofiaManualCard from './methodologies/Hipertrofia/HipertrofiaManualCard.jsx';
+import HipertrofiaV2ManualCard from './methodologies/HipertrofiaV2/HipertrofiaV2ManualCard.jsx';
 import PowerliftingManualCard from './methodologies/Powerlifting/PowerliftingManualCard.jsx';
 import CrossFitManualCard from './methodologies/CrossFit/CrossFitManualCard.jsx';
 import FuncionalManualCard from './methodologies/Funcional/FuncionalManualCard.jsx';
@@ -25,6 +26,7 @@ import HalterofíliaManualCard from './methodologies/Halterofilia/HalterofíliaM
 import CasaManualCard from './methodologies/Casa/CasaManualCard.jsx';
 import { useTrace } from '@/contexts/TraceContext';
 import { useNavigate } from 'react-router-dom';
+import WeekendWarningModal from '../routines/modals/WeekendWarningModal.jsx';
 
 // ===============================================
 // 🎯 ESTADO LOCAL MÍNIMO PARA ESTA PANTALLA
@@ -35,7 +37,9 @@ const LOCAL_STATE_INITIAL = {
   pendingMethodology: null,
   detailsMethod: {}, // Cambiar de null a objeto vacío para evitar warnings
   activeTrainingInfo: null,
-  versionSelectionData: null
+  versionSelectionData: null,
+  showWeekendWarning: false,
+  weekendGenerationData: null
 };
 
 export default function MethodologiesScreen() {
@@ -46,6 +50,15 @@ export default function MethodologiesScreen() {
   // ===============================================
   // 🛡️ FUNCIONES DE VALIDACIÓN
   // ===============================================
+
+  /**
+   * Detecta si hoy es fin de semana
+   */
+  const isWeekend = () => {
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    return dayOfWeek === 0 || dayOfWeek === 6; // 0 = Domingo, 6 = Sábado
+  };
 
   /**
    * Valida que un plan tenga datos completos antes de mostrar el modal
@@ -285,6 +298,20 @@ export default function MethodologiesScreen() {
       objetivo_principal: rawProfile.objetivo_principal || rawProfile.objetivoPrincipal
     });
 
+    // 🎯 VERIFICAR FIN DE SEMANA
+    if (isWeekend()) {
+      console.log('🚨 Detectado generación en fin de semana');
+      updateLocalState({
+        showWeekendWarning: true,
+        weekendGenerationData: {
+          versionConfig,
+          fullProfile,
+          mode: 'automatic'
+        }
+      });
+      return; // Detener aquí y esperar decisión del usuario
+    }
+
     try {
       console.log('🤖 Generando plan automático con WorkoutContext...');
 
@@ -336,6 +363,12 @@ export default function MethodologiesScreen() {
       // Si es Hipertrofia, mostrar el modal específico
       if (methodology.name === 'Hipertrofia') {
         ui.showModal('hipertrofiaManual');
+        return;
+      }
+
+      // Si es HipertrofiaV2, mostrar el modal específico
+      if (methodology.name === 'HipertrofiaV2') {
+        ui.showModal('hipertrofiaV2Manual');
         return;
       }
 
@@ -600,6 +633,59 @@ export default function MethodologiesScreen() {
     } catch (error) {
       console.error('❌ Error generando plan de Hipertrofia:', error);
       ui.setError(error.message || 'Error al generar el plan de Hipertrofia');
+    } finally {
+      ui.setLoading(false);
+    }
+  };
+
+  const handleHipertrofiaV2ManualGenerate = async (hipertrofiaV2Data) => {
+    try { track('ACTION', { id: 'generate_hipertrofiav2' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
+
+    // 🛡️ Prevenir múltiples clicks estableciendo loading inmediatamente
+    if (ui.isLoading) {
+      console.warn('⚠️ Ya hay una generación en curso, ignorando click...');
+      return;
+    }
+
+    ui.setLoading(true);
+
+    try {
+      // 🎯 FLUJO SIMPLIFICADO - SUPABASE FIRST
+      const hasActivePlanInDB = await hasActivePlanFromDB();
+      if (hasActivePlanInDB) {
+        console.log('🔄 Plan activo detectado en BD, limpiando para generar nuevo...');
+        await cancelPlan();
+        await syncWithDatabase();
+      }
+
+      console.log('🎯 Generando plan de Hipertrofia V2 con tracking RIR...');
+
+      // Usar generatePlan del WorkoutContext
+      const result = await generatePlan({
+        mode: 'manual',
+        methodology: 'hipertrofiaV2',
+        ...hipertrofiaV2Data
+      });
+
+      if (result.success) {
+        console.log('✅ Plan de Hipertrofia V2 generado exitosamente');
+        ui.hideModal('hipertrofiaV2Manual');
+
+        // 🛡️ VALIDAR DATOS ANTES DE MOSTRAR MODAL
+        const validation = validatePlanData(result.plan);
+        if (validation.isValid) {
+          ui.showModal('planConfirmation');
+        } else {
+          console.error('❌ Plan inválido:', validation.error);
+          ui.setError(`Plan generado incorrectamente: ${validation.error}`);
+        }
+      } else {
+        throw new Error(result.error || 'Error generando plan de Hipertrofia V2');
+      }
+
+    } catch (error) {
+      console.error('❌ Error generando plan de Hipertrofia V2:', error);
+      ui.setError(error.message || 'Error al generar el plan de Hipertrofia V2');
     } finally {
       ui.setLoading(false);
     }
@@ -1055,6 +1141,57 @@ export default function MethodologiesScreen() {
   };
 
   // ===============================================
+  // 🚨 HANDLERS PARA FIN DE SEMANA
+  // ===============================================
+
+  const handleWeekendContinueRegular = async () => {
+    console.log('📅 Usuario eligió continuar con plan regular en fin de semana');
+
+    const { versionConfig, fullProfile, mode } = localState.weekendGenerationData || {};
+
+    updateLocalState({
+      showWeekendWarning: false,
+      weekendGenerationData: null
+    });
+
+    try {
+      const result = await generatePlan({
+        mode: mode || 'automatic',
+        versionConfig: versionConfig || { version: 'adapted', customWeeks: 4 },
+        userProfile: fullProfile
+      });
+
+      if (result.success) {
+        const validation = validatePlanData(result.plan);
+        if (validation.isValid) {
+          ui.showModal('planConfirmation');
+        } else {
+          ui.setError(`Plan generado incorrectamente: ${validation.error}`);
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error generando plan regular:', error);
+      ui.setError('Error al generar plan: ' + error.message);
+    }
+  };
+
+  const handleWeekendFullBody = async (fullBodyPlan) => {
+    console.log('💪 Usuario eligió Full Body para fin de semana');
+
+    updateLocalState({
+      showWeekendWarning: false,
+      weekendGenerationData: null
+    });
+
+    // El modal ya generó el plan Full Body, solo necesitamos activarlo
+    if (fullBodyPlan) {
+      console.log('✅ Plan Full Body generado exitosamente');
+      // Aquí podrías mostrar el plan o navegar directamente
+      ui.showModal('planConfirmation');
+    }
+  };
+
+  // ===============================================
   // 🎨 RENDER
   // ===============================================
 
@@ -1288,6 +1425,22 @@ export default function MethodologiesScreen() {
         </Dialog>
       )}
 
+      {/* Modal de Hipertrofia V2 Manual */}
+      {ui.showHipertrofiaV2Manual && (
+        <Dialog open={ui.showHipertrofiaV2Manual} onOpenChange={() => ui.hideModal('hipertrofiaV2Manual')}>
+          <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader className="sr-only">
+              <DialogTitle>Hipertrofia V2 - Tracking RIR</DialogTitle>
+            </DialogHeader>
+            <HipertrofiaV2ManualCard
+              onGenerate={handleHipertrofiaV2ManualGenerate}
+              isLoading={ui.isLoading}
+              error={ui.error}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
+
       {/* Modal de Powerlifting Manual */}
       {ui.showPowerliftingManual && (
         <Dialog open={ui.showPowerliftingManual} onOpenChange={() => ui.hideModal('powerliftingManual')}>
@@ -1415,6 +1568,15 @@ export default function MethodologiesScreen() {
           navigateToRoutines={() => navigate('/routines')}
         />
       )}
+
+      {/* Modal de advertencia de fin de semana */}
+      <WeekendWarningModal
+        isOpen={localState.showWeekendWarning}
+        onClose={() => updateLocalState({ showWeekendWarning: false, weekendGenerationData: null })}
+        onConfirm={handleWeekendContinueRegular}
+        onFullBody={handleWeekendFullBody}
+        nivel={userData?.nivel || userData?.nivel_entrenamiento || 'Principiante'}
+      />
     </div>
   );
 }

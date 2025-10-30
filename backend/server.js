@@ -42,6 +42,7 @@ import nutritionRoutes from './routes/nutrition.js';
 import nutritionV2Routes from './routes/nutritionV2.js';
 import musicRoutes from './routes/music.js';
 import analyticsRoutes from './routes/analytics.js';
+import hipertrofiaV2Routes from './routes/hipertrofiaV2.js';
 
 // ===============================================
 // 🗄️ RUTAS LEGACY (MANTENER TEMPORALMENTE)
@@ -125,14 +126,23 @@ app.use(cors({
   ],
   credentials: true
 }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Aumentar límite de body-parser para manejar planes grandes (50MB)
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Middleware para logging de peticiones
+// Middleware para logging de peticiones (sin imprimir datos masivos)
 app.use((req, res, next) => {
   console.log(`📥 ${req.method} ${req.path} - ${getSpanishTimestamp()}`);
   if (req.body && Object.keys(req.body).length > 0) {
-    console.log('📦 Body:', JSON.stringify(req.body, null, 2));
+    // Solo mostrar las claves del body para evitar logs masivos
+    const bodyKeys = Object.keys(req.body);
+    console.log(`📦 Body keys: [${bodyKeys.join(', ')}]`);
+
+    // Si el body es pequeño (< 500 caracteres), mostrarlo completo
+    const bodyStr = JSON.stringify(req.body);
+    if (bodyStr.length < 500) {
+      console.log('📦 Body:', bodyStr);
+    }
   }
   next();
 });
@@ -314,6 +324,17 @@ app.post('/api/methodology/generate', authenticateToken, (req, res, next) => {
     if (methodology === 'heavy-duty' || methodology === 'heavy duty') {
       console.log('💪 Heavy Duty manual detectada - specialist/heavy-duty/generate');
       req.url = '/api/routine-generation/specialist/heavy-duty/generate';
+    } else if (methodology === 'hipertrofiav2') {
+      console.log('🏋️‍♂️ HipertrofiaV2 manual detectada - hipertrofiav2/generate');
+      req.url = '/api/hipertrofiav2/generate';
+      // Reestructurar el body para que coincida con lo esperado
+      if (req.body && !req.body.planData) {
+        // Extraer planData del body si existe, si no, usar todo el body
+        const { mode, methodology, metodologia_solicitada, ...restData } = req.body;
+        req.body = {
+          planData: restData.planData || restData
+        };
+      }
     } else if (methodology === 'hipertrofia') {
       console.log('🏋️ Hipertrofia manual detectada - specialist/hipertrofia/generate');
       req.url = '/api/routine-generation/specialist/hipertrofia/generate';
@@ -390,6 +411,7 @@ app.use('/api/nutrition', nutritionRoutes);
 app.use('/api/nutrition-v2', nutritionV2Routes); // Sistema determinista normalizado
 app.use('/api/music', musicRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/hipertrofiav2', hipertrofiaV2Routes); // Sistema de tracking RIR
 
 // Endpoint simple de salud
 app.get('/api/health', (req, res) => {

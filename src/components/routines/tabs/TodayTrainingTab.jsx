@@ -38,6 +38,7 @@ import { ExerciseListItem } from '../summary/ExerciseListItem.jsx';
 import { SummaryHeader } from '../summary/SummaryHeader.jsx';
 import { UserProfileDisplay } from '../summary/UserProfileDisplay.jsx';
 import { ProgressBar } from '../summary/ProgressBar.jsx';
+import { FirstWeekWarning, usePlanConfig } from '../alerts/FirstWeekWarning.jsx';
 
 import { useNavigate } from 'react-router-dom';
 
@@ -123,6 +124,8 @@ export default function TodayTrainingTab({
   const { track } = useTrace();
   const navigate = useNavigate();
 
+  // 🎯 NUEVO: Cargar configuración del plan para redistribución
+  const { config: planConfig, loading: configLoading } = usePlanConfig(methodologyPlanId);
 
   // ===============================================
   // 🚀 WORKOUT CONTEXT
@@ -1296,10 +1299,39 @@ export default function TodayTrainingTab({
             {/* Solo mostrar header completo si hay plan activo */}
             {hasActivePlan && (
               <>
+                {/* 🎯 NUEVO: Mostrar warnings de redistribución si aplica */}
+                {!configLoading && planConfig && (
+                  <FirstWeekWarning
+                    methodologyPlanId={methodologyPlanId}
+                    onClose={(index) => {
+                      // Opcional: Manejar cierre de warnings individuales
+                      console.log('Warning cerrado:', index);
+                    }}
+                  />
+                )}
+
                 <div className="flex items-center justify-between">
                   <div>
                     <h2 className="text-2xl font-bold text-white">
                       Entrenamiento de Hoy
+                      {/* 🎯 NUEVO: Mostrar número de sesión si hay mapeo */}
+                      {planConfig?.day_mappings && (
+                        <span className="ml-3 text-lg font-normal text-yellow-400">
+                          (Sesión {
+                            (() => {
+                              const today = getTodayName();
+                              const todayAbbrev = today.substring(0, 3);
+                              const todayCapitalized = todayAbbrev.charAt(0).toUpperCase() + todayAbbrev.slice(1);
+                              const mapping = planConfig.day_mappings[todayCapitalized];
+                              if (mapping) {
+                                const sessionNum = mapping.replace('sesion_', '');
+                                return `${sessionNum} de ${planConfig.expected_sessions || 12}`;
+                              }
+                              return null;
+                            })()
+                          })
+                        </span>
+                      )}
                     </h2>
                     <p className="text-gray-400">
                       {new Date().toLocaleDateString('es-ES', {

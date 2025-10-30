@@ -15,7 +15,7 @@
  * @version 4.0.0 - Role-Separated Architecture
  */
 
-import { Zap, Trophy, Dumbbell, Activity, Target, User, Home, Shield, Flame } from 'lucide-react';
+import { Zap, Trophy, Dumbbell, Activity, Target, User, Home, Shield, Flame, TrendingUp } from 'lucide-react';
 import methodologyMapping from '../../config/methodologyMapping.js';
 
 // Configuraciones centralizadas
@@ -429,6 +429,42 @@ export const METHODOLOGIES = [
     duration: '60-90 minutos por sesión',
     scientificBasis: 'Basado en investigación sobre síntesis proteica muscular, mTOR, tensión mecánica y adaptaciones metabólicas',
     videoPlaceholder: true
+  },
+  {
+    id: 'hipertrofiaV2',
+    name: 'HipertrofiaV2',
+    description: 'Sistema Full Body con tracking RIR y autorregulación automática',
+    detailedDescription: 'Metodología avanzada de hipertrofia con tracking de RIR (Reps In Reserve) por serie. Incorpora autorregulación automática basada en datos reales del usuario, selección aleatoria de ejercicios y calendario adaptativo. Sistema inteligente que ajusta cargas según el esfuerzo real reportado.',
+    focus: 'Hipertrofia inteligente',
+    level: formatLevelRange([METHODOLOGIES_CONFIG.LEVELS.BEGINNER, METHODOLOGIES_CONFIG.LEVELS.ADVANCED]),
+    homeCompatible: METHODOLOGIES_CONFIG.HOME_COMPATIBILITY.PARTIAL,
+    icon: TrendingUp,
+    programDuration: '4-5 semanas',
+    frequency: formatFrequency(METHODOLOGIES_CONFIG.FREQUENCIES.MODERATE),
+    volume: METHODOLOGIES_CONFIG.VOLUMES.MODERATE,
+    intensity: METHODOLOGIES_CONFIG.INTENSITIES.MODERATE,
+    principles: [
+      'Full Body 3x/semana para principiantes (Lun/Mié/Vie)',
+      'Tracking RIR (0-4) por cada serie completada',
+      'Cálculo automático de 1RM y peso objetivo (80%)',
+      'Autorregulación: RIR 2-3 mantener, RIR≤1 bajar peso, RIR≥4 subir peso',
+      'Selección aleatoria de ejercicios dentro de cada categoría muscular'
+    ],
+    benefits: [
+      'Progresión basada en datos reales, no en estimaciones',
+      'Prevención de sobreentrenamiento mediante RIR',
+      'Variedad de ejercicios para evitar estancamiento',
+      'Ajuste automático de cargas según capacidad real',
+      'Historial completo de progresión por ejercicio'
+    ],
+    targetAudience: 'Desde principiantes hasta avanzados que buscan optimización mediante datos',
+    duration: '60-75 minutos por sesión',
+    scientificBasis: 'Basado en RIR/RPE, autorregulación, fórmula de Epley para 1RM, y principios de sobrecarga progresiva adaptativa',
+    videoPlaceholder: true,
+    isNew: true,
+    manualMode: true,
+    requiresEvaluation: true,
+    trackingEnabled: true
   },
   {
     id: 'powerlifting',
