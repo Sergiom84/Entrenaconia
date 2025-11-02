@@ -1588,15 +1588,85 @@ export default function MethodologiesScreen() {
             ui.hideModal('routineSession');
             setSessionData(null); // Limpiar datos de sesión al cerrar
           }}
-          onFinishExercise={(exerciseIndex, progressData) =>
-            updateExercise(exerciseIndex, progressData)
-          }
-          onSkipExercise={(exerciseIndex, progressData) =>
-            updateExercise(exerciseIndex, progressData)
-          }
-          onCancelExercise={(exerciseIndex, progressData) =>
-            updateExercise(exerciseIndex, progressData)
-          }
+          onFinishExercise={async (exerciseIndex, progressData) => {
+            // 🌟 Verificar si es sesión de fin de semana (check both flags)
+            const isWeekend = sessionData?.isWeekendExtra || sessionData?.session_type === 'weekend-extra';
+            if (isWeekend) {
+              console.log('🌟 Sesión weekend detectada, usando endpoint correcto');
+              const sid = session.sessionId;
+              const exerciseOrder = exerciseIndex + 1;
+              try {
+                await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3010'}/api/training-session/progress/methodology/${sid}/${exerciseOrder}`, {
+                  method: 'PUT',
+                  headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify({
+                    status: progressData.status || 'completed',
+                    series_completed: progressData.series_completed || 0,
+                    time_spent_seconds: progressData.time_spent_seconds || 0
+                  })
+                });
+              } catch (error) {
+                console.error('❌ Error actualizando ejercicio weekend:', error);
+              }
+            } else {
+              updateExercise(exerciseIndex, progressData);
+            }
+          }}
+          onSkipExercise={async (exerciseIndex, progressData) => {
+            // 🌟 Verificar si es sesión de fin de semana (check both flags)
+            const isWeekend = sessionData?.isWeekendExtra || sessionData?.session_type === 'weekend-extra';
+            if (isWeekend) {
+              const sid = session.sessionId;
+              const exerciseOrder = exerciseIndex + 1;
+              try {
+                await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3010'}/api/training-session/progress/methodology/${sid}/${exerciseOrder}`, {
+                  method: 'PUT',
+                  headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify({
+                    status: 'skipped',
+                    series_completed: 0,
+                    time_spent_seconds: 0
+                  })
+                });
+              } catch (error) {
+                console.error('❌ Error actualizando ejercicio weekend:', error);
+              }
+            } else {
+              updateExercise(exerciseIndex, progressData);
+            }
+          }}
+          onCancelExercise={async (exerciseIndex, progressData) => {
+            // 🌟 Verificar si es sesión de fin de semana (check both flags)
+            const isWeekend = sessionData?.isWeekendExtra || sessionData?.session_type === 'weekend-extra';
+            if (isWeekend) {
+              const sid = session.sessionId;
+              const exerciseOrder = exerciseIndex + 1;
+              try {
+                await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3010'}/api/training-session/progress/methodology/${sid}/${exerciseOrder}`, {
+                  method: 'PUT',
+                  headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify({
+                    status: 'cancelled',
+                    series_completed: 0,
+                    time_spent_seconds: 0
+                  })
+                });
+              } catch (error) {
+                console.error('❌ Error actualizando ejercicio weekend:', error);
+              }
+            } else {
+              updateExercise(exerciseIndex, progressData);
+            }
+          }}
           onEndSession={handleEndSession}
           navigateToRoutines={() => navigate('/routines')}
         />
@@ -1653,14 +1723,81 @@ export default function MethodologiesScreen() {
               pendingSessionData: null
             });
           }}
-          onFinishExercise={(exerciseIndex, progressData) => {
+          onFinishExercise={async (exerciseIndex, progressData) => {
             console.log('✅ Ejercicio completado:', exerciseIndex, progressData);
+            const sid = localState.pendingSessionData?.sessionId;
+            if (sid) {
+              // El exerciseIndex viene base 0, pero en BD es base 1
+              const exerciseOrder = exerciseIndex + 1;
+              console.log(`📝 Guardando ejercicio ${exerciseOrder} (index ${exerciseIndex})`);
+              try {
+                await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3010'}/api/training-session/progress/methodology/${sid}/${exerciseOrder}`, {
+                  method: 'PUT',
+                  headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify({
+                    status: progressData.status || 'completed',
+                    series_completed: progressData.series_completed || 0,
+                    time_spent_seconds: progressData.time_spent_seconds || 0
+                  })
+                });
+                console.log('✅ Progreso guardado en BD');
+              } catch (error) {
+                console.error('❌ Error guardando progreso:', error);
+              }
+            }
           }}
-          onSkipExercise={(exerciseIndex, progressData) => {
+          onSkipExercise={async (exerciseIndex, progressData) => {
             console.log('⏭️ Ejercicio saltado:', exerciseIndex, progressData);
+            const sid = localState.pendingSessionData?.sessionId;
+            if (sid) {
+              const exerciseOrder = exerciseIndex + 1;
+              console.log(`⏭️ Saltando ejercicio ${exerciseOrder} (index ${exerciseIndex})`);
+              try {
+                await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3010'}/api/training-session/progress/methodology/${sid}/${exerciseOrder}`, {
+                  method: 'PUT',
+                  headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify({
+                    status: 'skipped',
+                    series_completed: 0,
+                    time_spent_seconds: progressData.time_spent_seconds || 0
+                  })
+                });
+                console.log('⏭️ Ejercicio saltado guardado en BD');
+              } catch (error) {
+                console.error('❌ Error guardando skip:', error);
+              }
+            }
           }}
-          onCancelExercise={(exerciseIndex, progressData) => {
+          onCancelExercise={async (exerciseIndex, progressData) => {
             console.log('❌ Ejercicio cancelado:', exerciseIndex, progressData);
+            const sid = localState.pendingSessionData?.sessionId;
+            if (sid) {
+              const exerciseOrder = exerciseIndex + 1;
+              console.log(`❌ Cancelando ejercicio ${exerciseOrder} (index ${exerciseIndex})`);
+              try {
+                await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3010'}/api/training-session/progress/methodology/${sid}/${exerciseOrder}`, {
+                  method: 'PUT',
+                  headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify({
+                    status: 'cancelled',
+                    series_completed: 0,
+                    time_spent_seconds: progressData.time_spent_seconds || 0
+                  })
+                });
+                console.log('❌ Ejercicio cancelado guardado en BD');
+              } catch (error) {
+                console.error('❌ Error guardando cancelación:', error);
+              }
+            }
           }}
           onCompleteSession={(sessionSummary) => {
             console.log('🎉 Sesión completada:', sessionSummary);

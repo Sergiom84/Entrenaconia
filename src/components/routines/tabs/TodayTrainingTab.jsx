@@ -260,7 +260,8 @@ export default function TodayTrainingTab({
             dia: new Date().toLocaleDateString('es-ES', { weekday: 'long' }),
             tipo: 'Full Body Extra',
             ejercicios: exercisesData || [],
-            isWeekendExtra: true
+            isWeekendExtra: true,
+            session_type: 'weekend-extra'  // 🌟 Agregar session_type para detección
           });
         }
 
@@ -1753,7 +1754,20 @@ export default function TodayTrainingTab({
                   )}
                 </div>
 
+                {/* Texto informativo sobre la duración de la rutina weekend */}
+                <div className="mt-6 p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                  <p className="text-blue-400 text-sm text-center">
+                    ℹ️ Esta rutina es solo para hoy. Una vez finalizada o cuando acabe el día se eliminará,
+                    aunque los datos generados serán guardados en el histórico.
+                  </p>
+                </div>
+
                 {/* Botón de reanudar si no está completa */}
+                {console.log('🔍 DEBUG Botón Reanudar:', {
+                  canRetry: todayStatus.summary.canRetry,
+                  progress: todayStatus.summary.progress,
+                  shouldShow: todayStatus.summary.canRetry && todayStatus.summary.progress < 100
+                })}
                 {todayStatus.summary.canRetry && todayStatus.summary.progress < 100 && (
                   <div className="mt-6 text-center">
                     <Button

@@ -369,7 +369,7 @@ router.put('/progress/methodology/:sessionId/:exerciseOrder', authenticateToken,
     await client.query('BEGIN');
 
     const userId = req.user?.userId || req.user?.id;
-    const { sessionId, exerciseOrder } = req.params;
+    const { sessionId, exerciseOrder} = req.params;
     const { series_completed, status, time_spent_seconds } = req.body;
 
     // Verificar sesión del usuario
@@ -383,6 +383,85 @@ router.put('/progress/methodology/:sessionId/:exerciseOrder', authenticateToken,
       return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
     }
 
+    const sessionType = ses.rows[0].session_type;
+    const isWeekendExtra = sessionType === 'weekend-extra';
+
+    console.log(`📝 Actualizando ejercicio orden ${exerciseOrder} | Sesión ${sessionId} | Tipo: ${sessionType} | Weekend: ${isWeekendExtra}`);
+
+    // 🎯 Para sesiones de fin de semana, usar exercise_session_tracking
+    if (isWeekendExtra) {
+      // Buscar ejercicio en exercise_session_tracking
+      const trackingSel = await client.query(
+        `SELECT * FROM app.exercise_session_tracking
+         WHERE methodology_session_id = $1 AND exercise_order = $2`,
+        [sessionId, exerciseOrder]
+      );
+
+      if (trackingSel.rowCount === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ success: false, error: 'Ejercicio no encontrado en tracking' });
+      }
+
+      // Actualizar exercise_session_tracking
+      const finalSeriesCompleted = (status === 'skipped' || status === 'cancelled') ? 0 : (series_completed ?? 0);
+
+      const upd = await client.query(
+        `UPDATE app.exercise_session_tracking
+         SET actual_sets = $1::int,
+             status = $2::varchar,
+             actual_duration_seconds = COALESCE($3::int, actual_duration_seconds),
+             completed_at = CASE WHEN $2::varchar = 'completed' THEN NOW() ELSE completed_at END,
+             updated_at = NOW()
+         WHERE methodology_session_id = $4 AND exercise_order = $5
+         RETURNING *`,
+        [finalSeriesCompleted, status, time_spent_seconds ?? null, sessionId, exerciseOrder]
+      );
+
+      // Contar ejercicios por estado
+      const counters = await client.query(
+        `SELECT
+           COUNT(*) FILTER (WHERE status = 'completed') AS completed,
+           COUNT(*) FILTER (WHERE status = 'skipped') AS skipped,
+           COUNT(*) FILTER (WHERE status = 'cancelled') AS cancelled,
+           COUNT(*) AS total
+         FROM app.exercise_session_tracking
+         WHERE methodology_session_id = $1`,
+        [sessionId]
+      );
+
+      const { completed, skipped, cancelled, total } = counters.rows[0];
+
+      // Actualizar sesión
+      await client.query(
+        `UPDATE app.methodology_exercise_sessions
+         SET exercises_completed = $2::int,
+             exercises_skipped = $3::int,
+             exercises_cancelled = $4::int,
+             total_exercises = $5::int,
+             session_status = CASE WHEN ($2::int + $3::int + $4::int) = $5::int AND $5::int > 0 THEN 'completed' ELSE 'in_progress' END,
+             completed_at = CASE WHEN ($2::int + $3::int + $4::int) = $5::int AND $5::int > 0 THEN NOW() ELSE completed_at END,
+             updated_at = NOW()
+         WHERE id = $1`,
+        [sessionId, Number(completed), Number(skipped), Number(cancelled), Number(total)]
+      );
+
+      await client.query('COMMIT');
+
+      console.log(`✅ Ejercicio de fin de semana actualizado: ${status} | Completados: ${completed}/${total}`);
+
+      return res.json({
+        success: true,
+        exercise: upd.rows[0],
+        progress: {
+          completed: Number(completed),
+          skipped: Number(skipped),
+          cancelled: Number(cancelled),
+          total: Number(total)
+        }
+      });
+    }
+
+    // 🎯 Para sesiones normales, usar methodology_exercise_progress
     // Asegurar fila de progreso existente
     const progSel = await client.query(
       `SELECT * FROM app.methodology_exercise_progress
@@ -1787,6 +1866,121 @@ router.put('/close-active', authenticateToken, async (req, res) => {
       success: false,
       message: 'Error al cerrar sesiones activas'
     });
+  }
+});
+
+/**
+ * GET /api/training-session/weekend-status
+ * Obtiene el estado de sesión de fin de semana del día actual
+ */
+router.get('/weekend-status', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const userId = req.user?.userId || req.user?.id;
+
+    // Buscar sesiones de fin de semana del día actual
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const sessionQuery = `
+      SELECT
+        mes.id,
+        mes.methodology_plan_id,
+        mes.session_status,
+        mes.session_type,
+        mes.exercises_completed,
+        mes.exercises_skipped,
+        mes.exercises_cancelled,
+        mes.total_exercises,
+        mes.exercises_data,
+        mes.session_metadata,
+        mes.started_at,
+        mes.completed_at
+      FROM app.methodology_exercise_sessions mes
+      WHERE mes.user_id = $1
+        AND mes.session_type = 'weekend-extra'
+        AND mes.session_date >= $2
+        AND mes.session_date < $3
+      ORDER BY mes.id DESC
+      LIMIT 1
+    `;
+
+    const sessionResult = await client.query(sessionQuery, [userId, today, tomorrow]);
+
+    if (sessionResult.rows.length === 0) {
+      return res.json({
+        success: true,
+        hasWeekendSession: false,
+        message: 'No hay sesión de fin de semana para hoy'
+      });
+    }
+
+    const session = sessionResult.rows[0];
+
+    // Obtener el detalle de los ejercicios
+    const exercisesQuery = `
+      SELECT
+        est.exercise_order,
+        est.exercise_name,
+        est.status,
+        est.exercise_data,
+        est.actual_sets,
+        est.planned_sets,
+        est.actual_reps,
+        est.planned_reps,
+        est.completed_at
+      FROM app.exercise_session_tracking est
+      WHERE est.methodology_session_id = $1
+      ORDER BY est.exercise_order
+    `;
+
+    const exercisesResult = await client.query(exercisesQuery, [session.id]);
+
+    // Calcular resumen
+    const completed = parseInt(session.exercises_completed) || 0;
+    const skipped = parseInt(session.exercises_skipped) || 0;
+    const cancelled = parseInt(session.exercises_cancelled) || 0;
+    const total = parseInt(session.total_exercises) || 0;
+    // 🎯 CORRECCIÓN: El progreso debe ser solo basado en ejercicios COMPLETADOS
+    const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+    res.json({
+      success: true,
+      hasWeekendSession: true,
+      session: {
+        id: session.id,
+        methodology_plan_id: session.methodology_plan_id,
+        session_status: session.session_status,
+        session_type: session.session_type,
+        started_at: session.started_at,
+        completed_at: session.completed_at,
+        exercises_data: session.exercises_data
+      },
+      exercises: exercisesResult.rows,
+      summary: {
+        completed,
+        skipped,
+        cancelled,
+        total,
+        pending: total - (completed + skipped + cancelled),
+        progress,
+        // 🎯 CORRECCIÓN: canRetry debe ser true si hay ejercicios pendientes (no completados)
+        // Permite reanudar incluso si algunos fueron saltados/cancelados
+        canRetry: completed < total && total > 0,
+        isCompleted: session.session_status === 'completed'
+      }
+    });
+
+  } catch (error) {
+    console.error('Error obteniendo estado de sesión de fin de semana:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al obtener estado de sesión'
+    });
+  } finally {
+    client.release();
   }
 });
 
