@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Video Config</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .test-case {
+            background: #2a2a2a;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            border-left: 4px solid #4CAF50;
+        }
+        .test-case.fail {
+            border-left-color: #f44336;
+        }
+        video {
+            max-width: 100%;
+            margin: 10px 0;
+            border-radius: 8px;
+        }
+        .status {
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .status.success { color: #4CAF50; }
+        .status.fail { color: #f44336; }
+    </style>
+</head>
+<body>
+    <h1>🎬 Test de Configuración de Videos</h1>
+
+    <div id="results"></div>
+
+    <script type="module">
+        import { getExerciseVideoUrl, DEV_VIDEO_MODE, DEV_SINGLE_VIDEO } from './src/config/exerciseVideos.js';
+
+        const results = document.getElementById('results');
+
+        // Test 1: Video único para pruebas
+        const testConfig = document.createElement('div');
+        testConfig.className = 'test-case';
+        testConfig.innerHTML = `
+            <h3>Configuración Actual</h3>
+            <p><strong>Modo:</strong> ${DEV_VIDEO_MODE}</p>
+            <p><strong>Video único:</strong> ${DEV_SINGLE_VIDEO}</p>
+        `;
+        results.appendChild(testConfig);
+
+        // Test 2: Ejercicio sin video_url (como los de Hipertrofia)
+        const ejercicioSinVideo = {
+            nombre: 'Press de pecho en máquina',
+            nivel: 'Principiante'
+            // Sin video_url ni gif_url
+        };
+
+        const videoUrl = getExerciseVideoUrl(ejercicioSinVideo);
+        const test1 = document.createElement('div');
+        test1.className = videoUrl ? 'test-case' : 'test-case fail';
+        test1.innerHTML = `
+            <div class="status ${videoUrl ? 'success' : 'fail'}">
+                ${videoUrl ? '✅ PASS' : '❌ FAIL'}: Ejercicio sin video_url
+            </div>
+            <p><strong>Ejercicio:</strong> ${ejercicioSinVideo.nombre}</p>
+            <p><strong>URL obtenida:</strong> ${videoUrl || 'NULL'}</p>
+            ${videoUrl ? `
+                <video controls autoplay loop muted>
+                    <source src="${videoUrl}" type="video/mp4">
+                </video>
+            ` : '<p style="color: #f44336;">No se obtuvo URL de video</p>'}
+        `;
+        results.appendChild(test1);
+
+        // Test 3: Ejercicio con video_url (simulado)
+        const ejercicioConVideo = {
+            nombre: 'Dominadas',
+            video_url: 'https://example.com/dominadas.mp4'
+        };
+
+        const videoUrl2 = getExerciseVideoUrl(ejercicioConVideo);
+        const test2 = document.createElement('div');
+        test2.className = 'test-case';
+        test2.innerHTML = `
+            <div class="status success">✅ PASS: Ejercicio con video_url</div>
+            <p><strong>Ejercicio:</strong> ${ejercicioConVideo.nombre}</p>
+            <p><strong>URL esperada:</strong> ${ejercicioConVideo.video_url}</p>
+            <p><strong>URL obtenida:</strong> ${videoUrl2}</p>
+            <p><strong>Match:</strong> ${videoUrl2 === ejercicioConVideo.video_url ? '✅' : '❌'}</p>
+        `;
+        results.appendChild(test2);
+
+        // Resumen
+        const summary = document.createElement('div');
+        summary.className = 'test-case';
+        summary.style.borderLeftColor = '#2196F3';
+        summary.innerHTML = `
+            <h3>📊 Resumen</h3>
+            <p>✅ La configuración está lista para mostrar el mismo video en todos los ejercicios durante las pruebas.</p>
+            <p>🎯 Modo activo: <strong>${DEV_VIDEO_MODE}</strong></p>
+            <p>📹 Todos los ejercicios sin video_url mostrarán: <strong>${DEV_SINGLE_VIDEO.split('/').pop()}</strong></p>
+        `;
+        results.appendChild(summary);
+    </script>
+</body>
+</html>

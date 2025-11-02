@@ -561,4 +561,257 @@ router.post('/generate-fullbody', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * POST /api/hipertrofiav2/generate-single-day
+ * Genera un entrenamiento de día único (para fines de semana o días extra)
+ * NO genera un plan completo, solo una sesión independiente
+ */
+router.post('/generate-single-day', authenticateToken, async (req, res) => {
+  const dbClient = await pool.connect();
+
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    const { nivel = 'Principiante', objetivos = [], isWeekendExtra = false } = req.body;
+
+    console.log('🏋️ Generando entrenamiento de día único para usuario:', userId);
+    console.log('📊 Nivel:', nivel, '| Fin de semana extra:', isWeekendExtra);
+
+    // Mapear nivel a formato de BD (basico/intermedio/avanzado)
+    const nivelMapping = {
+      'Principiante': 'basico',
+      'Intermedio': 'intermedio',
+      'Avanzado': 'avanzado',
+      'basico': 'basico',
+      'intermedio': 'intermedio',
+      'avanzado': 'avanzado'
+    };
+    const nivelNormalized = nivelMapping[nivel] || 'basico';
+    console.log('📝 Nivel normalizado:', nivelNormalized);
+
+    await dbClient.query('BEGIN');
+
+    // Obtener ejercicios según nivel
+    const exercisesQuery = `
+      SELECT
+        exercise_id,
+        nombre,
+        categoria,
+        patron,
+        equipamiento,
+        nivel,
+        series_reps_objetivo,
+        descanso_seg,
+        notas,
+        "Tipo base",
+        "Ejecución"
+      FROM app."Ejercicios_Hipertrofia"
+      WHERE nivel = $1
+        AND "Tipo base" IS NOT NULL
+      ORDER BY
+        CASE
+          WHEN "Tipo base" = 'Multiarticular' THEN 1
+          ELSE 2
+        END,
+        RANDOM()
+    `;
+
+    const exercisesResult = await dbClient.query(exercisesQuery, [nivel]);
+
+    // Seleccionar ejercicios para Full Body (6-8 ejercicios)
+    const fullBodyExercises = [];
+    const targetGroups = [
+      { categoria: 'Pecho', count: 1 },
+      { categoria: 'Espalda', count: 1 },
+      { categoria: 'Piernas', count: 2 },
+      { categoria: 'Hombros', count: 1 },
+      { categoria: 'Core', count: 1 }
+    ];
+
+    for (const group of targetGroups) {
+      const groupExercises = exercisesResult.rows
+        .filter(ex => ex.categoria === group.categoria)
+        .slice(0, group.count);
+
+      fullBodyExercises.push(...groupExercises.map((ex, idx) => ({
+        ...ex,
+        orden: fullBodyExercises.length + idx + 1,
+        series: nivel === 'Principiante' ? 3 : nivel === 'Intermedio' ? 3 : 4,
+        isWeekendExtra
+      })));
+    }
+
+    // Crear plan temporal para fin de semana
+    const currentDate = new Date();
+    const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+    const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+
+    // Crear plan temporal en methodology_plans
+    const planResult = await dbClient.query(`
+      INSERT INTO app.methodology_plans (
+        user_id,
+        methodology_type,
+        nivel,
+        plan_name,
+        plan_start_date,
+        status,
+        total_days,
+        generation_mode,
+        version_type
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9
+      ) RETURNING id`,
+      [
+        userId,
+        'hipertrofia',
+        nivelNormalized,  // Usar nivel normalizado (basico/intermedio/avanzado)
+        'Entrenamiento Extra Fin de Semana',
+        currentDate,
+        'completed', // Marcado como completado para no interferir con planes activos
+        1,
+        'manual',
+        'weekend-extra'
+      ]
+    );
+
+    const planId = planResult.rows[0].id;
+    console.log(`📋 Plan temporal creado: ID ${planId}`);
+
+    // Crear sesión de metodología para fin de semana
+    const sessionResult = await dbClient.query(`
+      INSERT INTO app.methodology_exercise_sessions (
+        user_id,
+        methodology_plan_id,
+        methodology_type,
+        methodology_level,
+        session_name,
+        day_name,
+        session_date,
+        session_type,
+        total_exercises,
+        exercises_completed,
+        exercises_skipped,
+        exercises_cancelled,
+        exercises_in_progress,
+        session_status,
+        started_at,
+        day_of_month,
+        month_name,
+        month_number,
+        year_number,
+        exercises_data,
+        session_metadata
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
+      ) RETURNING id`,
+      [
+        userId,
+        planId,                                         // methodology_plan_id (ahora con ID real)
+        'hipertrofia',                                  // methodology_type
+        nivel,                                          // methodology_level
+        'Full Body Extra - Fin de Semana',             // session_name
+        dayNames[currentDate.getDay()],                // day_name
+        currentDate,                                    // session_date
+        'weekend-extra',                                // session_type
+        fullBodyExercises.length,                       // total_exercises
+        0,                                              // exercises_completed
+        0,                                              // exercises_skipped
+        0,                                              // exercises_cancelled
+        0,                                              // exercises_in_progress
+        'pending',                                      // session_status
+        currentDate,                                    // started_at
+        currentDate.getDate(),                          // day_of_month
+        monthNames[currentDate.getMonth()],             // month_name
+        currentDate.getMonth() + 1,                     // month_number
+        currentDate.getFullYear(),                      // year_number
+        JSON.stringify(fullBodyExercises),              // exercises_data
+        JSON.stringify({
+          nivel,
+          generated_at: currentDate,
+          type: 'single-day-workout',
+          weekend_extra: isWeekendExtra,
+          note: 'Entrenamiento extra de fin de semana - no afecta plan semanal'
+        })
+      ]
+    );
+
+    const sessionId = sessionResult.rows[0].id;
+
+    // Crear tracking para cada ejercicio
+    for (const exercise of fullBodyExercises) {
+      await dbClient.query(`
+        INSERT INTO app.exercise_session_tracking (
+          methodology_session_id,
+          user_id,
+          exercise_name,
+          exercise_order,
+          exercise_data,
+          status,
+          planned_sets,
+          planned_reps,
+          planned_rest_seconds,
+          created_at
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+        )`,
+        [
+          sessionId,
+          userId,
+          exercise.nombre,
+          exercise.orden,
+          JSON.stringify(exercise),
+          'pending',
+          exercise.series,
+          exercise.series_reps_objetivo || '8-12',
+          exercise.descanso_seg || 90,
+          currentDate
+        ]
+      );
+    }
+
+    await dbClient.query('COMMIT');
+
+    console.log('✅ Entrenamiento de día único generado exitosamente');
+
+    res.json({
+      success: true,
+      message: 'Entrenamiento del día generado exitosamente',
+      sessionId,
+      workout: {
+        id: sessionId,
+        type: 'full-body-single',
+        nivel,
+        exercises_count: fullBodyExercises.length,
+        duration_estimate: nivel === 'Principiante' ? '45-50 min' : '50-60 min',
+        exercises: fullBodyExercises.map(ex => ({
+          exercise_id: ex.exercise_id,
+          nombre: ex.nombre,
+          categoria: ex.categoria,
+          series: ex.series,
+          reps: ex.series_reps_objetivo,
+          descanso_seg: ex.descanso_seg,
+          tipo_base: ex["Tipo base"],
+          ejecucion: ex["Ejecución"],
+          notas: ex.notas
+        }))
+      },
+      notes: [
+        'Este entrenamiento es independiente y no afecta tu plan semanal',
+        'Se guardará en tu histórico como entrenamiento extra',
+        'Ajusta los pesos según tu capacidad actual'
+      ]
+    });
+
+  } catch (error) {
+    await dbClient.query('ROLLBACK');
+    console.error('❌ Error generando entrenamiento de día único:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error al generar entrenamiento',
+      details: error.message
+    });
+  } finally {
+    dbClient.release();
+  }
+});
+
 export default router;

@@ -53,6 +53,11 @@ function getTodayName() {
   return days[new Date().getDay()];
 }
 
+function isWeekend() {
+  const dayOfWeek = new Date().getDay();
+  return dayOfWeek === 0 || dayOfWeek === 6; // 0 = Domingo, 6 = Sábado
+}
+
 // Compute day_id from plan start datetime and timezone (calendar days, 1-indexed)
 function computeDayId(startISO, timezone = 'Europe/Madrid', now = new Date()) {
   try {
@@ -180,6 +185,7 @@ export default function TodayTrainingTab({
   const [sessionError, setSessionError] = useState(null);
   const [todayStatus, setTodayStatus] = useState(null);
   const [loadingTodayStatus, setLoadingTodayStatus] = useState(false);
+  const [isLoadingWeekendWorkout, setIsLoadingWeekendWorkout] = useState(false);
 
   // Nombre del día actual disponible para hooks que lo requieren
   const currentTodayName = todayName || getTodayName();
@@ -883,6 +889,74 @@ export default function TodayTrainingTab({
     }, 0);
   };
 
+  // Nueva función para generar entrenamiento de fin de semana
+  const handleGenerateWeekendWorkout = async () => {
+    if (isLoadingWeekendWorkout) return;
+
+    track('BUTTON_CLICK', { id: 'generate_weekend_workout' }, { component: 'TodayTrainingTab' });
+
+    setIsLoadingWeekendWorkout(true);
+    setSessionError(null);
+
+    try {
+      // Obtener nivel del usuario desde el perfil o plan activo
+      const userProfile = JSON.parse(localStorage.getItem('userProfile') || '{}');
+      const nivel = userProfile.nivel_entrenamiento || plan.nivel || 'Principiante';
+
+      console.log('🏋️ Generando entrenamiento de fin de semana. Nivel:', nivel);
+
+      const response = await apiClient.post('/hipertrofiav2/generate-single-day', {
+        nivel: nivel,
+        objetivos: userProfile.objetivos || [],
+        isWeekendExtra: true
+      });
+
+      if (response.data.success) {
+        const { workout, sessionId } = response.data;
+
+        // Transformar el workout al formato esperado por todaySessionData
+        const weekendSessionData = {
+          dia: getTodayName(),
+          tipo: 'Full Body Extra',
+          enfoque_principal: 'Full Body',
+          enfoque_secundario: 'Recuperación activa',
+          ejercicios: workout.exercises.map((ex, idx) => ({
+            ...ex,
+            orden: idx + 1,
+            repeticiones: ex.reps,
+            series: ex.series
+          })),
+          isWeekendExtra: true,
+          sessionId: sessionId
+        };
+
+        // Actualizar el estado con la sesión de fin de semana
+        setTodaySessionData(weekendSessionData);
+
+        // Iniciar la sesión directamente (sin plan asociado)
+        updateLocalState({
+          pendingSessionData: {
+            session: weekendSessionData,
+            sessionId: sessionId
+          },
+          showWarmupModal: true,
+          showSessionModal: false
+        });
+
+        track('WEEKEND_WORKOUT_GENERATED', {
+          nivel,
+          sessionId,
+          exercises: workout.exercises_count
+        });
+      }
+    } catch (error) {
+      console.error('❌ Error generando entrenamiento de fin de semana:', error);
+      setSessionError('Error al generar el entrenamiento. Por favor, intenta de nuevo.');
+    } finally {
+      setIsLoadingWeekendWorkout(false);
+    }
+  };
+
   const handleSkipWarmup = () => {
     track('BUTTON_CLICK', { id: 'warmup_skip' }, { component: 'TodayTrainingTab' });
 
@@ -1553,21 +1627,67 @@ export default function TodayTrainingTab({
             )}
 
             {/* =============================================== */}
-            {/* 🛌 DÍA DE DESCANSO */}
+            {/* 🛌 DÍA DE DESCANSO / FIN DE SEMANA */}
             {/* =============================================== */}
 
             {hasActivePlan && !hasToday && !sessionMatchesToday && !hasCompletedSession && (
               <div className="text-center py-12">
                 <Calendar className="w-12 h-12 text-gray-600 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-white mb-2">
-                  {isRestDay ? 'Día de descanso' : 'Entrenamiento completado'}
+                  {isWeekend() ? '🌟 Fin de Semana' : isRestDay ? 'Día de descanso' : 'Entrenamiento completado'}
                 </h3>
-                <p className="text-gray-400 mb-6">
-                  {isRestDay ?
-                    'No hay entrenamientos programados para hoy. ¡Disfruta tu día de recuperación!' :
-                    '¡Buen trabajo! Has completado el entrenamiento de hoy.'
-                  }
-                </p>
+
+                {isWeekend() ? (
+                  <>
+                    <p className="text-gray-400 mb-2">
+                      {new Date().getDay() === 0 ? 'Domingo' : 'Sábado'} - Día de descanso
+                    </p>
+                    <p className="text-blue-400 text-sm mb-6">
+                      🎯 Es fin de semana, toca descanso.
+                    </p>
+                    <p className="text-gray-400 text-sm mb-8">
+                      El descanso es parte fundamental del progreso.<br />
+                      Tu cuerpo necesita recuperarse para crecer más fuerte.
+                    </p>
+
+                    <div className="bg-gray-800/50 rounded-xl p-6 max-w-md mx-auto border border-gray-700">
+                      <p className="text-gray-300 mb-4">
+                        Pero si aún así quieres entrenar, podemos generar un{' '}
+                        <span className="text-yellow-400 font-semibold">entrenamiento especial para hoy</span>.
+                      </p>
+
+                      <Button
+                        onClick={handleGenerateWeekendWorkout}
+                        disabled={isLoadingWeekendWorkout}
+                        className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg flex items-center justify-center gap-2 mx-auto"
+                      >
+                        {isLoadingWeekendWorkout ? (
+                          <>
+                            <div className="animate-spin h-5 w-5 border-2 border-white/30 border-t-white rounded-full" />
+                            <span>Generando...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Dumbbell className="h-5 w-5" />
+                            <span>Entrenar Extra Hoy</span>
+                          </>
+                        )}
+                      </Button>
+
+                      <p className="text-xs text-gray-500 mt-4">
+                        Este entrenamiento no afectará tu plan semanal.<br />
+                        Se guardará en tu histórico como sesión extra.
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-gray-400 mb-6">
+                    {isRestDay ?
+                      'No hay entrenamientos programados para hoy. ¡Disfruta tu día de recuperación!' :
+                      '¡Buen trabajo! Has completado el entrenamiento de hoy.'
+                    }
+                  </p>
+                )}
               </div>
             )}
 

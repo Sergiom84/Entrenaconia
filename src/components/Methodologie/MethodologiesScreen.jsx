@@ -39,7 +39,10 @@ const LOCAL_STATE_INITIAL = {
   activeTrainingInfo: null,
   versionSelectionData: null,
   showWeekendWarning: false,
-  weekendGenerationData: null
+  weekendGenerationData: null,
+  pendingSessionData: null,
+  showWarmupModal: false,
+  showRoutineSessionModal: false
 };
 
 export default function MethodologiesScreen() {
@@ -647,6 +650,33 @@ export default function MethodologiesScreen() {
       return;
     }
 
+    // 🎯 VERIFICAR FIN DE SEMANA PARA HIPERTROFIAV2
+    if (isWeekend()) {
+      console.log('🚨 Detectado generación HipertrofiaV2 en fin de semana');
+
+      // Obtener perfil del usuario para el nivel
+      const userProfile = JSON.parse(localStorage.getItem('userProfile') || '{}');
+      const nivel = hipertrofiaV2Data?.evaluation?.level || userProfile.nivel_entrenamiento || 'Principiante';
+
+      // Cerrar el modal de HipertrofiaV2
+      ui.hideModal('hipertrofiaV2Manual');
+
+      updateLocalState({
+        showWeekendWarning: true,
+        weekendGenerationData: {
+          versionConfig: {
+            mode: 'manual',
+            methodology: 'hipertrofiaV2',
+            ...hipertrofiaV2Data
+          },
+          fullProfile: userProfile,
+          mode: 'manual',
+          nivel: nivel
+        }
+      });
+      return; // Detener aquí y esperar decisión del usuario
+    }
+
     ui.setLoading(true);
 
     try {
@@ -1145,49 +1175,52 @@ export default function MethodologiesScreen() {
   // ===============================================
 
   const handleWeekendContinueRegular = async () => {
-    console.log('📅 Usuario eligió continuar con plan regular en fin de semana');
-
-    const { versionConfig, fullProfile, mode } = localState.weekendGenerationData || {};
+    console.log('📅 Usuario eligió DESCANSAR - Plan comenzará el lunes');
 
     updateLocalState({
       showWeekendWarning: false,
       weekendGenerationData: null
     });
 
-    try {
-      const result = await generatePlan({
-        mode: mode || 'automatic',
-        versionConfig: versionConfig || { version: 'adapted', customWeeks: 4 },
-        userProfile: fullProfile
-      });
-
-      if (result.success) {
-        const validation = validatePlanData(result.plan);
-        if (validation.isValid) {
-          ui.showModal('planConfirmation');
-        } else {
-          ui.setError(`Plan generado incorrectamente: ${validation.error}`);
-        }
-      }
-    } catch (error) {
-      console.error('❌ Error generando plan regular:', error);
-      ui.setError('Error al generar plan: ' + error.message);
-    }
+    // Simplemente cerrar el modal, el usuario volverá el lunes para generar
+    console.log('✅ Modal cerrado. El usuario puede volver el lunes para generar su plan.');
   };
 
   const handleWeekendFullBody = async (fullBodyPlan) => {
     console.log('💪 Usuario eligió Full Body para fin de semana');
+    console.log('📦 Datos del entrenamiento recibido:', fullBodyPlan);
 
     updateLocalState({
       showWeekendWarning: false,
       weekendGenerationData: null
     });
 
-    // El modal ya generó el plan Full Body, solo necesitamos activarlo
-    if (fullBodyPlan) {
-      console.log('✅ Plan Full Body generado exitosamente');
-      // Aquí podrías mostrar el plan o navegar directamente
-      ui.showModal('planConfirmation');
+    // El modal ya generó el plan Full Body, ahora iniciamos el flujo de entrenamiento
+    if (fullBodyPlan && fullBodyPlan.sessionId) {
+      console.log('✅ Plan Full Body generado exitosamente, iniciando flujo de entrenamiento...');
+
+      // Preparar datos para el modal de calentamiento
+      const sessionData = {
+        dia: new Date().toLocaleDateString('es-ES', { weekday: 'long' }),
+        tipo: 'Full Body Extra',
+        ejercicios: fullBodyPlan.exercises || [],
+        isWeekendExtra: true,
+        sessionId: fullBodyPlan.sessionId,
+        nivel: fullBodyPlan.nivel || 'Principiante'
+      };
+
+      console.log('🔥 Datos de sesión preparados:', sessionData);
+
+      // Actualizar estado para mostrar WarmupModal
+      updateLocalState({
+        pendingSessionData: sessionData,
+        showWarmupModal: true
+      });
+
+      ui.showModal('warmup');
+    } else {
+      console.error('❌ No se recibió sessionId en el plan Full Body:', fullBodyPlan);
+      alert('Error al iniciar el entrenamiento. Por favor, intenta de nuevo.');
     }
   };
 
@@ -1575,8 +1608,71 @@ export default function MethodologiesScreen() {
         onClose={() => updateLocalState({ showWeekendWarning: false, weekendGenerationData: null })}
         onConfirm={handleWeekendContinueRegular}
         onFullBody={handleWeekendFullBody}
-        nivel={userData?.nivel || userData?.nivel_entrenamiento || 'Principiante'}
+        nivel={localState.weekendGenerationData?.nivel || user?.nivel || 'Principiante'}
       />
+
+      {/* Modal de calentamiento para entrenamiento de fin de semana */}
+      {localState.showWarmupModal && localState.pendingSessionData && (
+        <WarmupModal
+          sessionId={localState.pendingSessionData.sessionId}
+          level={localState.pendingSessionData.nivel || 'Principiante'}
+          onComplete={() => {
+            console.log('🔥 Calentamiento completado, mostrando RoutineSessionModal');
+            updateLocalState({
+              showWarmupModal: false,
+              showRoutineSessionModal: true
+            });
+          }}
+          onSkip={() => {
+            console.log('⏭️ Calentamiento saltado, mostrando RoutineSessionModal');
+            updateLocalState({
+              showWarmupModal: false,
+              showRoutineSessionModal: true
+            });
+          }}
+          onClose={() => {
+            console.log('❌ Modal de calentamiento cerrado');
+            updateLocalState({
+              showWarmupModal: false,
+              pendingSessionData: null
+            });
+          }}
+        />
+      )}
+
+      {/* Modal de sesión de rutina para entrenamiento de fin de semana */}
+      {localState.showRoutineSessionModal && localState.pendingSessionData && (
+        <RoutineSessionModal
+          isOpen={localState.showRoutineSessionModal}
+          session={localState.pendingSessionData}
+          sessionId={localState.pendingSessionData.sessionId}
+          onClose={() => {
+            console.log('❌ Modal de sesión cerrado');
+            updateLocalState({
+              showRoutineSessionModal: false,
+              pendingSessionData: null
+            });
+          }}
+          onFinishExercise={(exerciseIndex, progressData) => {
+            console.log('✅ Ejercicio completado:', exerciseIndex, progressData);
+          }}
+          onSkipExercise={(exerciseIndex, progressData) => {
+            console.log('⏭️ Ejercicio saltado:', exerciseIndex, progressData);
+          }}
+          onCancelExercise={(exerciseIndex, progressData) => {
+            console.log('❌ Ejercicio cancelado:', exerciseIndex, progressData);
+          }}
+          onCompleteSession={(sessionSummary) => {
+            console.log('🎉 Sesión completada:', sessionSummary);
+            updateLocalState({
+              showRoutineSessionModal: false,
+              pendingSessionData: null
+            });
+            // Navegar a la pestaña de Hoy en rutinas
+            navigate('/routines', { state: { activeTab: 'today' } });
+          }}
+        />
+      )}
     </div>
   );
 }

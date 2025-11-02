@@ -21,33 +21,55 @@ export function WeekendWarningModal({
 
   if (!isOpen) return null;
 
-  const handleFullBodyGeneration = async () => {
+  const handleTodayOnlyGeneration = async () => {
     setIsGeneratingFullBody(true);
     try {
-      const response = await apiClient.post('/api/hipertrofiav2/generate-fullbody', {
+      // Endpoint para generar solo entrenamiento del día (sin plan completo)
+      const response = await apiClient.post('/hipertrofiav2/generate-single-day', {
         nivel: nivel,
-        objetivos: []
+        objetivos: [],
+        isWeekendExtra: true  // Flag para indicar que es entrenamiento extra de fin de semana
       });
 
-      if (response.data.success) {
-        // Llamar callback con el plan generado
+      console.log('📦 Respuesta completa del servidor:', response);
+      console.log('📊 response.data:', response.data);
+      console.log('📊 response.success:', response.success);
+
+      // apiClient puede devolver directamente el data, verificar ambos casos
+      const data = response.data || response;
+
+      if (data.success) {
+        console.log('✅ Entrenamiento generado:', data.workout);
+        console.log('📝 SessionId recibido:', data.sessionId);
+
+        // Pasar el workout completo con el sessionId incluido
+        const fullWorkoutData = {
+          ...data.workout,
+          sessionId: data.sessionId  // Asegurar que sessionId esté incluido
+        };
+
+        console.log('📦 Datos completos a enviar:', fullWorkoutData);
+
+        // Llamar callback con el entrenamiento del día generado
         if (onFullBody) {
-          onFullBody(response.data.plan);
+          onFullBody(fullWorkoutData);
         }
         onClose();
+      } else {
+        console.error('❌ Respuesta sin success:', data);
+        alert('No se pudo generar el entrenamiento. Por favor, intenta de nuevo.');
       }
     } catch (error) {
-      console.error('Error generando Full Body:', error);
-      alert('Error al generar rutina Full Body. Por favor, intenta de nuevo.');
+      console.error('Error generando entrenamiento del día:', error);
+      alert('Error al generar el entrenamiento. Por favor, intenta de nuevo.');
     } finally {
       setIsGeneratingFullBody(false);
     }
   };
 
-  const handleContinueRegular = () => {
-    if (onConfirm) {
-      onConfirm();
-    }
+  const handleRest = () => {
+    // Si elige descansar, simplemente cerrar el modal
+    // El plan se generará cuando vuelva el lunes
     onClose();
   };
 
@@ -56,38 +78,39 @@ export function WeekendWarningModal({
       <div className="bg-gray-800 rounded-2xl max-w-2xl w-full p-6 border border-yellow-400/30">
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
-          <div className="p-3 bg-yellow-400/10 rounded-xl">
-            <AlertTriangle className="h-8 w-8 text-yellow-400" />
+          <div className="p-3 bg-blue-500/10 rounded-xl">
+            <Calendar className="h-8 w-8 text-blue-400" />
           </div>
           <div>
             <h2 className="text-2xl font-bold text-white">
-              Generación en Fin de Semana
+              🌟 Hoy es Fin de Semana
             </h2>
             <p className="text-gray-400">
-              Has elegido comenzar tu plan en fin de semana
+              {new Date().getDay() === 0 ? 'Domingo' : 'Sábado'} - Día de descanso
             </p>
           </div>
         </div>
 
         {/* Mensaje principal */}
-        <div className="bg-yellow-400/5 border border-yellow-400/20 rounded-lg p-4 mb-6">
-          <p className="text-gray-300 mb-2">
-            <strong className="text-yellow-400">⚠️ Atención:</strong> Generar un plan regular en fin de semana puede afectar tu progresión:
+        <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-4 mb-6">
+          <p className="text-gray-300 mb-3">
+            <strong className="text-blue-400">🎯 Es fin de semana, toca descanso.</strong>
           </p>
-          <ul className="text-sm text-gray-400 space-y-1 ml-4">
-            <li>• Las rutinas están optimizadas para días laborales</li>
-            <li>• Podrías tener menos tiempo de recuperación</li>
-            <li>• El volumen puede ser excesivo para entrenar sábado y domingo</li>
-          </ul>
+          <p className="text-gray-400 text-sm mb-3">
+            El descanso es parte fundamental del progreso. Tu cuerpo necesita recuperarse para crecer más fuerte.
+          </p>
+          <p className="text-gray-300 text-sm">
+            Pero si aún así quieres entrenar, podemos generar un <span className="text-yellow-400 font-semibold">entrenamiento especial para hoy</span>.
+          </p>
         </div>
 
         {/* Opciones */}
         <div className="space-y-3 mb-6">
-          {/* Opción 1: Full Body */}
+          {/* Opción 1: Entrenar Solo Hoy */}
           <button
-            onClick={() => setSelectedOption('fullbody')}
+            onClick={() => setSelectedOption('today-only')}
             className={`w-full p-4 rounded-xl border transition-all text-left ${
-              selectedOption === 'fullbody'
+              selectedOption === 'today-only'
                 ? 'bg-green-500/10 border-green-500/50'
                 : 'bg-gray-700/50 border-gray-600 hover:bg-gray-700'
             }`}
@@ -98,57 +121,57 @@ export function WeekendWarningModal({
               </div>
               <div className="flex-1">
                 <h3 className="text-white font-semibold mb-1">
-                  Rutina Full Body (Recomendado)
+                  Entrenar Solo Hoy
                 </h3>
                 <p className="text-sm text-gray-400">
-                  Una sesión completa trabajando todos los grupos musculares.
-                  Ideal para entrenar 1-2 veces el fin de semana.
+                  Genera un entrenamiento Full Body adaptado a tu nivel para hoy.
+                  Sin compromisos, sin planes. Solo una buena sesión.
                 </p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <span className="text-xs px-2 py-1 bg-green-500/20 text-green-400 rounded">
-                    5-6 ejercicios
+                    Solo para hoy
                   </span>
                   <span className="text-xs px-2 py-1 bg-green-500/20 text-green-400 rounded">
                     45-60 minutos
                   </span>
                   <span className="text-xs px-2 py-1 bg-green-500/20 text-green-400 rounded">
-                    Volumen optimizado
+                    Se guarda en histórico
                   </span>
                 </div>
               </div>
             </div>
           </button>
 
-          {/* Opción 2: Plan Regular */}
+          {/* Opción 2: Descansar */}
           <button
-            onClick={() => setSelectedOption('regular')}
+            onClick={() => setSelectedOption('rest')}
             className={`w-full p-4 rounded-xl border transition-all text-left ${
-              selectedOption === 'regular'
-                ? 'bg-orange-500/10 border-orange-500/50'
+              selectedOption === 'rest'
+                ? 'bg-blue-500/10 border-blue-500/50'
                 : 'bg-gray-700/50 border-gray-600 hover:bg-gray-700'
             }`}
           >
             <div className="flex items-start gap-3">
-              <div className="p-2 bg-orange-500/20 rounded-lg">
-                <Calendar className="h-5 w-5 text-orange-400" />
+              <div className="p-2 bg-blue-500/20 rounded-lg">
+                <Calendar className="h-5 w-5 text-blue-400" />
               </div>
               <div className="flex-1">
                 <h3 className="text-white font-semibold mb-1">
-                  Continuar con Plan Regular
+                  Descansar (Recomendado)
                 </h3>
                 <p className="text-sm text-gray-400">
-                  Genera el plan estándar de {nivel === 'Principiante' ? '3' : nivel === 'Intermedio' ? '4' : '5-6'} días.
-                  El plan se extenderá a 5 semanas para completar todas las sesiones.
+                  Tómate el día libre. Tu plan de {nivel} comenzará el próximo lunes
+                  con toda la energía.
                 </p>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  <span className="text-xs px-2 py-1 bg-orange-500/20 text-orange-400 rounded">
-                    Plan extendido
+                  <span className="text-xs px-2 py-1 bg-blue-500/20 text-blue-400 rounded">
+                    Recuperación óptima
                   </span>
-                  <span className="text-xs px-2 py-1 bg-orange-500/20 text-orange-400 rounded">
-                    12 sesiones totales
+                  <span className="text-xs px-2 py-1 bg-blue-500/20 text-blue-400 rounded">
+                    Plan desde lunes
                   </span>
-                  <span className="text-xs px-2 py-1 bg-orange-500/20 text-orange-400 rounded">
-                    5 semanas
+                  <span className="text-xs px-2 py-1 bg-blue-500/20 text-blue-400 rounded">
+                    Mejor progreso
                   </span>
                 </div>
               </div>
@@ -159,14 +182,14 @@ export function WeekendWarningModal({
         {/* Mensaje adicional según selección */}
         {selectedOption && (
           <div className={`p-3 rounded-lg mb-4 ${
-            selectedOption === 'fullbody'
+            selectedOption === 'today-only'
               ? 'bg-green-500/10 border border-green-500/20'
-              : 'bg-orange-500/10 border border-orange-500/20'
+              : 'bg-blue-500/10 border border-blue-500/20'
           }`}>
             <p className="text-sm text-gray-300">
-              {selectedOption === 'fullbody'
-                ? '💡 La rutina Full Body te permitirá entrenar eficientemente el fin de semana sin comprometer tu recuperación.'
-                : '⚠️ Recuerda que entrenar el fin de semana con un plan regular requiere buena gestión del descanso.'
+              {selectedOption === 'today-only'
+                ? '💪 Perfecto! Vamos a generar un entrenamiento especial para hoy. No afectará tu plan semanal.'
+                : '🌟 Excelente decisión. El descanso también es entrenamiento. Nos vemos el lunes.'
               }
             </p>
           </div>
@@ -183,18 +206,18 @@ export function WeekendWarningModal({
 
           <button
             onClick={() => {
-              if (selectedOption === 'fullbody') {
-                handleFullBodyGeneration();
-              } else if (selectedOption === 'regular') {
-                handleContinueRegular();
+              if (selectedOption === 'today-only') {
+                handleTodayOnlyGeneration();
+              } else if (selectedOption === 'rest') {
+                handleRest();
               }
             }}
             disabled={!selectedOption || isGeneratingFullBody}
             className={`flex-1 py-3 px-4 rounded-xl transition-all flex items-center justify-center gap-2 ${
               selectedOption
-                ? selectedOption === 'fullbody'
+                ? selectedOption === 'today-only'
                   ? 'bg-green-500 hover:bg-green-600 text-white'
-                  : 'bg-orange-500 hover:bg-orange-600 text-white'
+                  : 'bg-blue-500 hover:bg-blue-600 text-white'
                 : 'bg-gray-700 text-gray-500 cursor-not-allowed'
             }`}
           >
@@ -206,10 +229,10 @@ export function WeekendWarningModal({
             ) : (
               <>
                 <span>
-                  {selectedOption === 'fullbody'
-                    ? 'Generar Full Body'
-                    : selectedOption === 'regular'
-                    ? 'Continuar con Plan Regular'
+                  {selectedOption === 'today-only'
+                    ? 'Generar Entrenamiento'
+                    : selectedOption === 'rest'
+                    ? 'Descansar Hoy'
                     : 'Selecciona una opción'
                   }
                 </span>
