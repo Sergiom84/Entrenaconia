@@ -2015,35 +2015,30 @@ router.delete('/cancel/methodology/:sessionId', authenticateToken, async (req, r
     const session = sessionCheck.rows[0];
     const isWeekend = session.session_type === 'weekend-extra';
 
-    // Marcar sesión como cancelada
-    await client.query(
-      `UPDATE app.methodology_exercise_sessions
-       SET session_status = 'cancelled',
-           completed_at = NOW(),
-           updated_at = NOW()
+    // 🗑️ ELIMINAR ejercicios de la sesión
+    const deleteExercisesResult = await client.query(
+      `DELETE FROM app.exercise_session_tracking
+       WHERE methodology_session_id = $1`,
+      [sessionId]
+    );
+    console.log(`🗑️ ${deleteExercisesResult.rowCount} ejercicios eliminados de sesión ${sessionId}`);
+
+    // 🗑️ ELIMINAR la sesión
+    const deleteSessionResult = await client.query(
+      `DELETE FROM app.methodology_exercise_sessions
        WHERE id = $1`,
       [sessionId]
     );
+    console.log(`🗑️ Sesión ${sessionId} eliminada`);
 
-    // Marcar todos los ejercicios como cancelados
-    await client.query(
-      `UPDATE app.exercise_session_tracking
-       SET status = 'cancelled',
-           updated_at = NOW()
-       WHERE methodology_session_id = $1 AND status = 'pending'`,
-      [sessionId]
-    );
-
-    // Si es sesión weekend, también marcar el plan como cancelado
+    // 🗑️ Si es sesión weekend, también ELIMINAR el plan
     if (isWeekend && session.methodology_plan_id) {
-      await client.query(
-        `UPDATE app.methodology_plans
-         SET status = 'cancelled',
-             updated_at = NOW()
+      const deletePlanResult = await client.query(
+        `DELETE FROM app.methodology_plans
          WHERE id = $1`,
         [session.methodology_plan_id]
       );
-      console.log(`✅ Plan weekend ${session.methodology_plan_id} marcado como cancelado`);
+      console.log(`🗑️ Plan weekend ${session.methodology_plan_id} eliminado (${deletePlanResult.rowCount} filas)`);
     }
 
     await client.query('COMMIT');
