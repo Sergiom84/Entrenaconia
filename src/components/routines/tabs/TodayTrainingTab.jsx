@@ -1119,17 +1119,46 @@ export default function TodayTrainingTab({
 
     try {
       setLoading(true);
-      const result = await cancelPlan();
 
-      if (result.success) {
-        updateLocalState({ showRejectionModal: false });
-        showSuccess('Rutina cancelada exitosamente');
-        // Redirigir a metodologías después de un breve delay
-        setTimeout(() => {
-          goToMethodologies();
-        }, 1500);
+      // 🌟 Verificar si es sesión weekend
+      const isWeekendSession = todayStatus?.session?.session_type === 'weekend-extra';
+      const sessionId = localState.pendingCancelSessionId || todayStatus?.session?.id;
+
+      if (isWeekendSession && sessionId) {
+        console.log('🌟 Cancelando sesión weekend:', sessionId);
+        // Cancelar sesión weekend directamente
+        const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3010'}/api/training-session/cancel/methodology/${sessionId}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (response.ok) {
+          updateLocalState({ showRejectionModal: false, pendingCancelSessionId: null });
+          showSuccess('Entrenamiento de fin de semana cancelado');
+          // Limpiar estado y refrescar
+          setTodayStatus(null);
+          setTodaySessionData(null);
+          await fetchTodayStatus();
+        } else {
+          throw new Error('Error cancelando entrenamiento de fin de semana');
+        }
       } else {
-        throw new Error(result.error || 'Error cancelando la rutina');
+        // Cancelar plan normal
+        const result = await cancelPlan();
+
+        if (result.success) {
+          updateLocalState({ showRejectionModal: false });
+          showSuccess('Rutina cancelada exitosamente');
+          // Redirigir a metodologías después de un breve delay
+          setTimeout(() => {
+            goToMethodologies();
+          }, 1500);
+        } else {
+          throw new Error(result.error || 'Error cancelando la rutina');
+        }
       }
     } catch (error) {
       console.error('Error cancelando rutina:', error);
@@ -1137,7 +1166,7 @@ export default function TodayTrainingTab({
     } finally {
       setLoading(false);
     }
-  }, [cancelPlan, setLoading, showSuccess, setError, goToMethodologies, track]);
+  }, [cancelPlan, setLoading, showSuccess, setError, goToMethodologies, track, todayStatus, localState.pendingCancelSessionId, fetchTodayStatus]);
 
   const handleCloseCancelModal = () => {
     track('BUTTON_CLICK', { id: 'cancel_plan_close' }, { component: 'TodayTrainingTab' });
@@ -1762,14 +1791,15 @@ export default function TodayTrainingTab({
                   </p>
                 </div>
 
-                {/* Botón de reanudar si no está completa */}
+                {/* Botones de acción */}
                 {console.log('🔍 DEBUG Botón Reanudar:', {
                   canRetry: todayStatus.summary.canRetry,
                   progress: todayStatus.summary.progress,
                   shouldShow: todayStatus.summary.canRetry && todayStatus.summary.progress < 100
                 })}
-                {todayStatus.summary.canRetry && todayStatus.summary.progress < 100 && (
-                  <div className="mt-6 text-center">
+                <div className="mt-6 flex gap-4 justify-center">
+                  {/* Botón de reanudar si no está completa */}
+                  {todayStatus.summary.canRetry && todayStatus.summary.progress < 100 && (
                     <Button
                       onClick={handleResumeSession}
                       className="bg-yellow-400 hover:bg-yellow-500 text-gray-900 px-6 py-3 rounded-lg"
@@ -1787,8 +1817,18 @@ export default function TodayTrainingTab({
                         </>
                       )}
                     </Button>
-                  </div>
-                )}
+                  )}
+
+                  {/* Botón de cancelar (siempre visible en sesiones weekend) */}
+                  <Button
+                    onClick={() => updateLocalState({ showRejectionModal: true, pendingCancelSessionId: todayStatus.session.id })}
+                    variant="outline"
+                    className="border-red-500/30 text-red-400 hover:bg-red-500/10 px-6 py-3 rounded-lg"
+                    disabled={ui.isLoading}
+                  >
+                    Cancelar rutina
+                  </Button>
+                </div>
               </Card>
             )}
 

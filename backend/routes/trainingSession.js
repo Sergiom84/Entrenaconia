@@ -1984,4 +1984,89 @@ router.get('/weekend-status', authenticateToken, async (req, res) => {
   }
 });
 
+// DELETE /api/training-session/cancel/methodology/:sessionId
+// Cancelar sesión de metodología (incluyendo sesiones weekend)
+router.delete('/cancel/methodology/:sessionId', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const userId = req.user?.userId || req.user?.id;
+    const { sessionId } = req.params;
+
+    console.log(`🗑️ Cancelando sesión metodología ${sessionId} para usuario ${userId}`);
+
+    // Verificar que la sesión pertenece al usuario
+    const sessionCheck = await client.query(
+      `SELECT id, session_type, methodology_plan_id
+       FROM app.methodology_exercise_sessions
+       WHERE id = $1 AND user_id = $2`,
+      [sessionId, userId]
+    );
+
+    if (sessionCheck.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        success: false,
+        message: 'Sesión no encontrada o no pertenece al usuario'
+      });
+    }
+
+    const session = sessionCheck.rows[0];
+    const isWeekend = session.session_type === 'weekend-extra';
+
+    // Marcar sesión como cancelada
+    await client.query(
+      `UPDATE app.methodology_exercise_sessions
+       SET session_status = 'cancelled',
+           completed_at = NOW(),
+           updated_at = NOW()
+       WHERE id = $1`,
+      [sessionId]
+    );
+
+    // Marcar todos los ejercicios como cancelados
+    await client.query(
+      `UPDATE app.exercise_session_tracking
+       SET status = 'cancelled',
+           updated_at = NOW()
+       WHERE methodology_session_id = $1 AND status = 'pending'`,
+      [sessionId]
+    );
+
+    // Si es sesión weekend, también marcar el plan como cancelado
+    if (isWeekend && session.methodology_plan_id) {
+      await client.query(
+        `UPDATE app.methodology_plans
+         SET status = 'cancelled',
+             updated_at = NOW()
+         WHERE id = $1`,
+        [session.methodology_plan_id]
+      );
+      console.log(`✅ Plan weekend ${session.methodology_plan_id} marcado como cancelado`);
+    }
+
+    await client.query('COMMIT');
+
+    console.log(`✅ Sesión ${sessionId} cancelada exitosamente`);
+
+    res.json({
+      success: true,
+      message: isWeekend
+        ? 'Entrenamiento de fin de semana cancelado'
+        : 'Sesión de entrenamiento cancelada'
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('❌ Error cancelando sesión:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al cancelar la sesión'
+    });
+  } finally {
+    client.release();
+  }
+});
+
 export default router;
