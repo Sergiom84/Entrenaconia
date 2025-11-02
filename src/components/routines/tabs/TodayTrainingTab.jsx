@@ -191,8 +191,88 @@ export default function TodayTrainingTab({
   const currentTodayName = todayName || getTodayName();
 
 
+  // Función para cargar estado de sesión de fin de semana
+  const fetchWeekendStatus = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('authToken');
+      if (!token) {
+        console.log('⚠️ No token para fetchWeekendStatus');
+        return null;
+      }
+
+      console.log('🌐 Llamando a /api/training-session/weekend-status...');
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3010'}/api/training-session/weekend-status`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      console.log('📡 Response status:', response.status);
+
+      if (!response.ok) {
+        console.error('❌ Error obteniendo estado de fin de semana:', response.status);
+        return null;
+      }
+
+      const data = await response.json();
+      console.log('📦 Weekend status data completa:', data);
+
+      if (data.hasWeekendSession) {
+        console.log('✅ Sesión de fin de semana encontrada:', data);
+        return data;
+      }
+
+      console.log('⚠️ No hay weekend session en la respuesta');
+      return null;
+    } catch (error) {
+      console.error('❌ Error cargando estado de fin de semana:', error);
+      return null;
+    }
+  }, []);
+
   const fetchTodayStatus = useCallback(async () => {
     const currentMethodologyPlanId = methodologyPlanId || plan.methodologyPlanId;
+
+    console.log('🔍 fetchTodayStatus - isWeekend:', isWeekend(), 'day:', new Date().getDay());
+
+    // Si es fin de semana, buscar sesiones de fin de semana
+    if (isWeekend()) {
+      console.log('📅 Es fin de semana, buscando sesión weekend...');
+      const weekendData = await fetchWeekendStatus();
+      console.log('📦 Weekend data recibida:', weekendData);
+      if (weekendData?.hasWeekendSession) {
+        console.log('🎯 Usando datos de sesión de fin de semana');
+        setTodayStatus({
+          session: weekendData.session,
+          exercises: weekendData.exercises,
+          summary: weekendData.summary
+        });
+
+        // Si hay ejercicios, configurar la sesión actual
+        if (weekendData.exercises?.length > 0) {
+          const exercisesData = typeof weekendData.session.exercises_data === 'string'
+            ? JSON.parse(weekendData.session.exercises_data)
+            : weekendData.session.exercises_data;
+
+          setTodaySessionData({
+            dia: new Date().toLocaleDateString('es-ES', { weekday: 'long' }),
+            tipo: 'Full Body Extra',
+            ejercicios: exercisesData || [],
+            isWeekendExtra: true
+          });
+        }
+
+        return {
+          session: weekendData.session,
+          exercises: weekendData.exercises,
+          summary: weekendData.summary
+        };
+      }
+    }
+
+    // Si no hay plan activo o metodología, no continuar
     if (!hasActivePlan || !currentMethodologyPlanId) return null;
 
     setLoadingTodayStatus(true);
@@ -275,7 +355,7 @@ export default function TodayTrainingTab({
     } finally {
       setLoadingTodayStatus(false);
     }
-  }, [methodologyPlanId, plan.methodologyPlanId, plan.planStartDate, planStartDate, hasActivePlan]);
+  }, [methodologyPlanId, plan.methodologyPlanId, plan.planStartDate, planStartDate, hasActivePlan, fetchWeekendStatus]);
 
 
   const mountedRef = useRef(true);
@@ -375,10 +455,17 @@ export default function TodayTrainingTab({
 
   // 🎯 CORRECCIÓN CRÍTICA: Refrescar resumen del día al cambiar estado de sesión o cerrar el modal
   // Agregado: Forzar re-fetch cuando el modal se cierra (showSessionModal false)
+  // 🌟 WEEKEND: También ejecutar si es fin de semana (para cargar sesiones weekend-extra)
   useEffect(() => {
-    if (!hasActivePlan) return;
+    // 🌟 Permitir ejecución si hay plan activo O si es fin de semana
+    if (!hasActivePlan && !isWeekend()) {
+      console.log('⏸️ No hay plan activo y no es fin de semana, saltando fetchTodayStatus');
+      return;
+    }
 
-    // 🎯 IMPORTANTE: Si el modal se acaba de cerrar (showSessionModal === false), forzar actualización
+    console.log('🔄 Ejecutando fetchTodayStatus...', { hasActivePlan, isWeekend: isWeekend() });
+
+    // 🎯 IMPORTANTE: Si el modal se acaba de cerrado (showSessionModal === false), forzar actualización
     if (localState.showSessionModal === false) {
       console.log('🔄 Modal cerrado, forzando refresh del estado desde BD...');
       fetchTodayStatus();
@@ -1562,6 +1649,136 @@ export default function TodayTrainingTab({
 
 
             {/* =============================================== */}
+            {/* 🌟 SESIÓN DE FIN DE SEMANA (WEEKEND-EXTRA) */}
+            {/* =============================================== */}
+
+            {/* Mostrar resumen de sesión de fin de semana */}
+            {!hasActivePlan && todayStatus?.session?.session_type === 'weekend-extra' && (
+              <Card className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h3 className="text-xl font-semibold text-white">
+                      🌟 Entrenamiento Extra de {new Date().toLocaleDateString('es-ES', { weekday: 'long' })}
+                    </h3>
+                    <p className="text-gray-400 mt-1">
+                      {todayStatus.summary.completed} completados - {todayStatus.summary.skipped} saltados - {todayStatus.summary.total} ejercicios
+                    </p>
+                  </div>
+                  <div className="text-sm text-gray-400">
+                    {"Duración total: "}
+                    {todayStatus.session?.total_duration_seconds
+                      ? Math.round(
+                          (todayStatus.session.total_duration_seconds + (todayStatus.session.warmup_time_seconds || 0)) / 60
+                        )
+                      : 0}
+                    {" min"}
+                  </div>
+                </div>
+
+                {/* Barra de progreso */}
+                <div className="mb-6">
+                  <div className="flex justify-between text-sm text-gray-400 mb-2">
+                    <span>Progreso</span>
+                    <span>{todayStatus.summary.progress || 0}%</span>
+                  </div>
+                  <div className="h-3 bg-gray-700 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full transition-all duration-500 ${
+                        todayStatus.summary.progress === 100
+                          ? 'bg-green-500'
+                          : todayStatus.summary.progress >= 75
+                            ? 'bg-yellow-400'
+                            : 'bg-blue-400'
+                      }`}
+                      style={{ width: `${todayStatus.summary.progress || 0}%` }}
+                    />
+                  </div>
+                  {todayStatus.summary.progress === 100 && (
+                    <p className="text-green-400 text-sm mt-2 text-center">
+                      ✨ ¡Entrenamiento completado al 100%!
+                    </p>
+                  )}
+                </div>
+
+                {/* Lista de ejercicios con colores de estado */}
+                <div className="space-y-2">
+                  {todaySessionData?.ejercicios ? (
+                    todaySessionData.ejercicios.map((ejercicio, index) => {
+                      // Combinar datos del plan con estado desde backend
+                      const backendExercise = todayStatus?.exercises?.[index];
+                      const status = backendExercise?.status || 'pending';
+                      const ex = {
+                        ...ejercicio,
+                        status: String(status).toLowerCase(),
+                        exercise_name: ejercicio.nombre,
+                        series_total: ejercicio.series,
+                        sentiment: backendExercise?.sentiment,
+                        comment: backendExercise?.comment
+                      };
+                      return (
+                        <ExerciseListItem key={index} exercise={ex} index={index} />
+                      );
+                    })
+                  ) : (
+                    // Fallback si no hay todaySessionData
+                    todayStatus?.exercises?.map((exercise, index) => (
+                      <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-gray-800">
+                        <div className="flex items-center gap-3">
+                          <div className={`h-8 w-8 rounded-full flex items-center justify-center ${
+                            exercise.status === 'completed' ? 'bg-green-500' :
+                            exercise.status === 'skipped' ? 'bg-gray-500' :
+                            exercise.status === 'cancelled' ? 'bg-red-500' :
+                            'bg-gray-600'
+                          }`}>
+                            {exercise.status === 'completed' ? '✓' :
+                             exercise.status === 'skipped' ? '⏭' :
+                             exercise.status === 'cancelled' ? '✕' :
+                             (index + 1)}
+                          </div>
+                          <span className="text-white">Ejercicio {index + 1}</span>
+                        </div>
+                        <span className={`text-sm ${
+                          exercise.status === 'completed' ? 'text-green-400' :
+                          exercise.status === 'skipped' ? 'text-gray-400' :
+                          exercise.status === 'cancelled' ? 'text-red-400' :
+                          'text-gray-500'
+                        }`}>
+                          {exercise.status === 'completed' ? 'Completado' :
+                           exercise.status === 'skipped' ? 'Saltado' :
+                           exercise.status === 'cancelled' ? 'Cancelado' :
+                           'Pendiente'}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* Botón de reanudar si no está completa */}
+                {todayStatus.summary.canRetry && todayStatus.summary.progress < 100 && (
+                  <div className="mt-6 text-center">
+                    <Button
+                      onClick={handleResumeSession}
+                      className="bg-yellow-400 hover:bg-yellow-500 text-gray-900 px-6 py-3 rounded-lg"
+                      disabled={ui.isLoading}
+                    >
+                      {ui.isLoading ? (
+                        <>
+                          <RefreshCw className="h-5 w-5 animate-spin mr-2" />
+                          Iniciando...
+                        </>
+                      ) : (
+                        <>
+                          <Play className="h-5 w-5 mr-2" />
+                          Reanudar Entrenamiento
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                )}
+              </Card>
+            )}
+
+            {/* =============================================== */}
             {/* ✅ SESIÓN COMPLETADA EXITOSAMENTE */}
             {/* =============================================== */}
 
@@ -1611,10 +1828,10 @@ export default function TodayTrainingTab({
 
 
             {/* =============================================== */}
-            {/* ❌ NO HAY PLAN ACTIVO */}
+            {/* ❌ NO HAY PLAN ACTIVO (pero puede haber sesión de fin de semana) */}
             {/* =============================================== */}
 
-            {noActivePlan && (
+            {noActivePlan && !todayStatus?.session && !(todayStatus?.session?.session_type === 'weekend-extra') && (
               <div className="text-center py-12">
                 <Calendar className="w-12 h-12 text-gray-600 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-white mb-2">
