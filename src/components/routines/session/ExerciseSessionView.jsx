@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Play, Pause, RotateCcw, Info, SkipForward, Star, Target, Square, TrendingUp } from 'lucide-react';
+import { Play, Pause, RotateCcw, Info, SkipForward, Star, Target, Square, TrendingUp, Settings } from 'lucide-react';
 import { getExerciseGifUrl } from '@/config/exerciseGifs.js';
 import { getExerciseVideoUrl } from '@/config/exerciseVideos.js';
 import { formatExerciseName } from '../../../utils/exerciseUtils';
+import { DraggableWrapper, CustomizableContainer, useCustomLayout, useEditMode } from '../../customization';
 
 /**
  * Vista del ejercicio actual - Solo UI
@@ -42,6 +43,23 @@ export const ExerciseSessionView = ({
   ]
 }) => {
   const [exerciseGif, setExerciseGif] = useState(null);
+
+  // 🎯 SISTEMA DE PERSONALIZACIÓN - Drag & Drop de botones
+  const [editMode, toggleEditMode, saveAndExit] = useEditMode(false);
+
+  // Layout por defecto de botones (orden inicial)
+  const defaultButtonLayout = [
+    'btn-play-pause',
+    'btn-advance',
+    'btn-reset',
+    'btn-skip',
+    'btn-cancel'
+  ];
+
+  const [buttonLayout, saveButtonLayout] = useCustomLayout(
+    'exercise-control-buttons',
+    defaultButtonLayout
+  );
 
   // 🎬 Actualizar video/GIF cuando cambia ejercicio
   // Usa la configuración centralizada de src/config/exerciseVideos.js
@@ -394,58 +412,125 @@ export const ExerciseSessionView = ({
         </div>
       )}
 
-      {/* Controles principales */}
-      <div className="flex flex-wrap gap-2 justify-center mb-4">
-        {phase === 'ready' && (
-          <button
-            onClick={start}
-            className="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white font-semibold py-2 px-4 rounded"
-          >
-            <Play className="w-4 h-4" /> Comenzar
-          </button>
-        )}
-
-        {phase !== 'ready' && hasTimer && (
-          <button
-            onClick={toggle}
-            className="flex items-center gap-2 bg-gray-200 hover:bg-white text-black font-semibold py-2 px-4 rounded"
-          >
-            {isRunning ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-            {isRunning ? 'Pausar' : 'Reanudar'}
-          </button>
-        )}
-
-        {canAdvanceManually && (
-          <button
-            onClick={manualAdvance}
-            className="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white font-semibold py-2 px-4 rounded"
-          >
-            <SkipForward className="w-4 h-4" /> Avanzar
-          </button>
-        )}
-
+      {/* 🎯 TOGGLE MODO EDICIÓN */}
+      <div className="flex justify-end mb-2">
         <button
-          onClick={reset}
-          className="flex items-center gap-2 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded"
-          title="Reiniciar ejercicio actual"
+          onClick={toggleEditMode}
+          className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded-md transition-all ${
+            editMode
+              ? 'bg-yellow-400 text-gray-900 font-semibold'
+              : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+          }`}
+          title="Personalizar orden de botones"
         >
-          <RotateCcw className="w-4 h-4" /> Repetir
-        </button>
-
-        <button
-          onClick={onSkip}
-          className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded"
-        >
-          <SkipForward className="w-4 h-4" /> Saltar Ejercicio
-        </button>
-
-        <button
-          onClick={onCancel}
-          className="flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white font-semibold py-2 px-4 rounded"
-        >
-          <Square className="w-4 h-4" /> Cancelar Ejercicio
+          <Settings className="w-3 h-3" />
+          {editMode ? 'Guardar Orden' : 'Personalizar'}
         </button>
       </div>
+
+      {/* Banner de modo edición */}
+      {editMode && (
+        <div className="mb-3 p-3 bg-yellow-400/20 border border-yellow-400/40 rounded-lg">
+          <p className="text-yellow-300 text-sm font-semibold mb-1">
+            🎯 Modo Personalización Activo
+          </p>
+          <p className="text-yellow-200/80 text-xs">
+            Arrastra los botones para cambiar su orden. Los cambios se guardarán automáticamente.
+          </p>
+        </div>
+      )}
+
+      {/* Controles principales - CON DRAG & DROP */}
+      <CustomizableContainer
+        items={buttonLayout}
+        onReorder={saveButtonLayout}
+        editMode={editMode}
+        strategy="horizontal"
+        className="flex flex-wrap gap-2 justify-center mb-4"
+      >
+        {buttonLayout.map((buttonId) => {
+          // Definir cada botón según su ID
+          let button = null;
+
+          if (buttonId === 'btn-play-pause') {
+            if (phase === 'ready') {
+              button = (
+                <button
+                  onClick={start}
+                  className="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white font-semibold py-2 px-4 rounded transition-colors"
+                >
+                  <Play className="w-4 h-4" /> Comenzar
+                </button>
+              );
+            } else if (phase !== 'ready' && hasTimer) {
+              button = (
+                <button
+                  onClick={toggle}
+                  className="flex items-center gap-2 bg-gray-200 hover:bg-white text-black font-semibold py-2 px-4 rounded transition-colors"
+                >
+                  {isRunning ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                  {isRunning ? 'Pausar' : 'Reanudar'}
+                </button>
+              );
+            }
+          }
+
+          if (buttonId === 'btn-advance' && canAdvanceManually) {
+            button = (
+              <button
+                onClick={manualAdvance}
+                className="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white font-semibold py-2 px-4 rounded transition-colors"
+              >
+                <SkipForward className="w-4 h-4" /> Avanzar
+              </button>
+            );
+          }
+
+          if (buttonId === 'btn-reset') {
+            button = (
+              <button
+                onClick={reset}
+                className="flex items-center gap-2 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded transition-colors"
+                title="Reiniciar ejercicio actual"
+              >
+                <RotateCcw className="w-4 h-4" /> Repetir
+              </button>
+            );
+          }
+
+          if (buttonId === 'btn-skip') {
+            button = (
+              <button
+                onClick={onSkip}
+                className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded transition-colors"
+              >
+                <SkipForward className="w-4 h-4" /> Saltar Ejercicio
+              </button>
+            );
+          }
+
+          if (buttonId === 'btn-cancel') {
+            button = (
+              <button
+                onClick={onCancel}
+                className="flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white font-semibold py-2 px-4 rounded transition-colors"
+              >
+                <Square className="w-4 h-4" /> Cancelar Ejercicio
+              </button>
+            );
+          }
+
+          // Si el botón no debe renderizarse (ej: play-pause cuando no aplica), skip
+          if (!button) return null;
+
+          // Envolver en DraggableWrapper
+          return (
+            <DraggableWrapper key={buttonId} id={buttonId} editMode={editMode}>
+              {button}
+            </DraggableWrapper>
+          );
+        })}
+      </CustomizableContainer>
 
       {/* Selector de tiempo por serie */}
       {!isTimeBased && allowManualTimer && (

@@ -17,6 +17,7 @@ function getSpanishTimestamp() {
 }
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/users.js';
+import userPreferencesRoutes from './routes/userPreferences.js';
 import authenticateToken from './middleware/auth.js';
 import medicalDocsRoutes from './routes/medicalDocs.js';
 import equipmentRoutes from './routes/equipment.js';
@@ -396,6 +397,7 @@ app.use('/api/progress', progressReEvaluationRoutes);
 // === RUTAS NO AFECTADAS POR LA CONSOLIDACIÓN ===
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/user', userPreferencesRoutes); // Preferencias y layouts personalizados
 app.use('/api/medical-docs', medicalDocsRoutes);
 app.use('/api/equipment', equipmentRoutes);
 app.use('/api/ai', aiVideoCorrection);
