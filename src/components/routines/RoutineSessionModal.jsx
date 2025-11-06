@@ -414,38 +414,15 @@ export default function RoutineSessionModal({
     <>
       {/* Modal principal */}
       <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-        <div className="bg-gray-800 border border-gray-600 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-          {/* Header */}
-          <div className="p-4 border-b border-gray-700 flex items-center justify-between">
-            <div>
-              <h2 className="text-xl text-white font-bold flex items-center gap-2">
-                {formatExerciseName(progressState.currentExercise?.nombre) || 'Ejercicio'}
-                {/* 🎯 NUEVO: Indicador de volumen ajustado */}
-                {progressState.currentExercise?.intensity_adjusted && (
-                  <span className="inline-flex items-center gap-1 px-2 py-1 bg-orange-500/20 text-orange-400 rounded-md text-xs font-normal">
-                    <span className="text-lg">⚡</span>
-                    Volumen ajustado
-                  </span>
-                )}
-              </h2>
-              <p className="text-sm text-gray-400">
-                {progressState.progressText}
-                {/* 🎯 NUEVO: Mostrar nota de ajuste si existe */}
-                {progressState.currentExercise?.adjustment_note && (
-                  <span className="ml-2 text-xs text-orange-300">
-                    ({progressState.currentExercise.adjustment_note})
-                  </span>
-                )}
-              </p>
-            </div>
-            <button
-              onClick={handleSmartExit}
-              className="text-gray-400 hover:text-white"
-              aria-label="Cerrar"
-            >
-              <IconX className="w-5 h-5" />
-            </button>
-          </div>
+        <div className="bg-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto relative">
+          {/* Botón de cierre en la esquina superior derecha */}
+          <button
+            onClick={handleSmartExit}
+            className="absolute top-4 right-4 text-gray-400 hover:text-white z-10"
+            aria-label="Cerrar"
+          >
+            <IconX className="w-6 h-6" />
+          </button>
 
           {/* Body - Vista del ejercicio */}
           <div className="p-6 space-y-4">

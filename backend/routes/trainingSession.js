@@ -1919,7 +1919,7 @@ router.get('/weekend-status', authenticateToken, async (req, res) => {
 
     const session = sessionResult.rows[0];
 
-    // Obtener el detalle de los ejercicios
+    // Obtener el detalle de los ejercicios CON FEEDBACK
     const exercisesQuery = `
       SELECT
         est.exercise_order,
@@ -1930,21 +1930,39 @@ router.get('/weekend-status', authenticateToken, async (req, res) => {
         est.planned_sets,
         est.actual_reps,
         est.planned_reps,
-        est.completed_at
+        est.completed_at,
+        f.sentiment,
+        f.comment
       FROM app.exercise_session_tracking est
+      LEFT JOIN app.methodology_exercise_feedback f
+        ON est.methodology_session_id = f.methodology_session_id
+        AND est.exercise_order = f.exercise_order
       WHERE est.methodology_session_id = $1
       ORDER BY est.exercise_order
     `;
 
     const exercisesResult = await client.query(exercisesQuery, [session.id]);
 
-    // Calcular resumen
-    const completed = parseInt(session.exercises_completed) || 0;
-    const skipped = parseInt(session.exercises_skipped) || 0;
-    const cancelled = parseInt(session.exercises_cancelled) || 0;
-    const total = parseInt(session.total_exercises) || 0;
+    // 🎯 CORRECCIÓN: Calcular resumen directamente desde los ejercicios para evitar datos cacheados desactualizados
+    const total = exercisesResult.rows.length;
+    const completed = exercisesResult.rows.filter(ex => String(ex.status).toLowerCase() === 'completed').length;
+    const skipped = exercisesResult.rows.filter(ex => String(ex.status).toLowerCase() === 'skipped').length;
+    const cancelled = exercisesResult.rows.filter(ex => String(ex.status).toLowerCase() === 'cancelled').length;
     // 🎯 CORRECCIÓN: El progreso debe ser solo basado en ejercicios COMPLETADOS
     const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+    console.log('📊 Weekend Status - Contadores calculados:', {
+      sessionId: session.id,
+      total,
+      completed,
+      skipped,
+      cancelled,
+      exercises: exercisesResult.rows.map(ex => ({
+        order: ex.exercise_order,
+        name: ex.exercise_name,
+        status: ex.status
+      }))
+    });
 
     res.json({
       success: true,

@@ -90,17 +90,43 @@ export const ExerciseSessionView = ({
     setTimePerSeries
   } = timerActions;
 
-  const repsText = exercise?.repeticiones ?? '';
+  // Buscar reps en múltiples campos posibles
+  const repsText = exercise?.series_reps_objetivo || exercise?.repeticiones || exercise?.reps || '';
   // 🔥 CORRECCIÓN: Usar originalIndex para buscar feedback en BD
   const currentFeedback = exerciseFeedback?.[exercise?.originalIndex ?? exerciseIndex];
 
   return (
     <div className="bg-black/40 p-4 rounded-lg border border-gray-700">
-      {/* Header del ejercicio */}
-      <div className="flex items-center justify-between mb-2">
-        <h4 className="text-white font-semibold">{formatExerciseName(exercise.nombre)}</h4>
-        <div className="text-gray-400 text-sm">{seriesText}</div>
+      {/* Header del ejercicio - Nueva estructura unificada */}
+      <div className="flex items-center justify-between mb-4 gap-4">
+        <h4 className="text-white font-semibold text-lg flex-1">
+          {formatExerciseName(exercise.nombre)}
+          {/* 🎯 Indicador de volumen ajustado */}
+          {exercise?.intensity_adjusted && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 ml-2 bg-orange-500/20 text-orange-400 rounded-md text-xs font-normal">
+              <span className="text-lg">⚡</span>
+              Volumen ajustado
+            </span>
+          )}
+        </h4>
+        <div className="flex items-center gap-3 text-sm">
+          <div className="text-gray-300">
+            <span className="text-yellow-400 font-semibold">Ejercicio {progressState.currentIndex + 1}</span>
+            <span className="text-gray-400"> de {progressState.total}</span>
+          </div>
+          <div className="text-gray-300">
+            <span className="text-green-400 font-semibold">Serie {series}</span>
+            <span className="text-gray-400"> de {seriesTotal}</span>
+          </div>
+        </div>
       </div>
+
+      {/* 🎯 Mostrar nota de ajuste si existe */}
+      {exercise?.adjustment_note && (
+        <div className="mb-4 text-sm text-orange-300 bg-orange-500/10 border border-orange-500/20 rounded-md px-3 py-2">
+          <span className="font-semibold">Nota:</span> {exercise.adjustment_note}
+        </div>
+      )}
 
       {/* Estado y cronómetro */}
       <div className="text-center mb-6">
@@ -146,7 +172,7 @@ export const ExerciseSessionView = ({
       </div>
 
       {/* Información del ejercicio */}
-      <div className="bg-gray-700/50 rounded-lg p-4 mb-6">
+      <div className="bg-gray-700/50 rounded-lg p-4 mb-4">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
           <div>
             <div className="text-2xl font-bold text-white">{seriesTotal}</div>
@@ -173,229 +199,8 @@ export const ExerciseSessionView = ({
         </div>
       </div>
 
-      {/* Botón de información del ejercicio */}
-      <div className="text-center mb-6">
-        <button
-          onClick={onShowExerciseInfo}
-          className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
-          title="Ver información detallada del ejercicio"
-        >
-          <Info className="w-5 h-5" />
-          Información del Ejercicio
-        </button>
-      </div>
-
-      {/* Notas / Consejos de ejecución */}
-      {exercise?.notas && (
-        <div className="bg-blue-900/20 border border-blue-700/50 rounded-lg p-4 mb-6">
-          <div className="flex items-start mb-3">
-            <Target className="w-4 h-4 text-blue-400 mr-2 mt-1 flex-shrink-0" />
-            <h4 className="text-blue-200 font-semibold text-sm">Consejos de Ejecución</h4>
-          </div>
-          <p className="text-blue-200 text-sm leading-relaxed">{exercise.notas}</p>
-
-          {/* Equipamiento necesario */}
-          {exercise?.equipamiento && (
-            <div className="mt-4 pt-4 border-t border-blue-700/30">
-              <div className="flex items-start mb-2">
-                <Square className="w-4 h-4 text-blue-400 mr-2 mt-1 flex-shrink-0" />
-                <h4 className="text-blue-200 font-semibold text-sm">Equipamiento</h4>
-              </div>
-              <p className="text-blue-200 text-sm leading-relaxed capitalize">
-                {String(exercise.equipamiento).replaceAll('_', ' ')}
-              </p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Solo equipamiento si no hay notas */}
-      {!exercise?.notas && exercise?.equipamiento && (
-        <div className="bg-blue-900/20 border border-blue-700/50 rounded-lg p-4 mb-6">
-          <div className="flex items-start mb-3">
-            <Square className="w-4 h-4 text-blue-400 mr-2 mt-1 flex-shrink-0" />
-            <h4 className="text-blue-200 font-semibold text-sm">Equipamiento</h4>
-          </div>
-          <p className="text-blue-200 text-sm leading-relaxed capitalize">
-            {String(exercise.equipamiento).replaceAll('_', ' ')}
-          </p>
-        </div>
-      )}
-
-      {/* Sección de valoración y feedback - Siempre visible */}
-      <div className="bg-gray-700/30 rounded-lg p-3 mb-6">
-        {/* Botón para valorar */}
-        <div className="flex justify-end mb-3">
-          <button
-            onClick={onShowFeedback}
-            className={`flex items-center gap-2 border px-3 py-1.5 rounded-md transition-colors ${
-              currentFeedback
-                ? 'text-green-300 hover:text-green-200 border-green-400/30 bg-green-900/20'
-                : 'text-yellow-300 hover:text-yellow-200 border-yellow-400/30'
-            }`}
-            title={currentFeedback ? 'Editar valoración' : 'Cómo has sentido este ejercicio?'}
-          >
-            <Star className={`w-4 h-4 ${currentFeedback ? 'fill-current' : ''}`} />
-            {currentFeedback ? 'Editado' : 'Valorar'}
-          </button>
-        </div>
-
-        {/* Mostrar comentario del usuario si existe */}
-        {currentFeedback?.comment && currentFeedback.comment.trim() && (
-          <div className="p-3 bg-yellow-400/10 border border-yellow-400/20 rounded-md mb-3">
-            <div className="flex items-start gap-2">
-              <Star className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5 fill-current" />
-              <div>
-                <div className="text-yellow-400 font-medium text-sm mb-1">Mi comentario:</div>
-                <div className="text-yellow-200 text-sm leading-relaxed">{currentFeedback.comment}</div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Mostrar valoración si existe */}
-        {currentFeedback?.sentiment && (
-          <div className="p-2 bg-yellow-400/10 border border-yellow-400/20 rounded-md flex items-center gap-2">
-            <Star className="w-4 h-4 text-yellow-400 fill-current" />
-            <span className="text-yellow-400 font-medium text-sm">
-              Valoración: {currentFeedback.sentiment === 'like' ? '👍 Me gusta' : currentFeedback.sentiment === 'hard' ? '⚠️ Es difícil' : '👎 No me gusta'}
-            </span>
-          </div>
-        )}
-      </div>
-
-      {/* Información adicional */}
-      {(exercise?.patron || exercise?.implemento) && (
-        <div className="bg-gray-700/30 rounded-lg p-3 mb-6">
-          <div className="flex flex-wrap gap-4 text-sm">
-            {exercise?.patron && (
-              <div className="flex items-center">
-                <span className="w-2 h-2 bg-green-400 rounded-full mr-2"></span>
-                <span className="text-gray-300">Patrón:</span>
-                <span className="text-white font-medium ml-1 capitalize">
-                  {String(exercise.patron).replaceAll('_', ' ')}
-                </span>
-              </div>
-            )}
-            {exercise?.implemento && (
-              <div className="flex items-center">
-                <span className="w-2 h-2 bg-blue-400 rounded-full mr-2"></span>
-                <span className="text-gray-300">Implemento:</span>
-                <span className="text-white font-medium ml-1 capitalize">
-                  {String(exercise.implemento).replaceAll('_', ' ')}
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Demostración del ejercicio */}
-      <div className="bg-gray-700/30 rounded-lg p-4 mb-6">
-        <div className="text-center mb-4">
-          <h4 className="text-white font-semibold mb-2">Demostración del Ejercicio</h4>
-          {exerciseGif ? (
-            <div className="relative inline-block">
-              {/* 🎬 Detectar si es video o imagen por extensión */}
-              {exerciseGif.match(/\.(mp4|webm|mov|avi)$/i) ? (
-                <video
-                  src={exerciseGif}
-                  autoPlay
-                  loop
-                  muted
-                  playsInline
-                  className="mx-auto max-h-64 rounded-md shadow-lg border border-gray-600"
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none';
-                    e.currentTarget.nextElementSibling.style.display = 'block';
-                  }}
-                />
-              ) : (
-                <img
-                  src={exerciseGif}
-                  alt={formatExerciseName(exercise.nombre)}
-                  className="mx-auto max-h-64 rounded-md shadow-lg border border-gray-600"
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none';
-                    e.currentTarget.nextElementSibling.style.display = 'block';
-                  }}
-                />
-              )}
-              <div className="hidden text-center py-8">
-                <Target className="mx-auto mb-2 text-gray-400" size={48} />
-                <p className="text-gray-400">Demostración no disponible</p>
-                <p className="text-sm text-gray-500">({formatExerciseName(exercise.nombre)})</p>
-              </div>
-            </div>
-          ) : (
-            <div className="text-center py-8">
-              <Target className="mx-auto mb-2 text-gray-400" size={48} />
-              <p className="text-gray-400">Demostración no disponible</p>
-              <p className="text-sm text-gray-500">({exercise.nombre})</p>
-            </div>
-          )}
-        </div>
-
-        {/* Input para URL de GIF/Video personalizada */}
-        <div className="bg-gray-800/50 rounded-md p-3">
-          <div className="text-xs text-gray-400 mb-2">¿Tienes un GIF o vídeo mejor? Pégalo aquí:</div>
-          <div className="flex items-center gap-2">
-            <input
-              type="url"
-              placeholder="https://ejemplo.com/ejercicio.mp4 o .gif"
-              className="flex-1 bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-white placeholder-gray-400 focus:border-yellow-400 focus:outline-none transition-colors"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  const v = e.currentTarget.value.trim();
-                  if (v) {
-                    setExerciseGif(v);
-                    e.currentTarget.value = '';
-                  }
-                }
-              }}
-            />
-            <button
-              onClick={(e) => {
-                const input = e.currentTarget.previousSibling;
-                if (input && input.value.trim()) {
-                  setExerciseGif(input.value.trim());
-                  input.value = '';
-                }
-              }}
-              className="bg-yellow-400 hover:bg-yellow-500 text-black text-sm font-semibold px-3 py-2 rounded-md transition-colors"
-            >
-              Aplicar
-            </button>
-          </div>
-          <div className="text-xs text-gray-500 mt-2">
-            🎬 Soporta: MP4, WebM, GIF, MOV
-          </div>
-        </div>
-      </div>
-
-      {/* 🎯 BOTÓN DE TRACKING RIR - Aparece durante descanso o al completar serie */}
-      {onShowSeriesTracking && (phase === 'rest' || (phase === 'exercise' && !isRunning)) && (
-        <div className="mb-4 p-4 bg-gradient-to-r from-yellow-600/20 to-orange-600/20 rounded-lg border border-yellow-400/30">
-          <div className="text-center">
-            <p className="text-yellow-300 text-sm mb-2 font-semibold">
-              {phase === 'rest' ? '💪 Serie completada - Registra tus datos' : '📊 Registra tu serie'}
-            </p>
-            <button
-              onClick={onShowSeriesTracking}
-              className="inline-flex items-center gap-2 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-bold py-3 px-6 rounded-lg shadow-lg transform transition-all hover:scale-105"
-            >
-              <TrendingUp className="w-5 h-5" />
-              Registrar Serie (RIR)
-            </button>
-            <p className="text-gray-400 text-xs mt-2">
-              Peso, Repeticiones y RIR para tracking de progreso
-            </p>
-          </div>
-        </div>
-      )}
-
       {/* Controles principales */}
-      <div className="flex flex-wrap gap-2 justify-center mb-4">
+      <div className="flex flex-wrap gap-2 justify-center mb-3">
         {phase === 'ready' && (
           <button
             onClick={start}
@@ -449,7 +254,7 @@ export const ExerciseSessionView = ({
 
       {/* Selector de tiempo por serie */}
       {!isTimeBased && allowManualTimer && (
-        <div className="flex items-center gap-2 justify-center text-sm text-gray-400">
+        <div className="flex items-center gap-2 justify-center text-sm text-gray-400 mb-4">
           <span>Tiempo por serie:</span>
           {timePerSeriesOptions.map((opt) => (
             <button
@@ -464,6 +269,129 @@ export const ExerciseSessionView = ({
               {opt.label}
             </button>
           ))}
+        </div>
+      )}
+
+      {/* Botones de Información y Valorar */}
+      <div className="flex items-center justify-center gap-3 mb-6">
+        {/* Botón circular de información */}
+        <button
+          onClick={onShowExerciseInfo}
+          className="w-12 h-12 flex items-center justify-center bg-blue-600 hover:bg-blue-500 text-white rounded-full transition-colors shadow-lg"
+          title="Ver información detallada del ejercicio"
+        >
+          <Info className="w-6 h-6" />
+        </button>
+
+        {/* Botón de valorar */}
+        <button
+          onClick={onShowFeedback}
+          className={`flex items-center gap-2 border px-4 py-2 rounded-lg transition-colors shadow-md ${
+            currentFeedback
+              ? 'text-green-300 hover:text-green-200 border-green-400/50 bg-green-900/30'
+              : 'text-yellow-300 hover:text-yellow-200 border-yellow-400/50 bg-yellow-900/20'
+          }`}
+          title={currentFeedback ? 'Editar valoración' : 'Cómo has sentido este ejercicio?'}
+        >
+          <Star className={`w-5 h-5 ${currentFeedback ? 'fill-current' : ''}`} />
+          {currentFeedback ? 'Editado' : 'Valorar'}
+        </button>
+      </div>
+
+      {/* Notas / Consejos de ejecución */}
+      {exercise?.notas && (
+        <div className="bg-blue-900/20 border border-blue-700/50 rounded-lg p-4 mb-6">
+          <div className="flex items-start mb-3">
+            <Target className="w-4 h-4 text-blue-400 mr-2 mt-1 flex-shrink-0" />
+            <h4 className="text-blue-200 font-semibold text-sm">Consejos de Ejecución</h4>
+          </div>
+          <p className="text-blue-200 text-sm leading-relaxed">{exercise.notas}</p>
+        </div>
+      )}
+
+      {/* Mostrar comentario del feedback si existe */}
+      {currentFeedback?.comment && currentFeedback.comment.trim() && (
+        <div className="p-3 bg-yellow-400/10 border border-yellow-400/20 rounded-md mb-6">
+          <div className="flex items-start gap-2">
+            <Star className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5 fill-current" />
+            <div>
+              <div className="text-yellow-400 font-medium text-sm mb-1">Mi comentario:</div>
+              <div className="text-yellow-200 text-sm leading-relaxed">{currentFeedback.comment}</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mostrar valoración si existe */}
+      {currentFeedback?.sentiment && (
+        <div className="p-2 bg-yellow-400/10 border border-yellow-400/20 rounded-md flex items-center gap-2 mb-6">
+          <Star className="w-4 h-4 text-yellow-400 fill-current" />
+          <span className="text-yellow-400 font-medium text-sm">
+            Valoración: {currentFeedback.sentiment === 'like' ? '👍 Me gusta' : currentFeedback.sentiment === 'hard' ? '⚠️ Es difícil' : '👎 No me gusta'}
+          </span>
+        </div>
+      )}
+
+      {/* Demostración del ejercicio - Simplificado */}
+      <div className="mb-6">
+        {exerciseGif ? (
+          <div className="relative inline-block w-full">
+            {/* 🎬 Detectar si es video o imagen por extensión */}
+            {exerciseGif.match(/\.(mp4|webm|mov|avi)$/i) ? (
+              <video
+                src={exerciseGif}
+                autoPlay
+                loop
+                muted
+                playsInline
+                className="mx-auto max-h-64 rounded-md shadow-lg border border-gray-600"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                  e.currentTarget.nextElementSibling.style.display = 'block';
+                }}
+              />
+            ) : (
+              <img
+                src={exerciseGif}
+                alt={formatExerciseName(exercise.nombre)}
+                className="mx-auto max-h-64 rounded-md shadow-lg border border-gray-600"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                  e.currentTarget.nextElementSibling.style.display = 'block';
+                }}
+              />
+            )}
+            <div className="hidden text-center py-8">
+              <Target className="mx-auto mb-2 text-gray-400" size={48} />
+              <p className="text-gray-400">Demostración no disponible</p>
+            </div>
+          </div>
+        ) : (
+          <div className="text-center py-8">
+            <Target className="mx-auto mb-2 text-gray-400" size={48} />
+            <p className="text-gray-400">Demostración no disponible</p>
+          </div>
+        )}
+      </div>
+
+      {/* 🎯 BOTÓN DE TRACKING RIR - Aparece durante descanso o al completar serie */}
+      {onShowSeriesTracking && (phase === 'rest' || (phase === 'exercise' && !isRunning)) && (
+        <div className="mb-4 p-4 bg-gradient-to-r from-yellow-600/20 to-orange-600/20 rounded-lg border border-yellow-400/30">
+          <div className="text-center">
+            <p className="text-yellow-300 text-sm mb-2 font-semibold">
+              {phase === 'rest' ? '💪 Serie completada - Registra tus datos' : '📊 Registra tu serie'}
+            </p>
+            <button
+              onClick={onShowSeriesTracking}
+              className="inline-flex items-center gap-2 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-bold py-3 px-6 rounded-lg shadow-lg transform transition-all hover:scale-105"
+            >
+              <TrendingUp className="w-5 h-5" />
+              Registrar Serie (RIR)
+            </button>
+            <p className="text-gray-400 text-xs mt-2">
+              Peso, Repeticiones y RIR para tracking de progreso
+            </p>
+          </div>
         </div>
       )}
     </div>

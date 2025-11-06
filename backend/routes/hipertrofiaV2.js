@@ -788,10 +788,15 @@ router.post('/generate-single-day', authenticateToken, async (req, res) => {
           categoria: ex.categoria,
           series: ex.series,
           reps: ex.series_reps_objetivo,
+          series_reps_objetivo: ex.series_reps_objetivo,  // Agregar también en este formato
+          repeticiones: ex.series_reps_objetivo,           // Y en este formato para compatibilidad
           descanso_seg: ex.descanso_seg,
           tipo_base: ex["Tipo base"],
           ejecucion: ex["Ejecución"],
-          notas: ex.notas
+          notas: ex.notas,
+          patron: ex.patron,
+          equipamiento: ex.equipamiento,
+          nivel: ex.nivel
         }))
       },
       notes: [
