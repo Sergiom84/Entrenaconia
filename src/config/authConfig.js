@@ -22,7 +22,7 @@ const ENVIRONMENTS = {
     TOKEN_REFRESH_THRESHOLD: 5 * 60 * 1000, // 5 minutos
     SESSION_TIMEOUT: 24 * 60 * 60 * 1000, // 24 horas
     INACTIVITY_TIMEOUT: 2 * 60 * 60 * 1000, // 2 horas
-    REQUEST_TIMEOUT: 10000, // 10 segundos
+    REQUEST_TIMEOUT: 20000, // 20 segundos (aumentado para operaciones pesadas)
     RATE_LIMIT_WINDOW: 15 * 60 * 1000, // 15 minutos
     MAX_LOGIN_ATTEMPTS: 10 // Más relajado en desarrollo
   },

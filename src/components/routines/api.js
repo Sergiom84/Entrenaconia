@@ -125,7 +125,11 @@ export async function getProgressData({ methodology_plan_id }) {
 }
 
 export async function getActivePlan() {
-  const data = await apiClient.get('/routines/active-plan');
+  // ⏱️ Timeout aumentado a 30s: este endpoint puede tardar al generar programación
+  const data = await apiClient.get('/routines/active-plan', {
+    timeout: 30000, // 30 segundos
+    cache: false // Siempre consultar datos frescos
+  });
   if (!data.success) throw new Error(data.error || 'No se pudo obtener la rutina activa');
   return data; // { hasActivePlan, routinePlan, planSource, planId, methodology_plan_id }
 }
