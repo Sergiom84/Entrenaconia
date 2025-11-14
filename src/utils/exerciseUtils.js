@@ -168,3 +168,43 @@ export const getExerciseStatus = (exercise) => {
       };
   }
 };
+
+/**
+ * Extraer patrones de movimiento únicos de una sesión
+ * Considera estructuras diferentes (ejercicios directos o dentro de bloques)
+ */
+export const extractSessionPatterns = (session) => {
+  if (!session) return [];
+
+  const exercises = [];
+
+  if (Array.isArray(session?.ejercicios)) {
+    exercises.push(...session.ejercicios);
+  }
+
+  if (Array.isArray(session?.exercises)) {
+    exercises.push(...session.exercises);
+  }
+
+  if (Array.isArray(session?.bloques)) {
+    session.bloques.forEach((bloque) => {
+      if (Array.isArray(bloque?.ejercicios)) {
+        exercises.push(...bloque.ejercicios);
+      }
+    });
+  }
+
+  const patterns = exercises
+    .map((exercise) =>
+      exercise?.patron_movimiento ||
+      exercise?.movement_pattern ||
+      exercise?.patron ||
+      exercise?.pattern ||
+      null
+    )
+    .filter(Boolean)
+    .map((pattern) => pattern.toString().toLowerCase().trim())
+    .filter((pattern) => pattern.length > 0);
+
+  return Array.from(new Set(patterns));
+};

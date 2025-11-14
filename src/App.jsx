@@ -14,7 +14,7 @@
 // =============================================================================
 import { Routes, Route, useLocation } from 'react-router-dom';
 import { Suspense, lazy, useState, useEffect, useMemo } from 'react';
-import { TraceProvider, useTrace } from './contexts/TraceContext';
+import { useTrace } from './contexts/TraceContext';
 import TraceConsole from './components/dev/TraceConsole';
 
 // =============================================================================
@@ -22,9 +22,8 @@ import TraceConsole from './components/dev/TraceConsole';
 // =============================================================================
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
-import { AuthProvider } from './contexts/AuthContext';
-import { UserProvider } from './contexts/UserContext';
 import { useAuth } from './contexts/AuthContext';
+import AppProviders from './providers/AppProviders';
 
 // =============================================================================
 // 🎵 HOOKS & UTILITIES
@@ -375,16 +374,11 @@ function App() {
       message="La aplicación encontró un problema inesperado. Por favor, recarga la página."
       showStack={true}
     >
-      <AuthProvider>
-        <UserProvider>
-          <WorkoutProvider>
-            <TraceProvider>
-              <AppContent />
-              {import.meta.env.DEV && <TraceConsole />}
-            </TraceProvider>
-          </WorkoutProvider>
-        </UserProvider>
-      </AuthProvider>
+      {/* 🔍 AppProviders: Envuelve TODOS los contextos + debugging automático */}
+      <AppProviders>
+        <AppContent />
+        {import.meta.env.DEV && <TraceConsole />}
+      </AppProviders>
     </ErrorBoundary>
   )
 }

@@ -161,6 +161,7 @@ export default function MethodologiesScreen() {
   // Estado local mínimo para datos específicos de esta pantalla
   const [localState, setLocalState] = useState(LOCAL_STATE_INITIAL);
   const [sessionData, setSessionData] = useState(null); // 🔥 Datos de la sesión con ejercicios
+  const [isConfirmingPlan, setIsConfirmingPlan] = useState(false);
 
   const updateLocalState = useCallback((updates) => {
     setLocalState(prev => ({ ...prev, ...updates }));
@@ -680,7 +681,6 @@ export default function MethodologiesScreen() {
     ui.setLoading(true);
 
     try {
-      // 🎯 FLUJO SIMPLIFICADO - SUPABASE FIRST
       const hasActivePlanInDB = await hasActivePlanFromDB();
       if (hasActivePlanInDB) {
         console.log('🔄 Plan activo detectado en BD, limpiando para generar nuevo...');
@@ -688,30 +688,29 @@ export default function MethodologiesScreen() {
         await syncWithDatabase();
       }
 
-      console.log('🎯 Generando plan de Hipertrofia V2 con tracking RIR...');
+      // 🎯 FLUJO MOD MindFeed: usamos plan ya generado y lo registramos en el contexto
+      const planData = hipertrofiaV2Data?.planData;
+      const validation = validatePlanData(planData);
 
-      // Usar generatePlan del WorkoutContext
+      if (!validation.isValid) {
+        throw new Error(`Plan generado incorrectamente: ${validation.error}`);
+      }
+
       const result = await generatePlan({
         mode: 'manual',
         methodology: 'hipertrofiaV2',
-        ...hipertrofiaV2Data
+        planData,
+        methodologyPlanId: hipertrofiaV2Data?.methodologyPlanId,
+        systemInfo: hipertrofiaV2Data?.system_info
       });
 
-      if (result.success) {
-        console.log('✅ Plan de Hipertrofia V2 generado exitosamente');
-        ui.hideModal('hipertrofiaV2Manual');
-
-        // 🛡️ VALIDAR DATOS ANTES DE MOSTRAR MODAL
-        const validation = validatePlanData(result.plan);
-        if (validation.isValid) {
-          ui.showModal('planConfirmation');
-        } else {
-          console.error('❌ Plan inválido:', validation.error);
-          ui.setError(`Plan generado incorrectamente: ${validation.error}`);
-        }
-      } else {
-        throw new Error(result.error || 'Error generando plan de Hipertrofia V2');
+      if (!result.success) {
+        throw new Error(result.error || 'Error registrando el plan MindFeed');
       }
+
+      console.log('✅ Plan de Hipertrofia V2 integrado en WorkoutContext');
+      ui.hideModal('hipertrofiaV2Manual');
+      ui.showModal('planConfirmation');
 
     } catch (error) {
       console.error('❌ Error generando plan de Hipertrofia V2:', error);
@@ -995,6 +994,9 @@ export default function MethodologiesScreen() {
 
   const handleStartTraining = async () => {
     try {
+      // Bloquear doble click mientras confirmamos/iniciamos
+      setIsConfirmingPlan(true);
+      ui.setLoading(true);
       try { track('BUTTON_CLICK', { id: 'start_training' }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
       console.log('🚀 Iniciando sesión de entrenamiento...');
 
@@ -1063,6 +1065,10 @@ export default function MethodologiesScreen() {
           // 🎯 MAPEAR exercise_name → nombre para compatibilidad con el modal
           const mappedExercises = progressData.exercises.map(ex => ({
             ...ex,
+            // 🔑 Alinear indices con backend para PUT /exercise/:order
+            originalIndex: ex.exercise_order,
+            // Garantizar ejercicio ID para tracking RIR
+            exercise_id: ex.exercise_id ?? ex.id ?? null,
             nombre: ex.exercise_name || ex.nombre, // Priorizar exercise_name del backend
             series: ex.series_total || ex.series,
             repeticiones: ex.repeticiones,
@@ -1098,6 +1104,9 @@ export default function MethodologiesScreen() {
     } catch (error) {
       console.error('❌ Error iniciando entrenamiento:', error);
       ui.setError(error.message || 'Error al iniciar el entrenamiento');
+    } finally {
+      ui.setLoading(false);
+      setIsConfirmingPlan(false);
     }
   };
 
@@ -1564,7 +1573,7 @@ export default function MethodologiesScreen() {
         methodology={plan.methodology}
         isLoading={ui.isLoading}
         error={ui.error}
-        isConfirming={ui.isLoading}
+        isConfirming={isConfirmingPlan}
       />
 
       {/* Modal de calentamiento */}

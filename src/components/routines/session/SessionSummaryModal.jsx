@@ -1,6 +1,8 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTrace } from '@/contexts/TraceContext.jsx';
+import FatigueReportModal from '../../Methodologie/methodologies/HipertrofiaV2/components/FatigueReportModal';
+import { extractSessionPatterns } from '@/utils/exerciseUtils.js';
 
 /**
  * Modal de resumen final de sesión
@@ -8,12 +10,15 @@ import { useTrace } from '@/contexts/TraceContext.jsx';
  * Extraído de RoutineSessionModal.jsx para mejor organización
  * Muestra el resumen completo de la sesión al finalizar
  * Incluye estadísticas y opciones de navegación
+ * FASE 2: Integra reporte de fatiga opcional
  */
 export const SessionSummaryModal = ({
   show,
   endTitle,
   endMessage,
   progressState,
+  session,
+  sessionId,
   onClose,
   onEndSession,
   navigateToRoutines
@@ -21,6 +26,7 @@ export const SessionSummaryModal = ({
   const { track } = useTrace();
   const navigate = useNavigate();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [showFatigueReport, setShowFatigueReport] = React.useState(false);
 
   // Ref para evitar loop infinito en tracking
   const prevShowRef = React.useRef(show);
@@ -53,6 +59,87 @@ export const SessionSummaryModal = ({
         console.log('📝 Llamando a onEndSession para completar sesión en BD');
         await onEndSession();
         console.log('✅ onEndSession completado, estado actualizado');
+      }
+
+      const isMindfeedSession = session?.metodologia === 'HipertrofiaV2_MindFeed' || session?.metodologia === 'HipertrofiaV2';
+
+      // 🎯 PASO 1.25: Detectar fatiga automáticamente (si aplica)
+      if (isMindfeedSession && sessionId) {
+        try {
+          console.log('🤖 [FATIGUE] Detectando fatiga automática para sesión', sessionId);
+          const token = localStorage.getItem('authToken');
+          const fatigueResponse = await fetch(
+            `${import.meta.env.VITE_API_URL || 'http://localhost:3010'}/api/hipertrofiav2/detect-auto-fatigue`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify({ sessionId })
+            }
+          );
+
+          if (fatigueResponse.ok) {
+            const fatigueResult = await fatigueResponse.json();
+            console.log('✅ [FATIGUE] Resultado detección automática:', fatigueResult);
+          } else {
+            console.error('❌ [FATIGUE] Error detectando fatiga automática:', await fatigueResponse.text());
+          }
+        } catch (fatigueError) {
+          console.error('❌ [FATIGUE] Error inesperado en detección automática:', fatigueError);
+        }
+      }
+
+      const sessionPatterns = extractSessionPatterns(session);
+
+      // 🎯 PASO 1.5: Si es HipertrofiaV2 MindFeed, avanzar el ciclo D1-D5
+      if (isMindfeedSession) {
+        console.log('🔄 [MINDFEED] Detectado HipertrofiaV2, avanzando ciclo...');
+
+        // Extraer cycle_day del nombre de sesión (formato: "D1: ...", "D2: ...", etc.)
+        const sessionName = session?.session_name || session?.sessionName || '';
+        const cycleMatch = sessionName.match(/^D(\d)/);
+
+        if (cycleMatch) {
+          const cycleDay = `D${cycleMatch[1]}`;
+          console.log(`🔄 [MINDFEED] Avanzando ciclo desde ${cycleDay}...`);
+
+          try {
+            const token = localStorage.getItem('authToken');
+            const response = await fetch(
+              `${import.meta.env.VITE_API_URL || 'http://localhost:3010'}/api/hipertrofiav2/advance-cycle`,
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                  sessionDayName: cycleDay,
+                  sessionPatterns
+                })
+              }
+            );
+
+            if (response.ok) {
+              const cycleResult = await response.json();
+              console.log('✅ [MINDFEED] Ciclo avanzado:', cycleResult);
+
+              // Si completó microciclo, mostrar mensaje especial
+              if (cycleResult.microcycle_completed) {
+                console.log('🎉 [MINDFEED] ¡Microciclo completado!', cycleResult.progression);
+              }
+            } else {
+              console.error('❌ [MINDFEED] Error avanzando ciclo:', await response.text());
+            }
+          } catch (error) {
+            console.error('❌ [MINDFEED] Error en advance-cycle:', error);
+            // No bloquear la navegación si falla el advance-cycle
+          }
+        } else {
+          console.warn('⚠️ [MINDFEED] No se pudo extraer cycle_day del session_name:', sessionName);
+        }
       }
 
       // 🎯 PASO 2: Esperar más tiempo para asegurar que el estado se propagó completamente
@@ -208,6 +295,20 @@ export const SessionSummaryModal = ({
             {isSubmitting ? 'Guardando y navegando…' : 'Ver progreso en Rutinas'}
           </button>
 
+          {/* 🩺 FASE 2: Botón de Reporte de Fatiga (opcional) */}
+          {(session?.metodologia === 'HipertrofiaV2_MindFeed' || session?.metodologia === 'HipertrofiaV2') && (
+            <button
+              onClick={() => {
+                track('BUTTON_CLICK', { id: 'fatigue_report' }, { component: 'SessionSummaryModal' });
+                setShowFatigueReport(true);
+              }}
+              className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors flex items-center justify-center gap-2"
+            >
+              <span>🩺</span>
+              Reportar Recuperación (opcional)
+            </button>
+          )}
+
           <button
             onClick={() => {
               track('BUTTON_CLICK', { id: 'close' }, { component: 'SessionSummaryModal' });
@@ -227,6 +328,23 @@ export const SessionSummaryModal = ({
           </p>
         </div>
       </div>
+
+      {/* 🩺 FASE 2: Modal de Reporte de Fatiga */}
+      <FatigueReportModal
+        show={showFatigueReport}
+        onClose={() => setShowFatigueReport(false)}
+        onSubmit={(result) => {
+          console.log('✅ [FATIGUE] Reporte completado:', result);
+
+          // Si se creó un flag, mostrar notificación
+          if (result.flag_created) {
+            // TODO: Mostrar toast o notificación
+            console.log(`🚨 Flag de fatiga creado: ${result.flag.flag_type}`);
+          }
+
+          setShowFatigueReport(false);
+        }}
+      />
     </div>
   );
 };

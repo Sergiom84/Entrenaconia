@@ -21,9 +21,10 @@ export default function SeriesTrackingModal({
   previousPR = null,
   suggestedWeight = null,
   onSave,
-  onClose
+  onClose,
+  neuralOverlap = null
 }) {
-  const [weight, setWeight] = useState(suggestedWeight || '');
+  const [weight, setWeight] = useState(suggestedWeight ? String(suggestedWeight) : '');
   const [reps, setReps] = useState('');
   const [rir, setRir] = useState(2); // Default RIR 2 (óptimo)
   const [errors, setErrors] = useState([]);
@@ -35,6 +36,13 @@ export default function SeriesTrackingModal({
     volumeLoad: 0,
     isEffective: false
   });
+
+  // Actualizar valor sugerido cuando cambia
+  useEffect(() => {
+    if (suggestedWeight) {
+      setWeight(String(suggestedWeight));
+    }
+  }, [suggestedWeight]);
 
   // Actualizar cálculos cuando cambian los valores
   useEffect(() => {
@@ -121,17 +129,30 @@ export default function SeriesTrackingModal({
 
         <div className="p-6 space-y-4">
           {/* Sugerencia de peso si existe */}
-          {suggestedWeight && (
-            <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3 flex items-start gap-2">
-              <Info className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
-              <div className="text-sm">
-                <p className="text-blue-300 font-semibold">Peso sugerido:</p>
-                <p className="text-gray-300">
-                  {suggestedWeight} kg (80% de tu PR: {previousPR} kg)
+        {suggestedWeight && (() => {
+          const suggestedWeightNumber = Number(suggestedWeight);
+          const displaySuggestedWeight = Number.isFinite(suggestedWeightNumber)
+            ? `${suggestedWeightNumber.toFixed(2)} kg`
+            : `${suggestedWeight} kg`;
+
+          return (
+          <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3 flex items-start gap-2">
+            <Info className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
+            <div className="text-sm">
+              <p className="text-blue-300 font-semibold">Peso sugerido:</p>
+              <p className="text-gray-300">
+                {displaySuggestedWeight} (80% de tu PR: {previousPR} kg)
+              </p>
+              {neuralOverlap?.adjustment && (
+                <p className="text-xs text-orange-300 mt-1">
+                  🧠 Ajuste por solapamiento neural: {Math.round(neuralOverlap.adjustment * 100)}%
+                  {neuralOverlap?.message ? ` · ${neuralOverlap.message}` : ''}
                 </p>
-              </div>
+              )}
             </div>
-          )}
+          </div>
+          );
+        })()}
 
           {/* Input: Peso */}
           <div>

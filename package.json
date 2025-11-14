@@ -80,7 +80,8 @@
     "husky": "^9.1.7",
     "lint-staged": "^16.1.6",
     "prettier": "^3.6.2",
-    "terser": "^5.44.0"
+    "terser": "^5.44.0",
+    "vite-plugin-inspect": "^11.3.3"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx}": [

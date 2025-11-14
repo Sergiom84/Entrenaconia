@@ -370,9 +370,14 @@ class ConnectionManager {
    * Executa request con manejo automático offline/online
    */
   async executeRequest(url, options, metadata = {}) {
-    // Si estamos offline, agregar a queue
+    // Si estamos offline, agregar a queue y lanzar error específico
     if (!this.isOnline) {
-      return this.queueRequest(url, options, metadata);
+      const queueId = this.queueRequest(url, options, metadata);
+      const error = new Error(`Request queued for offline processing (Queue ID: ${queueId})`);
+      error.name = 'OfflineQueuedError';
+      error.queueId = queueId;
+      error.isQueued = true;
+      throw error;
     }
 
     try {
@@ -387,10 +392,16 @@ class ConnectionManager {
       clearTimeout(timeoutId);
       return response;
     } catch (error) {
-      // Si es error de red, agregar a queue offline
+      // Si es error de red, agregar a queue offline y lanzar error específico
       if (error.name === 'NetworkError' || error.name === 'AbortError') {
         console.log('Network error, queuing request for offline processing');
-        return this.queueRequest(url, options, metadata);
+        const queueId = this.queueRequest(url, options, metadata);
+        const queuedError = new Error(`Request queued for offline processing (Queue ID: ${queueId})`);
+        queuedError.name = 'OfflineQueuedError';
+        queuedError.queueId = queueId;
+        queuedError.isQueued = true;
+        queuedError.originalError = error;
+        throw queuedError;
       }
 
       throw error;

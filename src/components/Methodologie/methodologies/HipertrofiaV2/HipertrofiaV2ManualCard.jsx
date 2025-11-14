@@ -30,6 +30,7 @@ export default function HipertrofiaV2ManualCard({ onGenerate, isLoading, error }
   const [step, setStep] = useState('evaluation'); // 'evaluation' | 'confirmed'
   const [evaluating, setEvaluating] = useState(false);
   const [evaluation, setEvaluation] = useState(null);
+  const [generating, setGenerating] = useState(false); // Estado local de generación
 
   // Evaluar perfil del usuario
   const handleEvaluate = async () => {
@@ -74,94 +75,91 @@ export default function HipertrofiaV2ManualCard({ onGenerate, isLoading, error }
     }
   };
 
-  // Preparar datos y pasar al callback onGenerate
+  // NUEVO: Generar plan D1-D5 usando Motor MindFeed
   const handleGenerate = async () => {
+    setGenerating(true); // Activar loading local
+
     try {
       const userLevel = evaluation?.level || 'Principiante';
-      const levelConfig = getLevelConfig(userLevel);
 
-      // Calcular calendario inteligente
-      const today = new Date();
-      const scheduleConfig = calculateFullBodySchedule(today);
-      const weeks = generateWeeksWithDates(today, scheduleConfig);
+      console.log('🏋️ [MINDFEED] Generando plan D1-D5 para nivel:', userLevel);
 
-      // Seleccionar ejercicios variados desde Supabase
-      const selectedExercises = await selectVariedExercises(userLevel);
+      // Llamar al nuevo endpoint de generación D1-D5
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/hipertrofiav2/generate-d1d5`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+          },
+          body: JSON.stringify({
+            nivel: userLevel,
+            totalWeeks: 6  // 6 semanas por defecto (1 microciclo = 5 sesiones)
+          })
+        }
+      );
 
-      // Asignar ejercicios a cada sesión según su template
-      const weeksWithExercises = weeks.map(week => ({
-        ...week,
-        sesiones: week.sesiones.map(session => {
-          // Mapear template a la clave correcta
-          const templateMap = {
-            'A': 'templateA',
-            'B': 'templateB',
-            'C': 'templateC',
-            'templateA': 'templateA',
-            'templateB': 'templateB',
-            'templateC': 'templateC'
-          };
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Error al generar plan D1-D5');
+      }
 
-          const templateKey = templateMap[session.template] || 'templateA';
-          const ejercicios = selectedExercises[templateKey] || [];
+      const data = await response.json();
 
-          return {
-            ...session,
-            nombre: `Full Body ${session.template}`,
-            ejercicios: ejercicios.map(ex => ({
-              ...ex,
-              series: levelConfig.setsPerExercise,
-              repeticiones: levelConfig.repsRange,
-              descanso_segundos: levelConfig.restSeconds,
-              rir_objetivo: levelConfig.rirTarget
-            }))
-          };
-        })
+      console.log('✅ [MINDFEED] Plan D1-D5 generado:', data);
+
+      // 🔧 TRANSFORMAR ESTRUCTURA: sessions[] → semanas[] para compatibilidad con validatePlanData
+      // El plan D1-D5 se repite durante totalWeeks semanas
+      const totalWeeks = data.plan.total_weeks || 6;
+      const baseSessions = data.plan.sessions.map((session, idx) => ({
+        id: session.id || idx,
+        dia: session.session_name || session.nombre_sesion || `D${idx + 1}`,
+        dia_semana: session.session_name || session.nombre_sesion || `D${idx + 1}`,
+        ejercicios: session.ejercicios || session.exercises || []
       }));
 
-      // Preparar datos para pasar al callback
-      const hipertrofiaV2Data = {
-        metodologia: 'HipertrofiaV2',
-        mode: 'manual',
-        nivel: userLevel,
-        frecuencia_semanal: levelConfig.frequency,
-        semanas_totales: scheduleConfig.totalWeeks,
-        split_type: 'full_body',
-        semanas: weeksWithExercises,
-        ejercicios_seleccionados: selectedExercises,
-        configuracion: {
-          sets: levelConfig.setsPerExercise,
-          reps: levelConfig.repsRange,
-          rir_target: levelConfig.rirTarget,
-          rest_seconds: levelConfig.restSeconds,
-          tracking_enabled: true
-        },
-        planData: {
-          metodologia: 'HipertrofiaV2',
-          nivel: userLevel,
-          frecuencia_semanal: levelConfig.frequency,
-          semanas_totales: scheduleConfig.totalWeeks,
-          split_type: 'full_body',
-          semanas: weeksWithExercises,
-          ejercicios_seleccionados: selectedExercises,
-          configuracion: {
-            sets: levelConfig.setsPerExercise,
-            reps: levelConfig.repsRange,
-            rir_target: levelConfig.rirTarget,
-            rest_seconds: levelConfig.restSeconds,
-            tracking_enabled: true
-          }
-        }
+      const transformedPlan = {
+        ...data.plan,
+        methodologyPlanId: data.methodologyPlanId,
+        fecha_inicio: new Date().toISOString(),
+        // Generar 6 semanas con las mismas 5 sesiones D1-D5 en cada una
+        semanas: Array.from({ length: totalWeeks }, (_, weekIdx) => ({
+          numero: weekIdx + 1,
+          semana: weekIdx + 1,
+          sesiones: baseSessions.map((session, sessionIdx) => ({
+            ...session,
+            // Asegurar IDs únicos por semana
+            id: `${session.id}-w${weekIdx + 1}`
+          }))
+        }))
       };
 
-      console.log('✅ Datos preparados para HipertrofiaV2, llamando a onGenerate callback');
+      // Transformar estructura para compatibilidad con onGenerate
+      const hipertrofiaV2Data = {
+        metodologia: 'HipertrofiaV2_MindFeed',
+        mode: 'manual',
+        nivel: userLevel,
+        ciclo_type: 'D1-D5',
+        semanas_totales: data.plan.total_weeks,
+        sessions: data.plan.sessions,  // Array de 5 sesiones D1-D5
+        methodologyPlanId: data.methodologyPlanId,
+        system_info: data.system_info,
+
+        // Estructura compatible con el callback (ahora con semanas[])
+        planData: transformedPlan
+      };
+
+      console.log('✅ [MINDFEED] Datos transformados, llamando a onGenerate callback');
 
       // Llamar al callback de MethodologiesScreen
       onGenerate(hipertrofiaV2Data);
 
     } catch (error) {
-      console.error('❌ Error preparando datos HipertrofiaV2:', error);
-      alert('Error al preparar el plan. Por favor, intenta de nuevo.');
+      console.error('❌ [MINDFEED] Error generando plan D1-D5:', error);
+      alert(`Error al generar plan: ${error.message}`);
+    } finally {
+      setGenerating(false); // Desactivar loading
     }
   };
 
@@ -217,10 +215,10 @@ export default function HipertrofiaV2ManualCard({ onGenerate, isLoading, error }
           <Dumbbell className="w-8 h-8 text-white" />
           <div>
             <h2 className="text-2xl font-bold text-white">
-              Hipertrofia V2
+              Hipertrofia V2 - MindFeed
             </h2>
             <p className="text-blue-100 text-sm">
-              Sistema de Tracking con RIR - Full Body
+              Sistema de Periodización Inteligente D1-D5
             </p>
           </div>
         </div>
@@ -242,16 +240,16 @@ export default function HipertrofiaV2ManualCard({ onGenerate, isLoading, error }
 
               <div className="bg-gray-800/50 border border-blue-500/20 rounded-lg p-6">
                 <h4 className="font-semibold text-white mb-3">
-                  🎯 Características del Sistema V2:
+                  🎯 Características del Sistema MindFeed:
                 </h4>
                 <ul className="space-y-2 text-gray-300 text-sm">
                   <li className="flex items-start gap-2">
                     <CheckCircle className="w-4 h-4 text-green-400 mt-0.5 flex-shrink-0" />
-                    <span><strong>Full Body 3x/semana:</strong> Lunes, Miércoles, Viernes</span>
+                    <span><strong>Ciclo D1-D5:</strong> 5 sesiones rotativas (entrena cuando quieras)</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <CheckCircle className="w-4 h-4 text-green-400 mt-0.5 flex-shrink-0" />
-                    <span><strong>Ejercicios Variados:</strong> Selección aleatoria cada generación</span>
+                    <span><strong>Progresión por Microciclo:</strong> +2.5% al completar D1-D5 completo</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <CheckCircle className="w-4 h-4 text-green-400 mt-0.5 flex-shrink-0" />
@@ -259,11 +257,15 @@ export default function HipertrofiaV2ManualCard({ onGenerate, isLoading, error }
                   </li>
                   <li className="flex items-start gap-2">
                     <CheckCircle className="w-4 h-4 text-green-400 mt-0.5 flex-shrink-0" />
-                    <span><strong>Autorregulación:</strong> Ajustes automáticos basados en RIR</span>
+                    <span><strong>Deload Automático:</strong> Cada 6 microciclos completados</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <CheckCircle className="w-4 h-4 text-green-400 mt-0.5 flex-shrink-0" />
-                    <span><strong>Calendario Inteligente:</strong> Se adapta al día de inicio</span>
+                    <span><strong>Motor de Ciclo:</strong> Avanza solo cuando completas sesiones reales</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircle className="w-4 h-4 text-green-400 mt-0.5 flex-shrink-0" />
+                    <span><strong>Ejercicios Clasificados:</strong> Multiarticulares, unilaterales y analíticos</span>
                   </li>
                 </ul>
               </div>
@@ -311,29 +313,29 @@ export default function HipertrofiaV2ManualCard({ onGenerate, isLoading, error }
                 <div className="flex items-start gap-3 mb-4">
                   <Calendar className="w-6 h-6 text-blue-400" />
                   <h4 className="font-semibold text-white">
-                    📅 Calendario Adaptativo
+                    🔄 Motor de Ciclo Inteligente
                   </h4>
                 </div>
                 <p className="text-gray-400 text-sm">
-                  El sistema calculará automáticamente las sesiones según el día de hoy.
-                  Si empiezas a mitad de semana, recuperarás las sesiones al final del bloque.
+                  El ciclo D1-D5 avanza SOLO cuando completas sesiones reales.
+                  Entrena en los días que prefieras - el sistema se adapta a tu calendario y progresa cuando TÚ entrenas.
                 </p>
               </div>
 
               <div className="flex gap-3">
                 <button
                   onClick={() => setStep('evaluation')}
-                  disabled={isLoading}
+                  disabled={isLoading || generating}
                   className="flex-1 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-semibold disabled:opacity-50"
                 >
                   Volver
                 </button>
                 <button
                   onClick={handleGenerate}
-                  disabled={isLoading}
+                  disabled={isLoading || generating}
                   className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
-                  {isLoading ? (
+                  {(isLoading || generating) ? (
                     <>
                       <Loader className="w-5 h-5 animate-spin" />
                       Generando...
@@ -343,6 +345,23 @@ export default function HipertrofiaV2ManualCard({ onGenerate, isLoading, error }
                   )}
                 </button>
               </div>
+
+              {/* Mensaje de carga visible */}
+              {generating && (
+                <div className="mt-4 p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <Loader className="w-5 h-5 text-blue-400 animate-spin flex-shrink-0" />
+                    <div>
+                      <h4 className="font-semibold text-blue-400 mb-1">
+                        La IA está generando tu entrenamiento
+                      </h4>
+                      <p className="text-sm text-blue-300">
+                        Analizando tu perfil para crear la rutina idónea…
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

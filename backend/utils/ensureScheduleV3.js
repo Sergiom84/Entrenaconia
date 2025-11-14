@@ -205,53 +205,58 @@ export async function ensureWorkoutScheduleV3(client, userId, methodologyPlanId,
     }
 
     // Guardar configuración de redistribución en la base de datos
-    const configResult = await client.query(`
-      INSERT INTO app.plan_start_config (
-        methodology_plan_id,
-        user_id,
-        start_day_of_week,
-        start_date,
-        is_consecutive_days,
-        intensity_adjusted,
-        is_extended_weeks,
-        original_pattern,
-        first_week_pattern,
-        regular_pattern,
-        total_weeks,
-        expected_sessions,
-        day_mappings,
-        warnings
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-      ON CONFLICT (methodology_plan_id)
-      DO UPDATE SET
-        start_day_of_week = EXCLUDED.start_day_of_week,
-        start_date = EXCLUDED.start_date,
-        is_consecutive_days = EXCLUDED.is_consecutive_days,
-        intensity_adjusted = EXCLUDED.intensity_adjusted,
-        first_week_pattern = EXCLUDED.first_week_pattern,
-        day_mappings = EXCLUDED.day_mappings,
-        warnings = EXCLUDED.warnings,
-        updated_at = NOW()
-      RETURNING *
-    `, [
-      methodologyPlanId,
-      userId,
-      startDayOfWeek,
-      planStartDate.toISOString().split('T')[0],
-      isConsecutiveDays,
-      intensityAdjusted,
-      isExtendedWeeks,
-      originalPattern,
-      firstWeekPattern,
-      originalPattern, // regular_pattern (semanas 2+)
-      totalWeeks,
-      isPrincipiante ? 12 : planData.semanas.length * 3, // expected_sessions
-      JSON.stringify(dayMappings),
-      JSON.stringify(warnings)
-    ]).catch(err => {
-      console.warn('⚠️ No se pudo guardar plan_start_config (tabla puede no existir aún):', err.message);
-      return null;
-    });
+    let configResult = null;
+    try {
+      console.log('[ensureWorkoutScheduleV3] 📝 Guardando configuración de redistribución...');
+      configResult = await client.query(`
+        INSERT INTO app.plan_start_config (
+          methodology_plan_id,
+          user_id,
+          start_day_of_week,
+          start_date,
+          is_consecutive_days,
+          intensity_adjusted,
+          is_extended_weeks,
+          original_pattern,
+          first_week_pattern,
+          regular_pattern,
+          total_weeks,
+          expected_sessions,
+          day_mappings,
+          warnings
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        ON CONFLICT (methodology_plan_id)
+        DO UPDATE SET
+          start_day_of_week = EXCLUDED.start_day_of_week,
+          start_date = EXCLUDED.start_date,
+          is_consecutive_days = EXCLUDED.is_consecutive_days,
+          intensity_adjusted = EXCLUDED.intensity_adjusted,
+          first_week_pattern = EXCLUDED.first_week_pattern,
+          day_mappings = EXCLUDED.day_mappings,
+          warnings = EXCLUDED.warnings,
+          updated_at = NOW()
+        RETURNING *
+      `, [
+        methodologyPlanId,
+        userId,
+        startDayOfWeek,
+        planStartDate.toISOString().split('T')[0],
+        isConsecutiveDays,
+        intensityAdjusted,
+        isExtendedWeeks,
+        originalPattern,
+        firstWeekPattern,
+        originalPattern, // regular_pattern (semanas 2+)
+        totalWeeks,
+        isPrincipiante ? 12 : planData.semanas.length * 3, // expected_sessions
+        JSON.stringify(dayMappings),
+        JSON.stringify(warnings)
+      ]);
+      console.log('[ensureWorkoutScheduleV3] ✅ Configuración guardada exitosamente');
+    } catch (err) {
+      console.warn('[ensureWorkoutScheduleV3] ⚠️ No se pudo guardar plan_start_config:', err.message);
+      configResult = null;
+    }
 
     const planConfig = configResult?.rows?.[0] || {
       is_consecutive_days: isConsecutiveDays,
@@ -365,6 +370,35 @@ export async function ensureWorkoutScheduleV3(client, userId, methodologyPlanId,
         }
       } else {
         sessionsToSchedule = baseSessions.map(session => ({ ...session }));
+      }
+
+      // ✅ SEMANAS 2+: Mapear D1..D5 a días reales (Lun..Vie)
+      // En muchos planes MindFeed, las semanas >1 vienen con etiquetas 'D1'..'D5'.
+      // Aquí las traducimos a días fijos para que workout_schedule pueda asignarlas.
+      if (weekIndex > 0) {
+        const KNOWN = new Set(DAY_ABBREVS); // Dom..Sab
+        const allUnknown = sessionsToSchedule.every(s => !KNOWN.has(normalizeDayAbbrev(s.dia)));
+        if (allUnknown && sessionsToSchedule.length > 0) {
+          // Seleccionar patrón según número de sesiones/semana
+          let targetDays;
+          const count = sessionsToSchedule.length;
+          if (count >= 5) {
+            targetDays = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie'];
+          } else if (count === 4) {
+            targetDays = ['Lun', 'Mar', 'Jue', 'Vie'];
+          } else if (count === 3) {
+            targetDays = ['Lun', 'Mie', 'Vie'];
+          } else if (count === 2) {
+            targetDays = ['Lun', 'Jue'];
+          } else {
+            targetDays = ['Lun'];
+          }
+
+          sessionsToSchedule = sessionsToSchedule.map((session, i) => ({
+            ...session,
+            dia: targetDays[i % targetDays.length]
+          }));
+        }
       }
 
       // 🔧 LÓGICA PARA PRIMERA SEMANA Y ÚLTIMA SEMANA

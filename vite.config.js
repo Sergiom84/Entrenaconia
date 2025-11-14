@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
+import Inspect from 'vite-plugin-inspect'
 import path from 'path'
 import { fileURLToPath } from 'url'
 
@@ -19,7 +20,7 @@ export default defineConfig(({ mode }) => {
   console.log('🔍 DEBUG - All VITE_ env vars:', Object.keys(env).filter(key => key.startsWith('VITE_')))
 
   return {
-    plugins: [react()],
+    plugins: [react(), Inspect()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),

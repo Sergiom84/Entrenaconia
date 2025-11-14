@@ -532,6 +532,41 @@ export function WorkoutProvider({ children }) {
     dispatch({ type: WORKOUT_ACTIONS.CLEAR_ERROR });
 
     try {
+      // Branch: HipertrofiaV2 MindFeed plan ya generado por endpoint dedicado
+      if (
+        String(config?.methodology || '').toLowerCase() === 'hipertrofiav2' &&
+        config?.planData &&
+        Array.isArray(config.planData?.semanas)
+      ) {
+        const methodologyPlanId = config.methodologyPlanId || config.planData.methodologyPlanId;
+        const nowUTC = new Date().toISOString();
+
+        const planPayload = {
+          currentPlan: config.planData,
+          methodologyPlanId,
+          planStartDate: nowUTC,
+          planType: 'manual',
+          methodology: 'HipertrofiaV2_MindFeed',
+          generatedAt: nowUTC,
+          weekTotal: config.planData?.semanas?.length || 0,
+          currentWeek: 1
+        };
+
+        dispatch({ type: WORKOUT_ACTIONS.SET_PLAN, payload: planPayload });
+
+        return {
+          success: true,
+          plan: config.planData,
+          planId: methodologyPlanId,
+          methodologyPlanId,
+          methodology: 'HipertrofiaV2_MindFeed',
+          metadata: {
+            generatedAt: nowUTC,
+            source: 'mindfeed_generate_d1d5'
+          }
+        };
+      }
+
       let requestBody;
 
       // Mapear datos según el modo específico
@@ -697,7 +732,7 @@ export function WorkoutProvider({ children }) {
       // Import the API function
       const { startSession: startSessionAPI } = await import('@/components/routines/api');
 
-      // Construir payload segn disponibilidad: preferir day_id; si no, usar (week_number, day_name)
+      // Construir payload según disponibilidad: preferir day_id; si no, usar (week_number, day_name)
       const payload = {
         methodology_plan_id: config.methodologyPlanId || state.plan.methodologyPlanId
       };
@@ -722,11 +757,12 @@ export function WorkoutProvider({ children }) {
         }
       });
 
-      dispatch({ type: WORKOUT_ACTIONS.SET_LOADING, payload: false });
       return { success: true, ...sessionData };
     } catch (error) {
       dispatch({ type: WORKOUT_ACTIONS.SET_ERROR, payload: error.message });
       return { success: false, error: error.message };
+    } finally {
+      dispatch({ type: WORKOUT_ACTIONS.SET_LOADING, payload: false });
     }
   }, [state.plan.methodologyPlanId, state.plan.currentWeek]);
 

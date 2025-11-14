@@ -288,7 +288,8 @@ class ApiClient {
         }
 
         return result;
-      } else {
+      } else if (response && !response.ok) {
+        // Manejo de respuestas no OK (verificar que sea una Response válida)
         const txt = await response.text();
         let data;
         try { data = JSON.parse(txt); } catch { data = { message: txt }; }
@@ -298,6 +299,18 @@ class ApiClient {
         throw err;
       }
     } catch (error) {
+      // MANEJO ESPECIAL: Errores de offline queuing
+      if (error.name === 'OfflineQueuedError') {
+        logger.info('Request queued for offline processing', { url: fullUrl, queueId: error.queueId }, 'ApiClient');
+        // Retornar respuesta simulada para que el flujo continúe
+        // El request se procesará cuando vuelva la conexión
+        return {
+          queued: true,
+          queueId: error.queueId,
+          message: 'Request queued for offline processing'
+        };
+      }
+
       // 4. MANEJO AVANZADO DE ERRORES 401 CON TOKEN REFRESH
       if (error.status === 401) {
         logger.warn('Token inválido, intentando refresh automático', { url: fullUrl }, 'ApiClient');

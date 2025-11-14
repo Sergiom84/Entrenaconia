@@ -597,6 +597,14 @@ router.post('/sessions/start', authenticateToken, async (req, res) => {
 
       // 🎯 Extraer exercise_id si está disponible
       const exerciseId = ej.exercise_id || ej.id || null;
+      const repsTarget =
+        ej.repeticiones ||
+        ej.reps_objetivo ||
+        ej.reps ||
+        ej.repsObjetivo ||
+        ej.default_reps_range ||
+        '0';
+      const restSeconds = Number(ej.descanso_seg ?? ej.descanso ?? 60) || 60;
 
       // Insertar si no existe
       await client.query(
@@ -611,7 +619,7 @@ router.post('/sessions/start', authenticateToken, async (req, res) => {
             WHERE methodology_session_id = $1 AND exercise_order = $3
          )`,
         [session.id, userId, order, exerciseId, ej.nombre || `Ejercicio ${i + 1}`,
-         String(ej.series || '3'), String(ej.repeticiones || '0'), Number(ej.descanso_seg) || 60,
+         String(ej.series || '3'), String(repsTarget || '0'), restSeconds,
          ej.intensidad || null, ej.tempo || null, ej.notas || null]
       );
     }
@@ -1474,8 +1482,8 @@ router.get('/sessions/:sessionId/progress', authenticateToken, async (req, res) 
     if (ses.rowCount === 0) return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
 
     const progress = await pool.query(
-      `SELECT
-        mep.exercise_order, mep.exercise_name, mep.series_total, mep.series_completed,
+       `SELECT
+        mep.exercise_order, mep.exercise_id, mep.exercise_name, mep.series_total, mep.series_completed,
         mep.repeticiones, mep.descanso_seg, mep.intensidad, mep.tempo, mep.status,
         mep.time_spent_seconds, mep.notas,
         mef.sentiment, mef.comment
@@ -1515,7 +1523,7 @@ router.post('/confirm-plan', authenticateToken, async (req, res) => {
     const { methodology_plan_id } = req.body;
 
     if (!methodology_plan_id) {
-      await client.query('ROLLBACK');
+      client.release();
       return res.status(400).json({
         success: false,
         error: 'methodology_plan_id es requerido'
@@ -1531,7 +1539,7 @@ router.post('/confirm-plan', authenticateToken, async (req, res) => {
     );
 
     if (planCheck.rowCount === 0) {
-      await client.query('ROLLBACK');
+      client.release();
       return res.status(404).json({
         success: false,
         error: 'Plan no encontrado'
@@ -1540,6 +1548,12 @@ router.post('/confirm-plan', authenticateToken, async (req, res) => {
 
     const plan = planCheck.rows[0];
     console.log("🔍 [confirm-plan] Plan encontrado:", { id: plan.id, status: plan.status, methodology_type: plan.methodology_type, userId });
+
+    // Si ya está activo, considerar la operación idempotente
+    if (String(plan.status).toLowerCase() === 'active') {
+      client.release();
+      return res.json({ success: true, status: 'active', message: 'Plan ya confirmado (idempotente)' });
+    }
 
     // Confirmación del plan con fallback seguro si no existe la función/tabla legacy
     let confirmed = false;
@@ -1570,6 +1584,7 @@ router.post('/confirm-plan', authenticateToken, async (req, res) => {
     }
 
     if (!confirmed) {
+      client.release();
       return res.status(400).json({
         success: false,
         error: 'No se pudo confirmar el plan. Puede que ya esté confirmado o no esté en estado draft.'
@@ -1742,15 +1757,21 @@ router.post('/confirm-plan', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Error confirmando rutina:', error);
+    console.error('❌ [confirm-plan] Error confirmando rutina:', error);
+    console.error('Stack:', error.stack);
+
+    // Intentar liberar el cliente de forma segura
+    try {
+      client.release();
+    } catch (releaseError) {
+      console.error('⚠️ Error liberando cliente:', releaseError.message);
+    }
+
     res.status(500).json({
       success: false,
       error: 'Error interno del servidor',
       details: error.message
     });
-  } finally {
-    client.release();
   }
 });
 

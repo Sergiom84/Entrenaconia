@@ -30,6 +30,7 @@ import {
 import RoutineSessionModal from '../RoutineSessionModal';
 import WarmupModal from '../WarmupModal';
 import { useWorkout } from '@/contexts/WorkoutContext'; // Mantenemos el contexto original
+import { useAuth } from '@/contexts/AuthContext';
 import apiClient from '@/lib/apiClient';
 
 import SafeComponent from '../../ui/SafeComponent';
@@ -39,6 +40,8 @@ import { SummaryHeader } from '../summary/SummaryHeader.jsx';
 import { UserProfileDisplay } from '../summary/UserProfileDisplay.jsx';
 import { ProgressBar } from '../summary/ProgressBar.jsx';
 import { FirstWeekWarning, usePlanConfig } from '../alerts/FirstWeekWarning.jsx';
+import CycleStatusBadge from '../../Methodologie/methodologies/HipertrofiaV2/components/CycleStatusBadge';
+import MusclePriorityModal from '../../Methodologie/methodologies/HipertrofiaV2/components/MusclePriorityModal';
 
 import { useNavigate } from 'react-router-dom';
 
@@ -128,6 +131,8 @@ export default function TodayTrainingTab({
 }) {
   const { track } = useTrace();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const userId = user?.id;
 
   // 🎯 NUEVO: Cargar configuración del plan para redistribución
   const { config: planConfig, loading: configLoading } = usePlanConfig(methodologyPlanId);
@@ -186,6 +191,10 @@ export default function TodayTrainingTab({
   const [todayStatus, setTodayStatus] = useState(null);
   const [loadingTodayStatus, setLoadingTodayStatus] = useState(false);
   const [isLoadingWeekendWorkout, setIsLoadingWeekendWorkout] = useState(false);
+
+  // 🎯 FASE 2: Estado para modal de prioridad muscular
+  const [showPriorityModal, setShowPriorityModal] = useState(false);
+  const [currentPriority, setCurrentPriority] = useState(null);
 
   // Nombre del día actual disponible para hooks que lo requieren
   const currentTodayName = todayName || getTodayName();
@@ -1174,6 +1183,56 @@ export default function TodayTrainingTab({
   };
 
   // ===============================================
+  // 🎯 FASE 2: HANDLERS DE PRIORIDAD MUSCULAR
+  // ===============================================
+
+  // Cargar prioridad actual al montar
+  useEffect(() => {
+    if (!userId) return;
+
+    const fetchPriority = async () => {
+      try {
+        const token = localStorage.getItem('authToken');
+        const response = await fetch(
+          `${import.meta.env.VITE_API_URL || 'http://localhost:3010'}/api/hipertrofiav2/priority-status/${userId}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          }
+        );
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.priority) {
+            setCurrentPriority(data.priority);
+          }
+        }
+      } catch (error) {
+        console.error('❌ [PRIORITY] Error cargando prioridad:', error);
+      }
+    };
+
+    fetchPriority();
+  }, [userId]);
+
+  const handlePriorityActivate = (result) => {
+    console.log('✅ [PRIORITY] Prioridad activada:', result);
+    setCurrentPriority(result);
+    showSuccess(`Prioridad activada para ${result.priority_muscle}`);
+    // Refrescar el badge
+    setTimeout(() => window.location.reload(), 500);
+  };
+
+  const handlePriorityDeactivate = (result) => {
+    console.log('✅ [PRIORITY] Prioridad desactivada:', result);
+    setCurrentPriority(null);
+    showSuccess('Prioridad muscular desactivada');
+    // Refrescar el badge
+    setTimeout(() => window.location.reload(), 500);
+  };
+
+  // ===============================================
   // 📊 CÁLCULOS DE PROGRESO
   // ===============================================
 
@@ -1534,6 +1593,25 @@ export default function TodayTrainingTab({
                     </p>
                   </div>
                 </div>
+
+                {/* 🔄 Badge de estado del ciclo MindFeed (solo para HipertrofiaV2) */}
+                {(plan?.metodologia === 'HipertrofiaV2_MindFeed' || plan?.metodologia === 'HipertrofiaV2') && (
+                  <div className="mt-4 space-y-3">
+                    <CycleStatusBadge
+                      userId={userId}
+                      methodologyPlanId={methodologyPlanId || plan?.methodologyPlanId}
+                    />
+
+                    {/* 🎯 FASE 2: Botón de Prioridad Muscular */}
+                    <button
+                      onClick={() => setShowPriorityModal(true)}
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg font-medium transition-colors"
+                    >
+                      <Target className="h-5 w-5" />
+                      {currentPriority ? 'Gestionar Prioridad' : 'Activar Prioridad Muscular'}
+                    </button>
+                  </div>
+                )}
 
                 {/* Header enriquecido con metodología, fuente, perfil y progreso */}
                 <section className="mt-4">
@@ -2086,6 +2164,15 @@ export default function TodayTrainingTab({
           </div>
         </div>
       )}
+
+      {/* 🎯 FASE 2: Modal de Prioridad Muscular */}
+      <MusclePriorityModal
+        show={showPriorityModal}
+        onClose={() => setShowPriorityModal(false)}
+        currentPriority={currentPriority}
+        onActivate={handlePriorityActivate}
+        onDeactivate={handlePriorityDeactivate}
+      />
 
       </div>
     </SafeComponent>

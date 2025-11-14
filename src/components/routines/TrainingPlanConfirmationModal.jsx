@@ -284,7 +284,7 @@ export default function TrainingPlanConfirmationModal({
                 <p className="text-gray-400 text-sm">No hay semanas para mostrar.</p>
               )}
               {plan.semanas?.map((semana, weekIndex) => (
-                <div key={semana.semana} className="bg-gray-800/60 border border-gray-700 rounded-lg">
+                <div key={`week-${weekIndex}`} className="bg-gray-800/60 border border-gray-700 rounded-lg">
                   <div className="px-3 sm:px-4 py-2 border-b border-gray-700 flex items-center justify-between">
                     <span className="text-gray-200 font-medium text-sm sm:text-base">
                       Semana {semana.numero || semana.semana}
@@ -321,16 +321,24 @@ export default function TrainingPlanConfirmationModal({
                         sessionIndex // Pasar índice para primera semana
                       );
 
+                      const shortDayLabel = weekIndex === 0 && sessionDate
+                        ? sessionDate.split(' ')[0]
+                        : null;
+
+                      const headerText = shortDayLabel
+                        ? sessionDate
+                        : (sesion.dia || sesion.dia_semana || `D${sessionIndex + 1}`);
+
                       return (
                         <div
-                          key={sessionIndex}
+                          key={sesion.id || `w${weekIndex}-s${sessionIndex}`}
                           onClick={() => hasMore && toggleSession(weekIndex, sessionIndex)}
                           className={`bg-black/40 rounded-md p-3 sm:p-4 border border-gray-700 transition-colors min-h-[150px] flex flex-col ${
                             hasMore ? 'cursor-pointer hover:border-yellow-500/50 hover:bg-black/60' : ''
                           }`}
                         >
                           <div className="text-yellow-300 font-semibold text-sm sm:text-base mb-3">
-                            {sessionDate}
+                            {headerText}
                           </div>
 
                           {/* Lista de ejercicios */}

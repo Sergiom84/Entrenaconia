@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { X as IconX, TrendingUp } from 'lucide-react';
-import { formatExerciseName } from '../../utils/exerciseUtils';
+import { formatExerciseName, extractSessionPatterns } from '../../utils/exerciseUtils';
 import ExerciseFeedbackModal from '../HomeTraining/ExerciseFeedbackModal';
 import ExerciseInfoModal from './ExerciseInfoModal';
 import { saveExerciseFeedback, getSessionFeedback } from './api';
@@ -51,6 +51,7 @@ export default function RoutineSessionModal({
   // Hooks de estado (siempre llamar hooks, validar después)
   const progressState = useExerciseProgress(session, exercises);
   const timerState = useExerciseTimer(progressState.currentExercise, progressState.seriesTotal, 45, allowManualTimer);
+  const sessionPatterns = useMemo(() => extractSessionPatterns(session), [session]);
 
   // Estados locales para modales y feedback
   const [showFeedback, setShowFeedback] = useState(false);
@@ -64,6 +65,7 @@ export default function RoutineSessionModal({
   const [showSeriesTracking, setShowSeriesTracking] = useState(false);
   const [seriesTrackingData, setSeriesTrackingData] = useState([]);
   const [exerciseProgression, setExerciseProgression] = useState({});
+  const [neuralOverlapInfo, setNeuralOverlapInfo] = useState(null);
   // Guards y refs
   const closingRef = useRef(false);
   const toastTimeoutRef = useRef(null);
@@ -366,6 +368,16 @@ export default function RoutineSessionModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, session?.methodologyPlanId, progressState.seriesTotal]);
 
+  const applyNeuralAdjustment = useCallback((weight) => {
+    if (!weight || !neuralOverlapInfo?.adjustment) return weight;
+
+    const numericWeight = Number(weight);
+    if (Number.isNaN(numericWeight)) return weight;
+
+    const factor = 1 + Number(neuralOverlapInfo.adjustment);
+    return Number(Math.max(0, numericWeight * factor).toFixed(2));
+  }, [neuralOverlapInfo]);
+
   // Guardar feedback de ejercicio
   const handleSaveFeedback = useCallback(async (payload) => {
     try {
@@ -485,9 +497,10 @@ export default function RoutineSessionModal({
             seriesNumber={timerState.series}
             totalSeries={timerState.seriesTotal}
             previousPR={exerciseProgression[exerciseId]?.current_pr}
-            suggestedWeight={exerciseProgression[exerciseId]?.target_weight_80}
+            suggestedWeight={applyNeuralAdjustment(exerciseProgression[exerciseId]?.target_weight_80)}
             onSave={handleSaveSeriesTracking}
             onClose={() => setShowSeriesTracking(false)}
+            neuralOverlap={neuralOverlapInfo}
           />
         );
       })()}
@@ -507,6 +520,8 @@ export default function RoutineSessionModal({
         endTitle={progressState.endMessage.title}
         endMessage={progressState.endMessage.message}
         progressState={progressState}
+        session={session}
+        sessionId={sessionId}
         onClose={() => { setShowEndModal(false); safeClose(); }}
         onEndSession={onEndSession}
         navigateToRoutines={navigateToRoutines}
@@ -551,6 +566,16 @@ export default function RoutineSessionModal({
                 🔙 Continuar entrenando
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mensaje de solapamiento neural */}
+      {neuralOverlapInfo?.overlap && neuralOverlapInfo.overlap !== 'none' && (
+        <div className="fixed top-12 left-1/2 -translate-x-1/2 z-40">
+          <div className="bg-orange-900/80 border border-orange-500/50 px-4 py-2 rounded-lg text-sm text-orange-100 shadow-lg">
+            🧠 Solapamiento {neuralOverlapInfo.overlap === 'high' ? 'alto' : 'parcial'} detectado.
+            Ajuste sugerido: {Math.round((neuralOverlapInfo.adjustment || 0) * 100)}%
           </div>
         </div>
       )}
