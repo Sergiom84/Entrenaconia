@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "dev:backend": "npm --prefix backend run dev",
+    "dev:backend:debug": "npm --prefix backend run debug",
     "dev:all": "concurrently -n FRONT,API -c green,cyan \"npm run dev\" \"npm run dev:backend\"",
+    "dev:all:debug": "concurrently -n FRONT,API -c green,cyan \"npm run dev\" \"npm run dev:backend:debug\"",
     "dev:sync": "node scripts/check-ports.js && npm run dev",
     "dev:auto": "scripts\\dev-auto.bat",
     "dev:auto:cross": "node scripts/check-ports.js && concurrently -n FRONT,API -c green,cyan \"npm run dev\" \"npm run dev:backend\"",
@@ -56,6 +58,7 @@
     "pdf-parse": "^1.1.1",
     "pg": "^8.16.3",
     "postcss": "^8.5.6",
+    "postgres": "^3.4.7",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-hook-form": "^7.56.3",

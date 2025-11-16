@@ -12,6 +12,7 @@ import {
   calculateVolumeLoad,
   isEffectiveSet
 } from '../config/progressionRules';
+import RIRReferenceModal from '../../../../routines/modals/RIRReferenceModal';
 
 export default function SeriesTrackingModal({
   exerciseName,
@@ -28,6 +29,7 @@ export default function SeriesTrackingModal({
   const [reps, setReps] = useState('');
   const [rir, setRir] = useState(2); // Default RIR 2 (óptimo)
   const [errors, setErrors] = useState([]);
+  const [showRIRReference, setShowRIRReference] = useState(false);
 
   // Cálculos en tiempo real
   const [calculations, setCalculations] = useState({
@@ -186,9 +188,18 @@ export default function SeriesTrackingModal({
 
           {/* Selector: RIR */}
           <div>
-            <label className="block text-sm font-semibold text-gray-300 mb-2">
-              RIR (Repeticiones en Reserva)
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-semibold text-gray-300">
+                RIR (Repeticiones en Reserva)
+              </label>
+              <button
+                onClick={() => setShowRIRReference(true)}
+                className="text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1 text-xs"
+              >
+                <Info className="w-4 h-4" />
+                ¿Qué es RIR?
+              </button>
+            </div>
             <div className="grid grid-cols-5 gap-2 mb-2">
               {[0, 1, 2, 3, 4].map(value => (
                 <button
@@ -264,6 +275,12 @@ export default function SeriesTrackingModal({
           </div>
         </div>
       </div>
+
+      {/* Modal de Referencia RIR */}
+      <RIRReferenceModal
+        isOpen={showRIRReference}
+        onClose={() => setShowRIRReference(false)}
+      />
     </div>
   );
 }

@@ -121,6 +121,30 @@ export const ExerciseListItem = ({ exercise, index }) => {
         </div>
       </div>
 
+      {/* 🆕 Mostrar datos de series completadas (peso, reps, RIR) */}
+      {exercise.sets && exercise.sets.length > 0 && status === 'completed' && (
+        <div className="mt-3 space-y-1">
+          <div className="text-xs font-semibold text-gray-400 mb-1">Series completadas:</div>
+          {exercise.sets.map((set, idx) => (
+            <div
+              key={idx}
+              className="flex items-center gap-3 text-xs bg-gray-800/60 rounded px-2 py-1.5 border border-gray-700"
+            >
+              <span className="text-gray-400 font-medium">Serie {set.set_number}:</span>
+              <span className="text-white font-semibold">{set.weight_used} kg</span>
+              <span className="text-gray-300">× {set.reps_completed} reps</span>
+              <span className={`ml-auto px-2 py-0.5 rounded ${
+                set.rir_reported <= 2 ? 'bg-green-900/40 text-green-300' :
+                set.rir_reported <= 4 ? 'bg-yellow-900/40 text-yellow-300' :
+                'bg-red-900/40 text-red-300'
+              }`}>
+                RIR {set.rir_reported}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Comentario del feedback */}
       {comment && (
         <div

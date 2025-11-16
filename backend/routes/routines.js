@@ -1611,19 +1611,37 @@ router.post('/confirm-plan', authenticateToken, async (req, res) => {
     // 🎯 FASE 1 & 2: Generar programación completa (methodology_plan_days + workout_schedule)
     console.log(`📅 [confirm-plan] Generando programación completa (methodology_plan_days + workout_schedule)...`);
     try {
-      // Obtener la fecha de inicio del plan (usar NOW si no existe)
+      // 🆕 Leer configuración de inicio si existe
+      const startConfigQuery = await client.query(
+        `SELECT * FROM app.plan_start_config WHERE methodology_plan_id = $1`,
+        [methodology_plan_id]
+      );
+
+      const startConfig = startConfigQuery.rowCount > 0 ? startConfigQuery.rows[0] : null;
+
+      if (startConfig) {
+        console.log('🗓️ [confirm-plan] Configuración de inicio encontrada:', {
+          startDate: startConfig.start_date,
+          sessionsFirstWeek: startConfig.sessions_first_week,
+          distributionOption: startConfig.distribution_option,
+          includeSaturdays: startConfig.include_saturdays
+        });
+      }
+
+      // Obtener la fecha de inicio del plan (usar startConfig si existe, sino NOW)
       const startDateQuery = await client.query(
         `SELECT COALESCE(plan_start_date, confirmed_at, NOW()) as start_date
          FROM app.methodology_plans
          WHERE id = $1`,
         [methodology_plan_id]
       );
-      const startDate = startDateQuery.rows[0]?.start_date || new Date();
+      const startDate = startConfig?.start_date || startDateQuery.rows[0]?.start_date || new Date();
 
       console.log(`📅 [confirm-plan] Fecha de inicio del plan: ${startDate}`);
 
       // Llamar a ensureWorkoutSchedule para generar la programación completa
-      await ensureWorkoutScheduleV3(client, userId, methodology_plan_id, plan.plan_data, startDate);
+      // 🆕 Pasar startConfig como parámetro
+      await ensureWorkoutScheduleV3(client, userId, methodology_plan_id, plan.plan_data, startDate, startConfig);
 
       console.log('✅ Programación completa generada (methodology_plan_days + workout_schedule)');
 

@@ -343,6 +343,34 @@ export default function TodayTrainingTab({
         };
         setTodayStatus(normalized);
 
+        // 🆕 Construir estructura compatible con ExerciseList usando datos reales del backend
+        if (Array.isArray(data.exercises)) {
+          const normalizedExercises = data.exercises.map((exercise, index) => ({
+            nombre: exercise.exercise_name || exercise.nombre || `Ejercicio ${index + 1}`,
+            series: String(exercise.series_total || exercise.series || '—'),
+            repeticiones: String(exercise.repeticiones || exercise.reps || '—'),
+            descanso: exercise.descanso_seg
+              ? `${exercise.descanso_seg}s`
+              : (exercise.descanso || '60s'),
+            intensidad: exercise.intensidad || null,
+            tempo: exercise.tempo || null,
+            notas: exercise.notas || '',
+            order: exercise.exercise_order ?? index
+          }));
+
+          setTodaySessionData((prev) => ({
+            ...prev,
+            dia: data.session?.day_name || dayName,
+            tipo: data.session?.session_name || prev?.tipo || 'Entrenamiento del día',
+            ejercicios: normalizedExercises,
+            sessionId: data.session?.id || prev?.sessionId || null,
+            sessionStatus: data.session?.session_status || prev?.sessionStatus || null,
+            summary: data.summary
+          }));
+        } else {
+          setTodaySessionData(null);
+        }
+
         console.log('✅ todayStatus actualizado:', {
           session_id: data.session?.id,
           session_status: data.session?.session_status,
@@ -761,7 +789,8 @@ export default function TodayTrainingTab({
       warmupAlreadyShown,
       hasActiveSession,
       todayStatusSession: statusSource?.session,
-      contextSessionId: session.sessionId
+      contextSessionId: session.sessionId,
+      hasTodaySessionData: !!todaySessionData
     });
 
     // 🎯 CORRECCIÓN: Si la sesión está completada Y NO puede reintentar, NO abrir modal
@@ -774,6 +803,40 @@ export default function TodayTrainingTab({
       console.log('[TodayTrainingTab] No existing session found, starting new with warmup');
       handleStartSession(currentExerciseIndex || 0);
       return;
+    }
+
+    // 🆕 CORRECCIÓN: Si no hay todaySessionData, cargar desde el plan
+    if (!todaySessionData) {
+      console.log('⚠️ [TodayTrainingTab] todaySessionData no disponible, cargando desde plan...');
+      // Forzar recarga de datos del plan
+      const currentWeekIdx = plan.currentWeek || 1;
+      const dayId = plan.currentDayId;
+
+      if (dayId && plan.currentPlan?.plan_data) {
+        try {
+          const planData = typeof plan.currentPlan.plan_data === 'string'
+            ? JSON.parse(plan.currentPlan.plan_data)
+            : plan.currentPlan.plan_data;
+
+          const sessionData = planData?.semanas?.[currentWeekIdx - 1]?.sesiones?.find(
+            s => s.day_id === dayId
+          );
+
+          if (sessionData) {
+            console.log('✅ [TodayTrainingTab] Datos del plan cargados:', sessionData);
+            setTodaySessionData(sessionData);
+          } else {
+            console.error('❌ [TodayTrainingTab] No se encontró sesión en el plan');
+            return;
+          }
+        } catch (error) {
+          console.error('❌ [TodayTrainingTab] Error cargando datos del plan:', error);
+          return;
+        }
+      } else {
+        console.error('❌ [TodayTrainingTab] Faltan datos del plan');
+        return;
+      }
     }
 
     // Verificar si ya hay progreso real (ejercicios completados/saltados/cancelados)
@@ -1403,7 +1466,11 @@ export default function TodayTrainingTab({
     session.dayName.toLowerCase() === todaySessionData.dia.toLowerCase()
   );
 
-  const hasToday = Boolean(todaySessionData?.ejercicios?.length > 0);
+  // 🆕 CORRECCIÓN: Verificar tanto todaySessionData como todayStatus para detectar sesiones
+  const hasToday = Boolean(
+    todaySessionData?.ejercicios?.length > 0 ||
+    (todayStatus?.session && todayStatus?.summary?.total > 0)
+  );
 
   // Progreso para header (completados/total/skip/cancel)
   const headerProgressStats = useMemo(() => {

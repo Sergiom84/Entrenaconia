@@ -27,6 +27,8 @@ import CasaManualCard from './methodologies/Casa/CasaManualCard.jsx';
 import { useTrace } from '@/contexts/TraceContext';
 import { useNavigate } from 'react-router-dom';
 import WeekendWarningModal from '../routines/modals/WeekendWarningModal.jsx';
+import StartDayConfirmationModal from '../routines/modals/StartDayConfirmationModal.jsx';
+import SessionDistributionModal from '../routines/modals/SessionDistributionModal.jsx';
 
 // ===============================================
 // 🎯 ESTADO LOCAL MÍNIMO PARA ESTA PANTALLA
@@ -42,7 +44,12 @@ const LOCAL_STATE_INITIAL = {
   weekendGenerationData: null,
   pendingSessionData: null,
   showWarmupModal: false,
-  showRoutineSessionModal: false
+  showRoutineSessionModal: false,
+  // 🆕 Estados para modales de inicio
+  showStartDayModal: false,
+  showDistributionModal: false,
+  startConfig: null,
+  distributionConfig: null
 };
 
 export default function MethodologiesScreen() {
@@ -61,6 +68,24 @@ export default function MethodologiesScreen() {
     const today = new Date();
     const dayOfWeek = today.getDay();
     return dayOfWeek === 0 || dayOfWeek === 6; // 0 = Domingo, 6 = Sábado
+  };
+
+  /**
+   * 🆕 Detecta si debe mostrar modal de día de inicio
+   * Muestra modal si es Jueves, Viernes, Sábado o Domingo
+   */
+  const shouldShowStartDayModal = () => {
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    return [0, 4, 5, 6].includes(dayOfWeek); // Dom, Jue, Vie, Sáb
+  };
+
+  /**
+   * 🆕 Detecta si debe mostrar modal de distribución de sesiones
+   * Muestra modal si comienza en día incompleto (Mar, Mié, Jue, Vie)
+   */
+  const shouldShowDistributionModal = (sessionsFirstWeek) => {
+    return sessionsFirstWeek && sessionsFirstWeek < 5;
   };
 
   /**
@@ -352,69 +377,92 @@ export default function MethodologiesScreen() {
 
     // Permitir ejecución si está en modo manual O si se fuerza (clic en botón Seleccionar)
     if (localState.selectionMode === 'manual' || forceManual) {
-      // Si es Calistenia, mostrar el modal específico
-      if (methodology.name === 'Calistenia') {
-        ui.showModal('calisteniaManual');
+      // 🆕 PASO 1: Detectar si debe mostrar modal de día de inicio
+      if (shouldShowStartDayModal()) {
+        console.log('🗓️ Día especial detectado, mostrando modal de inicio...');
+        updateLocalState({
+          pendingMethodology: methodology,
+          showStartDayModal: true
+        });
         return;
       }
 
-      // Si es Heavy Duty, mostrar el modal específico
-      if (methodology.name === 'Heavy Duty') {
-        ui.showModal('heavyDutyManual');
-        return;
-      }
-
-      // Si es Hipertrofia, mostrar el modal específico
-      if (methodology.name === 'Hipertrofia') {
-        ui.showModal('hipertrofiaManual');
-        return;
-      }
-
-      // Si es HipertrofiaV2, mostrar el modal específico
-      if (methodology.name === 'HipertrofiaV2') {
-        ui.showModal('hipertrofiaV2Manual');
-        return;
-      }
-
-      // Si es Powerlifting, mostrar el modal específico
-      if (methodology.name === 'Powerlifting') {
-        ui.showModal('powerliftingManual');
-        return;
-      }
-
-      // Si es CrossFit, mostrar el modal específico
-      if (methodology.name === 'CrossFit') {
-        ui.showModal('crossfitManual');
-        return;
-      }
-
-      // Si es Funcional, mostrar el modal específico
-      if (methodology.name === 'Funcional') {
-        ui.showModal('funcionalManual');
-        return;
-      }
-
-      // Si es Halterofilia, mostrar el modal específico
-      if (methodology.name === 'Halterofilia') {
-        ui.showModal('halterofíliaManual');
-        return;
-      }
-
-      // Si es Entrenamiento en Casa, mostrar el modal específico
-      if (methodology.name === 'Entrenamiento en Casa') {
-        ui.showModal('casaManual');
-        return;
-      }
-
-      updateLocalState({
-        pendingMethodology: methodology,
-        versionSelectionData: {
-          isAutomatic: false,
-          selectedMethodology: methodology.name
-        }
-      });
-      ui.showModal('versionSelection');
+      // PASO 2: Si no es día especial, continuar con flujo normal
+      proceedWithMethodologySelection(methodology);
     }
+  };
+
+  /**
+   * 🆕 Procede con la selección de metodología (después de modal de inicio o directamente)
+   */
+  const proceedWithMethodologySelection = (methodology, startConfig = null) => {
+    // Si es Calistenia, mostrar el modal específico
+    if (methodology.name === 'Calistenia') {
+      ui.showModal('calisteniaManual');
+      return;
+    }
+
+    // Si es Heavy Duty, mostrar el modal específico
+    if (methodology.name === 'Heavy Duty') {
+      ui.showModal('heavyDutyManual');
+      return;
+    }
+
+    // Si es Hipertrofia, mostrar el modal específico
+    if (methodology.name === 'Hipertrofia') {
+      ui.showModal('hipertrofiaManual');
+      return;
+    }
+
+    // Si es HipertrofiaV2, mostrar el modal específico
+    if (methodology.name === 'HipertrofiaV2') {
+      ui.showModal('hipertrofiaV2Manual');
+      return;
+    }
+
+    // Si es Powerlifting, mostrar el modal específico
+    if (methodology.name === 'Powerlifting') {
+      ui.showModal('powerliftingManual');
+      return;
+    }
+
+    // Si es CrossFit, mostrar el modal específico
+    if (methodology.name === 'CrossFit') {
+      ui.showModal('crossfitManual');
+      return;
+    }
+
+    // Si es Funcional, mostrar el modal específico
+    if (methodology.name === 'Funcional') {
+      ui.showModal('funcionalManual');
+      return;
+    }
+
+    // Si es Halterofilia, mostrar el modal específico
+    if (methodology.name === 'Halterofilia') {
+      ui.showModal('halterofíliaManual');
+      return;
+    }
+
+    // Si es Entrenamiento en Casa, mostrar el modal específico
+    if (methodology.name === 'Entrenamiento en Casa') {
+      ui.showModal('casaManual');
+      return;
+    }
+
+    // Guardar configuración de inicio si existe
+    if (startConfig) {
+      updateLocalState({ startConfig });
+    }
+
+    updateLocalState({
+      pendingMethodology: methodology,
+      versionSelectionData: {
+        isAutomatic: false,
+        selectedMethodology: methodology.name
+      }
+    });
+    ui.showModal('versionSelection');
   };
 
   const confirmManualSelection = async (versionConfig) => {
@@ -435,12 +483,21 @@ export default function MethodologiesScreen() {
     try {
       console.log(`🎯 Generando plan manual para metodología: ${localState.pendingMethodology.name}`);
 
-      // Usar generatePlan del WorkoutContext
-      const result = await generatePlan({
+      // 🆕 Preparar configuración completa con datos de inicio
+      const planConfig = {
         mode: 'manual',
         methodology: (localState.pendingMethodology.name || '').toLowerCase(),
         versionConfig: versionConfig || { version: 'adapted', customWeeks: 4 }
-      });
+      };
+
+      // 🆕 Añadir configuración de inicio si existe
+      if (localState.startConfig) {
+        planConfig.startConfig = localState.startConfig;
+        console.log('🗓️ Configuración de inicio incluida:', localState.startConfig);
+      }
+
+      // Usar generatePlan del WorkoutContext
+      const result = await generatePlan(planConfig);
 
       if (result.success) {
         console.log('✅ Plan manual generado exitosamente');
@@ -463,6 +520,74 @@ export default function MethodologiesScreen() {
     } finally {
       updateLocalState({ pendingMethodology: null });
     }
+  };
+
+  /**
+   * 🆕 Handler para confirmación del modal de día de inicio
+   */
+  const handleStartDayConfirm = async (config) => {
+    try { track('ACTION', { id: 'start_day_confirm', config }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
+
+    console.log('🗓️ Configuración de inicio confirmada:', config);
+
+    // Cerrar modal de inicio
+    updateLocalState({ showStartDayModal: false });
+
+    // Si es Home Training, redirigir
+    if (config.isHomeTraining) {
+      console.log('🏠 Redirigiendo a Home Training...');
+      navigate('/home-training');
+      return;
+    }
+
+    // Guardar configuración de inicio
+    updateLocalState({ startConfig: config });
+
+    // Si comienza en día incompleto, mostrar modal de distribución
+    if (shouldShowDistributionModal(config.sessionsFirstWeek)) {
+      console.log('📊 Mostrando modal de distribución de sesiones...');
+      updateLocalState({
+        showDistributionModal: true,
+        distributionConfig: {
+          startDay: getDayName(new Date().getDay()),
+          totalSessions: 30, // Por defecto, se puede ajustar según metodología
+          sessionsPerWeek: 5,
+          missingSessions: 5 - config.sessionsFirstWeek
+        }
+      });
+    } else {
+      // Continuar con selección de metodología
+      proceedWithMethodologySelection(localState.pendingMethodology, config);
+    }
+  };
+
+  /**
+   * 🆕 Handler para confirmación del modal de distribución
+   */
+  const handleDistributionConfirm = async (option) => {
+    try { track('ACTION', { id: 'distribution_confirm', option }, { component: 'MethodologiesScreen' }); } catch (e) { console.warn('Track error:', e); }
+
+    console.log('📊 Opción de distribución confirmada:', option);
+
+    // Cerrar modal de distribución
+    updateLocalState({ showDistributionModal: false });
+
+    // Combinar configuración de inicio con opción de distribución
+    const finalConfig = {
+      ...localState.startConfig,
+      distributionOption: option // 'saturdays' o 'extra_week'
+    };
+
+    // Continuar con selección de metodología
+    proceedWithMethodologySelection(localState.pendingMethodology, finalConfig);
+  };
+
+  /**
+   * 🆕 Helper para obtener nombre del día
+   */
+  const getDayName = (dayOfWeek) => {
+    const days = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+    return days[dayOfWeek];
   };
 
   const handleOpenDetails = (methodology) => {
@@ -1570,6 +1695,7 @@ export default function MethodologiesScreen() {
         onStartTraining={handleStartTraining}
         onGenerateAnother={handleGenerateAnother}
         plan={plan.currentPlan}
+        planId={plan.methodologyPlanId}
         methodology={plan.methodology}
         isLoading={ui.isLoading}
         error={ui.error}
@@ -1819,6 +1945,22 @@ export default function MethodologiesScreen() {
           }}
         />
       )}
+
+      {/* 🆕 Modal de Día de Inicio */}
+      <StartDayConfirmationModal
+        isOpen={localState.showStartDayModal}
+        onClose={() => updateLocalState({ showStartDayModal: false, pendingMethodology: null })}
+        onConfirm={handleStartDayConfirm}
+        methodology={localState.pendingMethodology?.name || ''}
+      />
+
+      {/* 🆕 Modal de Distribución de Sesiones */}
+      <SessionDistributionModal
+        isOpen={localState.showDistributionModal}
+        onClose={() => updateLocalState({ showDistributionModal: false, distributionConfig: null })}
+        onConfirm={handleDistributionConfirm}
+        config={localState.distributionConfig}
+      />
     </div>
   );
 }

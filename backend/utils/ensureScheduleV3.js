@@ -54,14 +54,28 @@ import { adjustWorkoutIntensity, shouldAdjustIntensity } from './adjustWorkoutIn
 /**
  * Genera workout_schedule y methodology_plan_days respetando preferencias del usuario.
  * VERSIÓN MEJORADA: Implementa redistribución inteligente según el día de inicio
+ *
+ * @param {Object} startConfig - Configuración de inicio del usuario (opcional)
+ * @param {number} startConfig.sessions_first_week - Número de sesiones en primera semana
+ * @param {string} startConfig.distribution_option - 'saturdays' o 'extra_week'
+ * @param {boolean} startConfig.include_saturdays - Si incluir sábados en el calendario
  */
-export async function ensureWorkoutScheduleV3(client, userId, methodologyPlanId, planDataJson, startDate = new Date()) {
+export async function ensureWorkoutScheduleV3(client, userId, methodologyPlanId, planDataJson, startDate = new Date(), startConfig = null) {
   try {
     console.log('[ensureWorkoutScheduleV3] Iniciando con redistribución inteligente', {
       planId: methodologyPlanId,
       userId,
-      startDate: startDate.toISOString().split('T')[0]
+      startDate: startDate.toISOString().split('T')[0],
+      hasStartConfig: !!startConfig
     });
+
+    if (startConfig) {
+      console.log('🗓️ [ensureWorkoutScheduleV3] Usando configuración del usuario:', {
+        sessionsFirstWeek: startConfig.sessions_first_week,
+        distributionOption: startConfig.distribution_option,
+        includeSaturdays: startConfig.include_saturdays
+      });
+    }
 
     const planData = typeof planDataJson === 'string' ? JSON.parse(planDataJson) : planDataJson;
     if (!planData || !Array.isArray(planData.semanas) || planData.semanas.length === 0) {
@@ -83,18 +97,17 @@ export async function ensureWorkoutScheduleV3(client, userId, methodologyPlanId,
 
     const planStartDate = new Date(startDate);
 
-    // 🎯 NUEVO: LÓGICA DE REDISTRIBUCIÓN INTELIGENTE
+    // 🎯 NUEVO: LÓGICA DE REDISTRIBUCIÓN DINÁMICA
     const startDayOfWeek = planStartDate.getDay(); // 0=Dom, 1=Lun, ..., 6=Sáb
     const dayName = DAY_NAMES[startDayOfWeek];
 
-    console.log(`📅 [Redistribución Inteligente] Generando plan en ${dayName} (día ${startDayOfWeek})`);
+    console.log(`📅 [Redistribución Dinámica] Generando plan en ${dayName} (día ${startDayOfWeek})`);
 
     // Detectar el nivel del usuario (principiante, intermedio, avanzado)
     const userLevel = planData?.nivel || planData?.level || 'principiante';
     const isPrincipiante = userLevel.toLowerCase().includes('princip');
 
-    // Obtener el patrón original del nivel (típicamente Lun-Mié-Vie para principiantes)
-    const originalPattern = 'Lun-Mié-Vie'; // TODO: Extraer del plan
+    // Variables de configuración
     let firstWeekPattern = null;
     let isConsecutiveDays = false;
     let isExtendedWeeks = false;
@@ -102,9 +115,45 @@ export async function ensureWorkoutScheduleV3(client, userId, methodologyPlanId,
     let totalWeeks = planData.semanas.length;
     let warnings = [];
     let dayMappings = {};
+    let includeSaturdays = false;
 
-    // 🔄 APLICAR REDISTRIBUCIÓN SEGÚN EL DÍA DE INICIO
-    if (isPrincipiante) {
+    // 🆕 USAR CONFIGURACIÓN DEL USUARIO SI EXISTE
+    if (startConfig) {
+      console.log('✅ [Redistribución] Usando configuración del usuario');
+
+      // Calcular patrón de primera semana según sessionsFirstWeek
+      const sessionsFirstWeek = startConfig.sessions_first_week || 0;
+      includeSaturdays = startConfig.include_saturdays || false;
+      isExtendedWeeks = startConfig.distribution_option === 'extra_week';
+
+      // Generar patrón de primera semana
+      if (sessionsFirstWeek > 0) {
+        const daysAvailable = [];
+        const maxDay = includeSaturdays ? 6 : 5; // Hasta sábado o viernes
+
+        for (let d = startDayOfWeek; d <= maxDay && daysAvailable.length < sessionsFirstWeek; d++) {
+          daysAvailable.push(DAY_ABBREVS[d]);
+        }
+
+        firstWeekPattern = daysAvailable.join('-');
+        console.log(`📊 Primera semana: ${sessionsFirstWeek} sesiones → ${firstWeekPattern}`);
+      }
+
+      // Ajustar total de semanas si se eligió semana extra
+      if (isExtendedWeeks) {
+        totalWeeks = planData.semanas.length + 1;
+        console.log(`📊 Semana extra añadida: ${totalWeeks} semanas totales`);
+      }
+    } else {
+      console.log('⚠️ [Redistribución] Sin configuración del usuario, usando lógica por defecto');
+      // Mantener lógica original como fallback
+      const originalPattern = 'Lun-Mié-Vie';
+      firstWeekPattern = originalPattern;
+    }
+
+    // 🔄 APLICAR REDISTRIBUCIÓN SEGÚN EL DÍA DE INICIO (SOLO SI NO HAY startConfig)
+    if (!startConfig && isPrincipiante) {
+      console.log('⚠️ [Redistribución] Usando lógica hardcodeada (fallback)');
       switch (startDayOfWeek) {
         case 1: // LUNES
           console.log('✅ Lunes: Patrón estándar sin cambios');
@@ -372,16 +421,36 @@ export async function ensureWorkoutScheduleV3(client, userId, methodologyPlanId,
         sessionsToSchedule = baseSessions.map(session => ({ ...session }));
       }
 
-      // ✅ SEMANAS 2+: Mapear D1..D5 a días reales (Lun..Vie)
-      // En muchos planes MindFeed, las semanas >1 vienen con etiquetas 'D1'..'D5'.
+      // ✅ MAPEAR D1..D5 a días reales (Lun..Vie o Lun..Sáb) - TODAS LAS SEMANAS
+      // En muchos planes MindFeed, las sesiones vienen con etiquetas 'D1'..'D5'.
       // Aquí las traducimos a días fijos para que workout_schedule pueda asignarlas.
-      if (weekIndex > 0) {
-        const KNOWN = new Set(DAY_ABBREVS); // Dom..Sab
-        const allUnknown = sessionsToSchedule.every(s => !KNOWN.has(normalizeDayAbbrev(s.dia)));
-        if (allUnknown && sessionsToSchedule.length > 0) {
-          // Seleccionar patrón según número de sesiones/semana
-          let targetDays;
-          const count = sessionsToSchedule.length;
+      const KNOWN = new Set(DAY_ABBREVS); // Dom..Sab
+      const allUnknown = sessionsToSchedule.every(s => !KNOWN.has(normalizeDayAbbrev(s.dia)));
+
+      if (allUnknown && sessionsToSchedule.length > 0) {
+        console.log(`🔄 [Redistribución] Mapeando D1-D5 a días reales (semana ${weekIndex + 1})`);
+
+        // 🆕 Seleccionar patrón según número de sesiones/semana Y si incluye sábados
+        let targetDays;
+        const count = sessionsToSchedule.length;
+
+        if (includeSaturdays) {
+          // Patrón con sábados (Lun-Sáb)
+          if (count >= 6) {
+            targetDays = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab'];
+          } else if (count === 5) {
+            targetDays = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie'];
+          } else if (count === 4) {
+            targetDays = ['Lun', 'Mar', 'Jue', 'Vie'];
+          } else if (count === 3) {
+            targetDays = ['Lun', 'Mie', 'Vie'];
+          } else if (count === 2) {
+            targetDays = ['Lun', 'Jue'];
+          } else {
+            targetDays = ['Lun'];
+          }
+        } else {
+          // Patrón sin sábados (Lun-Vie)
           if (count >= 5) {
             targetDays = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie'];
           } else if (count === 4) {
@@ -393,12 +462,14 @@ export async function ensureWorkoutScheduleV3(client, userId, methodologyPlanId,
           } else {
             targetDays = ['Lun'];
           }
-
-          sessionsToSchedule = sessionsToSchedule.map((session, i) => ({
-            ...session,
-            dia: targetDays[i % targetDays.length]
-          }));
         }
+
+        console.log(`🔄 Mapeando D1-D${count} → ${targetDays.join(', ')}`);
+
+        sessionsToSchedule = sessionsToSchedule.map((session, i) => ({
+          ...session,
+          dia: targetDays[i % targetDays.length]
+        }));
       }
 
       // 🔧 LÓGICA PARA PRIMERA SEMANA Y ÚLTIMA SEMANA
@@ -406,37 +477,53 @@ export async function ensureWorkoutScheduleV3(client, userId, methodologyPlanId,
       const isLastWeek = weekIndex === normalizedPlan.semanas.length - 1;
       const startDayOfWeek = planStartDate.getDay(); // 0 = Domingo, 1 = Lun, ..., 5 = Vie, 6 = Sáb
 
-      // PRIMERA SEMANA: Usar días consecutivos desde hoy (solo lun-vie)
-      if (isFirstWeek && startDayOfWeek > 0 && startDayOfWeek < 6) {
-        // Calcular días consecutivos disponibles desde hoy hasta viernes
-        const consecutiveDaysAvailable = [];
-        for (let d = startDayOfWeek; d <= 5; d++) { // 1=Lun ... 5=Vie
-          consecutiveDaysAvailable.push(DAY_ABBREVS[d]);
+      // 🆕 PRIMERA SEMANA: Verificar que solo tenga las sesiones correctas
+      if (isFirstWeek && startConfig && firstWeekPattern) {
+        // Si ya se aplicó firstWeekPattern, verificar que solo tenga las sesiones necesarias
+        const expectedSessions = firstWeekPattern.split('-').length;
+        if (sessionsToSchedule.length > expectedSessions) {
+          console.log(`⚠️ [Primera semana] Recortando sesiones: ${sessionsToSchedule.length} → ${expectedSessions}`);
+          sessionsToSchedule = sessionsToSchedule.slice(0, expectedSessions);
         }
+        console.log('✅ [Primera semana] Usando configuración del usuario:', {
+          pattern: firstWeekPattern,
+          sessions: sessionsToSchedule.map(s => s.dia)
+        });
+      } else if (isFirstWeek && !startConfig) {
+        // Solo aplicar lógica hardcodeada si NO hay startConfig
+        console.log('⚠️ [Primera semana] Sin startConfig, usando lógica hardcodeada');
 
-        const sessionsNeeded = Math.min(sessionsToSchedule.length, consecutiveDaysAvailable.length);
-
-        if (sessionsNeeded > 0) {
-          console.log(`[ensureWorkoutScheduleV3] Primera semana: asignando ${sessionsNeeded} sesiones a días consecutivos`, {
-            planId: methodologyPlanId,
-            díasDisponibles: consecutiveDaysAvailable,
-            startDayOfWeek
-          });
-
-          // Tomar las primeras N sesiones y asignarlas a días consecutivos
-          const redistributedSessions = [];
-          for (let i = 0; i < sessionsNeeded; i++) {
-            const session = sessionsToSchedule[i];
-            const targetDay = consecutiveDaysAvailable[i];
-            redistributedSessions.push({ ...session, dia: targetDay });
+        if (startDayOfWeek > 0 && startDayOfWeek < 6) {
+          // Calcular días consecutivos disponibles desde hoy hasta viernes
+          const consecutiveDaysAvailable = [];
+          for (let d = startDayOfWeek; d <= 5; d++) { // 1=Lun ... 5=Vie
+            consecutiveDaysAvailable.push(DAY_ABBREVS[d]);
           }
 
-          sessionsToSchedule = redistributedSessions;
+          const sessionsNeeded = Math.min(sessionsToSchedule.length, consecutiveDaysAvailable.length);
 
-          console.log('[ensureWorkoutScheduleV3] Sesiones asignadas en primera semana:', {
-            planId: methodologyPlanId,
-            sesionesAsignadas: sessionsToSchedule.map(s => s.dia)
-          });
+          if (sessionsNeeded > 0) {
+            console.log(`[ensureWorkoutScheduleV3] Primera semana: asignando ${sessionsNeeded} sesiones a días consecutivos`, {
+              planId: methodologyPlanId,
+              díasDisponibles: consecutiveDaysAvailable,
+              startDayOfWeek
+            });
+
+            // Tomar las primeras N sesiones y asignarlas a días consecutivos
+            const redistributedSessions = [];
+            for (let i = 0; i < sessionsNeeded; i++) {
+              const session = sessionsToSchedule[i];
+              const targetDay = consecutiveDaysAvailable[i];
+              redistributedSessions.push({ ...session, dia: targetDay });
+            }
+
+            sessionsToSchedule = redistributedSessions;
+
+            console.log('[ensureWorkoutScheduleV3] Sesiones asignadas en primera semana:', {
+              planId: methodologyPlanId,
+              sesionesAsignadas: sessionsToSchedule.map(s => s.dia)
+            });
+          }
         }
       }
 

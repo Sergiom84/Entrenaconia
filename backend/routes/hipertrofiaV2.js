@@ -96,9 +96,14 @@ router.post('/generate-d1d5', authenticateToken, async (req, res) => {
 
   try {
     const userId = req.user?.userId || req.user?.id;
-    const { nivel = 'Principiante', totalWeeks = 6 } = req.body;
+    const { nivel = 'Principiante', totalWeeks = 6, startConfig } = req.body;
 
     console.log('🏋️ [MINDFEED] Generando plan D1-D5 para usuario:', userId, 'Nivel:', nivel);
+
+    // 🆕 Log de configuración de inicio si existe
+    if (startConfig) {
+      console.log('🗓️ Configuración de inicio recibida:', startConfig);
+    }
 
     await dbClient.query('BEGIN');
 
@@ -146,7 +151,7 @@ router.post('/generate-d1d5', authenticateToken, async (req, res) => {
         } else if (muscleGroupsRaw && typeof muscleGroupsRaw === 'object') {
           muscleGroups = Object.values(muscleGroupsRaw);
         }
-      } catch (parseError) {
+      } catch {
         console.warn('⚠️ [MINDFEED] muscle_groups en formato CSV, aplicando fallback:', muscleGroupsRaw);
         muscleGroups = String(muscleGroupsRaw)
           .split(',')
@@ -383,6 +388,57 @@ router.post('/generate-d1d5', authenticateToken, async (req, res) => {
         deload_active = false,
         updated_at = NOW()
     `, [userId, methodologyPlanId, 1, 0]);
+
+    // 🆕 6. Guardar configuración de inicio si existe
+    if (startConfig) {
+      console.log('💾 Guardando configuración de inicio en plan_start_config...');
+
+      const startDate = startConfig.startDate === 'today'
+        ? new Date()
+        : startConfig.startDate === 'next_monday'
+        ? (() => {
+            const d = new Date();
+            d.setDate(d.getDate() + ((1 + 7 - d.getDay()) % 7 || 7));
+            return d;
+          })()
+        : new Date();
+
+      await dbClient.query(`
+        INSERT INTO app.plan_start_config (
+          methodology_plan_id,
+          user_id,
+          start_day_of_week,
+          start_date,
+          sessions_first_week,
+          distribution_option,
+          include_saturdays,
+          is_consecutive_days,
+          is_extended_weeks,
+          created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+        ON CONFLICT (methodology_plan_id) DO UPDATE SET
+          start_day_of_week = EXCLUDED.start_day_of_week,
+          start_date = EXCLUDED.start_date,
+          sessions_first_week = EXCLUDED.sessions_first_week,
+          distribution_option = EXCLUDED.distribution_option,
+          include_saturdays = EXCLUDED.include_saturdays,
+          is_consecutive_days = EXCLUDED.is_consecutive_days,
+          is_extended_weeks = EXCLUDED.is_extended_weeks,
+          updated_at = NOW()
+      `, [
+        methodologyPlanId,
+        userId,
+        startDate.getDay(),
+        startDate.toISOString().split('T')[0],
+        startConfig.sessionsFirstWeek || null,
+        startConfig.distributionOption || null,
+        startConfig.distributionOption === 'saturdays',
+        false, // is_consecutive_days (calculado por backend)
+        startConfig.distributionOption === 'extra_week'
+      ]);
+
+      console.log('✅ Configuración de inicio guardada');
+    }
 
     await dbClient.query('COMMIT');
 
@@ -667,7 +723,7 @@ router.post('/generate-fullbody', authenticateToken, async (req, res) => {
 
   try {
     const userId = req.user?.userId || req.user?.id;
-    const { nivel = 'Principiante', objetivos = [] } = req.body;
+    const { nivel = 'Principiante' } = req.body;
 
     console.log('💪 Generando rutina Full Body para usuario:', userId, 'Nivel:', nivel);
 
@@ -775,7 +831,7 @@ router.post('/generate-fullbody', authenticateToken, async (req, res) => {
     };
 
     // Insertar la sesión en methodology_exercise_sessions
-    const sessionResult = await dbClient.query(`
+    await dbClient.query(`
       INSERT INTO app.methodology_exercise_sessions (
         methodology_plan_id,
         session_number,
@@ -900,7 +956,7 @@ router.post('/generate-single-day', authenticateToken, async (req, res) => {
 
   try {
     const userId = req.user?.userId || req.user?.id;
-    const { nivel = 'Principiante', objetivos = [], isWeekendExtra = false } = req.body;
+    const { nivel = 'Principiante', isWeekendExtra = false } = req.body;
 
     console.log('🏋️ Generando entrenamiento de día único para usuario:', userId);
     console.log('📊 Nivel:', nivel, '| Fin de semana extra:', isWeekendExtra);

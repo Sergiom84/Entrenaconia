@@ -8,6 +8,7 @@ import { preloadAllPrompts } from './lib/promptRegistry.js';
 import { validateAPIKeys } from './lib/openaiClient.js';
 import { initializeSessionMaintenance } from './utils/sessionMaintenance.js';
 import { startCleanupScheduler } from './jobs/sessionCleanupJob.js';
+import { startMissedSessionsScheduler } from './jobs/missedSessionsJob.js';
 
 // Helper function for Spanish timezone (UTC+2/UTC+1 depending on DST)
 function getSpanishTimestamp() {
@@ -109,6 +110,7 @@ const FRONTEND_DIST = path.join(__dirname, '../dist'); // ajusta si tu build sal
     console.log('🔧 Inicializando sistema de mantenimiento de sesiones...');
     initializeSessionMaintenance();
     console.log('✅ Sistema de mantenimiento de sesiones inicializado');
+    startMissedSessionsScheduler();
 
   } catch (err) {
     console.error('❌ Error en inicialización:', err);

@@ -24,6 +24,7 @@ import { AI_MODULES } from '../config/aiConfigs.js';
 import { getModuleOpenAI, getOpenAIClient } from '../lib/openaiClient.js';
 import { getPrompt, FeatureKey, clearPromptCache } from '../lib/promptRegistry.js';
 import { buildHipertrofiaPlan, HIPERTROFIA_LEVEL_RULES } from '../services/hipertrofiaPlanGenerator.js';
+import { calculateSessionDistribution } from '../services/sessionDistributionService.js';
 import {
   logSeparator,
   logUserProfile,
@@ -89,6 +90,76 @@ async function cleanUserDrafts(userId, client = null) {
     // No lanzar error - la limpieza es opcional pero loguear detalles
     return 0;
   }
+}
+
+/**
+ * 🆕 Aplica la distribución de sesiones a un plan generado
+ * Reorganiza las semanas según la configuración de inicio
+ */
+function applySessionDistribution(plan, startConfig) {
+  if (!startConfig || !startConfig.sessionsFirstWeek) {
+    console.log('ℹ️ No hay configuración de inicio, plan sin modificar');
+    return plan;
+  }
+
+  console.log('📊 Aplicando distribución de sesiones:', startConfig);
+
+  // Calcular distribución
+  const totalSessions = plan.semanas.reduce((sum, week) =>
+    sum + (week.sesiones?.length || 0), 0
+  );
+
+  const distribution = calculateSessionDistribution({
+    totalSessions,
+    sessionsPerWeek: plan.frecuencia_por_semana || 5,
+    sessionsFirstWeek: startConfig.sessionsFirstWeek,
+    distributionOption: startConfig.distributionOption || 'extra_week'
+  });
+
+  console.log('📊 Distribución calculada:', distribution);
+
+  // Reorganizar semanas según distribución
+  const allSessions = [];
+  plan.semanas.forEach(week => {
+    if (week.sesiones && Array.isArray(week.sesiones)) {
+      allSessions.push(...week.sesiones);
+    }
+  });
+
+  const newWeeks = [];
+  let sessionIndex = 0;
+
+  distribution.forEach((weekDist, idx) => {
+    const weekSessions = allSessions.slice(sessionIndex, sessionIndex + weekDist.sessions);
+
+    // Actualizar días de las sesiones según distribución
+    weekSessions.forEach((session, sIdx) => {
+      if (weekDist.days && weekDist.days[sIdx]) {
+        session.dia = weekDist.days[sIdx];
+      }
+    });
+
+    newWeeks.push({
+      numero: idx + 1,
+      enfoque: `Semana ${idx + 1}`,
+      sesiones: weekSessions
+    });
+
+    sessionIndex += weekDist.sessions;
+  });
+
+  // Actualizar plan con nueva estructura
+  return {
+    ...plan,
+    duracion_total_semanas: distribution.length,
+    semanas: newWeeks,
+    metadata: {
+      ...plan.metadata,
+      session_distribution_applied: true,
+      distribution_option: startConfig.distributionOption,
+      sessions_first_week: startConfig.sessionsFirstWeek
+    }
+  };
 }
 
 /**
@@ -273,7 +344,6 @@ function normalizeCasaPlan(plan) {
 function getCurrentDayInfo() {
   // Usar UTC para consistencia entre servidor y cliente
   const today = new Date();
-  const utcDate = new Date(today.toISOString());
   const daysOfWeek = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 
   // Obtener día de la semana en zona horaria local del servidor
@@ -1032,14 +1102,13 @@ router.post('/specialist/heavy-duty/generate', authenticateToken, async (req, re
     const heavyDutyData = req.body.heavyDutyData || req.body;
     const {
       userProfile,
-      level,              // Heavy Duty env+�a "level"
+      level,              // Heavy Duty envía "level"
       selectedLevel,      // Fallback por si viene selectedLevel
       goals,
       selectedMuscleGroups,
       previousPlan,
       regenerationReason,
-      additionalInstructions,
-      versionConfig
+      additionalInstructions
     } = heavyDutyData;
 
     // Mapear level G�� selectedLevel (Heavy Duty usa "level" en lugar de "selectedLevel")
@@ -1258,7 +1327,7 @@ router.post('/specialist/heavy-duty/generate', authenticateToken, async (req, re
         const diasLaborables = ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes'];
 
         parsedPlan.semanas.forEach((semana, sIdx) => {
-          semana.sesiones.forEach((sesion, dIdx) => {
+          semana.sesiones.forEach((sesion, D_IDX) => {
             const diaName = sesion.dia;
             if (!diasLaborables.includes(diaName)) {
               weekendDays.push({
@@ -1515,8 +1584,13 @@ router.post('/specialist/hipertrofia/generate', authenticateToken, async (req, r
       previousPlan,
       regenerationReason,
       additionalInstructions,
-      versionConfig
+      startConfig
     } = hipertrofiaData;
+
+    // 🆕 Log de configuración de inicio si existe
+    if (startConfig) {
+      console.log('🗓️ Configuración de inicio recibida:', startConfig);
+    }
 
     // Mapear level G�� selectedLevel
     const actualLevel = selectedLevel || level;
@@ -1681,9 +1755,8 @@ router.post('/specialist/hipertrofia/generate', authenticateToken, async (req, r
 
     // 🔧 VALIDACIÓN FLEXIBLE: Si la primera semana tiene menos sesiones (inicio a mitad de semana),
     // el total puede ser menor que expectedSessionsPerWeek * weeks
-    const primeraSemanaSesiones = generatedPlan.semanas[0]?.sesiones?.length || 0;
+    const PRIMERA_SEMANA_SESIONES = generatedPlan.semanas[0]?.sesiones?.length || 0;
     const esperadoConPrimeraSemanaCompleta = expectedSessionsPerWeek * levelRule.weeks;
-    const esperadoConPrimeraSemanaParcial = primeraSemanaSesiones + (expectedSessionsPerWeek * (levelRule.weeks - 1));
 
     // Validar que el total esté dentro del rango esperado
     const minSessions = expectedSessionsPerWeek * (levelRule.weeks - 1) + 1; // Al menos 1 sesión en primera semana
@@ -1699,7 +1772,20 @@ router.post('/specialist/hipertrofia/generate', authenticateToken, async (req, r
 
     console.log(
       `[HIPERTROFIA] Plan generado con ${totalSessions} sesiones totales (${expectedSessionsPerWeek} por semana)`
-    );    // Guardar plan en BD
+    );
+
+    // 🆕 Aplicar distribución de sesiones si existe configuración de inicio
+    let finalPlan = generatedPlan;
+    if (startConfig && startConfig.sessionsFirstWeek) {
+      console.log('📊 Aplicando distribución de sesiones al plan de Hipertrofia...');
+      finalPlan = applySessionDistribution(generatedPlan, startConfig);
+      console.log('✅ Distribución aplicada:', {
+        semanas: finalPlan.semanas.length,
+        primera_semana_sesiones: finalPlan.semanas[0]?.sesiones?.length
+      });
+    }
+
+    // Guardar plan en BD
     const client_db = await pool.connect();
     try {
       await client_db.query('BEGIN');
@@ -1714,17 +1800,68 @@ router.post('/specialist/hipertrofia/generate', authenticateToken, async (req, r
         )
         VALUES ($1, $2, $3, $4, $5, NOW())
         RETURNING id
-      `, [userId, 'Hipertrofia', JSON.stringify(generatedPlan), 'manual', 'draft']);
+      `, [userId, 'Hipertrofia', JSON.stringify(finalPlan), 'manual', 'draft']);
 
       const methodologyPlanId = planResult.rows[0].id;
 
+      // 🆕 Guardar configuración de inicio si existe
+      if (startConfig) {
+        console.log('💾 Guardando configuración de inicio en plan_start_config...');
+
+        const startDate = startConfig.startDate === 'today'
+          ? new Date()
+          : startConfig.startDate === 'next_monday'
+          ? (() => {
+              const d = new Date();
+              d.setDate(d.getDate() + ((1 + 7 - d.getDay()) % 7 || 7));
+              return d;
+            })()
+          : new Date();
+
+        await client_db.query(`
+          INSERT INTO app.plan_start_config (
+            methodology_plan_id,
+            user_id,
+            start_day_of_week,
+            start_date,
+            sessions_first_week,
+            distribution_option,
+            include_saturdays,
+            is_consecutive_days,
+            is_extended_weeks,
+            created_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+          ON CONFLICT (methodology_plan_id) DO UPDATE SET
+            start_day_of_week = EXCLUDED.start_day_of_week,
+            start_date = EXCLUDED.start_date,
+            sessions_first_week = EXCLUDED.sessions_first_week,
+            distribution_option = EXCLUDED.distribution_option,
+            include_saturdays = EXCLUDED.include_saturdays,
+            is_consecutive_days = EXCLUDED.is_consecutive_days,
+            is_extended_weeks = EXCLUDED.is_extended_weeks,
+            updated_at = NOW()
+        `, [
+          methodologyPlanId,
+          userId,
+          startDate.getDay(),
+          startDate.toISOString().split('T')[0],
+          startConfig.sessionsFirstWeek || null,
+          startConfig.distributionOption || null,
+          startConfig.distributionOption === 'saturdays',
+          false, // is_consecutive_days (calculado por backend)
+          startConfig.distributionOption === 'extra_week'
+        ]);
+
+        console.log('✅ Configuración de inicio guardada');
+      }
+
       await client_db.query('COMMIT');
 
-      console.log(`G�� Plan Hipertrofia guardado con ID: ${methodologyPlanId}`);
+      console.log(`✅ Plan Hipertrofia guardado con ID: ${methodologyPlanId}`);
 
       res.json({
         success: true,
-        plan: generatedPlan,
+        plan: finalPlan,
         methodologyPlanId,
         planId: methodologyPlanId,
         metadata: {
@@ -2007,7 +2144,7 @@ router.post('/specialist/powerlifting/generate', authenticateToken, async (req, 
 
     // Determinar frecuencia según nivel
     const frecuenciaObligatoria = dbLevel === 'Elite' ? 6 : (dbLevel === 'Avanzado' ? 5 : (dbLevel === 'Intermedio' ? 4 : 3));
-    const sesionesTotales = frecuenciaObligatoria * 4;
+    const SESIONES_TOTALES = frecuenciaObligatoria * 4;
 
     // userMessage YA NO SE USA - Ahora usamos planPayload estructurado
     // El mensaje anterior se mantiene comentado por referencia histórica
@@ -2214,7 +2351,7 @@ GENERA un plan completo siguiendo el formato JSON de metodología con EXACTAMENT
         const diasLaborablesCompletos = ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes'];
 
         parsedPlan.semanas.forEach((semana, sIdx) => {
-          semana.sesiones.forEach((sesion, dIdx) => {
+          semana.sesiones.forEach((sesion, D_IDX2) => {
             const diaName = sesion.dia;
             // Verificar tanto abreviaturas como nombres completos
             const isWeekday = diasLaborablesAbrev.includes(diaName) || diasLaborablesCompletos.includes(diaName);
@@ -2477,8 +2614,7 @@ router.post('/specialist/crossfit/generate', authenticateToken, async (req, res)
       selectedDomains,  // CrossFit usa dominios en lugar de muscle groups
       previousPlan,
       regenerationReason,
-      additionalInstructions,
-      versionConfig
+      additionalInstructions
     } = crossfitData;
 
     // Mapear level → selectedLevel
@@ -2734,8 +2870,8 @@ FORMATO EXACTO:
         // Validar MÍNIMO de ejercicios por sesión (CrossFit requiere 3-8 movimientos por WOD)
         const invalidDays = [];
 
-        normalizedPlan.semanas.forEach((semana, sIdx) => {
-          semana.sesiones.forEach((sesion, dIdx) => {
+        normalizedPlan.semanas.forEach((semana, S_IDX) => {
+          semana.sesiones.forEach((sesion, D_IDX3) => {
             const numExercises = Array.isArray(sesion.ejercicios) ? sesion.ejercicios.length : 0;
             const minForType = getMinExercisesForType(sesion.tipo);
 
@@ -2945,7 +3081,7 @@ router.post('/specialist/funcional/generate', authenticateToken, async (req, res
       previousPlan,
       regenerationReason,
       additionalInstructions,
-      versionConfig
+      VERSION_CONFIG_UNUSED
     } = funcionalData;
 
     // Mapear level → selectedLevel
@@ -3732,8 +3868,8 @@ router.post('/specialist/halterofilia/generate', authenticateToken, async (req, 
         // 🔥 VALIDACIÓN 3: Mínimo de ejercicios por sesión
         const invalidDays = [];
 
-        normalizedPlan.semanas.forEach((semana, sIdx) => {
-          semana.sesiones.forEach((sesion, dIdx) => {
+        normalizedPlan.semanas.forEach((semana, S_IDX2) => {
+          semana.sesiones.forEach((sesion, D_IDX4) => {
             const numExercises = sesion.ejercicios ? sesion.ejercicios.length : 0;
 
             if (numExercises < MIN_EXERCISES) {
@@ -3768,8 +3904,8 @@ router.post('/specialist/halterofilia/generate', authenticateToken, async (req, 
         const weekendDays = [];
         const diasLaborables = ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes'];
 
-        normalizedPlan.semanas.forEach((semana, sIdx) => {
-          semana.sesiones.forEach((sesion, dIdx) => {
+        normalizedPlan.semanas.forEach((semana, S_IDX3) => {
+          semana.sesiones.forEach((sesion, D_IDX5) => {
             const diaName = sesion.dia;
             if (!diasLaborables.includes(diaName)) {
               weekendDays.push({
@@ -4387,7 +4523,12 @@ Responde únicamente con el JSON solicitado.`;
 router.post('/manual/methodology', authenticateToken, async (req, res) => {
   try {
     const userId = req.user?.userId || req.user?.id;
-    const { metodologia_solicitada, versionConfig } = req.body;
+    const { metodologia_solicitada, versionConfig, startConfig } = req.body;
+
+    // 🆕 Log de configuración de inicio si existe
+    if (startConfig) {
+      console.log('🗓️ Configuración de inicio recibida:', startConfig);
+    }
 
     // Validar metodología
     const CANONICAL = {
@@ -4486,10 +4627,20 @@ router.post('/manual/methodology', authenticateToken, async (req, res) => {
     logTokens(response);
     logAIResponse(aiResponse, canonical);
 
-    const planData = JSON.parse(aiResponse);
+    let planData = JSON.parse(aiResponse);
 
     if (planData.selected_style !== canonical) {
       throw new Error('La IA no generó la metodología solicitada');
+    }
+
+    // 🆕 Aplicar distribución de sesiones si existe configuración de inicio
+    if (startConfig && startConfig.sessionsFirstWeek) {
+      console.log('📊 Aplicando distribución de sesiones al plan...');
+      planData = applySessionDistribution(planData, startConfig);
+      console.log('✅ Distribución aplicada:', {
+        semanas: planData.semanas.length,
+        primera_semana_sesiones: planData.semanas[0]?.sesiones?.length
+      });
     }
 
     // 🧹 LIMPIAR DRAFTS FALLIDOS ANTES DE CREAR PLAN NUEVO
@@ -4937,6 +5088,85 @@ router.get('/user/current-plan', authenticateToken, async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Error obteniendo plan',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * DELETE /api/routine-generation/draft/:planId
+ * Eliminar un plan draft (solo si no está confirmado)
+ *
+ * @description Este endpoint permite eliminar planes draft que no fueron confirmados.
+ * Se usa cuando el usuario cierra el modal de confirmación sin aceptar el plan.
+ * Solo permite eliminar drafts propios del usuario autenticado.
+ */
+router.delete('/draft/:planId', authenticateToken, async (req, res) => {
+  try {
+    const { planId } = req.params;
+    const userId = req.user?.userId || req.user?.id;
+
+    console.log(`🗑️ Solicitud de eliminación de draft: planId=${planId}, userId=${userId}`);
+
+    // Verificar que el plan existe y es un draft del usuario
+    const checkQuery = await pool.query(`
+      SELECT id, methodology_type, status, created_at
+      FROM app.methodology_plans
+      WHERE id = $1 AND user_id = $2
+    `, [planId, userId]);
+
+    if (checkQuery.rowCount === 0) {
+      console.log(`❌ Plan ${planId} no encontrado o no pertenece al usuario ${userId}`);
+      return res.status(404).json({
+        success: false,
+        error: 'Plan no encontrado'
+      });
+    }
+
+    const plan = checkQuery.rows[0];
+
+    // Solo permitir eliminar drafts
+    if (plan.status !== 'draft') {
+      console.log(`❌ Intento de eliminar plan con status '${plan.status}' (solo se permiten drafts)`);
+      return res.status(400).json({
+        success: false,
+        error: 'Solo se pueden eliminar planes draft',
+        currentStatus: plan.status
+      });
+    }
+
+    // Eliminar el draft
+    const deleteResult = await pool.query(`
+      DELETE FROM app.methodology_plans
+      WHERE id = $1 AND user_id = $2 AND status = 'draft'
+      RETURNING id, methodology_type
+    `, [planId, userId]);
+
+    if (deleteResult.rowCount === 0) {
+      console.log(`❌ No se pudo eliminar el draft ${planId}`);
+      return res.status(500).json({
+        success: false,
+        error: 'No se pudo eliminar el draft'
+      });
+    }
+
+    const deleted = deleteResult.rows[0];
+    console.log(`✅ Draft eliminado exitosamente: ID=${deleted.id}, tipo=${deleted.methodology_type}`);
+
+    res.json({
+      success: true,
+      message: 'Draft eliminado exitosamente',
+      deletedPlan: {
+        id: deleted.id,
+        methodology_type: deleted.methodology_type
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error eliminando draft:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error eliminando draft',
       message: error.message
     });
   }

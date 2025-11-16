@@ -13,6 +13,8 @@
 import express from 'express';
 import authenticateToken from '../middleware/auth.js';
 import { pool } from '../db.js';
+import { finalizePlanIfCompleted } from '../services/methodologyPlansService.js';
+import { calculateSessionStatus } from '../services/sessionStatusService.js';
 
 const router = express.Router();
 
@@ -129,8 +131,8 @@ async function createMissingDaySession(client, userId, methodologyPlanId, planDa
 
   const newSession = await client.query(
     `INSERT INTO app.methodology_exercise_sessions
-     (user_id, methodology_plan_id, methodology_type, session_name, week_number, day_name, total_exercises, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+     (user_id, methodology_plan_id, methodology_type, session_name, week_number, day_name, total_exercises, session_date, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8::timestamp, NOW()), NOW(), NOW())
      RETURNING id`,
     [
       userId,
@@ -139,7 +141,8 @@ async function createMissingDaySession(client, userId, methodologyPlanId, planDa
       `Sesión ${normalizedRequestedDay}`,
       weekNumber,
       normalizedRequestedDay,
-      templateSession.ejercicios?.length || 0
+      templateSession.ejercicios?.length || 0,
+      planDataJson?.planStartDate ? new Date(planDataJson.planStartDate) : null
     ]
   );
 
@@ -255,6 +258,7 @@ router.post('/start/methodology', authenticateToken, async (req, res) => {
       `UPDATE app.methodology_exercise_sessions
        SET session_status = 'in_progress',
            started_at = COALESCE(started_at, NOW()),
+           session_date = COALESCE(session_date, CURRENT_DATE),
            total_exercises = $2
        WHERE id = $1`,
       [session.id, ejercicios.length]
@@ -718,6 +722,10 @@ router.post('/complete/methodology/:sessionId', authenticateToken, async (req, r
 
     const userId = req.user?.userId || req.user?.id;
     const { sessionId } = req.params;
+    const {
+      outcome = 'auto',
+      feedback = []
+    } = req.body || {};
 
     const ses = await client.query(
       'SELECT * FROM app.methodology_exercise_sessions WHERE id = $1 AND user_id = $2',
@@ -729,17 +737,61 @@ router.post('/complete/methodology/:sessionId', authenticateToken, async (req, r
       return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
     }
 
-    // Actualizar estado de la sesión
-    await client.query(
-      `UPDATE app.methodology_exercise_sessions
-       SET session_status = 'completed', completed_at = NOW(),
-           total_duration_seconds = EXTRACT(EPOCH FROM (NOW() - started_at))::INTEGER
-       WHERE id = $1`,
+    // Actualizar ejercicios pendientes según outcome seleccionado
+    if (outcome === 'skip_remaining') {
+      await client.query(
+        `UPDATE app.methodology_exercise_progress
+         SET status = 'skipped', completed_at = NOW()
+         WHERE methodology_session_id = $1
+           AND status NOT IN ('completed','skipped')`,
+        [sessionId]
+      );
+    } else if (outcome === 'cancel_remaining') {
+      await client.query(
+        `UPDATE app.methodology_exercise_progress
+         SET status = 'cancelled', completed_at = NOW()
+         WHERE methodology_session_id = $1
+           AND status NOT IN ('completed','cancelled')`,
+        [sessionId]
+      );
+    }
+
+    // Obtener todos los ejercicios para calcular estado
+    const exercisesQuery = await client.query(
+      `SELECT exercise_order, status, series_completed, series_total
+       FROM app.methodology_exercise_progress
+       WHERE methodology_session_id = $1
+       ORDER BY exercise_order`,
       [sessionId]
     );
 
+    // Calcular estado de sesión usando el servicio
+    const { status: sessionStatus, completionRate, metrics } = calculateSessionStatus(exercisesQuery.rows);
+
+    const totalExercises = metrics.total;
+    const completedExercises = metrics.completed;
+    const skippedExercises = metrics.skipped;
+    const cancelledExercises = metrics.cancelled;
+
+    await client.query(
+      `UPDATE app.methodology_exercise_sessions
+       SET session_status = $2,
+           exercises_completed = $3,
+           exercises_skipped = $4,
+           exercises_cancelled = $5,
+           total_exercises = $6,
+           completion_rate = $7,
+           completed_at = NOW(),
+           total_duration_seconds = CASE
+             WHEN started_at IS NOT NULL THEN EXTRACT(EPOCH FROM (NOW() - started_at))::INTEGER
+             ELSE total_duration_seconds
+           END
+       WHERE id = $1`,
+      [sessionId, sessionStatus, completedExercises, skippedExercises, cancelledExercises, totalExercises, completionRate]
+    );
+
     // Obtener todos los ejercicios de la sesión para mover al historial
-    const exercisesQuery = await client.query(
+    const exercisesForHistory = await client.query(
       `SELECT mep.*, mes.methodology_type, mes.methodology_plan_id, mes.week_number, mes.day_name,
               mes.warmup_time_seconds, mes.started_at, mes.completed_at
        FROM app.methodology_exercise_progress mep
@@ -749,7 +801,7 @@ router.post('/complete/methodology/:sessionId', authenticateToken, async (req, r
     );
 
     // Mover cada ejercicio al historial completo
-    for (const exercise of exercisesQuery.rows) {
+    for (const exercise of exercisesForHistory.rows) {
       if (exercise.status !== 'pending') {
         await client.query(
           `INSERT INTO app.methodology_exercise_history_complete (
@@ -782,11 +834,53 @@ router.post('/complete/methodology/:sessionId', authenticateToken, async (req, r
       }
     }
 
+    // Registrar feedback opcional
+    if (Array.isArray(feedback) && feedback.length > 0) {
+      for (const entry of feedback) {
+        if (!entry) continue;
+        const allowedTypes = ['skipped','cancelled','missed'];
+        const allowedReasons = ['dificil','no_se_ejecutar','lesion','equipamiento','cansancio','tiempo','motivacion','auto_missed','otros'];
+        const feedbackType = allowedTypes.includes(entry.feedback_type) ? entry.feedback_type : 'cancelled';
+        const reasonCode = allowedReasons.includes(entry.reason_code) ? entry.reason_code : 'otros';
+
+        await client.query(
+          `INSERT INTO app.methodology_session_feedback (
+            user_id, methodology_plan_id, methodology_session_id,
+            exercise_order, exercise_name, feedback_type, reason_code, reason_text,
+            difficulty_rating, would_retry, created_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+          ON CONFLICT DO NOTHING`,
+          [
+            userId,
+            ses.rows[0].methodology_plan_id,
+            sessionId,
+            entry.exercise_order ?? null,
+            entry.exercise_name ?? null,
+            feedbackType,
+            reasonCode,
+            entry.reason_text || null,
+            entry.difficulty_rating ?? null,
+            entry.would_retry ?? false
+          ]
+        );
+      }
+    }
+
+    await finalizePlanIfCompleted(ses.rows[0].methodology_plan_id, client);
+
     await client.query('COMMIT');
 
     res.json({
       success: true,
-      message: 'Sesión finalizada y datos guardados en historial'
+      message: 'Sesión finalizada y datos guardados en historial',
+      summary: {
+        status: sessionStatus,
+        completionRate,
+        totalExercises,
+        completedExercises,
+        skippedExercises,
+        cancelledExercises
+      }
     });
 
   } catch (e) {
@@ -1068,7 +1162,7 @@ router.get('/today-status', authenticateToken, async (req, res) => {
         `SELECT
           p.exercise_order, p.exercise_name, p.series_total, p.series_completed,
           p.repeticiones, p.descanso_seg, p.intensidad, p.tempo, p.status,
-          p.time_spent_seconds, p.notas,
+          p.time_spent_seconds, p.notas, p.exercise_id,
           f.sentiment, f.comment
          FROM app.methodology_exercise_progress p
          LEFT JOIN app.methodology_exercise_feedback f
@@ -1078,6 +1172,40 @@ router.get('/today-status', authenticateToken, async (req, res) => {
          ORDER BY p.exercise_order ASC`,
         [session.id]
       );
+
+      // 🆕 Obtener datos de series (peso, reps, RIR) de hypertrophy_set_logs
+      const setLogsQuery = await pool.query(
+        `SELECT
+          exercise_id,
+          exercise_name,
+          set_number,
+          weight_used,
+          reps_completed,
+          rir_reported,
+          estimated_1rm,
+          rpe_calculated,
+          volume_load,
+          is_effective
+         FROM app.hypertrophy_set_logs
+         WHERE session_id = $1
+         ORDER BY exercise_id, set_number ASC`,
+        [session.id]
+      );
+
+      // Agrupar series por exercise_id
+      const setLogsByExercise = {};
+      setLogsQuery.rows.forEach(set => {
+        if (!setLogsByExercise[set.exercise_id]) {
+          setLogsByExercise[set.exercise_id] = [];
+        }
+        setLogsByExercise[set.exercise_id].push(set);
+      });
+
+      // Combinar datos de ejercicios con sus series
+      const exercisesWithSets = exercisesQuery.rows.map(ex => ({
+        ...ex,
+        sets: setLogsByExercise[ex.exercise_id] || []
+      }));
 
       // Calcular resumen
       const totalExercises = exercisesQuery.rowCount;
@@ -1117,7 +1245,7 @@ router.get('/today-status', authenticateToken, async (req, res) => {
           ...session,
           canResume
         },
-        exercises: exercisesQuery.rows,
+        exercises: exercisesWithSets, // 🆕 Ahora incluye datos de series
         summary: {
           total: totalExercises,
           completed: completedExercises,

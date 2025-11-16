@@ -29,12 +29,41 @@ try {
   throw e;
 }
 
-const host = parsed.hostname;                 // ej: aws-1-eu-north-1.pooler.supabase.com
+const host = parsed.hostname; // ej: aws-1-eu-north-1.pooler.supabase.com
 const port = Number(parsed.port || 5432);
 const database = decodeURIComponent(parsed.pathname.replace(/^\//, "")) || "postgres";
-const user = decodeURIComponent(parsed.username || "postgres");
+let user = decodeURIComponent(parsed.username || "postgres");
 const password = decodeURIComponent(parsed.password || "");
 const sslmode = parsed.searchParams.get("sslmode");
+
+// --- 2.1) Fallback automático para pooler Supabase sin sufijo de tenant ---
+const isSupabasePooler = host?.includes(".pooler.supabase.com");
+const hasTenantSuffix = user?.includes(".");
+if (isSupabasePooler && !hasTenantSuffix) {
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  let projectRef = process.env.SUPABASE_PROJECT_REF;
+
+  if (!projectRef && supabaseUrl) {
+    try {
+      const supabaseHost = new URL(supabaseUrl).hostname;
+      projectRef = supabaseHost.split(".")[0];
+    } catch (err) {
+      console.warn("⚠️  SUPABASE_URL inválida, no se pudo derivar el project ref:", err.message);
+    }
+  }
+
+  if (projectRef) {
+    console.warn(
+      `⚠️  Pooler Supabase detectado sin sufijo de tenant. Ajustando usuario a postgres.${projectRef}`
+    );
+    user = `${user}.${projectRef}`;
+  } else {
+    console.warn(
+      "⚠️  Pooler Supabase detectado pero no se pudo determinar el project ref. " +
+        "Asegúrate de usar postgres.<project_ref> en tu DATABASE_URL o define SUPABASE_PROJECT_REF."
+    );
+  }
+}
 
 // Log seguro (sin password)
 console.log(

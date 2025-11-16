@@ -14,6 +14,7 @@
 import express from 'express';
 import authenticateToken from '../middleware/auth.js';
 import { pool } from '../db.js';
+import { setCurrentMethodologyPlan } from '../services/methodologyPlansService.js';
 
 const router = express.Router();
 
@@ -30,25 +31,39 @@ router.get('/state', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // Buscar plan activo o draft (para permitir visualización de planes recién generados)
+    // Buscar plan marcado como actual (fallback: plan activo más reciente)
     const activePlanResult = await pool.query(`
       SELECT
         mp.id as plan_id,
         mp.plan_data,
         mp.methodology_type,
         mp.status,
-        1 as current_week,
-        1 as current_day,
         mp.started_at,
-        false as has_active_session,
-        null as active_session_id
+        mp.created_at,
+        mp.is_current
       FROM app.methodology_plans mp
-      WHERE mp.user_id = $1 AND mp.status IN ('active', 'draft')
-      ORDER BY mp.created_at DESC
+      WHERE mp.user_id = $1
+        AND (mp.is_current = TRUE OR mp.status IN ('active','draft'))
+      ORDER BY mp.is_current DESC, mp.created_at DESC
       LIMIT 1
     `, [userId]);
 
     const activePlan = activePlanResult.rows[0] || null;
+
+    let planProgress = null;
+    if (activePlan) {
+      const progressQ = await pool.query(`
+        SELECT
+          COUNT(*) AS total_sessions,
+          COUNT(*) FILTER (WHERE session_status IN ('completed','skipped','cancelled','missed')) AS resolved_sessions,
+          COUNT(*) FILTER (WHERE session_status = 'completed') AS completed_sessions,
+          COALESCE(AVG(completion_rate),0) AS avg_completion_rate
+        FROM app.methodology_exercise_sessions
+        WHERE methodology_plan_id = $1
+      `, [activePlan.plan_id]);
+
+      planProgress = progressQ.rows[0];
+    }
 
     const response = {
       // Plan activo
@@ -58,9 +73,20 @@ router.get('/state', authenticateToken, async (req, res) => {
         planData: activePlan.plan_data,
         methodologyType: activePlan.methodology_type,
         status: activePlan.status,
-        currentWeek: activePlan.current_week,
-        currentDay: activePlan.current_day,
-        startedAt: activePlan.started_at
+        startedAt: activePlan.started_at,
+        createdAt: activePlan.created_at,
+        isCurrent: activePlan.is_current,
+        progress: planProgress ? {
+          totalSessions: Number(planProgress.total_sessions || 0),
+          resolvedSessions: Number(planProgress.resolved_sessions || 0),
+          completedSessions: Number(planProgress.completed_sessions || 0),
+          completionRate: Number(planProgress.total_sessions || 0)
+            ? Number((((planProgress.completed_sessions || 0) / planProgress.total_sessions) * 100).toFixed(2))
+            : 0,
+          averageCompletionRate: Number(
+            Number(planProgress.avg_completion_rate || 0).toFixed(2)
+          )
+        } : null
       } : null,
 
       // Sesión activa (simplificado)
@@ -219,19 +245,16 @@ router.post('/activate-plan', authenticateToken, async (req, res) => {
       });
     }
 
-    // Desactivar cualquier plan activo anterior
-    await client.query(`
-      UPDATE methodology_plans
-      SET status = 'archived', cancelled_at = NOW()
-      WHERE user_id = $1 AND status = 'active'
-    `, [userId]);
-
     // Activar el nuevo plan
     await client.query(`
       UPDATE methodology_plans
-      SET status = 'active', started_at = NOW(), confirmed_at = NOW()
+      SET status = 'active',
+          started_at = COALESCE(started_at, NOW()),
+          confirmed_at = NOW()
       WHERE id = $1
     `, [methodology_plan_id]);
+
+    await setCurrentMethodologyPlan(userId, methodology_plan_id, client);
 
     // Actualizar estado del usuario
     await client.query(`
@@ -285,18 +308,29 @@ router.post('/cancel-plan', authenticateToken, async (req, res) => {
     const userId = req.user.id;
 
     // Cancelar plan activo
-    const result = await client.query(`
+    let result = await client.query(`
       UPDATE methodology_plans
-      SET status = 'cancelled', cancelled_at = NOW()
-      WHERE user_id = $1 AND status = 'active'
+      SET status = 'cancelled', cancelled_at = NOW(), is_current = FALSE
+      WHERE user_id = $1 AND is_current = TRUE
       RETURNING id, methodology_type
     `, [userId]);
 
     if (result.rowCount === 0) {
-      return res.status(404).json({
-        success: false,
-        error: 'No hay plan activo para cancelar'
-      });
+      result = await client.query(`
+        UPDATE methodology_plans
+        SET status = 'cancelled', cancelled_at = NOW(), is_current = FALSE
+        WHERE user_id = $1 AND status = 'active'
+        ORDER BY created_at DESC
+        LIMIT 1
+        RETURNING id, methodology_type
+      `, [userId]);
+
+      if (result.rowCount === 0) {
+        return res.status(404).json({
+          success: false,
+          error: 'No hay plan activo para cancelar'
+        });
+      }
     }
 
     // Cancelar sesiones en progreso
