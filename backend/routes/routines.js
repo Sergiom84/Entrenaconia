@@ -2232,6 +2232,7 @@ router.get('/calendar-schedule/:planId', authenticateToken, async (req, res) => 
     const planData = typeof plan.plan_data === 'string' ? JSON.parse(plan.plan_data) : plan.plan_data;
 
     // Obtener el calendario real desde workout_schedule
+    console.log(`[calendar-schedule] Buscando sesiones en workout_schedule para plan ${planId}, user ${userId}`);
     const scheduleQuery = await pool.query(
       `SELECT
         week_number,
@@ -2245,6 +2246,22 @@ router.get('/calendar-schedule/:planId', authenticateToken, async (req, res) => 
        ORDER BY week_number, session_order`,
       [planId, userId]
     );
+
+    console.log(`[calendar-schedule] Encontradas ${scheduleQuery.rows.length} sesiones en workout_schedule`);
+    if (scheduleQuery.rows.length === 0) {
+      console.log(`[calendar-schedule] Verificando si existe tabla workout_schedule...`);
+      const tableCheck = await pool.query(`
+        SELECT EXISTS (
+          SELECT 1 FROM information_schema.tables
+          WHERE table_schema = 'app' AND table_name = 'workout_schedule'
+        )
+      `);
+      console.log(`[calendar-schedule] Tabla workout_schedule existe: ${tableCheck.rows[0].exists}`);
+
+      // Verificar si hay datos en workout_schedule para cualquier plan
+      const anyDataCheck = await pool.query(`SELECT COUNT(*) as total FROM app.workout_schedule`);
+      console.log(`[calendar-schedule] Total registros en workout_schedule: ${anyDataCheck.rows[0].total}`);
+    }
 
     // Reorganizar por semanas
     const semanasMap = new Map();
