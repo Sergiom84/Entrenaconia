@@ -1189,6 +1189,13 @@ export default function TodayTrainingTab({
   const handleCancelPlan = useCallback(async () => {
     track('BUTTON_CLICK', { id: 'cancel_plan_confirm' }, { component: 'TodayTrainingTab' });
 
+    console.log('🔴 HANDLE CANCEL PLAN - Start', {
+      todayStatus: todayStatus,
+      sessionType: todayStatus?.session?.session_type,
+      pendingCancelSessionId: localState.pendingCancelSessionId,
+      sessionIdFromStatus: todayStatus?.session?.id
+    });
+
     try {
       setLoading(true);
 
@@ -1196,10 +1203,19 @@ export default function TodayTrainingTab({
       const isWeekendSession = todayStatus?.session?.session_type === 'weekend-extra';
       const sessionId = localState.pendingCancelSessionId || todayStatus?.session?.id;
 
+      console.log('🔴 CANCEL - Decision:', {
+        isWeekendSession,
+        sessionId,
+        willCallWeekendEndpoint: isWeekendSession && sessionId
+      });
+
       if (isWeekendSession && sessionId) {
         console.log('🌟 Cancelando sesión weekend:', sessionId);
+        const url = `${import.meta.env.VITE_API_URL || 'http://localhost:3010'}/api/training-session/cancel/methodology/${sessionId}`;
+        console.log('🔴 DELETE URL:', url);
+
         // Cancelar sesión weekend directamente
-        const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3010'}/api/training-session/cancel/methodology/${sessionId}`, {
+        const response = await fetch(url, {
           method: 'DELETE',
           headers: {
             'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
@@ -1207,7 +1223,14 @@ export default function TodayTrainingTab({
           }
         });
 
+        console.log('🔴 DELETE Response:', {
+          ok: response.ok,
+          status: response.status
+        });
+
         if (response.ok) {
+          const data = await response.json();
+          console.log('✅ DELETE Success:', data);
           updateLocalState({ showRejectionModal: false, pendingCancelSessionId: null });
           showSuccess('Entrenamiento de fin de semana cancelado');
           // Limpiar estado y refrescar
@@ -1215,7 +1238,9 @@ export default function TodayTrainingTab({
           setTodaySessionData(null);
           await fetchTodayStatus();
         } else {
-          throw new Error('Error cancelando entrenamiento de fin de semana');
+          const errorData = await response.json();
+          console.error('❌ DELETE Failed:', errorData);
+          throw new Error(errorData.message || 'Error cancelando entrenamiento de fin de semana');
         }
       } else {
         // Cancelar plan normal
@@ -1966,7 +1991,14 @@ export default function TodayTrainingTab({
 
                   {/* Botón de cancelar (siempre visible en sesiones weekend) */}
                   <Button
-                    onClick={() => updateLocalState({ showRejectionModal: true, pendingCancelSessionId: todayStatus.session.id })}
+                    onClick={() => {
+                      console.log('🔴 CANCELAR CLICK - Session info:', {
+                        sessionId: todayStatus.session.id,
+                        sessionType: todayStatus.session.session_type,
+                        todayStatusFull: todayStatus
+                      });
+                      updateLocalState({ showRejectionModal: true, pendingCancelSessionId: todayStatus.session.id });
+                    }}
                     variant="outline"
                     className="border-red-500/30 text-red-400 hover:bg-red-500/10 px-6 py-3 rounded-lg"
                     disabled={ui.isLoading}
