@@ -19,6 +19,7 @@ import CalisteniaManualCard from './methodologies/CalisteniaManual/CalisteniaMan
 import HeavyDutyManualCard from './methodologies/HeavyDuty/HeavyDutyManualCard.jsx';
 import HipertrofiaManualCard from './methodologies/Hipertrofia/HipertrofiaManualCard.jsx';
 import HipertrofiaV2ManualCard from './methodologies/HipertrofiaV2/HipertrofiaV2ManualCard.jsx';
+import AdaptationTrackingBadge from './methodologies/HipertrofiaV2/components/AdaptationTrackingBadge.jsx';
 import PowerliftingManualCard from './methodologies/Powerlifting/PowerliftingManualCard.jsx';
 import CrossFitManualCard from './methodologies/CrossFit/CrossFitManualCard.jsx';
 import FuncionalManualCard from './methodologies/Funcional/FuncionalManualCard.jsx';
@@ -414,9 +415,34 @@ export default function MethodologiesScreen() {
       return;
     }
 
-    // Si es HipertrofiaV2, mostrar el modal específico
+    // Si es HipertrofiaV2, verificar si necesita modal de distribución
     if (methodology.name === 'HipertrofiaV2') {
-      ui.showModal('hipertrofiaV2Manual');
+      // Detectar día de la semana
+      const today = new Date();
+      const dayOfWeek = today.getDay(); // 0=Dom, 1=Lun, 2=Mar, 3=Mié, 4=Jue, 5=Vie, 6=Sáb
+
+      // Si comienza Martes, Miércoles, Jueves o Viernes → mostrar modal de distribución
+      if ([2, 3, 4, 5].includes(dayOfWeek)) {
+        console.log('🗓️ Usuario comienza HipertrofiaV2 en día incompleto, mostrando modal de distribución...');
+
+        // Calcular sesiones restantes en la primera semana
+        const sessionsFirstWeek = 5 - (dayOfWeek - 1); // Mar=4, Mié=3, Jue=2, Vie=1
+
+        updateLocalState({
+          pendingMethodology: methodology,
+          showDistributionModal: true,
+          distributionConfig: {
+            startDay: getDayName(dayOfWeek),
+            totalSessions: 40,
+            sessionsPerWeek: 5,
+            missingSessions: 5 - sessionsFirstWeek
+          }
+        });
+      } else {
+        // Lunes → ir directo al modal (5 días completos disponibles)
+        // Sábado/Domingo → ir directo, el WeekendWarningModal aparecerá después en handleHipertrofiaV2ManualGenerate
+        ui.showModal('hipertrofiaV2Manual');
+      }
       return;
     }
 
@@ -575,11 +601,19 @@ export default function MethodologiesScreen() {
     // Combinar configuración de inicio con opción de distribución
     const finalConfig = {
       ...localState.startConfig,
-      distributionOption: option // 'saturdays' o 'extra_week'
+      distributionOption: option, // 'saturdays' o 'extra_week'
+      includeSaturdays: option === 'saturdays' // Mapeo explícito para HipertrofiaV2
     };
 
-    // Continuar con selección de metodología
-    proceedWithMethodologySelection(localState.pendingMethodology, finalConfig);
+    // 🎯 CASO ESPECIAL: Si es HipertrofiaV2, pasar configuración directamente
+    if (localState.pendingMethodology?.name === 'HipertrofiaV2') {
+      console.log('🏋️ HipertrofiaV2 detectado, guardando configuración y mostrando modal...');
+      updateLocalState({ startConfig: finalConfig });
+      ui.showModal('hipertrofiaV2Manual');
+    } else {
+      // Continuar con selección de metodología para otras metodologías
+      proceedWithMethodologySelection(localState.pendingMethodology, finalConfig);
+    }
   };
 
   /**
@@ -1603,6 +1637,7 @@ export default function MethodologiesScreen() {
               onGenerate={handleHipertrofiaV2ManualGenerate}
               isLoading={ui.isLoading}
               error={ui.error}
+              startConfig={localState.startConfig}
             />
           </DialogContent>
         </Dialog>

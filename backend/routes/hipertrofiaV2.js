@@ -96,9 +96,22 @@ router.post('/generate-d1d5', authenticateToken, async (req, res) => {
 
   try {
     const userId = req.user?.userId || req.user?.id;
-    const { nivel = 'Principiante', totalWeeks = 6, startConfig } = req.body;
+    // Ajustar duración según teoría: 10 semanas principiante, 12 intermedio/avanzado
+    const defaultWeeks = nivel === 'Principiante' ? 10 : 12;
+    const { nivel = 'Principiante', totalWeeks = defaultWeeks, startConfig, includeWeek0 = true } = req.body;
 
     console.log('🏋️ [MINDFEED] Generando plan D1-D5 para usuario:', userId, 'Nivel:', nivel);
+    console.log('📅 Duración total:', totalWeeks, 'semanas + Semana 0:', includeWeek0);
+    
+    // Obtener información del usuario incluyendo sexo
+    const userResult = await dbClient.query(
+      `SELECT sex FROM app.users WHERE id = $1`,
+      [userId]
+    );
+    const userSex = userResult.rows[0]?.sex || 'male'; // Default a male si no especificado
+    const isFemale = userSex === 'female' || userSex === 'f' || userSex === 'mujer';
+    
+    console.log('👤 Sexo del usuario:', userSex, 'Aplicar ajuste femenino:', isFemale);
 
     // 🆕 Log de configuración de inicio si existe
     if (startConfig) {
@@ -371,24 +384,34 @@ router.post('/generate-d1d5', authenticateToken, async (req, res) => {
           series: sessionConfig.default_sets,
           reps_objetivo: sessionConfig.default_reps_range,
           rir_target: sessionConfig.default_rir_target,
-          descanso_seg: ex.descanso_seg || 90,
+          // Ajuste de descanso por sexo según teoría (-15% para mujeres en uni/analítico)
+          descanso_seg: (() => {
+            const baseRest = ex.descanso_seg || 90;
+            if (isFemale && (ex.tipo_ejercicio === 'unilateral' || ex.tipo_ejercicio === 'analitico')) {
+              return Math.round(baseRest * 0.85); // -15% para mujeres
+            }
+            return baseRest;
+          })(),
           notas: ex.notas,
-          intensidad_porcentaje: sessionConfig.intensity_percentage
+          intensidad_porcentaje: sessionConfig.intensity_percentage,
+          ajuste_sexo: isFemale && (ex.tipo_ejercicio === 'unilateral' || ex.tipo_ejercicio === 'analitico')
+            ? '-15% descanso (ajuste femenino)'
+            : null
         }))
       });
 
       console.log(`  ✅ D${cycleDay}: ${sessionExercises.length} ejercicios seleccionados`);
     }
 
-    // 3. Crear estructura del plan
+    // 3. Crear estructura del plan con Semana 0 de calibración
     const formattedSessions = sessionsWithExercises.map((session, idx) => {
       const cycleDay = `D${session.cycle_day}`;
       const actualDayName = dynamicDayMapping[cycleDay] || cycleDay;
 
       return {
         nombre: session.session_name,
-        dia: actualDayName, // 🆕 Usar día real en lugar de D1-D5
-        ciclo_dia: session.cycle_day, // Mantener referencia al ciclo D1-D5
+        dia: actualDayName,
+        ciclo_dia: session.cycle_day,
         descripcion: session.description,
         coach_tip: session.coach_tip,
         intensidad_porcentaje: session.intensity_percentage,
@@ -399,32 +422,69 @@ router.post('/generate-d1d5', authenticateToken, async (req, res) => {
       };
     });
 
-    const semanas = Array.from({ length: totalWeeks }, (_, weekIndex) => ({
-      numero: weekIndex + 1,
-      sesiones: formattedSessions.map((session, index) => ({
+    // Generar semanas de entrenamiento
+    const semanas = [];
+    
+    // Añadir Semana 0 de calibración si está habilitada
+    if (includeWeek0) {
+      const semana0Sessions = formattedSessions.map((session, index) => ({
         ...JSON.parse(JSON.stringify(session)),
         orden: index + 1,
-        id: `W${weekIndex + 1}-D${session.ciclo_dia}`
-      }))
-    }));
+        id: `W0-D${session.ciclo_dia}`,
+        intensidad_porcentaje: 70, // Semana 0 siempre al 70% según teoría
+        es_calibracion: true,
+        coach_tip: 'Semana de calibración: Enfócate en la técnica correcta y el control del movimiento. No busques fatiga.',
+        ejercicios: session.ejercicios.map(ex => ({
+          ...ex,
+          intensidad_porcentaje: 70,
+          rir_target: '4-5', // RIR más alto para calibración
+          notas: `${ex.notas || ''} - SEMANA DE CALIBRACIÓN: Prioriza técnica sobre carga`
+        }))
+      }));
+
+      semanas.push({
+        numero: 0,
+        tipo: 'calibracion',
+        descripcion: 'Semana de calibración técnica y ajuste de cargas',
+        sesiones: semana0Sessions
+      });
+    }
+
+    // Añadir semanas regulares de entrenamiento
+    for (let weekIndex = 0; weekIndex < totalWeeks; weekIndex++) {
+      semanas.push({
+        numero: weekIndex + 1,
+        tipo: 'entrenamiento',
+        sesiones: formattedSessions.map((session, index) => ({
+          ...JSON.parse(JSON.stringify(session)),
+          orden: index + 1,
+          id: `W${weekIndex + 1}-D${session.ciclo_dia}`
+        }))
+      });
+    }
 
     const planData = {
       metodologia: 'HipertrofiaV2_MindFeed',
-      version: 'MindFeed_v1.0',
+      version: 'MindFeed_v2.0', // Actualizado con semana 0
       nivel,
       ciclo_type: 'D1-D5',
       total_weeks: totalWeeks,
-      duracion_total_semanas: totalWeeks,
+      has_week_0: includeWeek0,
+      duracion_total_semanas: includeWeek0 ? totalWeeks + 1 : totalWeeks,
       frecuencia_semanal: formattedSessions.length,
       fecha_inicio: new Date().toISOString(),
       sessions: sessionsWithExercises,
       semanas,
       configuracion: {
-        progression_type: 'microcycle',  // Progresión por microciclo completo
-        progression_increment: 2.5,      // +2.5%
-        deload_trigger: 6,                // Cada 6 microciclos
+        progression_type: 'microcycle',
+        progression_increment: 2.5,
+        deload_trigger: 6,
         rir_target: '2-3',
-        tracking_enabled: true
+        tracking_enabled: true,
+        week_0_intensity: 70, // Intensidad de semana 0
+        duration_weeks: nivel === 'Principiante' ? 10 : 12, // Duración según teoría
+        sex_adjusted: isFemale, // Indica si se aplicaron ajustes por sexo
+        rest_adjustment_factor: isFemale ? 0.85 : 1.0 // Factor de ajuste de descanso
       }
     };
 
@@ -601,6 +661,7 @@ router.post('/select-exercises', async (req, res) => {
 /**
  * POST /api/hipertrofiav2/save-set
  * Guarda los datos de una serie (peso, reps, RIR)
+ * ACTUALIZADO: Soporta flag is_warmup para series de calentamiento
  */
 router.post('/save-set', async (req, res) => {
   try {
@@ -621,7 +682,9 @@ router.post('/save-set', async (req, res) => {
       reps,
       reps_completed, // También intentar con snake_case
       rir,
-      rir_reported // También intentar con snake_case
+      rir_reported, // También intentar con snake_case
+      isWarmup,
+      is_warmup // También intentar con snake_case
     } = req.body;
 
     // Normalizar datos (aceptar ambos formatos)
@@ -631,12 +694,19 @@ router.post('/save-set', async (req, res) => {
     const normalizedWeight = weight || weight_used;
     const normalizedReps = reps || reps_completed;
     const normalizedRir = rir !== undefined ? rir : rir_reported;
-
-    console.log('🔍 DEBUG - exerciseId (camelCase):', exerciseId);
-    console.log('🔍 DEBUG - exercise_id (snake_case):', exercise_id);
-    console.log('🔍 DEBUG - normalizedExerciseId:', normalizedExerciseId);
+    const normalizedIsWarmup = isWarmup !== undefined ? isWarmup : (is_warmup || false);
 
     console.log(`💾 Guardando serie ${normalizedSetNumber} de ${normalizedExerciseName}`);
+    if (normalizedIsWarmup) {
+      console.log('🔥 Serie de CALENTAMIENTO - No cuenta como volumen efectivo');
+    }
+
+    // Calcular valores derivados
+    const isEffective = !normalizedIsWarmup && normalizedRir <= 4;
+    const volumeLoad = !normalizedIsWarmup ? normalizedWeight * normalizedReps : 0;
+    const estimated1RM = !normalizedIsWarmup && normalizedReps > 0
+      ? normalizedWeight * (1 + normalizedReps * 0.0333)
+      : null;
 
     const result = await pool.query(`
       INSERT INTO app.hypertrophy_set_logs (
@@ -648,8 +718,12 @@ router.post('/save-set', async (req, res) => {
         set_number,
         weight_used,
         reps_completed,
-        rir_reported
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        rir_reported,
+        is_warmup,
+        is_effective,
+        volume_load,
+        estimated_1rm
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       RETURNING *
     `, [
       userId,
@@ -660,12 +734,18 @@ router.post('/save-set', async (req, res) => {
       normalizedSetNumber,
       normalizedWeight,
       normalizedReps,
-      normalizedRir
+      normalizedRir,
+      normalizedIsWarmup,
+      isEffective,
+      volumeLoad,
+      estimated1RM
     ]);
 
     res.json({
       success: true,
-      setData: result.rows[0]
+      setData: result.rows[0],
+      isWarmup: normalizedIsWarmup,
+      isEffective: isEffective
     });
 
   } catch (error) {
@@ -2058,6 +2138,244 @@ router.get('/fatigue-history/:userId', authenticateToken, async (req, res) => {
       success: false,
       error: 'Error al obtener historial de fatiga',
       details: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/hipertrofiav2/save-warmup-completion
+ * Registra cuando un usuario completa las series de calentamiento
+ */
+router.post('/save-warmup-completion', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    const {
+      methodologyPlanId,
+      sessionId,
+      exerciseId,
+      exerciseName,
+      warmupConfig,
+      setsCompleted,
+      setsPlanned,
+      userLevel,
+      targetWeight
+    } = req.body;
+    
+    console.log(`🔥 [WARMUP] Registrando calentamiento completado para ${exerciseName}`);
+    
+    const result = await pool.query(`
+      INSERT INTO app.warmup_sets_tracking (
+        user_id,
+        methodology_plan_id,
+        session_id,
+        exercise_id,
+        exercise_name,
+        warmup_config,
+        sets_completed,
+        sets_planned,
+        completion_time,
+        user_level,
+        target_weight
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), $9, $10)
+      RETURNING *
+    `, [
+      userId,
+      methodologyPlanId,
+      sessionId,
+      exerciseId,
+      exerciseName,
+      JSON.stringify(warmupConfig),
+      setsCompleted,
+      setsPlanned,
+      userLevel,
+      targetWeight
+    ]);
+    
+    res.json({
+      success: true,
+      tracking: result.rows[0],
+      message: 'Calentamiento registrado correctamente'
+    });
+    
+  } catch (error) {
+    console.error('❌ [WARMUP] Error registrando calentamiento:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error al registrar calentamiento'
+    });
+  }
+});
+
+/**
+ * GET /api/hipertrofiav2/check-warmup-reminder/:userId/:exerciseId/:sessionId
+ * Verifica si el usuario necesita recordatorio de calentamiento
+ */
+router.get('/check-warmup-reminder/:userId/:exerciseId/:sessionId', async (req, res) => {
+  try {
+    const { userId, exerciseId, sessionId } = req.params;
+    
+    console.log(`🔍 [WARMUP] Verificando recordatorio para usuario ${userId}, ejercicio ${exerciseId}`);
+    
+    const result = await pool.query(
+      `SELECT app.needs_warmup_reminder($1, $2, $3) as reminder`,
+      [userId, exerciseId, sessionId]
+    );
+    
+    res.json({
+      success: true,
+      ...result.rows[0].reminder
+    });
+    
+  } catch (error) {
+    console.error('❌ [WARMUP] Error verificando recordatorio:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error al verificar recordatorio'
+    });
+  }
+});
+
+/**
+ * GET /api/hipertrofiav2/check-reevaluation/:userId
+ * Verifica si el usuario necesita re-evaluación de nivel
+ */
+router.get('/check-reevaluation/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    console.log(`🔍 [REEVALUATION] Verificando necesidad de re-evaluación para usuario ${userId}`);
+    
+    // Evaluar necesidad de cambio de nivel
+    const evaluationResult = await pool.query(
+      `SELECT app.evaluate_level_change($1) as evaluation`,
+      [userId]
+    );
+    
+    const evaluation = evaluationResult.rows[0].evaluation;
+    
+    // Verificar si ya hay una re-evaluación pendiente
+    const pendingResult = await pool.query(
+      `SELECT id, new_level, reason, created_at
+       FROM app.level_reevaluations
+       WHERE user_id = $1 AND accepted IS NULL
+       ORDER BY created_at DESC LIMIT 1`,
+      [userId]
+    );
+    
+    const hasPending = pendingResult.rows.length > 0;
+    
+    res.json({
+      success: true,
+      evaluation,
+      hasPendingReevaluation: hasPending,
+      pendingReevaluation: hasPending ? pendingResult.rows[0] : null,
+      shouldShowNotification: !evaluation.no_change && !hasPending
+    });
+    
+  } catch (error) {
+    console.error('❌ [REEVALUATION] Error verificando re-evaluación:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error al verificar re-evaluación'
+    });
+  }
+});
+
+/**
+ * POST /api/hipertrofiav2/accept-reevaluation
+ * Acepta o rechaza una re-evaluación de nivel
+ */
+router.post('/accept-reevaluation', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    const { reevaluationId, accept = true } = req.body;
+    
+    console.log(`📝 [REEVALUATION] Usuario ${userId} ${accept ? 'acepta' : 'rechaza'} re-evaluación ${reevaluationId}`);
+    
+    // Actualizar estado de la re-evaluación
+    const updateResult = await pool.query(
+      `UPDATE app.level_reevaluations
+       SET accepted = $1, accepted_at = NOW()
+       WHERE id = $2 AND user_id = $3
+       RETURNING *`,
+      [accept, reevaluationId, userId]
+    );
+    
+    if (updateResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Re-evaluación no encontrada'
+      });
+    }
+    
+    const reevaluation = updateResult.rows[0];
+    
+    // Si acepta, actualizar el nivel en las próximas sesiones
+    if (accept) {
+      console.log(`✅ [REEVALUATION] Cambiando nivel de ${reevaluation.previous_level} a ${reevaluation.new_level}`);
+      
+      // Aquí podrías actualizar el nivel en las tablas necesarias
+      // Por ejemplo, en la próxima generación de plan se usará el nuevo nivel
+    }
+    
+    res.json({
+      success: true,
+      message: accept ? 'Nivel actualizado exitosamente' : 'Cambio de nivel rechazado',
+      newLevel: accept ? reevaluation.new_level : reevaluation.previous_level
+    });
+    
+  } catch (error) {
+    console.error('❌ [REEVALUATION] Error procesando respuesta:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error al procesar respuesta'
+    });
+  }
+});
+
+/**
+ * POST /api/hipertrofiav2/trigger-reevaluation
+ * Trigger manual de re-evaluación (para testing o casos especiales)
+ */
+router.post('/trigger-reevaluation', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    
+    console.log(`🔄 [REEVALUATION] Trigger manual de re-evaluación para usuario ${userId}`);
+    
+    // Evaluar y registrar si es necesario
+    const evaluationResult = await pool.query(
+      `SELECT app.evaluate_level_change($1) as evaluation`,
+      [userId]
+    );
+    
+    const evaluation = evaluationResult.rows[0].evaluation;
+    
+    if (!evaluation.no_change) {
+      const registerResult = await pool.query(
+        `SELECT app.register_reevaluation($1, $2::jsonb) as result`,
+        [userId, JSON.stringify(evaluation)]
+      );
+      
+      res.json({
+        success: true,
+        evaluation,
+        registration: registerResult.rows[0].result,
+        message: 'Re-evaluación registrada, revisa tu panel de notificaciones'
+      });
+    } else {
+      res.json({
+        success: true,
+        evaluation,
+        message: 'No se requiere cambio de nivel en este momento'
+      });
+    }
+    
+  } catch (error) {
+    console.error('❌ [REEVALUATION] Error en trigger manual:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error al trigger re-evaluación'
     });
   }
 });

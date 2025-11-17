@@ -1,0 +1,501 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { 
+  Target, CheckCircle, XCircle, Clock, TrendingUp, 
+  Activity, Brain, Weight, Users, AlertCircle,
+  ArrowRight, BarChart3, ChevronRight
+} from 'lucide-react';
+
+/**
+ * Dashboard del Bloque de Adaptación
+ * Visualización mejorada de criterios de transición según teoría MindFeed
+ */
+const AdaptationDashboard = ({ 
+  userId,
+  onTransitionReady,
+  onGenerateD1D5
+}) => {
+  const [adaptationData, setAdaptationData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [showTransitionModal, setShowTransitionModal] = useState(false);
+  const [transitioning, setTransitioning] = useState(false);
+  const [weeklyData, setWeeklyData] = useState([]);
+
+  const fetchAdaptationProgress = useCallback(async () => {
+    setLoading(true);
+    try {
+      const response = await fetch('/api/adaptation/progress', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+
+      const data = await response.json();
+      if (data.success && data.hasActiveBlock) {
+        setAdaptationData(data);
+        setWeeklyData(data.weeks || []);
+
+        // Auto-mostrar modal si está listo para transición
+        if (data.block?.readyForTransition && !showTransitionModal) {
+          setShowTransitionModal(true);
+        }
+      }
+    } catch (error) {
+      console.error('Error obteniendo progreso de adaptación:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [showTransitionModal]);
+
+  useEffect(() => {
+    if (userId) {
+      fetchAdaptationProgress();
+    }
+  }, [userId, fetchAdaptationProgress]);
+
+  const handleTransition = async () => {
+    setTransitioning(true);
+    try {
+      const response = await fetch('/api/adaptation/transition', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      
+      const data = await response.json();
+      if (data.success) {
+        if (onTransitionReady) {
+          onTransitionReady();
+        }
+        // Generar automáticamente plan D1-D5
+        if (onGenerateD1D5) {
+          onGenerateD1D5();
+        }
+      }
+    } catch (error) {
+      console.error('Error en transición:', error);
+    } finally {
+      setTransitioning(false);
+      setShowTransitionModal(false);
+    }
+  };
+
+  const handleReportTechnique = async (exerciseId) => {
+    // Abrir modal para reportar flag técnico
+    const flagType = prompt('Tipo de problema técnico:\n1. ROM incorrecto\n2. Postura inadecuada\n3. Uso de impulso\n4. Movimiento inestable\n5. Patrón compensatorio\n6. Dolor');
+    
+    if (flagType) {
+      try {
+        await fetch('/api/adaptation/technique-flag', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify({
+            exerciseId,
+            flagType: ['incorrect_rom', 'poor_posture', 'excessive_momentum', 
+                      'unstable_movement', 'compensation_pattern', 'pain_reported'][parseInt(flagType) - 1],
+            severity: 'moderate'
+          })
+        });
+        fetchAdaptationProgress(); // Refrescar datos
+      } catch (error) {
+        console.error('Error reportando flag:', error);
+      }
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="bg-white rounded-lg p-8 text-center">
+        <div className="animate-pulse">
+          <div className="h-8 bg-gray-200 rounded w-1/2 mx-auto mb-4"></div>
+          <div className="h-4 bg-gray-200 rounded w-3/4 mx-auto"></div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!adaptationData?.hasActiveBlock) {
+    // Panel para iniciar adaptación
+    return (
+      <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-8 border-2 border-blue-200">
+        <div className="text-center">
+          <Activity className="h-16 w-16 text-blue-600 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">
+            Bloque de Adaptación Inicial
+          </h2>
+          <p className="text-gray-600 mb-6 max-w-lg mx-auto">
+            Como eres principiante, es OBLIGATORIO completar 1-3 semanas de adaptación
+            antes de comenzar el programa D1-D5 completo.
+          </p>
+          
+          <div className="grid grid-cols-2 gap-4 max-w-lg mx-auto mb-6">
+            <div className="bg-white rounded-lg p-4">
+              <Users className="h-8 w-8 text-blue-500 mx-auto mb-2" />
+              <h3 className="font-semibold">Full Body</h3>
+              <p className="text-sm text-gray-600">4 días/semana</p>
+              <p className="text-xs text-gray-500">Circuito completo</p>
+            </div>
+            <div className="bg-white rounded-lg p-4">
+              <BarChart3 className="h-8 w-8 text-blue-500 mx-auto mb-2" />
+              <h3 className="font-semibold">Half Body</h3>
+              <p className="text-sm text-gray-600">5 días/semana</p>
+              <p className="text-xs text-gray-500">A/B alternado</p>
+            </div>
+          </div>
+          
+          <button
+            onClick={() => window.location.href = '/adaptation/create'}
+            className="bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors"
+          >
+            Iniciar Bloque de Adaptación
+          </button>
+          
+          <div className="mt-6 text-sm text-gray-500">
+            <p>✓ Duración: 1-3 semanas según progreso</p>
+            <p>✓ RIR objetivo: 3-4 (sin llegar al fallo)</p>
+            <p>✓ Transición automática al cumplir criterios</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const { block, latestCriteria } = adaptationData;
+  const currentWeek = block.latestWeek || 1;
+  const progress = (block.weeksTracked / block.durationWeeks) * 100;
+
+  // Calcular criterios cumplidos
+  const criteriaCount = [
+    latestCriteria?.adherence?.met,
+    latestCriteria?.rir?.met,
+    latestCriteria?.technique?.met,
+    latestCriteria?.progress?.met
+  ].filter(Boolean).length;
+
+  return (
+    <>
+      <div className="bg-white rounded-lg shadow-sm">
+        {/* Header */}
+        <div className="px-6 py-4 border-b bg-gradient-to-r from-blue-50 to-indigo-50">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <Activity className="h-6 w-6 text-blue-600" />
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900">
+                  Bloque de Adaptación - {block.blockType.replace('_', ' ').toUpperCase()}
+                </h2>
+                <p className="text-sm text-gray-600">
+                  Semana {currentWeek} de {block.durationWeeks}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                block.readyForTransition 
+                  ? 'bg-green-100 text-green-800'
+                  : progress >= 66 
+                    ? 'bg-yellow-100 text-yellow-800'
+                    : 'bg-gray-100 text-gray-800'
+              }`}>
+                {block.readyForTransition ? 'Listo para D1-D5' : `${Math.round(progress)}% Completado`}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Progress bar */}
+        <div className="px-6 py-4 border-b">
+          <div className="mb-2 flex justify-between text-sm">
+            <span className="text-gray-600">Progreso general</span>
+            <span className="font-medium">{criteriaCount}/4 criterios cumplidos</span>
+          </div>
+          <div className="w-full bg-gray-200 rounded-full h-3">
+            <div 
+              className={`h-3 rounded-full transition-all duration-500 ${
+                criteriaCount === 4 ? 'bg-green-500' :
+                criteriaCount >= 2 ? 'bg-yellow-500' : 'bg-blue-500'
+              }`}
+              style={{ width: `${(criteriaCount / 4) * 100}%` }}
+            />
+          </div>
+        </div>
+
+        {/* Criterios */}
+        <div className="p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">
+            Criterios de Transición a Hipertrofia D1-D5
+          </h3>
+          
+          <div className="grid grid-cols-2 gap-4">
+            {/* Criterio 1: Adherencia */}
+            <div className={`rounded-lg p-4 border-2 ${
+              latestCriteria?.adherence?.met 
+                ? 'bg-green-50 border-green-200' 
+                : 'bg-gray-50 border-gray-200'
+            }`}>
+              <div className="flex items-start justify-between">
+                <div className="flex items-center space-x-2">
+                  {latestCriteria?.adherence?.met ? (
+                    <CheckCircle className="h-5 w-5 text-green-600" />
+                  ) : (
+                    <XCircle className="h-5 w-5 text-gray-400" />
+                  )}
+                  <div>
+                    <p className="font-medium text-gray-900">Adherencia</p>
+                    <p className="text-sm text-gray-600">
+                      {Math.round(latestCriteria?.adherence?.value || 0)}% 
+                      <span className="text-gray-500"> (objetivo: {latestCriteria?.adherence?.threshold}%)</span>
+                    </p>
+                  </div>
+                </div>
+                <Target className="h-4 w-4 text-gray-400" />
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                Completar 4/5 sesiones semanales
+              </p>
+            </div>
+
+            {/* Criterio 2: RIR */}
+            <div className={`rounded-lg p-4 border-2 ${
+              latestCriteria?.rir?.met
+                ? 'bg-green-50 border-green-200'
+                : 'bg-gray-50 border-gray-200'
+            }`}>
+              <div className="flex items-start justify-between">
+                <div className="flex items-center space-x-2">
+                  {latestCriteria?.rir?.met ? (
+                    <CheckCircle className="h-5 w-5 text-green-600" />
+                  ) : (
+                    <XCircle className="h-5 w-5 text-gray-400" />
+                  )}
+                  <div>
+                    <p className="font-medium text-gray-900">Control RIR</p>
+                    <p className="text-sm text-gray-600">
+                      Media: {latestCriteria?.rir?.value?.toFixed(1) || 'N/A'}
+                      <span className="text-gray-500"> (objetivo: ≤{latestCriteria?.rir?.threshold})</span>
+                    </p>
+                  </div>
+                </div>
+                <Brain className="h-4 w-4 text-gray-400" />
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                Control del esfuerzo adecuado
+              </p>
+            </div>
+
+            {/* Criterio 3: Técnica */}
+            <div className={`rounded-lg p-4 border-2 ${
+              latestCriteria?.technique?.met
+                ? 'bg-green-50 border-green-200'
+                : 'bg-gray-50 border-gray-200'
+            }`}>
+              <div className="flex items-start justify-between">
+                <div className="flex items-center space-x-2">
+                  {latestCriteria?.technique?.met ? (
+                    <CheckCircle className="h-5 w-5 text-green-600" />
+                  ) : (
+                    <XCircle className="h-5 w-5 text-gray-400" />
+                  )}
+                  <div>
+                    <p className="font-medium text-gray-900">Técnica</p>
+                    <p className="text-sm text-gray-600">
+                      {latestCriteria?.technique?.flags_count || 0} flags
+                      <span className="text-gray-500"> (objetivo: &lt;{latestCriteria?.technique?.threshold})</span>
+                    </p>
+                  </div>
+                </div>
+                <Activity className="h-4 w-4 text-gray-400" />
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                Ejecución técnica correcta
+              </p>
+              <button
+                onClick={() => handleReportTechnique()}
+                className="text-xs text-blue-600 hover:text-blue-700 mt-1"
+              >
+                Reportar problema técnico
+              </button>
+            </div>
+
+            {/* Criterio 4: Progreso */}
+            <div className={`rounded-lg p-4 border-2 ${
+              latestCriteria?.progress?.met
+                ? 'bg-green-50 border-green-200'
+                : 'bg-gray-50 border-gray-200'
+            }`}>
+              <div className="flex items-start justify-between">
+                <div className="flex items-center space-x-2">
+                  {latestCriteria?.progress?.met ? (
+                    <CheckCircle className="h-5 w-5 text-green-600" />
+                  ) : (
+                    <XCircle className="h-5 w-5 text-gray-400" />
+                  )}
+                  <div>
+                    <p className="font-medium text-gray-900">Progreso Carga</p>
+                    <p className="text-sm text-gray-600">
+                      +{Math.round(latestCriteria?.progress?.value || 0)}%
+                      <span className="text-gray-500"> (objetivo: ≥{latestCriteria?.progress?.threshold}%)</span>
+                    </p>
+                  </div>
+                </div>
+                <Weight className="h-4 w-4 text-gray-400" />
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                Adaptación neuromuscular
+              </p>
+            </div>
+          </div>
+
+          {/* Histórico semanal */}
+          {weeklyData.length > 0 && (
+            <div className="mt-6 pt-6 border-t">
+              <h4 className="text-sm font-medium text-gray-700 mb-3">
+                Histórico semanal
+              </h4>
+              <div className="space-y-2">
+                {weeklyData.map((week) => (
+                  <div key={week.week_number} className="flex items-center justify-between text-sm">
+                    <span className="text-gray-600">Semana {week.week_number}</span>
+                    <div className="flex space-x-4">
+                      <span className={week.adherence_met ? 'text-green-600' : 'text-gray-400'}>
+                        Adherencia {week.adherence_percentage?.toFixed(0)}%
+                      </span>
+                      <span className={week.rir_met ? 'text-green-600' : 'text-gray-400'}>
+                        RIR {week.mean_rir?.toFixed(1) || 'N/A'}
+                      </span>
+                      <span className={week.technique_met ? 'text-green-600' : 'text-gray-400'}>
+                        Técnica ✓
+                      </span>
+                      <span className={week.progress_met ? 'text-green-600' : 'text-gray-400'}>
+                        Progreso +{week.weight_progress_percentage?.toFixed(0)}%
+                      </span>
+                    </div>
+                    {week.all_criteria_met && (
+                      <CheckCircle className="h-4 w-4 text-green-500" />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Mensaje de estado */}
+          <div className={`mt-6 p-4 rounded-lg ${
+            block.readyForTransition 
+              ? 'bg-green-50 border border-green-200'
+              : criteriaCount >= 2
+                ? 'bg-yellow-50 border border-yellow-200'
+                : 'bg-blue-50 border border-blue-200'
+          }`}>
+            <div className="flex items-start space-x-2">
+              {block.readyForTransition ? (
+                <>
+                  <CheckCircle className="h-5 w-5 text-green-600 mt-0.5" />
+                  <div>
+                    <p className="font-medium text-green-900">
+                      ¡Felicitaciones! Estás listo para el programa principal
+                    </p>
+                    <p className="text-sm text-green-700 mt-1">
+                      Has cumplido todos los criterios de adaptación. 
+                      Puedes transicionar al ciclo D1-D5 de HipertrofiaV2.
+                    </p>
+                    <button
+                      onClick={() => setShowTransitionModal(true)}
+                      className="mt-3 bg-green-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-700 transition-colors flex items-center space-x-2"
+                    >
+                      <span>Iniciar Transición a D1-D5</span>
+                      <ArrowRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <Clock className="h-5 w-5 text-blue-600 mt-0.5" />
+                  <div>
+                    <p className="font-medium text-gray-900">
+                      Continúa con tu adaptación
+                    </p>
+                    <p className="text-sm text-gray-600 mt-1">
+                      {criteriaCount === 0 
+                        ? 'Enfócate en completar las sesiones y mejorar tu técnica.'
+                        : criteriaCount === 1 
+                          ? 'Buen progreso. Sigue trabajando en los criterios pendientes.'
+                          : criteriaCount === 2
+                            ? 'Vas muy bien. Solo faltan algunos criterios más.'
+                            : 'Casi listo. Un último esfuerzo para completar todos los criterios.'
+                      }
+                    </p>
+                    {criteriaCount < 2 && (
+                      <div className="mt-2 text-xs text-gray-500">
+                        Tiempo estimado restante: {block.durationWeeks - currentWeek + 1} semana(s)
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Modal de transición */}
+      {showTransitionModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg max-w-md w-full p-6">
+            <div className="text-center">
+              <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" />
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                ¡Adaptación Completada!
+              </h2>
+              <p className="text-gray-600 mb-6">
+                Has cumplido todos los criterios necesarios. 
+                Ahora estás listo para comenzar el programa completo de HipertrofiaV2 con el ciclo D1-D5.
+              </p>
+              
+              <div className="bg-blue-50 rounded-lg p-4 mb-6">
+                <h3 className="font-semibold text-blue-900 mb-2">
+                  ¿Qué esperar del programa D1-D5?
+                </h3>
+                <ul className="text-sm text-blue-700 space-y-1 text-left">
+                  <li>• 5 días de entrenamiento (Lun-Vie)</li>
+                  <li>• {adaptationData.evaluation?.current_level === 'Principiante' ? '10' : '12'} semanas de duración</li>
+                  <li>• Progresión automática +2.5% semanal</li>
+                  <li>• Deload cada 6 semanas</li>
+                  <li>• Tracking completo con RIR</li>
+                </ul>
+              </div>
+              
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setShowTransitionModal(false)}
+                  className="flex-1 py-2 px-4 border border-gray-300 rounded-lg font-medium hover:bg-gray-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleTransition}
+                  disabled={transitioning}
+                  className="flex-1 py-2 px-4 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:bg-gray-400 flex items-center justify-center space-x-2"
+                >
+                  {transitioning ? (
+                    <span>Procesando...</span>
+                  ) : (
+                    <>
+                      <span>Generar Plan D1-D5</span>
+                      <ChevronRight className="h-4 w-4" />
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
+
+export default AdaptationDashboard;

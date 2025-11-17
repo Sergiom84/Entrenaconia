@@ -2,6 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTrace } from '@/contexts/TraceContext.jsx';
 import FatigueReportModal from '../../Methodologie/methodologies/HipertrofiaV2/components/FatigueReportModal';
+import WeeklyReviewModal from '../../Methodologie/methodologies/HipertrofiaV2/components/WeeklyReviewModal';
 import { extractSessionPatterns } from '@/utils/exerciseUtils.js';
 
 /**
@@ -27,6 +28,10 @@ export const SessionSummaryModal = ({
   const navigate = useNavigate();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [showFatigueReport, setShowFatigueReport] = React.useState(false);
+  const [showWeeklyReview, setShowWeeklyReview] = React.useState(false);
+  const [weeklyReviewLoading, setWeeklyReviewLoading] = React.useState(false);
+  const [weeklyReviewError, setWeeklyReviewError] = React.useState(null);
+  const [weeklyReviewData, setWeeklyReviewData] = React.useState(null);
 
   // Ref para evitar loop infinito en tracking
   const prevShowRef = React.useRef(show);
@@ -175,9 +180,9 @@ export const SessionSummaryModal = ({
         className="absolute inset-0 bg-black/60"
         onClick={() => {
           track('MODAL_DISMISS', { via: 'backdrop' }, { component: 'SessionSummaryModal' });
-          onClose?.();
-          onEndSession?.();
-        }}
+      onClose?.();
+      onEndSession?.();
+    }}
       />
 
       <div className="relative bg-gray-800 border border-gray-700 rounded-xl p-6 w-full max-w-md">
@@ -297,17 +302,71 @@ export const SessionSummaryModal = ({
 
           {/* 🩺 FASE 2: Botón de Reporte de Fatiga (opcional) */}
           {(session?.metodologia === 'HipertrofiaV2_MindFeed' || session?.metodologia === 'HipertrofiaV2') && (
-            <button
-              onClick={() => {
-                track('BUTTON_CLICK', { id: 'fatigue_report' }, { component: 'SessionSummaryModal' });
-                setShowFatigueReport(true);
-              }}
-              className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors flex items-center justify-center gap-2"
-            >
-              <span>🩺</span>
-              Reportar Recuperación (opcional)
-            </button>
+          <button
+            onClick={() => {
+              track('BUTTON_CLICK', { id: 'fatigue_report' }, { component: 'SessionSummaryModal' });
+              setShowFatigueReport(true);
+            }}
+            className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors flex items-center justify-center gap-2"
+          >
+            <span>🩺</span>
+            Reportar Recuperación (opcional)
+          </button>
           )}
+
+          {/* 🧮 Revisión semanal (adaptación) */}
+          {(session?.metodologia === 'HipertrofiaV2_MindFeed' || session?.metodologia === 'HipertrofiaV2') && (() => {
+            // Detectar si la sesión actual es D5 (cierre de microciclo/semana)
+            const sessionName = session?.session_name || session?.sessionName || '';
+            const cycleMatch = sessionName.match(/^D(\d)/);
+            const isD5 = cycleMatch && cycleMatch[1] === '5';
+
+            if (!isD5) return null;
+
+            const handleWeeklyReview = async () => {
+              setWeeklyReviewError(null);
+              setWeeklyReviewData(null);
+              setWeeklyReviewLoading(true);
+              setShowWeeklyReview(true);
+
+              try {
+                const token = localStorage.getItem('authToken');
+                const response = await fetch(
+                  `${import.meta.env.VITE_API_URL || 'http://localhost:3010'}/api/adaptation/auto-evaluate-week`,
+                  {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${token}`
+                    }
+                  }
+                );
+
+                const result = await response.json();
+
+                if (!response.ok || result.success === false) {
+                  throw new Error(result.error || 'No se pudo evaluar la semana');
+                }
+
+                setWeeklyReviewData(result);
+              } catch (err) {
+                console.error('❌ [ADAPTACIÓN] Error en revisión semanal:', err);
+                setWeeklyReviewError(err.message || 'Error al calcular la revisión semanal');
+              } finally {
+                setWeeklyReviewLoading(false);
+              }
+            };
+
+            return (
+              <button
+                onClick={handleWeeklyReview}
+                className="w-full px-4 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold transition-colors flex items-center justify-center gap-2"
+              >
+                <span>📅</span>
+                Revisión semanal (adaptación)
+              </button>
+            );
+          })()}
 
           <button
             onClick={() => {
@@ -344,6 +403,15 @@ export const SessionSummaryModal = ({
 
           setShowFatigueReport(false);
         }}
+      />
+
+      {/* 📅 Modal de revisión semanal (adaptación) */}
+      <WeeklyReviewModal
+        show={showWeeklyReview}
+        loading={weeklyReviewLoading}
+        error={weeklyReviewError}
+        data={weeklyReviewData}
+        onClose={() => setShowWeeklyReview(false)}
       />
     </div>
   );

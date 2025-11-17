@@ -44,6 +44,7 @@ import nutritionV2Routes from './routes/nutritionV2.js';
 import musicRoutes from './routes/music.js';
 import analyticsRoutes from './routes/analytics.js';
 import hipertrofiaV2Routes from './routes/hipertrofiaV2.js';
+import adaptationBlockRoutes from './routes/adaptationBlock.js';
 
 // ===============================================
 // 🗄️ RUTAS LEGACY (MANTENER TEMPORALMENTE)
@@ -414,6 +415,7 @@ app.use('/api/nutrition-v2', nutritionV2Routes); // Sistema determinista normali
 app.use('/api/music', musicRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/hipertrofiav2', hipertrofiaV2Routes); // Sistema de tracking RIR
+app.use('/api/adaptation', adaptationBlockRoutes); // Bloque de Adaptación Inicial
 
 // Endpoint simple de salud
 app.get('/api/health', (req, res) => {

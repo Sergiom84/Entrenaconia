@@ -5,6 +5,7 @@ import ExerciseFeedbackModal from '../HomeTraining/ExerciseFeedbackModal';
 import ExerciseInfoModal from './ExerciseInfoModal';
 import { saveExerciseFeedback, getSessionFeedback } from './api';
 import SeriesTrackingModal from '../Methodologie/methodologies/HipertrofiaV2/components/SeriesTrackingModal';
+import ApproximationSeriesModal from '../Methodologie/methodologies/HipertrofiaV2/components/ApproximationSeriesModal.jsx';
 
 // Componentes refactorizados
 import { useExerciseTimer } from './session/useExerciseTimer';
@@ -82,6 +83,8 @@ export default function RoutineSessionModal({
   const [seriesTrackingData, setSeriesTrackingData] = useState([]);
   const [exerciseProgression, setExerciseProgression] = useState({});
   const [neuralOverlapInfo, setNeuralOverlapInfo] = useState(null);
+  const [showApproximationModal, setShowApproximationModal] = useState(false);
+  const [approxShownFor, setApproxShownFor] = useState(new Set());
   // Guards y refs
   const closingRef = useRef(false);
   const toastTimeoutRef = useRef(null);
@@ -134,6 +137,20 @@ export default function RoutineSessionModal({
       }
     };
   }, [showExerciseToast]);
+
+  // Mostrar modal de series de aproximación al cambiar de ejercicio (solo HipertrofiaV2)
+  useEffect(() => {
+    const isHypertrofiaV2 = session?.metodologia === 'HipertrofiaV2_MindFeed' || session?.metodologia === 'HipertrofiaV2';
+    const currentId = progressState.currentExercise?.exercise_id || progressState.currentExercise?.id;
+    if (isHypertrofiaV2 && currentId && !approxShownFor.has(currentId)) {
+      setShowApproximationModal(true);
+      setApproxShownFor((prev) => {
+        const next = new Set(prev);
+        next.add(currentId);
+        return next;
+      });
+    }
+  }, [progressState.currentExercise, session?.metodologia, approxShownFor]);
 
 
   // Cargar feedback existente al abrir modal
@@ -538,6 +555,15 @@ export default function RoutineSessionModal({
           />
         );
       })()}
+
+      {/* 🔥 Modal de Series de Aproximación (solo HipertrofiaV2) */}
+      {showApproximationModal && progressState.currentExercise && (
+        <ApproximationSeriesModal
+          show={showApproximationModal}
+          onClose={() => setShowApproximationModal(false)}
+          exerciseName={formatExerciseName(progressState.currentExercise?.nombre)}
+        />
+      )}
 
       {/* Toast: Ejercicio completado */}
       {showExerciseToast && (

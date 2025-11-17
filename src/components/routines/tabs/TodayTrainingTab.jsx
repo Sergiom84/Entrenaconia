@@ -42,6 +42,7 @@ import { ProgressBar } from '../summary/ProgressBar.jsx';
 import { FirstWeekWarning, usePlanConfig } from '../alerts/FirstWeekWarning.jsx';
 import CycleStatusBadge from '../../Methodologie/methodologies/HipertrofiaV2/components/CycleStatusBadge';
 import MusclePriorityModal from '../../Methodologie/methodologies/HipertrofiaV2/components/MusclePriorityModal';
+import AdaptationTrackingBadge from '../../Methodologie/methodologies/HipertrofiaV2/components/AdaptationTrackingBadge.jsx';
 
 import { useNavigate } from 'react-router-dom';
 
@@ -191,6 +192,12 @@ export default function TodayTrainingTab({
   const [todayStatus, setTodayStatus] = useState(null);
   const [loadingTodayStatus, setLoadingTodayStatus] = useState(false);
   const [isLoadingWeekendWorkout, setIsLoadingWeekendWorkout] = useState(false);
+  const [adaptationState, setAdaptationState] = useState({
+    loading: false,
+    hasBlock: false,
+    readyForTransition: false,
+    block: null
+  });
 
   // 🎯 FASE 2: Estado para modal de prioridad muscular
   const [showPriorityModal, setShowPriorityModal] = useState(false);
@@ -240,6 +247,52 @@ export default function TodayTrainingTab({
       return null;
     }
   }, []);
+
+  // Estado de adaptación (mostrar badge cuando hay bloque activo y aún no D1-D5)
+  const fetchAdaptationProgress = useCallback(async () => {
+    try {
+      setAdaptationState((prev) => ({ ...prev, loading: true }));
+      const token = localStorage.getItem('authToken');
+      if (!token) {
+        setAdaptationState((prev) => ({ ...prev, loading: false }));
+        return;
+      }
+      const resp = await fetch(
+        `${import.meta.env.VITE_API_URL || 'http://localhost:3010'}/api/adaptation/progress`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+      const data = await resp.json();
+      if (!resp.ok || data.success === false) {
+        throw new Error(data.error || 'No se pudo cargar adaptación');
+      }
+      if (data.hasActiveBlock) {
+        setAdaptationState({
+          loading: false,
+          hasBlock: true,
+          readyForTransition: data.block?.readyForTransition || false,
+          block: data.block
+        });
+      } else {
+        setAdaptationState({
+          loading: false,
+          hasBlock: false,
+          readyForTransition: false,
+          block: null
+        });
+      }
+    } catch (err) {
+      console.error('❌ [ADAPTACIÓN] Error cargando progreso:', err);
+      setAdaptationState((prev) => ({ ...prev, loading: false }));
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchAdaptationProgress();
+  }, [fetchAdaptationProgress]);
 
   const fetchTodayStatus = useCallback(async () => {
     const currentMethodologyPlanId = methodologyPlanId || plan.methodologyPlanId;
@@ -1685,6 +1738,20 @@ export default function TodayTrainingTab({
                     </p>
                   </div>
                 </div>
+
+                {/* 🟣 Badge de adaptación (si hay bloque activo y aún no está en D1-D5) */}
+                {adaptationState.hasBlock && plan?.metodologia !== 'HipertrofiaV2_MindFeed' && (
+                  <div className="mt-3">
+                    <AdaptationTrackingBadge
+                      loading={adaptationState.loading}
+                      hasBlock={adaptationState.hasBlock}
+                      block={adaptationState.block}
+                      readyForTransition={adaptationState.readyForTransition}
+                      onReload={fetchAdaptationProgress}
+                      onTransition={() => goToMethodologies()} // que vaya a metodologías para transicionar
+                    />
+                  </div>
+                )}
 
                 {/* 🔄 Badge de estado del ciclo MindFeed (solo para HipertrofiaV2) */}
                 {(plan?.metodologia === 'HipertrofiaV2_MindFeed' || plan?.metodologia === 'HipertrofiaV2') && (

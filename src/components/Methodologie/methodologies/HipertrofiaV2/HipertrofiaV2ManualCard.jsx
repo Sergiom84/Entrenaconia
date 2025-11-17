@@ -2,10 +2,10 @@
  * HipertrofiaV2 Manual Card - Sistema de Tracking con RIR
  * Full Body con variedad de ejercicios y autorregulación
  *
- * @version 2.0.0 - Sistema de Tracking RIR
+ * @version 2.1.0 - Dashboard de Adaptación Mejorado
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Dumbbell,
   TrendingUp,
@@ -15,22 +15,79 @@ import {
   Target,
   Calendar
 } from 'lucide-react';
-import { useWorkout } from '../../../../contexts/WorkoutContext';
 import { useAuth } from '../../../../contexts/AuthContext';
-import { getLevelConfig } from './config/progressionRules';
 import {
-  calculateFullBodySchedule,
-  generateWeeksWithDates,
   BEGINNER_FULL_BODY_PATTERNS
 } from './config/fullBodyPatterns';
+import AdaptationBlockSelection from './components/AdaptationBlockSelection.jsx';
+import AdaptationTrackingBadge from './components/AdaptationTrackingBadge.jsx';
+import AdaptationTransitionModal from './components/AdaptationTransitionModal.jsx';
+import AdaptationDashboard from '../../../../HipertrofiaV2/AdaptationDashboard.jsx';
 
-export default function HipertrofiaV2ManualCard({ onGenerate, isLoading, error }) {
+export default function HipertrofiaV2ManualCard({ onGenerate, isLoading, error, startConfig }) {
   const { user } = useAuth();
 
-  const [step, setStep] = useState('evaluation'); // 'evaluation' | 'confirmed'
+  const [step, setStep] = useState('evaluation'); // 'evaluation' | 'confirmed' | 'adaptation'
   const [evaluating, setEvaluating] = useState(false);
   const [evaluation, setEvaluation] = useState(null);
   const [generating, setGenerating] = useState(false); // Estado local de generación
+  const [adaptation, setAdaptation] = useState({
+    loading: false,
+    hasBlock: false,
+    readyForTransition: false,
+    block: null,
+    weeks: []
+  });
+  const [showAdaptationSelect, setShowAdaptationSelect] = useState(false);
+  const [showTransitionModal, setShowTransitionModal] = useState(false);
+  const [showAdaptationDashboard, setShowAdaptationDashboard] = useState(false);
+
+  // Helpers: carga de progreso de adaptación
+  const fetchAdaptationProgress = async () => {
+    setAdaptation((prev) => ({ ...prev, loading: true }));
+    try {
+      const token = localStorage.getItem('authToken');
+      const resp = await fetch(
+        `${import.meta.env.VITE_API_URL || 'http://localhost:3010'}/api/adaptation/progress`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+      const data = await resp.json();
+
+      if (!resp.ok || data.success === false) {
+        throw new Error(data.error || 'No se pudo cargar progreso de adaptación');
+      }
+
+      if (data.hasActiveBlock) {
+        setAdaptation({
+          loading: false,
+          hasBlock: true,
+          readyForTransition: data.block?.readyForTransition || false,
+          block: data.block || null,
+          weeks: data.weeks || []
+        });
+      } else {
+        setAdaptation({
+          loading: false,
+          hasBlock: false,
+          readyForTransition: false,
+          block: null,
+          weeks: []
+        });
+      }
+    } catch (err) {
+      console.error('❌ [ADAPTACIÓN] Error cargando progreso:', err);
+      setAdaptation((prev) => ({ ...prev, loading: false }));
+    }
+  };
+
+  useEffect(() => {
+    // Cargar progreso de adaptación al montar
+    fetchAdaptationProgress();
+  }, []);
 
   // Evaluar perfil del usuario
   const handleEvaluate = async () => {
@@ -60,7 +117,13 @@ export default function HipertrofiaV2ManualCard({ onGenerate, isLoading, error }
         recommendation: data.recomendacion || 'Full Body 3x/semana'
       });
 
-      setStep('confirmed');
+      // Si es principiante absoluto, forzar dashboard de adaptación
+      if (data.nivel_hipertrofia === 'Principiante' && data.tags_adaptacion?.includes('novato')) {
+        setShowAdaptationDashboard(true);
+        setStep('adaptation');
+      } else {
+        setStep('confirmed');
+      }
     } catch (error) {
       console.error('Error evaluando perfil:', error);
       // Fallback: Asignar principiante por defecto
@@ -84,6 +147,15 @@ export default function HipertrofiaV2ManualCard({ onGenerate, isLoading, error }
 
       console.log('🏋️ [MINDFEED] Generando plan D1-D5 para nivel:', userLevel);
 
+      // 🎯 Preparar configuración de inicio (usa la pasada por props o crea una por defecto)
+      const finalStartConfig = startConfig || {
+        startDate: new Date().toISOString().split('T')[0],
+        distributionOption: 'saturdays', // Por defecto, entrenar sábados
+        includeSaturdays: true
+      };
+
+      console.log('📅 [MINDFEED] Configuración de inicio:', finalStartConfig);
+
       // Llamar al nuevo endpoint de generación D1-D5
       const response = await fetch(
         `${import.meta.env.VITE_API_URL}/api/hipertrofiav2/generate-d1d5`,
@@ -96,10 +168,7 @@ export default function HipertrofiaV2ManualCard({ onGenerate, isLoading, error }
           body: JSON.stringify({
             nivel: userLevel,
             totalWeeks: 8,  // 8 semanas para 40 sesiones (5 sesiones/semana × 8 semanas = 40)
-            startConfig: {
-              startDate: new Date().toISOString().split('T')[0], // Fecha actual en formato YYYY-MM-DD
-              distributionOption: 'consecutive' // Distribución consecutiva desde hoy
-            }
+            startConfig: finalStartConfig
           })
         }
       );
@@ -131,7 +200,7 @@ export default function HipertrofiaV2ManualCard({ onGenerate, isLoading, error }
         semanas: Array.from({ length: totalWeeks }, (_, weekIdx) => ({
           numero: weekIdx + 1,
           semana: weekIdx + 1,
-          sesiones: baseSessions.map((session, sessionIdx) => ({
+          sesiones: baseSessions.map((session) => ({
             ...session,
             // Asegurar IDs únicos por semana
             id: `${session.id}-w${weekIdx + 1}`
@@ -167,49 +236,66 @@ export default function HipertrofiaV2ManualCard({ onGenerate, isLoading, error }
     }
   };
 
-  // Función auxiliar: Seleccionar ejercicios variados
-  async function selectVariedExercises(userLevel) {
-    const templates = BEGINNER_FULL_BODY_PATTERNS;
-    const allExercises = {};
-
-    // Para cada template (A, B, C)
-    for (const [templateKey, template] of Object.entries(templates)) {
-      const exercises = [];
-
-      // Para cada patrón muscular
-      for (const pattern of template.patterns) {
-        try {
-          // Llamar al backend para obtener ejercicios aleatorios
-          const response = await fetch(
-            `${import.meta.env.VITE_API_URL}/api/hipertrofiav2/select-exercises`,
-            {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-              },
-              body: JSON.stringify({
-                categoria: pattern.categoria,
-                nivel: userLevel,
-                cantidad: pattern.cantidad
-              })
-            }
-          );
-
-          if (response.ok) {
-            const data = await response.json();
-            exercises.push(...data.exercises);
-          }
-        } catch (error) {
-          console.error(`Error seleccionando ejercicios para ${pattern.categoria}:`, error);
+  // Iniciar bloque de adaptación
+  const handleGenerateAdaptation = async ({ blockType, durationWeeks }) => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const resp = await fetch(
+        `${import.meta.env.VITE_API_URL || 'http://localhost:3010'}/api/adaptation/generate`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            blockType,
+            durationWeeks
+          })
         }
+      );
+
+      const data = await resp.json();
+      if (!resp.ok || data.success === false) {
+        throw new Error(data.error || 'No se pudo crear bloque de adaptación');
       }
 
-      allExercises[templateKey] = exercises;
+      await fetchAdaptationProgress();
+      setShowAdaptationSelect(false);
+    } catch (err) {
+      console.error('❌ [ADAPTACIÓN] Error creando bloque:', err);
+      alert(err.message || 'Error al crear bloque de adaptación');
     }
+  };
 
-    return allExercises;
-  }
+  // Transicionar a D1-D5
+  const handleTransition = async () => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const resp = await fetch(
+        `${import.meta.env.VITE_API_URL || 'http://localhost:3010'}/api/adaptation/transition`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+      const data = await resp.json();
+      if (!resp.ok || data.success === false) {
+        throw new Error(data.error || 'No se pudo transicionar');
+      }
+      // Una vez listo, generar D1-D5
+      await handleGenerate();
+      setShowTransitionModal(false);
+      await fetchAdaptationProgress();
+    } catch (err) {
+      console.error('❌ [ADAPTACIÓN] Error en transición:', err);
+      alert(err.message || 'Error al transicionar a D1-D5');
+    }
+  };
+
 
   return (
     <div className="bg-gray-900">
@@ -226,11 +312,37 @@ export default function HipertrofiaV2ManualCard({ onGenerate, isLoading, error }
             </p>
           </div>
         </div>
+
+        {/* Badge de Adaptación si aplica */}
+        {evaluation?.level === 'Principiante' && !showAdaptationDashboard && (
+          <div className="mt-3">
+            <AdaptationTrackingBadge
+              loading={adaptation.loading}
+              hasBlock={adaptation.hasBlock}
+              block={adaptation.block}
+              readyForTransition={adaptation.readyForTransition}
+              onReload={fetchAdaptationProgress}
+              onTransition={() => setShowTransitionModal(true)}
+            />
+          </div>
+        )}
       </div>
 
       <div>
-          {/* PASO 1: Evaluación */}
-          {step === 'evaluation' && (
+        {/* Dashboard de Adaptación Mejorado para Principiantes */}
+        {showAdaptationDashboard ? (
+          <AdaptationDashboard
+            userId={user.id}
+            onTransitionReady={() => {
+              setShowAdaptationDashboard(false);
+              setStep('confirmed');
+            }}
+            onGenerateD1D5={handleGenerate}
+          />
+        ) : (
+          <>
+            {/* PASO 1: Evaluación */}
+            {step === 'evaluation' && (
             <div className="space-y-6">
               <div className="text-center">
                 <Target className="w-16 h-16 text-blue-400 mx-auto mb-4" />
@@ -334,20 +446,54 @@ export default function HipertrofiaV2ManualCard({ onGenerate, isLoading, error }
                 >
                   Volver
                 </button>
-                <button
-                  onClick={handleGenerate}
-                  disabled={isLoading || generating}
-                  className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                >
-                  {(isLoading || generating) ? (
-                    <>
-                      <Loader className="w-5 h-5 animate-spin" />
-                      Generando...
-                    </>
+                {/* Lógica de adaptación: si principiante y no hay bloque, ofrecer crearlo; si listo, transicionar; si no, bloquear generación directa */}
+                {evaluation?.level === 'Principiante' ? (
+                  adaptation.hasBlock ? (
+                    adaptation.readyForTransition ? (
+                      <button
+                        onClick={() => setShowTransitionModal(true)}
+                        disabled={isLoading || generating}
+                        className="flex-1 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
+                      >
+                        <Target className="w-5 h-5" />
+                        Transicionar a D1-D5
+                      </button>
+                    ) : (
+                      <button
+                        disabled
+                        className="flex-1 py-3 bg-gray-800 text-gray-400 rounded-lg font-semibold flex items-center justify-center gap-2 cursor-not-allowed"
+                        title="Completa los criterios de adaptación antes de generar D1-D5"
+                      >
+                        <Loader className="w-5 h-5 animate-spin" />
+                        Bloque de adaptación en curso
+                      </button>
+                    )
                   ) : (
-                    'Generar Plan'
-                  )}
-                </button>
+                    <button
+                      onClick={() => setShowAdaptationSelect(true)}
+                      disabled={isLoading || generating}
+                      className="flex-1 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      <Calendar className="w-5 h-5" />
+                      Iniciar bloque de adaptación
+                    </button>
+                  )
+                ) : (
+                  <button
+                    onClick={handleGenerate}
+                    disabled={isLoading || generating}
+                    className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {(isLoading || generating) ? (
+                      <>
+                        <Loader className="w-5 h-5 animate-spin" />
+                        Generando...
+                      </>
+                    ) : (
+                      'Generar Plan'
+                    )}
+                  </button>
+                )}
               </div>
 
               {/* Mensaje de carga visible */}
@@ -368,20 +514,36 @@ export default function HipertrofiaV2ManualCard({ onGenerate, isLoading, error }
               )}
             </div>
           )}
+          </>
+        )}
 
-          {/* Mostrar error si existe */}
-          {error && (
-            <div className="mt-4 p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
-              <div className="flex items-start gap-3">
-                <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-                <div>
-                  <h4 className="font-semibold text-red-400 mb-1">Error</h4>
-                  <p className="text-sm text-red-300">{error}</p>
-                </div>
+        {/* Mostrar error si existe */}
+        {error && (
+          <div className="mt-4 p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <h4 className="font-semibold text-red-400 mb-1">Error</h4>
+                <p className="text-sm text-red-300">{error}</p>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
+
+      {/* Modales de adaptación */}
+      <AdaptationBlockSelection
+        show={showAdaptationSelect}
+        onClose={() => setShowAdaptationSelect(false)}
+        onConfirm={handleGenerateAdaptation}
+      />
+
+      <AdaptationTransitionModal
+        show={showTransitionModal}
+        onClose={() => setShowTransitionModal(false)}
+        onConfirm={handleTransition}
+        block={adaptation.block}
+      />
+    </div>
   );
 }
