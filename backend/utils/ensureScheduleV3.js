@@ -62,6 +62,9 @@ import { adjustWorkoutIntensity, shouldAdjustIntensity } from './adjustWorkoutIn
  */
 export async function ensureWorkoutScheduleV3(client, userId, methodologyPlanId, planDataJson, startDate = new Date(), startConfig = null) {
   try {
+    // Patrón base por defecto (3x semana Lun-Mié-Vie)
+    const originalPattern = 'Lun-Mié-Vie';
+
     console.log('[ensureWorkoutScheduleV3] Iniciando con redistribución inteligente', {
       planId: methodologyPlanId,
       userId,
@@ -121,23 +124,30 @@ export async function ensureWorkoutScheduleV3(client, userId, methodologyPlanId,
     if (startConfig) {
       console.log('✅ [Redistribución] Usando configuración del usuario');
 
-      // Calcular patrón de primera semana según sessionsFirstWeek
-      const sessionsFirstWeek = startConfig.sessions_first_week || 0;
-      includeSaturdays = startConfig.include_saturdays || false;
-      isExtendedWeeks = startConfig.distribution_option === 'extra_week';
+      // 🎯 Prioridad 1: Leer first_week_pattern directamente si existe
+      if (startConfig.first_week_pattern) {
+        firstWeekPattern = startConfig.first_week_pattern;
+        console.log(`📊 Primera semana (desde config): ${firstWeekPattern}`);
+      } else {
+        // Prioridad 2: Calcular patrón según sessionsFirstWeek
+        const sessionsFirstWeek = startConfig.sessions_first_week || 0;
+        includeSaturdays = startConfig.include_saturdays || false;
 
-      // Generar patrón de primera semana
-      if (sessionsFirstWeek > 0) {
-        const daysAvailable = [];
-        const maxDay = includeSaturdays ? 6 : 5; // Hasta sábado o viernes
+        if (sessionsFirstWeek > 0) {
+          const daysAvailable = [];
+          const maxDay = includeSaturdays ? 6 : 5; // Hasta sábado o viernes
 
-        for (let d = startDayOfWeek; d <= maxDay && daysAvailable.length < sessionsFirstWeek; d++) {
-          daysAvailable.push(DAY_ABBREVS[d]);
+          for (let d = startDayOfWeek; d <= maxDay && daysAvailable.length < sessionsFirstWeek; d++) {
+            daysAvailable.push(DAY_ABBREVS[d]);
+          }
+
+          firstWeekPattern = daysAvailable.join('-');
+          console.log(`📊 Primera semana (calculada): ${sessionsFirstWeek} sesiones → ${firstWeekPattern}`);
         }
-
-        firstWeekPattern = daysAvailable.join('-');
-        console.log(`📊 Primera semana: ${sessionsFirstWeek} sesiones → ${firstWeekPattern}`);
       }
+
+      isExtendedWeeks = startConfig.distribution_option === 'extra_week';
+      includeSaturdays = startConfig.include_saturdays || false;
 
       // Ajustar total de semanas si se eligió semana extra
       if (isExtendedWeeks) {
@@ -147,7 +157,6 @@ export async function ensureWorkoutScheduleV3(client, userId, methodologyPlanId,
     } else {
       console.log('⚠️ [Redistribución] Sin configuración del usuario, usando lógica por defecto');
       // Mantener lógica original como fallback
-      const originalPattern = 'Lun-Mié-Vie';
       firstWeekPattern = originalPattern;
     }
 
@@ -248,8 +257,8 @@ export async function ensureWorkoutScheduleV3(client, userId, methodologyPlanId,
         default:
           firstWeekPattern = originalPattern;
       }
-    } else {
-      // Para niveles intermedios/avanzados, usar el patrón original
+    } else if (!startConfig || !firstWeekPattern) {
+      // Para niveles intermedios/avanzados, usar el patrón original SOLO si no hay config
       firstWeekPattern = originalPattern;
     }
 
@@ -368,7 +377,11 @@ export async function ensureWorkoutScheduleV3(client, userId, methodologyPlanId,
       let sessionsToSchedule;
 
       // 🎯 NUEVO: Aplicar redistribución para la primera semana
-      if (weekIndex === 0 && firstWeekPattern && isPrincipiante) {
+      // 🚨 EXCEPCIÓN: Planes D1-D5 (HipertrofiaV2) NO necesitan redistribución
+      const isD1D5NonRedist = planData.metodologia === 'HipertrofiaV2_MindFeed' ||
+                              (firstWeekPattern && firstWeekPattern.includes('Lun-Mar-Mie-Jue-Vie'));
+
+      if (weekIndex === 0 && firstWeekPattern && !isD1D5NonRedist) {
         // Para la primera semana, usar el patrón redistribuido
         const redistributedDays = firstWeekPattern.split('-').map(d => d.trim());
 
@@ -479,16 +492,30 @@ export async function ensureWorkoutScheduleV3(client, userId, methodologyPlanId,
 
       // 🆕 PRIMERA SEMANA: Verificar que solo tenga las sesiones correctas
       if (isFirstWeek && startConfig && firstWeekPattern) {
-        // Si ya se aplicó firstWeekPattern, verificar que solo tenga las sesiones necesarias
-        const expectedSessions = firstWeekPattern.split('-').length;
-        if (sessionsToSchedule.length > expectedSessions) {
-          console.log(`⚠️ [Primera semana] Recortando sesiones: ${sessionsToSchedule.length} → ${expectedSessions}`);
-          sessionsToSchedule = sessionsToSchedule.slice(0, expectedSessions);
+        // 🎯 EXCEPCIÓN: No recortar planes D1-D5 (HipertrofiaV2, Oposiciones, etc.)
+        const isD1D5Plan = sessionsToSchedule.length >= 5 &&
+                           (planData.metodologia === 'HipertrofiaV2_MindFeed' ||
+                            planData.metodologia === 'Oposiciones' ||
+                            firstWeekPattern.includes('Lun-Mar-Mie-Jue-Vie'));
+
+        if (isD1D5Plan) {
+          console.log('🎯 [Primera semana] Plan D1-D5 detectado, manteniendo todas las sesiones:', {
+            metodologia: planData.metodologia,
+            sesiones: sessionsToSchedule.length,
+            pattern: firstWeekPattern
+          });
+        } else {
+          // Si ya se aplicó firstWeekPattern, verificar que solo tenga las sesiones necesarias
+          const expectedSessions = firstWeekPattern.split('-').length;
+          if (sessionsToSchedule.length > expectedSessions) {
+            console.log(`⚠️ [Primera semana] Recortando sesiones: ${sessionsToSchedule.length} → ${expectedSessions}`);
+            sessionsToSchedule = sessionsToSchedule.slice(0, expectedSessions);
+          }
+          console.log('✅ [Primera semana] Usando configuración del usuario:', {
+            pattern: firstWeekPattern,
+            sessions: sessionsToSchedule.map(s => s.dia)
+          });
         }
-        console.log('✅ [Primera semana] Usando configuración del usuario:', {
-          pattern: firstWeekPattern,
-          sessions: sessionsToSchedule.map(s => s.dia)
-        });
       } else if (isFirstWeek && !startConfig) {
         // Solo aplicar lógica hardcodeada si NO hay startConfig
         console.log('⚠️ [Primera semana] Sin startConfig, usando lógica hardcodeada');
@@ -613,7 +640,20 @@ export async function ensureWorkoutScheduleV3(client, userId, methodologyPlanId,
       // Calcular el lunes de la semana en que empieza el plan
       const mondayOfStartWeek = new Date(planStartDate);
       // startDayOfWeek ya fue declarado arriba (línea 141)
-      const daysToMonday = startDayOfWeek === 0 ? -6 : 1 - startDayOfWeek; // Si es domingo, retroceder 6 días
+
+      // 🎯 FIX: Para planes D1-D5 que empiezan en lunes, ESE lunes es el inicio
+      const isD1D5Plan = planData.metodologia === 'HipertrofiaV2_MindFeed' ||
+                         (firstWeekPattern && firstWeekPattern.includes('Lun-Mar-Mie-Jue-Vie'));
+
+      let daysToMonday;
+      if (isD1D5Plan && startDayOfWeek === 1) {
+        // Plan D1-D5 que empieza lunes → NO retroceder
+        daysToMonday = 0;
+      } else {
+        // Lógica normal para otros planes
+        daysToMonday = startDayOfWeek === 0 ? -6 : 1 - startDayOfWeek; // Si es domingo, retroceder 6 días
+      }
+
       mondayOfStartWeek.setDate(planStartDate.getDate() + daysToMonday);
       mondayOfStartWeek.setHours(0, 0, 0, 0);
 

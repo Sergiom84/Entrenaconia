@@ -44,6 +44,7 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
 
   // Estado para el plan actualizado desde la BD
   const [updatedPlan, setUpdatedPlan] = useState(plan);
+  const [planStart, setPlanStart] = useState(planStartDate);
   const [isLoadingCalendar, setIsLoadingCalendar] = useState(false);
 
   // Cargar el calendario real desde la BD cuando el componente se monta o cambia el planId
@@ -68,6 +69,13 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
               firstWeek: data.plan.semanas[0]?.sesiones?.map(s => s.dia)
             });
             setUpdatedPlan(data.plan);
+            if (data.planStartDate) {
+              setPlanStart(data.planStartDate);
+            }
+          } else if (ensureMethodologyPlan && typeof ensureMethodologyPlan === 'function') {
+            // Fallback: intentar regenerar si el calendario viene vacío
+            console.warn('[CalendarTab] Calendario vacío; intentando ensureMethodologyPlan()');
+            await ensureMethodologyPlan();
           }
         }
       } catch (error) {
@@ -82,8 +90,8 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
 
   // Calcular qué semana mostrar inicialmente basándose en la fecha actual
   const getInitialWeek = useCallback(() => {
-    if (!planStartDate) return 0;
-    const startDate = new Date(planStartDate);
+    if (!planStart) return 0;
+    const startDate = new Date(planStart);
     startDate.setHours(0, 0, 0, 0);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -100,7 +108,7 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
     // Asegurar que no excedemos el total de semanas
     const totalWeeks = updatedPlan?.duracion_total_semanas || 4;
     return Math.min(currentWeek, totalWeeks - 1);
-  }, [planStartDate, updatedPlan]);
+  }, [planStart, updatedPlan]);
 
 
   const [currentWeek, setCurrentWeek] = useState(getInitialWeek);
@@ -115,6 +123,11 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
   useEffect(() => {
     apiCacheRef.current = apiCache;
   }, [apiCache]);
+
+  // Sincronizar currentWeek cuando cambie la fecha de inicio calculada
+  useEffect(() => {
+    setCurrentWeek(getInitialWeek());
+  }, [getInitialWeek]);
 
   // Ref para evitar loop infinito en tracking del modal
   const prevShowDayModalRef = useRef(showDayModal);
@@ -140,16 +153,16 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
     console.log('[CalendarTab] Procesando calendarData:', {
       hasUpdatedPlan: !!updatedPlan,
       semanasLength: updatedPlan?.semanas?.length,
-      planStartDate,
+      planStartDate: planStart,
       firstWeekSessions: updatedPlan?.semanas?.[0]?.sesiones?.map(s => ({ dia: s.dia, titulo: s.titulo }))
     });
 
-    if (!updatedPlan?.semanas?.length || !planStartDate) {
+    if (!updatedPlan?.semanas?.length || !planStart) {
       console.log('[CalendarTab] No hay datos suficientes para calendarData');
       return [];
     }
 
-    const startDate = new Date(planStartDate);
+    const startDate = new Date(planStart);
     startDate.setHours(0, 0, 0, 0);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -231,7 +244,7 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
         days: weekDays
       };
     });
-  }, [updatedPlan, planStartDate]);
+  }, [updatedPlan, planStart]);
 
   const currentWeekData = calendarData[currentWeek] || null;
 

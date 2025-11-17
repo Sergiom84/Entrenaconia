@@ -2215,7 +2215,7 @@ router.get('/calendar-schedule/:planId', authenticateToken, async (req, res) => 
 
     // Verificar que el plan pertenece al usuario
     const planCheck = await pool.query(
-      `SELECT id, plan_data, plan_start_date
+      `SELECT id, plan_data, plan_start_date, confirmed_at, created_at
        FROM app.methodology_plans
        WHERE id = $1 AND user_id = $2`,
       [planId, userId]
@@ -2230,10 +2230,18 @@ router.get('/calendar-schedule/:planId', authenticateToken, async (req, res) => 
 
     const plan = planCheck.rows[0];
     const planData = typeof plan.plan_data === 'string' ? JSON.parse(plan.plan_data) : plan.plan_data;
+    const startDateFromPlan = plan.plan_start_date || plan.confirmed_at || plan.created_at || new Date();
+
+    // Intentar leer configuración de inicio (para redistribución)
+    const startConfigQuery = await pool.query(
+      `SELECT * FROM app.plan_start_config WHERE methodology_plan_id = $1`,
+      [planId]
+    );
+    const startConfig = startConfigQuery.rowCount > 0 ? startConfigQuery.rows[0] : null;
 
     // Obtener el calendario real desde workout_schedule
     console.log(`[calendar-schedule] Buscando sesiones en workout_schedule para plan ${planId}, user ${userId}`);
-    const scheduleQuery = await pool.query(
+    let scheduleQuery = await pool.query(
       `SELECT
         week_number,
         day_abbrev as dia,
@@ -2248,6 +2256,35 @@ router.get('/calendar-schedule/:planId', authenticateToken, async (req, res) => 
     );
 
     console.log(`[calendar-schedule] Encontradas ${scheduleQuery.rows.length} sesiones en workout_schedule`);
+    if (scheduleQuery.rows.length === 0) {
+      // Re-generar programación on-demand si está vacía para evitar calendarios en blanco
+      console.log(`[calendar-schedule] Sin programación; intentando regenerar con ensureWorkoutScheduleV3...`);
+      const client = await pool.connect();
+      try {
+        await ensureWorkoutScheduleV3(client, userId, planId, plan.plan_data, startDateFromPlan, startConfig);
+      } catch (regenError) {
+        console.warn('[calendar-schedule] No se pudo regenerar programación:', regenError?.message || regenError);
+      } finally {
+        client.release();
+      }
+
+      // Reintentar consulta después de regenerar
+      scheduleQuery = await pool.query(
+        `SELECT
+          week_number,
+          day_abbrev as dia,
+          scheduled_date,
+          session_title as titulo,
+          exercises as ejercicios,
+          status
+         FROM app.workout_schedule
+         WHERE methodology_plan_id = $1 AND user_id = $2
+         ORDER BY week_number, session_order`,
+        [planId, userId]
+      );
+      console.log(`[calendar-schedule] Reintento: ${scheduleQuery.rows.length} sesiones tras regenerar`);
+    }
+
     if (scheduleQuery.rows.length === 0) {
       console.log(`[calendar-schedule] Verificando si existe tabla workout_schedule...`);
       const tableCheck = await pool.query(`
@@ -2303,7 +2340,7 @@ router.get('/calendar-schedule/:planId', authenticateToken, async (req, res) => 
     res.json({
       success: true,
       plan: updatedPlan,
-      planStartDate: plan.plan_start_date
+      planStartDate: plan.plan_start_date || startDateFromPlan
     });
 
   } catch (error) {

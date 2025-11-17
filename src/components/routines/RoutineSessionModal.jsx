@@ -43,9 +43,25 @@ export default function RoutineSessionModal({
 }) {
   // Datos de la sesión (soporta "ejercicios" y fallback a "exercises")
   const exercises = useMemo(() => {
-    if (Array.isArray(session?.ejercicios)) return session.ejercicios;
-    if (Array.isArray(session?.exercises)) return session.exercises;
-    return [];
+    const base = Array.isArray(session?.ejercicios)
+      ? session.ejercicios
+      : (Array.isArray(session?.exercises) ? session.exercises : []);
+
+    // Normalizar ids y orden para evitar desfaces entre UI y API (usamos el índice como fuente de verdad)
+    return base.map((ex, idx) => ({
+      ...ex,
+      // Índice estable para llamadas a la API (0-based)
+      originalIndex: Number.isFinite(ex.originalIndex)
+        ? Number(ex.originalIndex)
+        : (Number.isFinite(ex.exercise_order) ? Number(ex.exercise_order) : idx),
+      // Id visible/seguimiento (1-based para RIR / UI)
+      exercise_id: ex.exercise_id
+        ?? ex.id
+        ?? ex.exerciseId
+        ?? (Number.isFinite(ex.exercise_order) ? Number(ex.exercise_order) + 1 : idx + 1),
+      // Orden para mostrar (1-based)
+      displayOrder: idx + 1
+    }));
   }, [session?.ejercicios, session?.exercises]);
 
   // Hooks de estado (siempre llamar hooks, validar después)
@@ -361,9 +377,22 @@ export default function RoutineSessionModal({
       setShowSeriesTracking(false);
       setShowExerciseToast(true);
 
-      // Si completó todas las series, avanzar
+      // Si completó todas las series, cerrar ejercicio pero mantener un ciclo de descanso antes del siguiente
       if (trackingData.set_number >= progressState.seriesTotal) {
-        handleCompleteExercise();
+        const result = progressState.actions.complete(
+          timerState.seriesTotal,
+          timerState.spent,
+          onFinishExercise
+        );
+
+        if (result.hasNext) {
+          // Preparar siguiente ejercicio pero dejar un descanso activo
+          timerState.actions.prepareNext();
+          timerState.actions.forceRest();
+          console.log('✅ Ejercicio completado, iniciando descanso antes del siguiente', result.nextIndex);
+        } else {
+          setShowEndModal(true);
+        }
       }
 
     } catch (error) {
@@ -371,7 +400,7 @@ export default function RoutineSessionModal({
       alert('Error al guardar la serie. Por favor, intenta de nuevo.');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, session?.methodologyPlanId, progressState.seriesTotal]);
+  }, [sessionId, session?.methodologyPlanId, progressState.seriesTotal, timerState.seriesTotal, timerState.spent, timerState.actions, progressState.actions, onFinishExercise]);
 
   const applyNeuralAdjustment = useCallback((weight) => {
     if (!weight || !neuralOverlapInfo?.adjustment) return weight;

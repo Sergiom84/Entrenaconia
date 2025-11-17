@@ -471,26 +471,42 @@ router.post('/generate-d1d5', authenticateToken, async (req, res) => {
           })()
         : new Date();
 
+      // 🎯 Forzar patrón D1-D5 (5 días) para HipertrofiaV2
+      const includeSaturdays = startConfig.includeSaturdays || false;
+      const firstWeekPattern = includeSaturdays
+        ? 'Lun-Mar-Mie-Jue-Vie-Sáb'
+        : 'Lun-Mar-Mie-Jue-Vie';
+
       await dbClient.query(`
         INSERT INTO app.plan_start_config (
           methodology_plan_id,
           user_id,
           start_day_of_week,
           start_date,
+          first_week_pattern,
+          include_saturdays,
           created_at
-        ) VALUES ($1, $2, $3, $4, NOW())
+        ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
         ON CONFLICT (methodology_plan_id) DO UPDATE SET
           start_day_of_week = EXCLUDED.start_day_of_week,
           start_date = EXCLUDED.start_date,
+          first_week_pattern = EXCLUDED.first_week_pattern,
+          include_saturdays = EXCLUDED.include_saturdays,
           updated_at = NOW()
       `, [
         methodologyPlanId,
         userId,
         startDate.getDay(),
-        startDate.toISOString().split('T')[0]
+        startDate.toISOString().split('T')[0],
+        firstWeekPattern,
+        includeSaturdays
       ]);
 
-      console.log('✅ Configuración de inicio guardada');
+      console.log('✅ Configuración de inicio guardada:', {
+        firstWeekPattern,
+        includeSaturdays,
+        startDay: startDate.toISOString().split('T')[0]
+      });
     }
 
     await dbClient.query('COMMIT');

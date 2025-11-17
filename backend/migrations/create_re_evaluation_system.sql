@@ -221,11 +221,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER trg_update_re_eval_config_timestamp
-  BEFORE UPDATE ON app.user_re_eval_config
-  FOR EACH ROW
-  EXECUTE FUNCTION app.update_re_eval_config_timestamp();
-
 -- ============================================================================
 -- DATOS INICIALES Y CONFIGURACIÓN DEFAULT
 -- ============================================================================
