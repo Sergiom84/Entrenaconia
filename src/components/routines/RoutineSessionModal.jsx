@@ -188,18 +188,25 @@ export default function RoutineSessionModal({
         timerState.actions._setIsRunning(true);
       } else if (timerState.phase === 'rest') {
         if (timerState.series < timerState.seriesTotal) {
-          // Siguiente serie
-          timerState.actions._setSeries(prev => prev + 1);
-          timerState.actions._setPhase('exercise');
-          timerState.actions._setTimeLeft(timerState.baseDuration);
-          timerState.actions._setIsRunning(true);
+          if (timerState.customTimePerSeries === 0) {
+            // Manual mode: increment series and wait for user to start next series
+            timerState.actions._setSeries(prev => prev + 1);
+            timerState.actions._setPhase('ready');
+            timerState.actions._setIsRunning(false);
+          } else {
+            // Auto mode: next series
+            timerState.actions._setSeries(prev => prev + 1);
+            timerState.actions._setPhase('exercise');
+            timerState.actions._setTimeLeft(timerState.baseDuration);
+            timerState.actions._setIsRunning(true);
+          }
         } else {
           // Ejercicio completado
           handleCompleteExercise();
         }
       }
     }
-  }, [timerState.timeLeft, timerState.isRunning, timerState.phase, timerState.series, timerState.seriesTotal, timerState.baseDuration, timerState.restDuration, isOpen]);
+  }, [timerState.timeLeft, timerState.isRunning, timerState.phase, timerState.series, timerState.seriesTotal, timerState.baseDuration, timerState.restDuration, timerState.customTimePerSeries, isOpen]);
 
   // Completar ejercicio actual
   const handleCompleteExercise = useCallback(() => {
@@ -356,9 +363,7 @@ export default function RoutineSessionModal({
 
       // Si completó todas las series, avanzar
       if (trackingData.set_number >= progressState.seriesTotal) {
-        setTimeout(() => {
-          handleCompleteExercise();
-        }, 1000);
+        handleCompleteExercise();
       }
 
     } catch (error) {

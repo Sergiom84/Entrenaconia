@@ -137,7 +137,17 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
 
   // Procesar el plan para crear estructura de calendario
   const calendarData = useMemo(() => {
-    if (!updatedPlan?.semanas?.length || !planStartDate) return [];
+    console.log('[CalendarTab] Procesando calendarData:', {
+      hasUpdatedPlan: !!updatedPlan,
+      semanasLength: updatedPlan?.semanas?.length,
+      planStartDate,
+      firstWeekSessions: updatedPlan?.semanas?.[0]?.sesiones?.map(s => ({ dia: s.dia, titulo: s.titulo }))
+    });
+
+    if (!updatedPlan?.semanas?.length || !planStartDate) {
+      console.log('[CalendarTab] No hay datos suficientes para calendarData');
+      return [];
+    }
 
     const startDate = new Date(planStartDate);
     startDate.setHours(0, 0, 0, 0);
@@ -165,12 +175,24 @@ export default function CalendarTab({ plan, planStartDate, methodologyPlanId, en
       weekStartDate.setHours(0, 0, 0, 0);
 
       // Usar la función de mapeo inteligente
+      console.log(`[CalendarTab] Semana ${weekIndex + 1} - Mapeando sesiones:`, {
+        sesionesCount: semana.sesiones?.length,
+        sesiones: semana.sesiones?.map(s => ({ dia: s.dia, titulo: s.titulo })),
+        weekStartDate: weekStartDate.toISOString().split('T')[0]
+      });
+
       const mappedDays = mapSessionsToWeekDays(
         semana.sesiones,
         weekStartDate,
         startDate,
         weekIndex
       );
+
+      console.log(`[CalendarTab] Semana ${weekIndex + 1} - Días mapeados:`, {
+        mappedDaysCount: mappedDays.length,
+        sessionsFound: mappedDays.filter(d => d.session).length,
+        sessionsPerDay: mappedDays.map((d, i) => ({ day: i, hasSession: !!d.session, dia: d.session?.dia }))
+      });
 
       // Construir el array de días con toda la información necesaria
       const weekDays = mappedDays.map((mappedDay, dayIndex) => {

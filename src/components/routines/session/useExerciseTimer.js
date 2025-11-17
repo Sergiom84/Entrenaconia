@@ -90,14 +90,11 @@ export const useExerciseTimer = (currentExercise, seriesTotal, timePerSeries = 4
 
   // Avance manual (para ejercicios sin timer)
   const handleManualAdvance = useCallback(() => {
-    if (series < seriesTotal) {
-      setSeries((s) => s + 1);
-      setAdvancedManually(true);
-    }
+    // In manual mode, don't increment series here - wait until rest finishes
     setPhase('rest');
     setTimeLeft(restDuration);
     setIsRunning(true);
-  }, [series, seriesTotal, restDuration]);
+  }, [restDuration]);
 
   // Reiniciar ejercicio actual
   const resetExercise = useCallback(() => {
