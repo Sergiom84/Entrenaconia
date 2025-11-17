@@ -22,7 +22,7 @@ import {
 import AdaptationBlockSelection from './components/AdaptationBlockSelection.jsx';
 import AdaptationTrackingBadge from './components/AdaptationTrackingBadge.jsx';
 import AdaptationTransitionModal from './components/AdaptationTransitionModal.jsx';
-import AdaptationDashboard from '../../../../HipertrofiaV2/AdaptationDashboard.jsx';
+import AdaptationDashboard from '../../../HipertrofiaV2/AdaptationDashboard.jsx';
 
 export default function HipertrofiaV2ManualCard({ onGenerate, isLoading, error, startConfig }) {
   const { user } = useAuth();
