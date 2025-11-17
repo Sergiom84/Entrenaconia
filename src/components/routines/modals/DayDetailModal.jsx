@@ -14,9 +14,9 @@ const DayDetailModal = ({ isOpen, onClose, day }) => {
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-3xl w-full max-h-[85vh] overflow-hidden flex flex-col">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-2xl w-full max-h-[70vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="bg-gradient-to-r from-blue-600 to-purple-600 p-6 flex justify-between items-start">
+        <div className="bg-gradient-to-r from-blue-600 to-purple-600 p-4 flex justify-between items-start">
           <div className="flex-1">
             <h2 className="text-2xl font-bold text-white mb-2">
               {day.date || 'Día de Entrenamiento'}
@@ -44,7 +44,7 @@ const DayDetailModal = ({ isOpen, onClose, day }) => {
         </div>
 
         {/* Exercise List */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {exercises.length === 0 ? (
             <div className="text-center py-12 text-gray-500 dark:text-gray-400">
               <Dumbbell className="w-12 h-12 mx-auto mb-3 opacity-50" />
@@ -57,7 +57,7 @@ const DayDetailModal = ({ isOpen, onClose, day }) => {
               return (
                 <div
                   key={idx}
-                  className="bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl p-5 hover:shadow-md transition-shadow"
+                  className="bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl p-4 hover:shadow-md transition-shadow"
                 >
                   {/* Exercise Header */}
                   <div className="flex items-start justify-between mb-3">
@@ -84,7 +84,7 @@ const DayDetailModal = ({ isOpen, onClose, day }) => {
                   </div>
 
                   {/* Exercise Details */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3">
                     {exercise.series && (
                       <div className="bg-white dark:bg-gray-900/50 rounded-lg p-3">
                         <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Series</p>
@@ -121,9 +121,9 @@ const DayDetailModal = ({ isOpen, onClose, day }) => {
 
                   {/* Additional Info */}
                   {exercise.notas && (
-                    <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                    <div className="mt-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
                       <p className="text-sm text-blue-900 dark:text-blue-200">
-                        💡 {exercise.notas}
+                        {exercise.notas}
                       </p>
                     </div>
                   )}
@@ -134,7 +134,7 @@ const DayDetailModal = ({ isOpen, onClose, day }) => {
         </div>
 
         {/* Footer */}
-        <div className="border-t border-gray-200 dark:border-gray-700 p-4 bg-gray-50 dark:bg-gray-900/50">
+        <div className="border-t border-gray-200 dark:border-gray-700 p-3 bg-gray-50 dark:bg-gray-900/50">
           <button
             onClick={onClose}
             className="w-full px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-colors"
