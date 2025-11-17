@@ -95,7 +95,11 @@ export default function HipertrofiaV2ManualCard({ onGenerate, isLoading, error }
           },
           body: JSON.stringify({
             nivel: userLevel,
-            totalWeeks: 6  // 6 semanas por defecto (1 microciclo = 5 sesiones)
+            totalWeeks: 8,  // 8 semanas para 40 sesiones (5 sesiones/semana × 8 semanas = 40)
+            startConfig: {
+              startDate: new Date().toISOString().split('T')[0], // Fecha actual en formato YYYY-MM-DD
+              distributionOption: 'consecutive' // Distribución consecutiva desde hoy
+            }
           })
         }
       );

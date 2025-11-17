@@ -105,6 +105,69 @@ router.post('/generate-d1d5', authenticateToken, async (req, res) => {
       console.log('🗓️ Configuración de inicio recibida:', startConfig);
     }
 
+    // 🆕 Calcular mapeo dinámico de D1-D5: día de inicio = D1, ciclo secuencial
+    let dynamicDayMapping = {};
+    const includeSaturday = startConfig?.distributionOption === 'saturdays' || startConfig?.includeSaturdays;
+
+    if (startConfig?.startDate) {
+      const startDate = new Date(startConfig.startDate);
+      const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+
+      // Generar secuencia de días de entrenamiento comenzando desde el día de inicio
+      const trainingDays = [];
+      let currentDate = new Date(startDate);
+      let sessionsNeeded = 40; // Necesitamos exactamente 40 sesiones
+
+      while (trainingDays.length < sessionsNeeded) {
+        const dayOfWeek = currentDate.getDay();
+
+        // Determinar si este día es válido para entrenamiento
+        const isValidTrainingDay = (() => {
+          if (includeSaturday) {
+            // Con sábado: Lunes-Sábado
+            return dayOfWeek >= 1 && dayOfWeek <= 6;
+          } else {
+            // Sin sábado: Solo Lunes-Viernes
+            return dayOfWeek >= 1 && dayOfWeek <= 5;
+          }
+        })();
+
+        if (isValidTrainingDay) {
+          trainingDays.push({
+            date: new Date(currentDate),
+            dayName: dayNames[dayOfWeek],
+            sessionNumber: trainingDays.length + 1
+          });
+        }
+
+        // Avanzar al siguiente día
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+
+      // Crear mapeo D1-D5 basado en la secuencia completa
+      // D1 = día de inicio, D2 = siguiente día válido, etc.
+      for (let i = 0; i < 5; i++) {
+        if (trainingDays[i]) {
+          dynamicDayMapping[`D${i + 1}`] = trainingDays[i].dayName;
+        }
+      }
+
+      console.log('🔄 [MINDFEED] Mapeo dinámico D1-D5:', dynamicDayMapping);
+      console.log(`📅 Total sesiones generadas: ${trainingDays.length}`);
+      console.log(`📅 Primeras sesiones:`, trainingDays.slice(0, 10).map(d => `${d.sessionNumber}: ${d.dayName} (${d.date.toISOString().split('T')[0]})`));
+      console.log(`📅 Últimas sesiones:`, trainingDays.slice(-5).map(d => `${d.sessionNumber}: ${d.dayName} (${d.date.toISOString().split('T')[0]})`));
+    } else {
+      // Fallback: mapeo por defecto (Lunes-Viernes)
+      dynamicDayMapping = {
+        'D1': 'Lunes',
+        'D2': 'Martes',
+        'D3': 'Miércoles',
+        'D4': 'Jueves',
+        'D5': 'Viernes'
+      };
+      console.log('⚠️ [MINDFEED] Sin fecha de inicio, usando mapeo por defecto');
+    }
+
     await dbClient.query('BEGIN');
 
     // Limpiar drafts previos
@@ -318,18 +381,23 @@ router.post('/generate-d1d5', authenticateToken, async (req, res) => {
     }
 
     // 3. Crear estructura del plan
-    const formattedSessions = sessionsWithExercises.map((session, idx) => ({
-      nombre: session.session_name,
-      dia: session.session_name.split(':')[0]?.trim() || `D${session.cycle_day}`,
-      ciclo_dia: session.cycle_day,
-      descripcion: session.description,
-      coach_tip: session.coach_tip,
-      intensidad_porcentaje: session.intensity_percentage,
-      es_dia_pesado: session.is_heavy_day,
-      grupos_musculares: session.muscle_groups,
-      ejercicios: session.exercises.map((exercise) => ({ ...exercise })),
-      id: `S-${session.cycle_day}-${idx}`
-    }));
+    const formattedSessions = sessionsWithExercises.map((session, idx) => {
+      const cycleDay = `D${session.cycle_day}`;
+      const actualDayName = dynamicDayMapping[cycleDay] || cycleDay;
+
+      return {
+        nombre: session.session_name,
+        dia: actualDayName, // 🆕 Usar día real en lugar de D1-D5
+        ciclo_dia: session.cycle_day, // Mantener referencia al ciclo D1-D5
+        descripcion: session.description,
+        coach_tip: session.coach_tip,
+        intensidad_porcentaje: session.intensity_percentage,
+        es_dia_pesado: session.is_heavy_day,
+        grupos_musculares: session.muscle_groups,
+        ejercicios: session.exercises.map((exercise) => ({ ...exercise })),
+        id: `S-${session.cycle_day}-${idx}`
+      };
+    });
 
     const semanas = Array.from({ length: totalWeeks }, (_, weekIndex) => ({
       numero: weekIndex + 1,
@@ -409,32 +477,17 @@ router.post('/generate-d1d5', authenticateToken, async (req, res) => {
           user_id,
           start_day_of_week,
           start_date,
-          sessions_first_week,
-          distribution_option,
-          include_saturdays,
-          is_consecutive_days,
-          is_extended_weeks,
           created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+        ) VALUES ($1, $2, $3, $4, NOW())
         ON CONFLICT (methodology_plan_id) DO UPDATE SET
           start_day_of_week = EXCLUDED.start_day_of_week,
           start_date = EXCLUDED.start_date,
-          sessions_first_week = EXCLUDED.sessions_first_week,
-          distribution_option = EXCLUDED.distribution_option,
-          include_saturdays = EXCLUDED.include_saturdays,
-          is_consecutive_days = EXCLUDED.is_consecutive_days,
-          is_extended_weeks = EXCLUDED.is_extended_weeks,
           updated_at = NOW()
       `, [
         methodologyPlanId,
         userId,
         startDate.getDay(),
-        startDate.toISOString().split('T')[0],
-        startConfig.sessionsFirstWeek || null,
-        startConfig.distributionOption || null,
-        startConfig.distributionOption === 'saturdays',
-        false, // is_consecutive_days (calculado por backend)
-        startConfig.distributionOption === 'extra_week'
+        startDate.toISOString().split('T')[0]
       ]);
 
       console.log('✅ Configuración de inicio guardada');

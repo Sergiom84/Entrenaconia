@@ -24,92 +24,14 @@ import {
   Zap,
   Dumbbell,
   Calendar,
-  Brain,
-  Eye
+  Brain
 } from 'lucide-react';
 import { useTrace } from '@/contexts/TraceContext.jsx';
 
-// 📅 FUNCIÓN GENÉRICA: Calcular fecha real de una sesión
-const DAY_NAMES_MAP = {
-  'Domingo': 0, 'Dom': 0,
-  'Lunes': 1, 'Lun': 1,
-  'Martes': 2, 'Mar': 2,
-  'Miercoles': 3, 'Mie': 3, 'Miércoles': 3,
-  'Jueves': 4, 'Jue': 4,
-  'Viernes': 5, 'Vie': 5,
-  'Sabado': 6, 'Sab': 6, 'Sábado': 6
-};
 
-const MONTH_NAMES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
-// 🆕 Mapeo de D1-D5 a días de la semana
-const D_TO_DAY_MAP = {
-  'D1': 'Lun',
-  'D2': 'Mar',
-  'D3': 'Mie',
-  'D4': 'Jue',
-  'D5': 'Vie',
-  'D6': 'Sab'
-};
+// 🆕 Mapeo dinámico: el backend ahora proporciona días reales, no necesitamos mapeo estático
 
-// Función mejorada con soporte para sesiones reorganizadas en primera semana
-const calculateSessionDate = (weekIndex, sessionDay, startDate, sessionIndex = null) => {
-  if (!startDate || !sessionDay) return sessionDay || 'Día';
-
-  try {
-    const start = new Date(startDate);
-    const startDayNum = start.getDay();
-
-    // 🆕 Mapear D1-D5 a días reales
-    let actualDay = sessionDay;
-    if (D_TO_DAY_MAP[sessionDay]) {
-      actualDay = D_TO_DAY_MAP[sessionDay];
-      console.log(`🔄 Mapeando ${sessionDay} → ${actualDay}`);
-    }
-
-    // 🔧 PRIMERA SEMANA: Usar días consecutivos basados en el índice de sesión
-    if (weekIndex === 0 && sessionIndex !== null) {
-      // Para la primera semana, si tenemos sessionIndex, usamos días consecutivos desde hoy
-      const sessionDate = new Date(start);
-      sessionDate.setDate(start.getDate() + sessionIndex);
-
-      const day = sessionDate.getDate();
-      const month = MONTH_NAMES[sessionDate.getMonth()];
-
-      // Obtenemos el nombre del día correcto basado en la fecha calculada
-      const dayOfWeekNum = sessionDate.getDay();
-      const correctDayName = Object.keys(DAY_NAMES_MAP).find(key =>
-        DAY_NAMES_MAP[key] === dayOfWeekNum && key.length > 3
-      ) || actualDay;
-
-      return `${correctDayName} ${day} ${month}`;
-    }
-
-    // 🔧 SEMANAS POSTERIORES: Usar la lógica normal basada en días fijos del plan
-    const targetDayNum = DAY_NAMES_MAP[actualDay];
-    if (targetDayNum === undefined) {
-      console.warn(`⚠️ Día no reconocido: ${sessionDay} (mapeado a ${actualDay})`);
-      return sessionDay;
-    }
-
-    let daysOffset = (targetDayNum - startDayNum + 7) % 7;
-
-    if (weekIndex > 0) {
-      daysOffset += weekIndex * 7;
-    }
-
-    const sessionDate = new Date(start);
-    sessionDate.setDate(start.getDate() + daysOffset);
-
-    const day = sessionDate.getDate();
-    const month = MONTH_NAMES[sessionDate.getMonth()];
-
-    return `${actualDay} ${day} ${month}`;
-  } catch (error) {
-    console.error('Error calculando fecha de sesión:', error);
-    return sessionDay;
-  }
-};
 
 export default function TrainingPlanConfirmationModal({
   isOpen,
@@ -126,7 +48,6 @@ export default function TrainingPlanConfirmationModal({
   error = null // NUEVO: Error del modal
 }) {
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
-  const [expandedSessions, setExpandedSessions] = useState(new Set());
   const [selectedDay, setSelectedDay] = useState(null);
   const [showDayDetailModal, setShowDayDetailModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -197,20 +118,30 @@ export default function TrainingPlanConfirmationModal({
     onClose();
   };
 
-  // Función para toggle expansión de sesión
-  const toggleSession = (weekIndex, sessionIndex) => {
-    const key = `${weekIndex}-${sessionIndex}`;
-    const newExpanded = new Set(expandedSessions);
-    if (newExpanded.has(key)) {
-      newExpanded.delete(key);
-    } else {
-      newExpanded.add(key);
+
+  // 👁️ Handler para abrir modal de detalle de día
+  const handleDayClick = (session, sessionDate) => {
+    const muscleGroups = getMuscleGroupsPreview(session);
+
+    let ejercicios = [];
+    if (Array.isArray(session.ejercicios)) {
+      ejercicios = session.ejercicios;
+    } else if (Array.isArray(session.bloques)) {
+      ejercicios = session.bloques.flatMap(bloque =>
+        Array.isArray(bloque.ejercicios) ? bloque.ejercicios : []
+      );
     }
-    setExpandedSessions(newExpanded);
-    track('SESSION_TOGGLE', { weekIndex, sessionIndex, expanded: !expandedSessions.has(key) }, { component: 'TrainingPlanConfirmationModal' });
+
+    setSelectedDay({
+      date: sessionDate,
+      muscleGroups,
+      ejercicios
+    });
+    setShowDayDetailModal(true);
+    track('DAY_DETAIL_OPEN', { date: sessionDate, exerciseCount: ejercicios.length }, { component: 'TrainingPlanConfirmationModal' });
   };
 
-  // 💪 Función para extraer grupos musculares de una sesión
+  //  Función para extraer grupos musculares de una sesión
   const getMuscleGroupsPreview = (session) => {
     // HipertrofiaV2 MindFeed: grupos_musculares en JSON
     if (session.grupos_musculares) {
@@ -239,27 +170,6 @@ export default function TrainingPlanConfirmationModal({
     return Array.from(groups).slice(0, 2); // Máximo 2 grupos
   };
 
-  // 👁️ Handler para abrir modal de detalle de día
-  const handleDayClick = (session, sessionDate) => {
-    const muscleGroups = getMuscleGroupsPreview(session);
-
-    let ejercicios = [];
-    if (Array.isArray(session.ejercicios)) {
-      ejercicios = session.ejercicios;
-    } else if (Array.isArray(session.bloques)) {
-      ejercicios = session.bloques.flatMap(bloque =>
-        Array.isArray(bloque.ejercicios) ? bloque.ejercicios : []
-      );
-    }
-
-    setSelectedDay({
-      date: sessionDate,
-      muscleGroups,
-      ejercicios
-    });
-    setShowDayDetailModal(true);
-    track('DAY_DETAIL_OPEN', { date: sessionDate, exerciseCount: ejercicios.length }, { component: 'TrainingPlanConfirmationModal' });
-  };
 
   if (!isOpen || !plan) return null;
 
@@ -298,8 +208,6 @@ export default function TrainingPlanConfirmationModal({
   };
 
   // Extraer información del plan
-  const firstWeek = plan.semanas?.[0];
-  const firstSession = firstWeek?.sesiones?.[0];
   const totalWeeks = plan.semanas?.length || 0;
   const totalSessions = plan.semanas?.reduce((acc, week) => acc + (week.sesiones?.length || 0), 0) || 0;
 
@@ -334,7 +242,7 @@ export default function TrainingPlanConfirmationModal({
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="max-w-5xl max-h-[95vh] overflow-y-auto bg-gray-900 border-yellow-500/20 z-50">
+        <DialogContent className="max-w-7xl w-full max-h-[95vh] overflow-y-auto bg-gray-900 border-yellow-500/20 z-50">
         <DialogHeader className="pb-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -420,41 +328,18 @@ export default function TrainingPlanConfirmationModal({
                       {semana.sesiones?.length || 0} sesiones
                     </Badge>
                   </div>
-                  <div className="p-3 sm:p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  <div className="p-3 sm:p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                     {(semana.sesiones || []).map((sesion, sessionIndex) => {
-                      // Soportar dos estructuras:
-                      // 1. sesion.ejercicios[] (directo)
-                      // 2. sesion.bloques[].ejercicios[] (con bloques, como en Halterofilia)
-                      let ejercicios = [];
-                      if (Array.isArray(sesion.ejercicios)) {
-                        ejercicios = sesion.ejercicios;
-                      } else if (Array.isArray(sesion.bloques)) {
-                        // Aplanar ejercicios de todos los bloques
-                        ejercicios = sesion.bloques.flatMap(bloque =>
-                          Array.isArray(bloque.ejercicios) ? bloque.ejercicios : []
-                        );
-                      }
+                      // Calcular fecha para esta sesión
+                      const sessionDate = new Date(plan.fecha_inicio);
+                      sessionDate.setDate(sessionDate.getDate() + (weekIndex * 7) + sessionIndex);
 
-                      const sessionKey = `${weekIndex}-${sessionIndex}`;
-                      const isExpanded = expandedSessions.has(sessionKey);
-                      const displayExercises = isExpanded ? ejercicios : ejercicios.slice(0, 3);
-                      const hasMore = ejercicios.length > 3;
+                      const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+                      const dayName = dayNames[sessionDate.getDay()];
+                      const dayNumber = sessionDate.getDate();
 
-                      // 📅 Calcular fecha real de la sesión
-                      const sessionDate = calculateSessionDate(
-                        weekIndex,
-                        sesion.dia || sesion.dia_semana,
-                        plan.fecha_inicio,
-                        sessionIndex // Pasar índice para primera semana
-                      );
-
-                      const shortDayLabel = weekIndex === 0 && sessionDate
-                        ? sessionDate.split(' ')[0]
-                        : null;
-
-                      const headerText = shortDayLabel
-                        ? sessionDate
-                        : (sesion.dia || sesion.dia_semana || `D${sessionIndex + 1}`);
+                      // 🎯 Formato: D1 Lun 17 : Pecho + Tríceps
+                      const headerText = `D${sessionIndex + 1} ${dayName} ${dayNumber}`;
 
                       // 💪 Obtener preview de grupos musculares
                       const muscleGroups = getMuscleGroupsPreview(sesion);
@@ -463,60 +348,19 @@ export default function TrainingPlanConfirmationModal({
                         <div
                           key={sesion.id || `w${weekIndex}-s${sessionIndex}`}
                           onClick={() => handleDayClick(sesion, headerText)}
-                          className="bg-black/40 rounded-md p-3 sm:p-4 border border-gray-700 transition-all min-h-[150px] flex flex-col cursor-pointer hover:border-blue-500/50 hover:bg-black/60 hover:shadow-lg"
+                          className="bg-black/40 rounded-md p-2 border border-gray-700 transition-all text-center cursor-pointer hover:border-blue-500/50 hover:bg-black/60 min-h-[80px] flex flex-col justify-center"
                         >
-                          {/* Header con fecha */}
-                          <div className="flex justify-between items-start mb-2">
-                            <div className="text-yellow-300 font-semibold text-sm sm:text-base">
-                              {headerText}
-                            </div>
-                            <Badge variant="secondary" className="bg-blue-500/10 text-blue-400 text-xs">
-                              {ejercicios.length}
-                            </Badge>
+                          {/* Formato: D1 Lun 17 : Pecho + Tríceps */}
+                          <div className="text-yellow-300 font-semibold text-xs leading-tight break-words">
+                            {headerText} : {muscleGroups.length > 0 ? muscleGroups.join(' + ') : 'Sin grupos definidos'}
                           </div>
 
-                          {/* Preview de grupos musculares */}
-                          {muscleGroups.length > 0 && (
-                            <div className="mb-3">
-                              <div className="text-gray-300 text-sm font-medium">
-                                💪 {muscleGroups.join(' + ')}
-                              </div>
+                          {/* Descripción entre paréntesis si existe */}
+                          {sesion.descripcion && (
+                            <div className="text-gray-400 text-xs mt-1 leading-tight break-words">
+                              ({sesion.descripcion})
                             </div>
                           )}
-
-                          {/* Primeros 2 ejercicios como preview */}
-                          <div className="space-y-1.5 mb-3 flex-grow">
-                            {ejercicios.slice(0, 2).map((ejercicio, exIdx) => (
-                              <div key={exIdx} className="text-gray-400 text-xs flex items-start gap-2">
-                                <span className="text-yellow-500 flex-shrink-0 mt-0.5">•</span>
-                                <span className="line-clamp-1">
-                                  {ejercicio.nombre || ejercicio.name}
-                                </span>
-                              </div>
-                            ))}
-                            {ejercicios.length > 2 && (
-                              <div className="text-gray-500 text-xs italic">
-                                + {ejercicios.length - 2} más...
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Footer con botón "Ver detalles" */}
-                          <div className="flex items-center justify-between text-xs mt-auto pt-2 border-t border-gray-700/50">
-                            <span className="text-gray-500">
-                              {ejercicios.length} ejercicio{ejercicios.length !== 1 ? 's' : ''}
-                            </span>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDayClick(sesion, headerText);
-                              }}
-                              className="text-blue-400 hover:text-blue-300 font-medium flex items-center gap-1"
-                            >
-                              <Eye className="w-3 h-3" />
-                              Ver detalles
-                            </button>
-                          </div>
                         </div>
                       );
                     })}
@@ -590,7 +434,6 @@ export default function TrainingPlanConfirmationModal({
         onSubmitFeedback={handleFeedbackSubmit}
         isSubmitting={isGeneratingAnother}
       />
-      </Dialog>
 
       {/* Modal de Detalle de Día */}
       <DayDetailModal
@@ -598,6 +441,8 @@ export default function TrainingPlanConfirmationModal({
         onClose={() => setShowDayDetailModal(false)}
         day={selectedDay}
       />
+      </Dialog>
+
     </>
   );
 }
