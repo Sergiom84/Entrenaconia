@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Target, TrendingUp, Clock, AlertCircle, CheckCircle, X, Info } from 'lucide-react';
+import { useTrace } from '../../contexts/TraceContext';
 
 /**
  * Panel de Priorización Muscular
@@ -13,11 +14,21 @@ const MusclePriorityPanel = ({
   onPriorityChange,
   userLevel = 'Principiante'
 }) => {
+  const { track } = useTrace();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedMuscle, setSelectedMuscle] = useState(null);
   const [priorityStatus, setPriorityStatus] = useState(null);
   const [loading, setLoading] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState(null);
+
+  // Trace: montaje del panel
+  useEffect(() => {
+    track('muscle_priority_panel_mounted', {
+      userId,
+      userLevel,
+      component: 'MusclePriorityPanel'
+    });
+  }, [userId, userLevel, track]);
 
   // Grupos musculares disponibles para priorización
   const muscleGroups = [
@@ -81,9 +92,20 @@ const MusclePriorityPanel = ({
 
   const handleActivatePriority = async () => {
     if (!selectedMuscle) {
+      track('muscle_priority_activate_no_selection', {
+        userId,
+        component: 'MusclePriorityPanel'
+      });
       alert('Selecciona un grupo muscular');
       return;
     }
+
+    track('muscle_priority_activate_start', {
+      userId,
+      selectedMuscle,
+      userLevel,
+      component: 'MusclePriorityPanel'
+    });
 
     setLoading(true);
     try {
@@ -100,6 +122,13 @@ const MusclePriorityPanel = ({
 
       const data = await response.json();
       if (data.success) {
+        track('muscle_priority_activate_success', {
+          userId,
+          selectedMuscle,
+          priorityId: data.id,
+          component: 'MusclePriorityPanel'
+        });
+
         setPriorityStatus(data);
         setIsModalOpen(false);
         if (onPriorityChange) {
@@ -107,9 +136,21 @@ const MusclePriorityPanel = ({
         }
         fetchPriorityStatus(); // Refrescar estado
       } else {
+        track('muscle_priority_activate_error', {
+          userId,
+          selectedMuscle,
+          error: data.error,
+          component: 'MusclePriorityPanel'
+        });
         alert(data.error || 'Error activando prioridad');
       }
     } catch (error) {
+      track('muscle_priority_activate_exception', {
+        userId,
+        selectedMuscle,
+        error: error.message,
+        component: 'MusclePriorityPanel'
+      });
       console.error('Error:', error);
       alert('Error al activar prioridad');
     } finally {
@@ -118,9 +159,27 @@ const MusclePriorityPanel = ({
   };
 
   const handleDeactivatePriority = async () => {
+    track('muscle_priority_deactivate_confirm_prompt', {
+      userId,
+      activeMuscle: priorityStatus?.priority_muscle,
+      component: 'MusclePriorityPanel'
+    });
+
     if (!confirm('¿Seguro que quieres desactivar la priorización actual?')) {
+      track('muscle_priority_deactivate_cancelled', {
+        userId,
+        activeMuscle: priorityStatus?.priority_muscle,
+        component: 'MusclePriorityPanel'
+      });
       return;
     }
+
+    track('muscle_priority_deactivate_start', {
+      userId,
+      activeMuscle: priorityStatus?.priority_muscle,
+      microcyclesCompleted: priorityStatus?.priority_microcycles_completed,
+      component: 'MusclePriorityPanel'
+    });
 
     setLoading(true);
     try {
@@ -133,12 +192,31 @@ const MusclePriorityPanel = ({
 
       const data = await response.json();
       if (data.success) {
+        track('muscle_priority_deactivate_success', {
+          userId,
+          previouslyActiveMuscle: priorityStatus?.priority_muscle,
+          component: 'MusclePriorityPanel'
+        });
+
         setPriorityStatus(null);
         if (onPriorityChange) {
           onPriorityChange(null);
         }
+      } else {
+        track('muscle_priority_deactivate_error', {
+          userId,
+          activeMuscle: priorityStatus?.priority_muscle,
+          error: data.error,
+          component: 'MusclePriorityPanel'
+        });
       }
     } catch (error) {
+      track('muscle_priority_deactivate_exception', {
+        userId,
+        activeMuscle: priorityStatus?.priority_muscle,
+        error: error.message,
+        component: 'MusclePriorityPanel'
+      });
       console.error('Error:', error);
     } finally {
       setLoading(false);
@@ -157,7 +235,15 @@ const MusclePriorityPanel = ({
             <h3 className="font-semibold text-gray-900">Prioridad Muscular Activa</h3>
           </div>
           <button
-            onClick={handleDeactivatePriority}
+            onClick={() => {
+              track('muscle_priority_deactivate_button_clicked', {
+                userId,
+                activeMuscle: priorityStatus?.priority_muscle,
+                microcyclesCompleted: priorityStatus?.priority_microcycles_completed,
+                component: 'MusclePriorityPanel'
+              });
+              handleDeactivatePriority();
+            }}
             disabled={loading}
             className="text-gray-400 hover:text-red-500 transition-colors"
             title="Desactivar prioridad"
@@ -253,7 +339,14 @@ const MusclePriorityPanel = ({
         </p>
 
         <button
-          onClick={() => setIsModalOpen(true)}
+          onClick={() => {
+            track('muscle_priority_modal_opened', {
+              userId,
+              userLevel,
+              component: 'MusclePriorityPanel'
+            });
+            setIsModalOpen(true);
+          }}
           className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center justify-center space-x-2"
         >
           <TrendingUp className="h-5 w-5" />
@@ -306,7 +399,15 @@ const MusclePriorityPanel = ({
                 {muscleGroups.map((muscle) => (
                   <button
                     key={muscle.id}
-                    onClick={() => setSelectedMuscle(muscle.id)}
+                    onClick={() => {
+                      track('muscle_priority_muscle_selected', {
+                        userId,
+                        muscleId: muscle.id,
+                        muscleName: muscle.name,
+                        component: 'MusclePriorityPanel'
+                      });
+                      setSelectedMuscle(muscle.id);
+                    }}
                     className={`w-full p-4 rounded-lg border-2 transition-all ${
                       selectedMuscle === muscle.id
                         ? 'border-blue-500 bg-blue-50'

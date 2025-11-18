@@ -1,21 +1,38 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { X, TrendingUp, TrendingDown, AlertCircle, CheckCircle, ChevronRight, BarChart3 } from 'lucide-react';
+import { useTrace } from '../../contexts/TraceContext';
 
 /**
  * Modal de Re-evaluación de Nivel
  * Notifica al usuario cuando el sistema detecta necesidad de cambio de nivel
  */
-const LevelReevaluationModal = ({ 
+const LevelReevaluationModal = ({
   userId,
   isOpen,
   onClose,
   onLevelChange
 }) => {
+  const { track } = useTrace();
   const [evaluation, setEvaluation] = useState(null);
   const [loading, setLoading] = useState(false);
   const [processing, setProcessing] = useState(false);
 
+  // Trace: apertura del modal
+  useEffect(() => {
+    if (isOpen) {
+      track('level_reevaluation_modal_opened', {
+        userId,
+        component: 'LevelReevaluationModal'
+      });
+    }
+  }, [isOpen, userId, track]);
+
   const checkReevaluation = useCallback(async () => {
+    track('level_reevaluation_check_start', {
+      userId,
+      component: 'LevelReevaluationModal'
+    });
+
     setLoading(true);
     try {
       const response = await fetch(`/api/hipertrofiav2/check-reevaluation/${userId}`, {
@@ -25,15 +42,31 @@ const LevelReevaluationModal = ({
       });
 
       const data = await response.json();
+
+      track('level_reevaluation_check_result', {
+        userId,
+        hasEvaluation: !!data.evaluation,
+        hasPendingReevaluation: !!data.pendingReevaluation,
+        currentLevel: data.evaluation?.current_level,
+        suggestedLevel: data.evaluation?.suggested_level,
+        confidence: data.evaluation?.confidence,
+        component: 'LevelReevaluationModal'
+      });
+
       if (data.success && data.evaluation) {
         setEvaluation(data);
       }
     } catch (error) {
+      track('level_reevaluation_check_error', {
+        userId,
+        error: error.message,
+        component: 'LevelReevaluationModal'
+      });
       console.error('Error verificando re-evaluación:', error);
     } finally {
       setLoading(false);
     }
-  }, [userId]);
+  }, [userId, track]);
 
   useEffect(() => {
     if (isOpen && userId) {
@@ -42,8 +75,23 @@ const LevelReevaluationModal = ({
   }, [isOpen, userId, checkReevaluation]);
 
   const handleAcceptChange = async (accept) => {
-    if (!evaluation?.pendingReevaluation?.id) return;
-    
+    if (!evaluation?.pendingReevaluation?.id) {
+      track('level_reevaluation_accept_no_pending', {
+        userId,
+        component: 'LevelReevaluationModal'
+      });
+      return;
+    }
+
+    track('level_reevaluation_accept_start', {
+      userId,
+      reevaluationId: evaluation.pendingReevaluation.id,
+      accept,
+      currentLevel: evaluation.evaluation?.current_level,
+      suggestedLevel: evaluation.evaluation?.suggested_level,
+      component: 'LevelReevaluationModal'
+    });
+
     setProcessing(true);
     try {
       const response = await fetch('/api/hipertrofiav2/accept-reevaluation', {
@@ -57,15 +105,35 @@ const LevelReevaluationModal = ({
           accept
         })
       });
-      
+
       const data = await response.json();
+
+      track('level_reevaluation_accept_result', {
+        userId,
+        accept,
+        success: data.success,
+        newLevel: data.newLevel,
+        component: 'LevelReevaluationModal'
+      });
+
       if (data.success) {
         if (onLevelChange && accept) {
+          track('level_reevaluation_onLevelChange_called', {
+            userId,
+            newLevel: data.newLevel,
+            component: 'LevelReevaluationModal'
+          });
           onLevelChange(data.newLevel);
         }
         onClose();
       }
     } catch (error) {
+      track('level_reevaluation_accept_error', {
+        userId,
+        accept,
+        error: error.message,
+        component: 'LevelReevaluationModal'
+      });
       console.error('Error procesando re-evaluación:', error);
     } finally {
       setProcessing(false);
@@ -106,7 +174,13 @@ const LevelReevaluationModal = ({
               <h2 className="text-xl font-semibold">Re-evaluación de Nivel</h2>
             </div>
             <button
-              onClick={onClose}
+              onClick={() => {
+                track('level_reevaluation_modal_closed', {
+                  userId,
+                  component: 'LevelReevaluationModal'
+                });
+                onClose();
+              }}
               className="p-2 hover:bg-white/50 rounded-full transition-colors"
             >
               <X className="h-5 w-5" />
@@ -257,19 +331,37 @@ const LevelReevaluationModal = ({
           {/* Botones de acción */}
           <div className="flex space-x-3">
             <button
-              onClick={() => handleAcceptChange(false)}
+              onClick={() => {
+                track('level_reevaluation_keep_current_clicked', {
+                  userId,
+                  currentLevel: evalData.current_level,
+                  suggestedLevel: evalData.suggested_level,
+                  component: 'LevelReevaluationModal'
+                });
+                handleAcceptChange(false);
+              }}
               disabled={processing}
               className="flex-1 py-3 px-4 border border-gray-300 rounded-lg font-medium hover:bg-gray-50 transition-colors"
             >
               Mantener nivel actual
             </button>
             <button
-              onClick={() => handleAcceptChange(true)}
+              onClick={() => {
+                track('level_reevaluation_change_level_clicked', {
+                  userId,
+                  currentLevel: evalData.current_level,
+                  suggestedLevel: evalData.suggested_level,
+                  isUpgrade,
+                  isDowngrade,
+                  component: 'LevelReevaluationModal'
+                });
+                handleAcceptChange(true);
+              }}
               disabled={processing}
               className={`flex-1 py-3 px-4 rounded-lg font-medium text-white transition-colors ${
-                processing 
+                processing
                   ? 'bg-gray-400 cursor-not-allowed'
-                  : isUpgrade 
+                  : isUpgrade
                     ? 'bg-green-600 hover:bg-green-700'
                     : isDowngrade
                       ? 'bg-orange-600 hover:bg-orange-700'

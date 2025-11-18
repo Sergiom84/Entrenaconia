@@ -23,9 +23,11 @@ import AdaptationBlockSelection from './components/AdaptationBlockSelection.jsx'
 import AdaptationTrackingBadge from './components/AdaptationTrackingBadge.jsx';
 import AdaptationTransitionModal from './components/AdaptationTransitionModal.jsx';
 import AdaptationDashboard from '../../../HipertrofiaV2/AdaptationDashboard.jsx';
+import { useTrace } from '../../../../contexts/TraceContext';
 
 export default function HipertrofiaV2ManualCard({ onGenerate, isLoading, error, startConfig }) {
   const { user } = useAuth();
+  const { track } = useTrace();
 
   const [step, setStep] = useState('evaluation'); // 'evaluation' | 'confirmed' | 'adaptation'
   const [evaluating, setEvaluating] = useState(false);
@@ -91,6 +93,11 @@ export default function HipertrofiaV2ManualCard({ onGenerate, isLoading, error, 
 
   // Evaluar perfil del usuario
   const handleEvaluate = async () => {
+    track('hipertrofia_evaluate_start', {
+      userId: user.id,
+      component: 'HipertrofiaV2ManualCard'
+    });
+
     setEvaluating(true);
 
     try {
@@ -111,6 +118,15 @@ export default function HipertrofiaV2ManualCard({ onGenerate, isLoading, error, 
 
       const data = await response.json();
 
+      track('hipertrofia_evaluate_result', {
+        userId: user.id,
+        level: data.nivel_hipertrofia,
+        confidence: data.confidence,
+        hasAdaptationTags: !!data.tags_adaptacion,
+        adaptationTags: data.tags_adaptacion,
+        component: 'HipertrofiaV2ManualCard'
+      });
+
       setEvaluation({
         level: data.nivel_hipertrofia || 'Principiante',
         experience: data.experiencia || 'Sin experiencia',
@@ -119,12 +135,27 @@ export default function HipertrofiaV2ManualCard({ onGenerate, isLoading, error, 
 
       // Si es principiante absoluto, forzar dashboard de adaptación
       if (data.nivel_hipertrofia === 'Principiante' && data.tags_adaptacion?.includes('novato')) {
+        track('hipertrofia_adaptation_dashboard_forced', {
+          userId: user.id,
+          reason: 'novato_tag_detected',
+          component: 'HipertrofiaV2ManualCard'
+        });
         setShowAdaptationDashboard(true);
         setStep('adaptation');
       } else {
+        track('hipertrofia_step_confirmed', {
+          userId: user.id,
+          level: data.nivel_hipertrofia,
+          component: 'HipertrofiaV2ManualCard'
+        });
         setStep('confirmed');
       }
     } catch (error) {
+      track('hipertrofia_evaluate_error', {
+        userId: user.id,
+        error: error.message,
+        component: 'HipertrofiaV2ManualCard'
+      });
       console.error('Error evaluando perfil:', error);
       // Fallback: Asignar principiante por defecto
       setEvaluation({
@@ -238,6 +269,13 @@ export default function HipertrofiaV2ManualCard({ onGenerate, isLoading, error, 
 
   // Iniciar bloque de adaptación
   const handleGenerateAdaptation = async ({ blockType, durationWeeks }) => {
+    track('adaptation_generate_start', {
+      userId: user.id,
+      blockType,
+      durationWeeks,
+      component: 'HipertrofiaV2ManualCard'
+    });
+
     try {
       const token = localStorage.getItem('authToken');
       const resp = await fetch(
@@ -260,14 +298,34 @@ export default function HipertrofiaV2ManualCard({ onGenerate, isLoading, error, 
         throw new Error(data.error || 'No se pudo crear bloque de adaptación');
       }
 
+      track('adaptation_generate_success', {
+        userId: user.id,
+        blockType,
+        durationWeeks,
+        blockId: data.blockId,
+        component: 'HipertrofiaV2ManualCard'
+      });
+
       await fetchAdaptationProgress();
       setShowAdaptationSelect(false);
 
       // 🔥 ACTIVAR DASHBOARD DE ADAPTACIÓN después de crear el bloque
+      track('adaptation_dashboard_activated', {
+        userId: user.id,
+        reason: 'block_created_successfully',
+        component: 'HipertrofiaV2ManualCard'
+      });
       setShowAdaptationDashboard(true);
       setStep('adaptation');
 
     } catch (err) {
+      track('adaptation_generate_error', {
+        userId: user.id,
+        blockType,
+        durationWeeks,
+        error: err.message,
+        component: 'HipertrofiaV2ManualCard'
+      });
       console.error('❌ [ADAPTACIÓN] Error creando bloque:', err);
       alert(err.message || 'Error al crear bloque de adaptación');
     }

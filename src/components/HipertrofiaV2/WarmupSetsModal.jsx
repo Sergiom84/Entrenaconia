@@ -1,22 +1,36 @@
 import React, { useState, useEffect } from 'react';
 import { X, AlertCircle, CheckCircle, Timer, TrendingUp } from 'lucide-react';
+import { useTrace } from '../../contexts/TraceContext';
 
 /**
  * Modal de Series de Aproximación/Calentamiento
  * Implementación según teoría MindFeed v1.0
  */
-const WarmupSetsModal = ({ 
-  isOpen, 
-  onClose, 
-  exerciseName, 
-  targetWeight, 
+const WarmupSetsModal = ({
+  isOpen,
+  onClose,
+  exerciseName,
+  targetWeight,
   userLevel = 'Principiante',
-  onComplete 
+  onComplete
 }) => {
+  const { track } = useTrace();
   const [currentSetIndex, setCurrentSetIndex] = useState(0);
   const [completedSets, setCompletedSets] = useState([]);
   const [isResting, setIsResting] = useState(false);
   const [restTimer, setRestTimer] = useState(0);
+
+  // Trace: apertura del modal
+  useEffect(() => {
+    if (isOpen) {
+      track('warmup_modal_opened', {
+        exerciseName,
+        targetWeight,
+        userLevel,
+        component: 'WarmupSetsModal'
+      });
+    }
+  }, [isOpen, exerciseName, targetWeight, userLevel, track]);
 
   // Configuración de series según nivel (teoría MindFeed)
   const warmupConfig = {
@@ -60,14 +74,32 @@ const WarmupSetsModal = ({
       weight: (targetWeight * currentSet.percentage / 100).toFixed(1),
       completedAt: new Date().toISOString()
     };
-    
+
+    track('warmup_set_completed', {
+      exerciseName,
+      setIndex: currentSetIndex + 1,
+      totalSets: currentWarmupSets.length,
+      weight: completedSet.weight,
+      percentage: currentSet.percentage,
+      reps: currentSet.reps,
+      userLevel,
+      component: 'WarmupSetsModal'
+    });
+
     setCompletedSets([...completedSets, completedSet]);
 
     if (currentSetIndex < currentWarmupSets.length - 1) {
       // Iniciar descanso
+      track('warmup_rest_started', {
+        exerciseName,
+        restSeconds: currentSet.rest,
+        nextSetIndex: currentSetIndex + 2,
+        component: 'WarmupSetsModal'
+      });
+
       setIsResting(true);
       setRestTimer(currentSet.rest);
-      
+
       // Esperar al final del descanso para avanzar
       setTimeout(() => {
         setCurrentSetIndex(currentSetIndex + 1);
@@ -79,6 +111,15 @@ const WarmupSetsModal = ({
   };
 
   const handleWarmupComplete = () => {
+    track('warmup_completed', {
+      exerciseName,
+      totalSets: currentWarmupSets.length,
+      completedSets: completedSets.length,
+      userLevel,
+      duration: new Date() - new Date(completedSets[0]?.completedAt || new Date()),
+      component: 'WarmupSetsModal'
+    });
+
     if (onComplete) {
       onComplete({
         sets: completedSets,
@@ -90,8 +131,27 @@ const WarmupSetsModal = ({
   };
 
   const handleSkip = () => {
+    track('warmup_skip_attempted', {
+      exerciseName,
+      userLevel,
+      component: 'WarmupSetsModal'
+    });
+
     if (window.confirm('¿Seguro que quieres saltar el calentamiento? Esto aumenta el riesgo de lesión.')) {
+      track('warmup_skipped', {
+        exerciseName,
+        userLevel,
+        reason: 'user_confirmed_skip',
+        component: 'WarmupSetsModal'
+      });
       onClose();
+    } else {
+      track('warmup_skip_cancelled', {
+        exerciseName,
+        userLevel,
+        reason: 'user_cancelled_skip',
+        component: 'WarmupSetsModal'
+      });
     }
   };
 
@@ -107,7 +167,17 @@ const WarmupSetsModal = ({
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-semibold">Series de Aproximación</h2>
             <button
-              onClick={onClose}
+              onClick={() => {
+                track('warmup_modal_closed', {
+                  exerciseName,
+                  userLevel,
+                  completedSets: completedSets.length,
+                  currentSetIndex: currentSetIndex + 1,
+                  reason: 'user_closed_modal',
+                  component: 'WarmupSetsModal'
+                });
+                onClose();
+              }}
               className="p-2 hover:bg-gray-100 rounded-full transition-colors"
             >
               <X className="h-5 w-5" />

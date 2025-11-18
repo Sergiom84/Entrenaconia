@@ -1,26 +1,41 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  Target, CheckCircle, XCircle, Clock, TrendingUp, 
+import {
+  Target, CheckCircle, XCircle, Clock, TrendingUp,
   Activity, Brain, Weight, Users, AlertCircle,
   ArrowRight, BarChart3, ChevronRight
 } from 'lucide-react';
+import { useTrace } from '../../contexts/TraceContext';
 
 /**
  * Dashboard del Bloque de Adaptación
  * Visualización mejorada de criterios de transición según teoría MindFeed
  */
-const AdaptationDashboard = ({ 
+const AdaptationDashboard = ({
   userId,
   onTransitionReady,
   onGenerateD1D5
 }) => {
+  const { track } = useTrace();
   const [adaptationData, setAdaptationData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showTransitionModal, setShowTransitionModal] = useState(false);
   const [transitioning, setTransitioning] = useState(false);
   const [weeklyData, setWeeklyData] = useState([]);
 
+  // Trace: Montaje del dashboard
+  useEffect(() => {
+    track('adaptation_dashboard_mounted', {
+      userId,
+      component: 'AdaptationDashboard'
+    });
+  }, [userId, track]);
+
   const fetchAdaptationProgress = useCallback(async () => {
+    track('adaptation_progress_fetch_start', {
+      userId,
+      component: 'AdaptationDashboard'
+    });
+
     setLoading(true);
     try {
       const response = await fetch('/api/adaptation/progress', {
@@ -30,21 +45,43 @@ const AdaptationDashboard = ({
       });
 
       const data = await response.json();
+
+      track('adaptation_progress_fetch_result', {
+        userId,
+        hasActiveBlock: data.hasActiveBlock,
+        readyForTransition: data.block?.readyForTransition,
+        currentWeek: data.block?.latestWeek,
+        criteriaMet: data.block?.readyForTransition ? 4 : 'checking'
+      });
+
       if (data.success && data.hasActiveBlock) {
         setAdaptationData(data);
         setWeeklyData(data.weeks || []);
 
         // Auto-mostrar modal si está listo para transición
         if (data.block?.readyForTransition && !showTransitionModal) {
+          track('adaptation_auto_show_transition_modal', {
+            userId,
+            reason: 'ready_for_transition'
+          });
           setShowTransitionModal(true);
         }
+      } else {
+        track('adaptation_no_active_block', {
+          userId,
+          reason: 'no adaptation block found'
+        });
       }
     } catch (error) {
+      track('adaptation_progress_fetch_error', {
+        userId,
+        error: error.message
+      });
       console.error('Error obteniendo progreso de adaptación:', error);
     } finally {
       setLoading(false);
     }
-  }, [showTransitionModal]);
+  }, [showTransitionModal, userId, track]);
 
   useEffect(() => {
     if (userId) {
@@ -53,6 +90,12 @@ const AdaptationDashboard = ({
   }, [userId, fetchAdaptationProgress]);
 
   const handleTransition = async () => {
+    track('adaptation_transition_start', {
+      userId,
+      blockId: adaptationData?.block?.id,
+      component: 'AdaptationDashboard'
+    });
+
     setTransitioning(true);
     try {
       const response = await fetch('/api/adaptation/transition', {
@@ -61,18 +104,33 @@ const AdaptationDashboard = ({
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
       });
-      
+
       const data = await response.json();
+
+      track('adaptation_transition_result', {
+        userId,
+        success: data.success,
+        willGenerateD1D5: !!onGenerateD1D5,
+        component: 'AdaptationDashboard'
+      });
+
       if (data.success) {
         if (onTransitionReady) {
+          track('adaptation_onTransitionReady_called', { userId });
           onTransitionReady();
         }
         // Generar automáticamente plan D1-D5
         if (onGenerateD1D5) {
+          track('adaptation_onGenerateD1D5_called', { userId });
           onGenerateD1D5();
         }
       }
     } catch (error) {
+      track('adaptation_transition_error', {
+        userId,
+        error: error.message,
+        component: 'AdaptationDashboard'
+      });
       console.error('Error en transición:', error);
     } finally {
       setTransitioning(false);
@@ -81,10 +139,27 @@ const AdaptationDashboard = ({
   };
 
   const handleReportTechnique = async (exerciseId) => {
+    track('adaptation_report_technique_start', {
+      userId,
+      exerciseId,
+      component: 'AdaptationDashboard'
+    });
+
     // Abrir modal para reportar flag técnico
     const flagType = prompt('Tipo de problema técnico:\n1. ROM incorrecto\n2. Postura inadecuada\n3. Uso de impulso\n4. Movimiento inestable\n5. Patrón compensatorio\n6. Dolor');
-    
+
     if (flagType) {
+      const flagTypes = ['incorrect_rom', 'poor_posture', 'excessive_momentum',
+                         'unstable_movement', 'compensation_pattern', 'pain_reported'];
+      const selectedFlag = flagTypes[parseInt(flagType) - 1];
+
+      track('adaptation_report_technique_selected', {
+        userId,
+        exerciseId,
+        flagType: selectedFlag,
+        flagNumber: parseInt(flagType)
+      });
+
       try {
         await fetch('/api/adaptation/technique-flag', {
           method: 'POST',
@@ -94,15 +169,32 @@ const AdaptationDashboard = ({
           },
           body: JSON.stringify({
             exerciseId,
-            flagType: ['incorrect_rom', 'poor_posture', 'excessive_momentum', 
-                      'unstable_movement', 'compensation_pattern', 'pain_reported'][parseInt(flagType) - 1],
+            flagType: selectedFlag,
             severity: 'moderate'
           })
         });
+
+        track('adaptation_report_technique_success', {
+          userId,
+          exerciseId,
+          flagType: selectedFlag
+        });
+
         fetchAdaptationProgress(); // Refrescar datos
       } catch (error) {
+        track('adaptation_report_technique_error', {
+          userId,
+          exerciseId,
+          flagType: selectedFlag,
+          error: error.message
+        });
         console.error('Error reportando flag:', error);
       }
+    } else {
+      track('adaptation_report_technique_cancelled', {
+        userId,
+        exerciseId
+      });
     }
   };
 
@@ -147,7 +239,14 @@ const AdaptationDashboard = ({
           </div>
           
           <button
-            onClick={() => window.location.href = '/adaptation/create'}
+            onClick={() => {
+              track('adaptation_create_block_button_clicked', {
+                userId,
+                reason: 'no_active_block',
+                component: 'AdaptationDashboard'
+              });
+              window.location.href = '/adaptation/create';
+            }}
             className="bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors"
           >
             Iniciar Bloque de Adaptación
@@ -403,7 +502,14 @@ const AdaptationDashboard = ({
                       Puedes transicionar al ciclo D1-D5 de HipertrofiaV2.
                     </p>
                     <button
-                      onClick={() => setShowTransitionModal(true)}
+                      onClick={() => {
+                        track('adaptation_transition_button_clicked', {
+                          userId,
+                          criteriaMet: criteriaCount,
+                          component: 'AdaptationDashboard'
+                        });
+                        setShowTransitionModal(true);
+                      }}
                       className="mt-3 bg-green-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-700 transition-colors flex items-center space-x-2"
                     >
                       <span>Iniciar Transición a D1-D5</span>
