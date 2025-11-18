@@ -324,6 +324,13 @@ const AdaptationDashboard = ({
 
         {/* Criterios */}
         <div className="p-6">
+          <div className="flex items-start gap-2 mb-3 text-sm text-gray-600">
+            <AlertCircle className="h-4 w-4 text-blue-500 mt-0.5" />
+            <p>
+              Completa estos criterios de adaptación para poder transicionar al ciclo completo de Hipertrofia D1-D5.
+            </p>
+          </div>
+
           <h3 className="text-lg font-semibold text-gray-900 mb-4">
             Criterios de Transición a Hipertrofia D1-D5
           </h3>
@@ -483,7 +490,7 @@ const AdaptationDashboard = ({
 
           {/* Mensaje de estado */}
           <div className={`mt-6 p-4 rounded-lg ${
-            block.readyForTransition 
+            block.readyForTransition
               ? 'bg-green-50 border border-green-200'
               : criteriaCount >= 2
                 ? 'bg-yellow-50 border border-yellow-200'
@@ -498,7 +505,7 @@ const AdaptationDashboard = ({
                       ¡Felicitaciones! Estás listo para el programa principal
                     </p>
                     <p className="text-sm text-green-700 mt-1">
-                      Has cumplido todos los criterios de adaptación. 
+                      Has cumplido todos los criterios de adaptación.
                       Puedes transicionar al ciclo D1-D5 de HipertrofiaV2.
                     </p>
                     <button
@@ -525,9 +532,9 @@ const AdaptationDashboard = ({
                       Continúa con tu adaptación
                     </p>
                     <p className="text-sm text-gray-600 mt-1">
-                      {criteriaCount === 0 
+                      {criteriaCount === 0
                         ? 'Enfócate en completar las sesiones y mejorar tu técnica.'
-                        : criteriaCount === 1 
+                        : criteriaCount === 1
                           ? 'Buen progreso. Sigue trabajando en los criterios pendientes.'
                           : criteriaCount === 2
                             ? 'Vas muy bien. Solo faltan algunos criterios más.'
@@ -539,6 +546,15 @@ const AdaptationDashboard = ({
                         Tiempo estimado restante: {block.durationWeeks - currentWeek + 1} semana(s)
                       </div>
                     )}
+                    
+                    {/* Botón para ir a entrenar */}
+                    <button
+                      onClick={() => window.location.href = '/routines'}
+                      className="mt-3 bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center space-x-2"
+                    >
+                      <Dumbbell className="h-4 w-4" />
+                      <span>Ir a Entrenar</span>
+                    </button>
                   </div>
                 </>
               )}

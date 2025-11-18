@@ -330,16 +330,21 @@ export default function TrainingPlanConfirmationModal({
                   </div>
                   <div className="p-3 sm:p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                     {(semana.sesiones || []).map((sesion, sessionIndex) => {
-                      // Calcular fecha para esta sesión
-                      const sessionDate = new Date(plan.fecha_inicio);
-                      sessionDate.setDate(sessionDate.getDate() + (weekIndex * 7) + sessionIndex);
+                      // ✅ CORREGIDO: Usar el día real que viene del plan (backend ya lo calcula correctamente)
+                      const cicloDay = sesion.ciclo_dia || sesion.cycle_day || (sessionIndex + 1);
+                      const dayName = sesion.dia || 'N/A'; // El backend ya proporciona el día real
 
-                      const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
-                      const dayName = dayNames[sessionDate.getDay()];
-                      const dayNumber = sessionDate.getDate();
+                      // Si el plan tiene fecha de inicio, podemos mostrar el número del día
+                      let dayNumber = '';
+                      if (plan.fecha_inicio && sesion.fecha) {
+                        const sessionDate = new Date(sesion.fecha);
+                        dayNumber = sessionDate.getDate();
+                      }
 
                       // 🎯 Formato: D1 Lun 17 : Pecho + Tríceps
-                      const headerText = `D${sessionIndex + 1} ${dayName} ${dayNumber}`;
+                      const headerText = dayNumber
+                        ? `D${cicloDay} ${dayName} ${dayNumber}`
+                        : `D${cicloDay} ${dayName}`;
 
                       // 💪 Obtener preview de grupos musculares
                       const muscleGroups = getMuscleGroupsPreview(sesion);

@@ -97,69 +97,86 @@ router.post('/generate-d1d5', authenticateToken, async (req, res) => {
   try {
     const userId = req.user?.userId || req.user?.id;
     // Ajustar duración según teoría: 10 semanas principiante, 12 intermedio/avanzado
+    const { nivel: nivelRaw = 'Principiante', totalWeeks: totalWeeksRaw, startConfig, includeWeek0 = true } = req.body;
+    const nivel = nivelRaw;
     const defaultWeeks = nivel === 'Principiante' ? 10 : 12;
-    const { nivel = 'Principiante', totalWeeks = defaultWeeks, startConfig, includeWeek0 = true } = req.body;
+    const totalWeeks = totalWeeksRaw ?? defaultWeeks;
 
     console.log('🏋️ [MINDFEED] Generando plan D1-D5 para usuario:', userId, 'Nivel:', nivel);
     console.log('📅 Duración total:', totalWeeks, 'semanas + Semana 0:', includeWeek0);
     
     // Obtener información del usuario incluyendo sexo
     const userResult = await dbClient.query(
-      `SELECT sex FROM app.users WHERE id = $1`,
+      `SELECT sexo FROM app.users WHERE id = $1`,
       [userId]
     );
-    const userSex = userResult.rows[0]?.sex || 'male'; // Default a male si no especificado
-    const isFemale = userSex === 'female' || userSex === 'f' || userSex === 'mujer';
-    
+    const userSex = userResult.rows[0]?.sexo || 'male'; // Default a male si no especificado
+    const isFemale = userSex === 'female' || userSex === 'f' || userSex === 'mujer' || userSex === 'femenino';
+
     console.log('👤 Sexo del usuario:', userSex, 'Aplicar ajuste femenino:', isFemale);
+
+    // 🎯 Obtener estado de priorización muscular activa
+    const priorityResult = await dbClient.query(
+      `SELECT priority_muscle FROM app.hipertrofia_v2_state WHERE user_id = $1`,
+      [userId]
+    );
+    const priorityMuscle = priorityResult.rows[0]?.priority_muscle || null;
+
+    if (priorityMuscle) {
+      console.log(`🎯 [PRIORIDAD] Músculo prioritario detectado: ${priorityMuscle}`);
+    }
 
     // 🆕 Log de configuración de inicio si existe
     if (startConfig) {
       console.log('🗓️ Configuración de inicio recibida:', startConfig);
     }
 
-    // 🆕 Calcular mapeo dinámico de D1-D5: día de inicio = D1, ciclo secuencial
+    // 🆕 Calcular calendario cíclico D1–D5: D1 es el día real de inicio, rota como “rueda de tanque”
+    // Reglas:
+    // - Entrenamos Lun–Vie por defecto.
+    // - Si includeSaturday es true Y el startDay es jueves, se permite usar SOLO el primer sábado del ciclo inicial.
     let dynamicDayMapping = {};
+    let trainingDays = null;
     const includeSaturday = startConfig?.distributionOption === 'saturdays' || startConfig?.includeSaturdays;
+
+    const cycleLength = 5; // HipertrofiaV2 siempre D1–D5
+    const sessionsNeeded = (totalWeeks || defaultWeeks) * cycleLength;
 
     if (startConfig?.startDate) {
       const startDate = new Date(startConfig.startDate);
       const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+      const startDay = startDate.getDay();
+      const allowOneSaturday = includeSaturday && startDay === 4; // solo si empieza en jueves
 
-      // Generar secuencia de días de entrenamiento comenzando desde el día de inicio
-      const trainingDays = [];
+      trainingDays = [];
       let currentDate = new Date(startDate);
-      let sessionsNeeded = 40; // Necesitamos exactamente 40 sesiones
+      let usedSaturday = false;
 
       while (trainingDays.length < sessionsNeeded) {
         const dayOfWeek = currentDate.getDay();
+        const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
+        const canUseFirstSaturday = allowOneSaturday && !usedSaturday && dayOfWeek === 6;
 
-        // Determinar si este día es válido para entrenamiento
-        const isValidTrainingDay = (() => {
-          if (includeSaturday) {
-            // Con sábado: Lunes-Sábado
-            return dayOfWeek >= 1 && dayOfWeek <= 6;
-          } else {
-            // Sin sábado: Solo Lunes-Viernes
-            return dayOfWeek >= 1 && dayOfWeek <= 5;
-          }
-        })();
+        const isValidTrainingDay = isWeekday || canUseFirstSaturday;
 
         if (isValidTrainingDay) {
           trainingDays.push({
             date: new Date(currentDate),
             dayName: dayNames[dayOfWeek],
-            sessionNumber: trainingDays.length + 1
+            sessionNumber: trainingDays.length + 1,
+            cycleDay: ((trainingDays.length) % cycleLength) + 1 // rota D1..D5
           });
+
+          if (canUseFirstSaturday) {
+            usedSaturday = true;
+          }
         }
 
-        // Avanzar al siguiente día
         currentDate.setDate(currentDate.getDate() + 1);
       }
 
-      // Crear mapeo D1-D5 basado en la secuencia completa
-      // D1 = día de inicio, D2 = siguiente día válido, etc.
-      for (let i = 0; i < 5; i++) {
+      // Mapear D1-D5 con los primeros 5 días válidos del calendario real
+      for (let i = 0; i < cycleLength; i++) {
         if (trainingDays[i]) {
           dynamicDayMapping[`D${i + 1}`] = trainingDays[i].dayName;
         }
@@ -170,7 +187,6 @@ router.post('/generate-d1d5', authenticateToken, async (req, res) => {
       console.log(`📅 Primeras sesiones:`, trainingDays.slice(0, 10).map(d => `${d.sessionNumber}: ${d.dayName} (${d.date.toISOString().split('T')[0]})`));
       console.log(`📅 Últimas sesiones:`, trainingDays.slice(-5).map(d => `${d.sessionNumber}: ${d.dayName} (${d.date.toISOString().split('T')[0]})`));
     } else {
-      // Fallback: mapeo por defecto (Lunes-Viernes)
       dynamicDayMapping = {
         'D1': 'Lunes',
         'D2': 'Martes',
@@ -362,18 +378,21 @@ router.post('/generate-d1d5', authenticateToken, async (req, res) => {
         }
       }
 
-      // Ordenar ejercicios por orden_recomendado
-      sessionExercises.sort((a, b) => (a.orden_recomendado || 3) - (b.orden_recomendado || 3));
+      // Ordenar ejercicios ESTRICTAMENTE por tipo: Multi → Uni → Ana (teoría MindFeed)
+      const tipoOrden = { 'multiarticular': 1, 'unilateral': 2, 'analitico': 3 };
+      sessionExercises.sort((a, b) => {
+        const ordenA = tipoOrden[a.tipo_ejercicio] || 99;
+        const ordenB = tipoOrden[b.tipo_ejercicio] || 99;
+        if (ordenA !== ordenB) return ordenA - ordenB;
+        // Si mismo tipo, usar orden_recomendado de BD
+        return (a.orden_recomendado || 0) - (b.orden_recomendado || 0);
+      });
 
-      sessionsWithExercises.push({
-        cycle_day: cycleDay,
-        session_name: sessionConfig.session_name,
-        description: sessionConfig.description,
-        coach_tip: sessionConfig.coach_tip,
-        intensity_percentage: sessionConfig.intensity_percentage,
-        is_heavy_day: sessionConfig.is_heavy_day,
-        muscle_groups: muscleGroups,
-        exercises: sessionExercises.map((ex, idx) => ({
+      // Log de verificación de orden
+      console.log(`  📋 D${cycleDay} - Orden final: ${sessionExercises.map(e => e.tipo_ejercicio[0].toUpperCase()).join(' → ')}`);
+
+      // Mapear ejercicios con parámetros base
+      let exercisesWithParams = sessionExercises.map((ex, idx) => ({
           orden: idx + 1,
           id: ex.exercise_id,
           exercise_id: ex.exercise_id,
@@ -381,7 +400,8 @@ router.post('/generate-d1d5', authenticateToken, async (req, res) => {
           categoria: ex.categoria,
           tipo_ejercicio: ex.tipo_ejercicio,
           patron_movimiento: ex.patron_movimiento,
-          series: sessionConfig.default_sets,
+          // VOLUMEN FIJO: Series nunca cambian durante el bloque (solo carga progresa)
+          series: sessionConfig.default_sets, // Fijo en 3 series (teoría MindFeed)
           reps_objetivo: sessionConfig.default_reps_range,
           rir_target: sessionConfig.default_rir_target,
           // Ajuste de descanso por sexo según teoría (-15% para mujeres en uni/analítico)
@@ -397,69 +417,124 @@ router.post('/generate-d1d5', authenticateToken, async (req, res) => {
           ajuste_sexo: isFemale && (ex.tipo_ejercicio === 'unilateral' || ex.tipo_ejercicio === 'analitico')
             ? '-15% descanso (ajuste femenino)'
             : null
-        }))
+        }));
+
+      // 🎯 Aplicar ajustes de priorización muscular (si está activa)
+      exercisesWithParams = applyPriorityIntensityAdjustments(
+        exercisesWithParams,
+        priorityMuscle,
+        sessionConfig.is_heavy_day
+      );
+
+      if (priorityMuscle && sessionConfig.is_heavy_day) {
+        console.log(`  🎯 [PRIORIDAD] Ajustes aplicados para ${priorityMuscle} en D${cycleDay}`);
+      }
+
+      sessionsWithExercises.push({
+        cycle_day: cycleDay,
+        session_name: sessionConfig.session_name,
+        description: sessionConfig.description,
+        coach_tip: sessionConfig.coach_tip,
+        intensity_percentage: sessionConfig.intensity_percentage,
+        is_heavy_day: sessionConfig.is_heavy_day,
+        muscle_groups: muscleGroups,
+        exercises: exercisesWithParams
       });
 
       console.log(`  ✅ D${cycleDay}: ${sessionExercises.length} ejercicios seleccionados`);
     }
 
     // 3. Crear estructura del plan con Semana 0 de calibración
-    const formattedSessions = sessionsWithExercises.map((session, idx) => {
-      const cycleDay = `D${session.cycle_day}`;
-      const actualDayName = dynamicDayMapping[cycleDay] || cycleDay;
+    // Plantilla de sesiones por ciclo (lookup por D1..D5)
+    const templateByCycleDay = new Map(
+      sessionsWithExercises
+        .sort((a, b) => a.cycle_day - b.cycle_day)
+        .map((session) => [
+          session.cycle_day,
+          {
+            nombre: session.session_name,
+            ciclo_dia: session.cycle_day,
+            descripcion: session.description,
+            coach_tip: session.coach_tip,
+            intensidad_porcentaje: session.intensity_percentage,
+            es_dia_pesado: session.is_heavy_day,
+            grupos_musculares: session.muscle_groups,
+            ejercicios: session.exercises.map((exercise) => ({ ...exercise }))
+          }
+        ])
+    );
 
-      return {
-        nombre: session.session_name,
-        dia: actualDayName,
-        ciclo_dia: session.cycle_day,
-        descripcion: session.description,
-        coach_tip: session.coach_tip,
-        intensidad_porcentaje: session.intensity_percentage,
-        es_dia_pesado: session.is_heavy_day,
-        grupos_musculares: session.muscle_groups,
-        ejercicios: session.exercises.map((exercise) => ({ ...exercise })),
-        id: `S-${session.cycle_day}-${idx}`
-      };
-    });
-
-    // Generar semanas de entrenamiento
+    // Generar semanas de entrenamiento usando el calendario real calculado
     const semanas = [];
     
     // Añadir Semana 0 de calibración si está habilitada
     if (includeWeek0) {
-      const semana0Sessions = formattedSessions.map((session, index) => ({
-        ...JSON.parse(JSON.stringify(session)),
-        orden: index + 1,
-        id: `W0-D${session.ciclo_dia}`,
-        intensidad_porcentaje: 70, // Semana 0 siempre al 70% según teoría
-        es_calibracion: true,
-        coach_tip: 'Semana de calibración: Enfócate en la técnica correcta y el control del movimiento. No busques fatiga.',
-        ejercicios: session.ejercicios.map(ex => ({
-          ...ex,
-          intensidad_porcentaje: 70,
-          rir_target: '4-5', // RIR más alto para calibración
-          notas: `${ex.notas || ''} - SEMANA DE CALIBRACIÓN: Prioriza técnica sobre carga`
-        }))
-      }));
+      const semana0Sessions = Array.from({ length: cycleLength }, (_, idx) => {
+        const cycleDay = idx + 1;
+        const template = templateByCycleDay.get(cycleDay);
+        const actualDayName = trainingDays?.[idx]?.dayName || dynamicDayMapping[`D${cycleDay}`] || `D${cycleDay}`;
+
+        return {
+          ...JSON.parse(JSON.stringify(template)),
+          dia: actualDayName,
+          fecha: trainingDays?.[idx]?.date ? trainingDays[idx].date.toISOString().split('T')[0] : null, // ✅ Añadir fecha real
+          orden: idx + 1,
+          id: `W0-D${cycleDay}`,
+          intensidad_porcentaje: 70, // Semana 0 siempre al 70% según teoría
+          es_calibracion: true,
+          coach_tip: 'Semana de calibración: Enfócate en la técnica correcta y el control del movimiento. No busques fatiga.',
+          ejercicios: template.ejercicios.map((ex) => ({
+            ...ex,
+            intensidad_porcentaje: 70,
+            rir_target: '4-5', // RIR más alto para calibración
+            notas: `${ex.notas || ''} - SEMANA DE CALIBRACIÓN: Prioriza técnica sobre carga`
+          }))
+        };
+      });
 
       semanas.push({
         numero: 0,
         tipo: 'calibracion',
         descripcion: 'Semana de calibración técnica y ajuste de cargas',
-        sesiones: semana0Sessions
+        sesiones: semana0Sessions,
+        // Metadata para el sistema
+        is_week_zero: true,
+        no_progression: true, // NO aplicar progresión de carga en esta semana
+        objetivo: 'Establecer técnica base y calibrar cargas iniciales (70% 1RM)'
       });
+
+      console.log('✅ [WEEK 0] Semana de calibración añadida (70% intensidad, RIR 4-5, sin progresión)');
     }
 
-    // Añadir semanas regulares de entrenamiento
+    // Añadir semanas regulares de entrenamiento (cíclico)
     for (let weekIndex = 0; weekIndex < totalWeeks; weekIndex++) {
+      const weekSessions = Array.from({ length: cycleLength }, (_, idx) => {
+        const sessionNumber = weekIndex * cycleLength + idx; // 0-based
+        const cycleDay = (sessionNumber % cycleLength) + 1;
+        const template = templateByCycleDay.get(cycleDay);
+        const calendarDay =
+          startConfig?.startDate && trainingDays
+            ? trainingDays[sessionNumber]
+            : null;
+
+        const actualDayName =
+          calendarDay?.dayName ||
+          dynamicDayMapping[`D${cycleDay}`] ||
+          `D${cycleDay}`;
+
+        return {
+          ...JSON.parse(JSON.stringify(template)),
+          dia: actualDayName,
+          fecha: calendarDay?.date ? calendarDay.date.toISOString().split('T')[0] : null, // ✅ Añadir fecha real
+          orden: idx + 1,
+          id: `W${weekIndex + 1}-D${cycleDay}`
+        };
+      });
+
       semanas.push({
         numero: weekIndex + 1,
         tipo: 'entrenamiento',
-        sesiones: formattedSessions.map((session, index) => ({
-          ...JSON.parse(JSON.stringify(session)),
-          orden: index + 1,
-          id: `W${weekIndex + 1}-D${session.ciclo_dia}`
-        }))
+        sesiones: weekSessions
       });
     }
 
@@ -471,7 +546,7 @@ router.post('/generate-d1d5', authenticateToken, async (req, res) => {
       total_weeks: totalWeeks,
       has_week_0: includeWeek0,
       duracion_total_semanas: includeWeek0 ? totalWeeks + 1 : totalWeeks,
-      frecuencia_semanal: formattedSessions.length,
+      frecuencia_semanal: cycleLength,
       fecha_inicio: new Date().toISOString(),
       sessions: sessionsWithExercises,
       semanas,
@@ -533,8 +608,8 @@ router.post('/generate-d1d5', authenticateToken, async (req, res) => {
 
       // 🎯 Forzar patrón D1-D5 (5 días) para HipertrofiaV2
       const includeSaturdays = startConfig.includeSaturdays || false;
-      const firstWeekPattern = includeSaturdays
-        ? 'Lun-Mar-Mie-Jue-Vie-Sáb'
+      const firstWeekPattern = (trainingDays && trainingDays.length >= cycleLength)
+        ? trainingDays.slice(0, cycleLength).map((d) => d.dayName).join('-')
         : 'Lun-Mar-Mie-Jue-Vie';
 
       await dbClient.query(`
@@ -1472,6 +1547,98 @@ router.post('/advance-cycle', authenticateToken, async (req, res) => {
 // ============================================================
 
 /**
+ * GET /api/hipertrofiav2/current-session-with-adjustments/:userId/:cycleDay
+ * Obtiene la sesión del día actual CON ajustes de solapamiento neural aplicados
+ * AUTOMÁTICO para principiantes
+ */
+router.get('/current-session-with-adjustments/:userId/:cycleDay', authenticateToken, async (req, res) => {
+  try {
+    const { userId, cycleDay } = req.params;
+    console.log(`🔍 [SESSION+OVERLAP] Obteniendo D${cycleDay} con ajustes automáticos para usuario ${userId}`);
+
+    // 1. Obtener nivel del usuario
+    const userQuery = await pool.query(
+      `SELECT nivel_entrenamiento FROM app.users WHERE id = $1`,
+      [userId]
+    );
+    const nivel = userQuery.rows[0]?.nivel_entrenamiento || 'Principiante';
+
+    // 2. Obtener configuración de sesión del plan activo
+    const planQuery = await pool.query(
+      `SELECT plan_data FROM app.methodology_plans
+       WHERE user_id = $1 AND status = 'active'
+       ORDER BY created_at DESC LIMIT 1`,
+      [userId]
+    );
+
+    if (planQuery.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'No hay plan activo' });
+    }
+
+    const planData = planQuery.rows[0].plan_data;
+    // Buscar sesión del cicleDay en el plan
+    let currentSession = null;
+
+    for (const semana of (planData.semanas || [])) {
+      for (const sesion of (semana.sesiones || [])) {
+        if (sesion.ciclo_dia == cycleDay || sesion.cycle_day == cycleDay) {
+          currentSession = sesion;
+          break;
+        }
+      }
+      if (currentSession) break;
+    }
+
+    if (!currentSession) {
+      return res.status(404).json({ success: false, error: `Sesión D${cycleDay} no encontrada` });
+    }
+
+    // 3. Detectar solapamiento neural AUTOMÁTICAMENTE (solo principiantes)
+    let adjustedSession = { ...currentSession };
+    let overlapInfo = null;
+
+    if (nivel === 'Principiante' && currentSession.ejercicios) {
+      const currentPatterns = currentSession.ejercicios.map(ex => ex.patron_movimiento).filter(Boolean);
+
+      const overlapResult = await pool.query(
+        `SELECT app.detect_neural_overlap($1, $2::jsonb) as result`,
+        [userId, JSON.stringify(currentPatterns)]
+      );
+
+      overlapInfo = overlapResult.rows[0]?.result || {};
+
+      if (overlapInfo.overlap !== 'none' && overlapInfo.adjustment < 0) {
+        console.log(`⚠️ [OVERLAP] ${overlapInfo.overlap} detectado, ajustando -10% intensidad`);
+
+        // Aplicar -10% a ejercicios multiarticulares
+        adjustedSession.ejercicios = currentSession.ejercicios.map(ex => {
+          if (ex.tipo_ejercicio === 'multiarticular') {
+            return {
+              ...ex,
+              intensidad_porcentaje: Math.round(ex.intensidad_porcentaje * 0.9 * 10) / 10,
+              notas: (ex.notas || '') + ' [⚠️ -10% por solapamiento neural]'
+            };
+          }
+          return ex;
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      session: adjustedSession,
+      overlap_detected: overlapInfo?.overlap !== 'none',
+      overlap_info: overlapInfo,
+      nivel
+    });
+
+  } catch (error) {
+    console.error('❌ [SESSION+OVERLAP] Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
  * POST /api/hipertrofiav2/check-neural-overlap
  * Detecta solapamiento neural entre la última sesión y la actual
  */
@@ -1642,6 +1809,87 @@ router.post('/deactivate-deload', authenticateToken, async (req, res) => {
 // ============================================================
 // 🚀 FASE 2 - MÓDULO 4: PRIORIDAD MUSCULAR
 // ============================================================
+
+/**
+ * Detecta y aplica ajustes por solapamiento neural (Principiantes)
+ * Reduce carga -10% si se detectan patrones de movimiento repetidos en <72h
+ */
+async function applyNeuralOverlapAdjustments(dbClient, userId, exercises, nivel) {
+  // Solo aplicar a principiantes según teoría MindFeed
+  if (nivel !== 'Principiante') {
+    return { exercises, overlapDetected: false };
+  }
+
+  try {
+    // Extraer patrones de movimiento de los ejercicios actuales
+    const currentPatterns = exercises
+      .map(ex => ex.patron_movimiento)
+      .filter(Boolean);
+
+    // Llamar a función SQL de detección
+    const overlapResult = await dbClient.query(
+      `SELECT app.detect_neural_overlap($1, $2) AS result`,
+      [userId, JSON.stringify(currentPatterns)]
+    );
+
+    const overlap = overlapResult.rows[0]?.result || { overlap: 'none', adjustment: 0 };
+    const shouldReduce = overlap.overlap !== 'none' && overlap.adjustment < 0;
+
+    if (shouldReduce) {
+      console.log(`⚠️ [NEURAL OVERLAP] Detectado: ${overlap.overlap}, ajuste: ${overlap.adjustment * 100}%`);
+
+      // Aplicar reducción del 10% en intensidad para multiarticulares
+      const adjustedExercises = exercises.map(ex => {
+        if (ex.tipo_ejercicio === 'multiarticular') {
+          return {
+            ...ex,
+            intensidad_porcentaje: Math.round(ex.intensidad_porcentaje * 0.9 * 10) / 10,
+            notas: ex.notas + ' [Ajuste -10% por solapamiento neural]'
+          };
+        }
+        return ex;
+      });
+
+      return { exercises: adjustedExercises, overlapDetected: true, overlapInfo: overlap };
+    }
+
+    return { exercises, overlapDetected: false };
+  } catch (error) {
+    console.error('❌ [NEURAL OVERLAP] Error detectando solapamiento:', error);
+    return { exercises, overlapDetected: false };
+  }
+}
+
+/**
+ * Aplica ajustes de intensidad según módulo de priorización MindFeed
+ * - Músculo prioritario (P): top set a 82.5% en días pesados (D1-D3)
+ * - No prioritarios (NP): reducir a 75-77.5% en días pesados
+ */
+function applyPriorityIntensityAdjustments(exercises, priorityMuscle, isHeavyDay) {
+  if (!priorityMuscle || !isHeavyDay) return exercises;
+
+  return exercises.map(exercise => {
+    const isPriority = exercise.categoria?.toLowerCase().includes(priorityMuscle.toLowerCase());
+
+    if (isPriority) {
+      // Músculo prioritario: incrementar intensidad a 82.5%
+      return {
+        ...exercise,
+        intensidad_porcentaje: 82.5,
+        notas: exercise.notas + ' [PRIORIDAD: Top set a 82.5%]'
+      };
+    } else if (exercise.tipo_ejercicio === 'multiarticular') {
+      // No prioritarios en días pesados: reducir a 75-77.5%
+      return {
+        ...exercise,
+        intensidad_porcentaje: 76,
+        notas: exercise.notas + ' [Intensidad reducida por priorización]'
+      };
+    }
+
+    return exercise;
+  });
+}
 
 /**
  * POST /api/hipertrofiav2/activate-priority

@@ -34,6 +34,135 @@ function getWeekBounds(startDate) {
   return { weekNumber, weekStart, weekEnd };
 }
 
+/**
+ * Helper: Generar sesiones de adaptación
+ * Selecciona ejercicios y estructura las sesiones según el tipo de bloque
+ */
+async function generateAdaptationSessions(dbClient, userId, blockType, durationWeeks) {
+  console.log(`🏗️ Generando sesiones para bloque ${blockType} (${durationWeeks} semanas)`);
+
+  const sessions = [];
+  const nivel = 'Principiante'; // Adaptación siempre es para principiantes/retorno
+
+  // Función auxiliar para obtener ejercicios por categoría
+  const getExercises = async (categoria, limit = 1, tipo = null) => {
+    let query = `
+      SELECT
+        exercise_id, nombre, categoria, tipo_ejercicio,
+        patron_movimiento, equipamiento, "Cómo_hacerlo", "Consejos"
+      FROM app."Ejercicios_Hipertrofia"
+      WHERE nivel = $1 AND categoria = $2
+    `;
+    const params = [nivel, categoria];
+
+    if (tipo) {
+      query += ` AND tipo_ejercicio = $3`;
+      params.push(tipo);
+    }
+
+    query += ` ORDER BY RANDOM() LIMIT $${params.length + 1}`;
+    params.push(limit);
+
+    const result = await dbClient.query(query, params);
+    return result.rows;
+  };
+
+  if (blockType === 'full_body') {
+    // ESTRUCTURA FULL BODY: Circuito completo 8 ejercicios
+    // Frecuencia: 3 días/semana (Lunes, Miércoles, Viernes)
+    const exercises = [
+      ...(await getExercises('Pecho', 1, 'multiarticular')),
+      ...(await getExercises('Espalda', 1, 'multiarticular')),
+      ...(await getExercises('Piernas (cuádriceps)', 1, 'multiarticular')), // Sentadilla/Prensa
+      ...(await getExercises('Piernas (femoral)', 1)), // Peso muerto/Curl
+      ...(await getExercises('Hombro', 1)),
+      ...(await getExercises('Bíceps', 1)),
+      ...(await getExercises('Tríceps', 1)),
+      ...(await getExercises('Core', 1))
+    ];
+
+    // Crear sesiones para cada semana
+    for (let week = 1; week <= durationWeeks; week++) {
+      // 3 sesiones por semana
+      for (let day = 1; day <= 3; day++) {
+        const sessionNumber = (week - 1) * 3 + day;
+        const dayName = day === 1 ? 'Lunes' : day === 2 ? 'Miércoles' : 'Viernes';
+
+        sessions.push({
+          week,
+          dayName,
+          sessionNumber,
+          name: `Full Body - Sesión ${sessionNumber}`,
+          description: 'Circuito de adaptación: Realiza todos los ejercicios en orden.',
+          exercises: exercises.map((ex, idx) => ({
+            ...ex,
+            orden: idx + 1,
+            series: 3, // 2-3 vueltas según doc
+            reps: '12-15',
+            rir_target: '3-4',
+            descanso_seg: 60,
+            notas: 'Enfócate en la técnica. RIR 3-4 (lejos del fallo).'
+          }))
+        });
+      }
+    }
+
+  } else if (blockType === 'half_body') {
+    // ESTRUCTURA HALF BODY A/B
+    // A: Empuje + Extensión (Pecho, Hombros, Tríceps, Cuádriceps)
+    // B: Tirón + Flexión (Espalda, Bíceps, Femoral, Glúteo/Core)
+    // Frecuencia: 5 días/semana (A-B-A-B-A rotativo)
+
+    const exercisesA = [
+      ...(await getExercises('Pecho', 1, 'multiarticular')),
+      ...(await getExercises('Hombro', 1, 'multiarticular')), // Press militar
+      ...(await getExercises('Piernas (cuádriceps)', 1, 'multiarticular')), // Sentadilla
+      ...(await getExercises('Tríceps', 1)),
+      ...(await getExercises('Pecho', 1, 'unilateral')), // Complemento
+      ...(await getExercises('Piernas (cuádriceps)', 1, 'analitico')) // Extensión
+    ];
+
+    const exercisesB = [
+      ...(await getExercises('Espalda', 1, 'multiarticular')), // Remo/Jalón
+      ...(await getExercises('Piernas (femoral)', 1)), // Peso muerto
+      ...(await getExercises('Bíceps', 1)),
+      ...(await getExercises('Glúteos', 1)),
+      ...(await getExercises('Espalda', 1, 'unilateral')), // Remo mancuerna
+      ...(await getExercises('Core', 1))
+    ];
+
+    const totalSessions = durationWeeks * 5; // 5 días por semana
+
+    for (let i = 0; i < totalSessions; i++) {
+      const isSessionA = i % 2 === 0; // A, B, A, B, A...
+      const sessionType = isSessionA ? 'A' : 'B';
+      const sessionExercises = isSessionA ? exercisesA : exercisesB;
+      const week = Math.floor(i / 5) + 1;
+      const dayOfWeek = (i % 5) + 1; // 1=Lun, 5=Vie
+      const dayNames = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'];
+
+      sessions.push({
+        week,
+        dayName: dayNames[dayOfWeek - 1],
+        sessionNumber: i + 1,
+        name: `Half Body ${sessionType} - Sesión ${i + 1}`,
+        description: isSessionA ? 'Enfoque: Empuje + Extensión' : 'Enfoque: Tirón + Flexión',
+        exercises: sessionExercises.map((ex, idx) => ({
+          ...ex,
+          orden: idx + 1,
+          series: 3,
+          reps: '10-12', // Un poco más intenso que Full Body
+          rir_target: '2-3',
+          descanso_seg: 75,
+          notas: 'Control técnico y rango de movimiento completo.'
+        }))
+      });
+    }
+  }
+
+  return sessions;
+}
+
 // ============================================
 // POST /api/adaptation/generate
 // ============================================
@@ -75,21 +204,131 @@ router.post('/generate', authenticateToken, async (req, res) => {
       });
     }
 
-    // Crear bloque de adaptación
+    // 1. Generar sesiones de entrenamiento
+    const sessions = await generateAdaptationSessions(dbClient, userId, blockType, durationWeeks || 2);
+
+    if (sessions.length === 0) {
+      throw new Error('No se pudieron generar sesiones de adaptación');
+    }
+
+    // 2. Crear Plan en methodology_plans (para que aparezca en el sistema)
+    const planData = {
+      type: 'adaptation',
+      blockType,
+      durationWeeks,
+      sessionsCount: sessions.length,
+      generatedAt: new Date().toISOString()
+    };
+
+    const planResult = await dbClient.query(
+      `INSERT INTO app.methodology_plans (
+        user_id, methodology_type, plan_name, plan_data, status, created_at
+      ) VALUES ($1, $2, $3, $4, 'active', NOW())
+      RETURNING id`,
+      [
+        userId,
+        'Adaptation',
+        `Adaptación ${blockType === 'full_body' ? 'Full Body' : 'Half Body'}`,
+        JSON.stringify(planData)
+      ]
+    );
+    const methodologyPlanId = planResult.rows[0].id;
+
+    // 3. Crear bloque de adaptación vinculado al plan
     const blockResult = await dbClient.query(
       `INSERT INTO app.adaptation_blocks (
         user_id,
+        methodology_plan_id,
         block_type,
         duration_weeks,
         start_date,
         status
       )
-      VALUES ($1, $2, $3, CURRENT_DATE, 'active')
+      VALUES ($1, $2, $3, $4, CURRENT_DATE, 'active')
       RETURNING *`,
-      [userId, blockType, durationWeeks || 2]
+      [userId, methodologyPlanId, blockType, durationWeeks || 2]
     );
 
     const block = blockResult.rows[0];
+
+    // 4. Guardar sesiones en methodology_exercise_sessions y agendar en workout_schedule
+    const startDate = new Date();
+    // Ajustar al próximo lunes si es fin de semana, o empezar hoy
+    // Para simplificar, empezamos hoy o mañana
+    
+    for (const session of sessions) {
+      // Guardar sesión
+      const sessionResult = await dbClient.query(
+        `INSERT INTO app.methodology_exercise_sessions (
+          methodology_plan_id,
+          session_number,
+          session_name,
+          exercises,
+          created_at
+        ) VALUES ($1, $2, $3, $4, NOW())
+        RETURNING id`,
+        [
+          methodologyPlanId,
+          session.sessionNumber,
+          session.name,
+          JSON.stringify(session.exercises)
+        ]
+      );
+      const sessionId = sessionResult.rows[0].id;
+
+      // Calcular fecha programada
+      // Full Body: L-X-V (días 1, 3, 5 de la semana)
+      // Half Body: L-M-X-J-V (días 1-5)
+      
+      // Lógica simple de fechas:
+      // Asumimos que la semana 1 empieza en el "start_date" del bloque
+      // Si hoy es martes, y la sesión 1 es Lunes, la ponemos ayer? No, mejor proyectar hacia adelante.
+      // Para simplificar la implementación inicial:
+      // Programar sesiones secuencialmente a partir de mañana, saltando fines de semana si es necesario.
+      
+      const scheduledDate = new Date(startDate);
+      // Calcular offset en días basado en semana y día relativo
+      // Full Body: Week 1 -> Day 1 (Lun), Day 2 (Mie), Day 3 (Vie)
+      // Half Body: Week 1 -> Day 1 (Lun), Day 2 (Mar)...
+      
+      let dayOffset = 0;
+      if (blockType === 'full_body') {
+        // Sesión 1: +0 (Lun), Sesión 2: +2 (Mie), Sesión 3: +4 (Vie)
+        // Offset base por semana: (week-1) * 7
+        const weekOffset = (session.week - 1) * 7;
+        const dayInWeekOffset = (session.sessionNumber - 1) % 3 * 2; // 0, 2, 4
+        dayOffset = weekOffset + dayInWeekOffset;
+      } else {
+        // Half Body: L-V consecutivos
+        const weekOffset = (session.week - 1) * 7;
+        const dayInWeekOffset = (session.sessionNumber - 1) % 5; // 0, 1, 2, 3, 4
+        dayOffset = weekOffset + dayInWeekOffset;
+      }
+      
+      scheduledDate.setDate(startDate.getDate() + dayOffset);
+
+      // Insertar en schedule
+      await dbClient.query(
+        `INSERT INTO app.workout_schedule (
+          user_id,
+          methodology_plan_id,
+          scheduled_date,
+          week_number,
+          day_in_week,
+          session_number,
+          completed,
+          created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, false, NOW())`,
+        [
+          userId,
+          methodologyPlanId,
+          scheduledDate,
+          session.week,
+          (scheduledDate.getDay() || 7), // 1=Lun, 7=Dom
+          session.sessionNumber
+        ]
+      );
+    }
 
     // Crear primera semana de tracking (inicializada en 0)
     await dbClient.query(
@@ -111,7 +350,7 @@ router.post('/generate', authenticateToken, async (req, res) => {
 
     await dbClient.query('COMMIT');
 
-    console.log('✅ [ADAPTACIÓN] Bloque creado:', block.id);
+    console.log('✅ [ADAPTACIÓN] Bloque creado y sesiones generadas:', block.id);
 
     res.json({
       success: true,
@@ -121,7 +360,8 @@ router.post('/generate', authenticateToken, async (req, res) => {
         blockType: block.block_type,
         durationWeeks: block.duration_weeks,
         startDate: block.start_date,
-        status: block.status
+        status: block.status,
+        sessionsGenerated: sessions.length
       },
       nextSteps: [
         'Completar 4-5 sesiones de entrenamiento por semana',

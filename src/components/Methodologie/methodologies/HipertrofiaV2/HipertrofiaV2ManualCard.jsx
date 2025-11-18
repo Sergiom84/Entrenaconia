@@ -133,17 +133,27 @@ export default function HipertrofiaV2ManualCard({ onGenerate, isLoading, error, 
         recommendation: data.recomendacion || 'Full Body 3x/semana'
       });
 
-      // Si es principiante absoluto, forzar dashboard de adaptación
+      // Si es principiante absoluto, mostrar modal de selección de bloque de adaptación
       if (data.nivel_hipertrofia === 'Principiante' && data.tags_adaptacion?.includes('novato')) {
-        track('hipertrofia_adaptation_dashboard_forced', {
+        track('hipertrofia_adaptation_selection_required', {
           userId: user.id,
           reason: 'novato_tag_detected',
           component: 'HipertrofiaV2ManualCard'
         });
-        setShowAdaptationDashboard(true);
+        setShowAdaptationSelect(true); // ✅ Mostrar modal de selección Full Body vs Half Body
+        setStep('adaptation');
+      } else if (data.nivel_hipertrofia === 'Principiante') {
+        // Principiante con experiencia: Mostrar también selección (pueden elegir)
+        track('hipertrofia_adaptation_selection_optional', {
+          userId: user.id,
+          reason: 'principiante_con_experiencia',
+          component: 'HipertrofiaV2ManualCard'
+        });
+        setShowAdaptationSelect(true);
         setStep('adaptation');
       } else {
-        track('hipertrofia_step_confirmed', {
+        // Intermedio/Avanzado: Saltar adaptación, ir directo a D1-D5
+        track('hipertrofia_skip_adaptation', {
           userId: user.id,
           level: data.nivel_hipertrofia,
           component: 'HipertrofiaV2ManualCard'
@@ -198,8 +208,9 @@ export default function HipertrofiaV2ManualCard({ onGenerate, isLoading, error, 
           },
           body: JSON.stringify({
             nivel: userLevel,
-            totalWeeks: 8,  // 8 semanas para 40 sesiones (5 sesiones/semana × 8 semanas = 40)
-            startConfig: finalStartConfig
+            totalWeeks: userLevel === 'Principiante' ? 10 : 12,  // 10 semanas principiante, 12 intermedio/avanzado (teoría MindFeed)
+            startConfig: finalStartConfig,
+            includeWeek0: true  // Semana 0 de calibración al 70% 1RM
           })
         }
       );
@@ -509,54 +520,21 @@ export default function HipertrofiaV2ManualCard({ onGenerate, isLoading, error, 
                 >
                   Volver
                 </button>
-                {/* Lógica de adaptación: si principiante y no hay bloque, ofrecer crearlo; si listo, transicionar; si no, bloquear generación directa */}
-                {evaluation?.level === 'Principiante' ? (
-                  adaptation.hasBlock ? (
-                    adaptation.readyForTransition ? (
-                      <button
-                        onClick={() => setShowTransitionModal(true)}
-                        disabled={isLoading || generating}
-                        className="flex-1 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
-                      >
-                        <Target className="w-5 h-5" />
-                        Transicionar a D1-D5
-                      </button>
-                    ) : (
-                      <button
-                        disabled
-                        className="flex-1 py-3 bg-gray-800 text-gray-400 rounded-lg font-semibold flex items-center justify-center gap-2 cursor-not-allowed"
-                        title="Completa los criterios de adaptación antes de generar D1-D5"
-                      >
-                        <Loader className="w-5 h-5 animate-spin" />
-                        Bloque de adaptación en curso
-                      </button>
-                    )
+                {/* Simplificado: siempre permitir generar plan directamente (adaptación opcional en el dashboard) */}
+                <button
+                  onClick={handleGenerate}
+                  disabled={isLoading || generating}
+                  className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {(isLoading || generating) ? (
+                    <>
+                      <Loader className="w-5 h-5 animate-spin" />
+                      Generando...
+                    </>
                   ) : (
-                    <button
-                      onClick={() => setShowAdaptationSelect(true)}
-                      disabled={isLoading || generating}
-                      className="flex-1 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                      <Calendar className="w-5 h-5" />
-                      Iniciar bloque de adaptación
-                    </button>
-                  )
-                ) : (
-                  <button
-                    onClick={handleGenerate}
-                    disabled={isLoading || generating}
-                    className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                  >
-                    {(isLoading || generating) ? (
-                      <>
-                        <Loader className="w-5 h-5 animate-spin" />
-                        Generando...
-                      </>
-                    ) : (
-                      'Generar Plan'
-                    )}
-                  </button>
-                )}
+                    'Generar Plan'
+                  )}
+                </button>
               </div>
 
               {/* Mensaje de carga visible */}

@@ -138,10 +138,14 @@ const StartDayConfirmationModal = ({ isOpen, onClose, onConfirm, methodology }) 
     if (!selectedOption) return;
     
     const option = options.find(opt => opt.id === selectedOption);
+    const today = new Date();
+    const effectiveStartDay = option.startDate === 'next_monday' ? 1 : today.getDay();
+
     onConfirm({
       startDate: option.startDate,
       sessionsFirstWeek: option.sessionsFirstWeek,
-      isHomeTraining: option.startDate === 'home_training_today'
+      isHomeTraining: option.startDate === 'home_training_today',
+      startDayOfWeek: effectiveStartDay // 0=Dom ... 6=Sáb (solo usamos jueves para sábados)
     });
   };
 

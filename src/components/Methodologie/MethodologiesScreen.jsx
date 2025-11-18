@@ -85,8 +85,13 @@ export default function MethodologiesScreen() {
    * 🆕 Detecta si debe mostrar modal de distribución de sesiones
    * Muestra modal si comienza en día incompleto (Mar, Mié, Jue, Vie)
    */
-  const shouldShowDistributionModal = (sessionsFirstWeek) => {
-    return sessionsFirstWeek && sessionsFirstWeek < 5;
+  // Solo queremos ofrecer la opción de sábados en HipertrofiaV2 y únicamente si el inicio real es jueves.
+  // Dejamos este helper preparado por si en el futuro se extiende a otros días/metodologías.
+  const shouldShowDistributionModal = (config) => {
+    if (!config) return false;
+    const { sessionsFirstWeek, startDayOfWeek } = config;
+    const isThursdayStart = startDayOfWeek === 4; // 4 = jueves
+    return isThursdayStart && sessionsFirstWeek && sessionsFirstWeek < 5;
   };
 
   /**
@@ -421,8 +426,8 @@ export default function MethodologiesScreen() {
       const today = new Date();
       const dayOfWeek = today.getDay(); // 0=Dom, 1=Lun, 2=Mar, 3=Mié, 4=Jue, 5=Vie, 6=Sáb
 
-      // Si comienza Martes, Miércoles, Jueves o Viernes → mostrar modal de distribución
-      if ([2, 3, 4, 5].includes(dayOfWeek)) {
+      // Solo jueves ofrece modal de distribución (sábados). Otros días: flujo directo.
+      if (dayOfWeek === 4) {
         console.log('🗓️ Usuario comienza HipertrofiaV2 en día incompleto, mostrando modal de distribución...');
 
         // Calcular sesiones restantes en la primera semana
@@ -435,7 +440,8 @@ export default function MethodologiesScreen() {
             startDay: getDayName(dayOfWeek),
             totalSessions: 40,
             sessionsPerWeek: 5,
-            missingSessions: 5 - sessionsFirstWeek
+            missingSessions: 5 - sessionsFirstWeek,
+            startDayOfWeek: dayOfWeek
           }
         });
       } else {
@@ -570,15 +576,16 @@ export default function MethodologiesScreen() {
     updateLocalState({ startConfig: config });
 
     // Si comienza en día incompleto, mostrar modal de distribución
-    if (shouldShowDistributionModal(config.sessionsFirstWeek)) {
+    if (shouldShowDistributionModal(config)) {
       console.log('📊 Mostrando modal de distribución de sesiones...');
       updateLocalState({
         showDistributionModal: true,
         distributionConfig: {
-          startDay: getDayName(new Date().getDay()),
+          startDay: getDayName(config.startDayOfWeek ?? new Date().getDay()),
           totalSessions: 30, // Por defecto, se puede ajustar según metodología
           sessionsPerWeek: 5,
-          missingSessions: 5 - config.sessionsFirstWeek
+          missingSessions: 5 - config.sessionsFirstWeek,
+          startDayOfWeek: config.startDayOfWeek
         }
       });
     } else {

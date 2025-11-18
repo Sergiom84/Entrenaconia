@@ -1,7 +1,14 @@
-import React from 'react';
-import { Loader, CheckCircle, AlertTriangle, Calendar } from 'lucide-react';
+import React from "react";
+import { Loader, CheckCircle, Calendar } from "lucide-react";
 
-export default function AdaptationTrackingBadge({ loading, hasBlock, block, readyForTransition, onReload, onTransition }) {
+export default function AdaptationTrackingBadge({
+  loading,
+  hasBlock,
+  block,
+  readyForTransition,
+  onReload,
+  onTransition
+}) {
   if (loading) {
     return (
       <div className="inline-flex items-center gap-2 px-3 py-2 bg-gray-800/70 border border-gray-700 rounded-lg text-sm text-gray-300">
@@ -21,17 +28,13 @@ export default function AdaptationTrackingBadge({ loading, hasBlock, block, read
           Adaptación activa ({block?.blockType === 'half_body' ? 'Half Body' : 'Full Body'})
         </span>
         <span className="text-xs text-purple-200">
-          Semanas: {block?.weeksTracked ?? block?.durationWeeks ?? '-'} / {block?.durationWeeks ?? '-'}
+          Semanas: {block?.weeksTracked ?? block?.durationWeeks ?? "-"} / {block?.durationWeeks ?? "-"}
         </span>
         {readyForTransition ? (
           <span className="text-xs text-green-300 flex items-center gap-1">
             <CheckCircle className="w-4 h-4" /> Listo para D1–D5
           </span>
-        ) : (
-          <span className="text-xs text-yellow-200 flex items-center gap-1">
-            <AlertTriangle className="w-4 h-4" /> Completa criterios para transicionar
-          </span>
-        )}
+        ) : null}
       </div>
       <div className="flex items-center gap-2">
         <button
