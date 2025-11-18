@@ -262,6 +262,11 @@ export default function HipertrofiaV2ManualCard({ onGenerate, isLoading, error, 
 
       await fetchAdaptationProgress();
       setShowAdaptationSelect(false);
+
+      // 🔥 ACTIVAR DASHBOARD DE ADAPTACIÓN después de crear el bloque
+      setShowAdaptationDashboard(true);
+      setStep('adaptation');
+
     } catch (err) {
       console.error('❌ [ADAPTACIÓN] Error creando bloque:', err);
       alert(err.message || 'Error al crear bloque de adaptación');
