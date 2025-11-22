@@ -4,6 +4,15 @@ import { getExerciseGifUrl } from '@/config/exerciseGifs.js';
 import { getExerciseVideoUrl } from '@/config/exerciseVideos.js';
 import { formatExerciseName } from '../../../utils/exerciseUtils';
 
+function parseRepsText(raw) {
+  if (!raw) return '';
+  const str = String(raw);
+  if (!str.includes('x')) return str;
+  const parts = str.split('x');
+  if (parts.length < 2) return str;
+  return parts[1].trim();
+}
+
 /**
  * Vista del ejercicio actual - Solo UI
  *
@@ -91,7 +100,15 @@ export const ExerciseSessionView = ({
   } = timerActions;
 
   // Buscar reps en múltiples campos posibles
-  const repsText = exercise?.series_reps_objetivo || exercise?.repeticiones || exercise?.reps || '';
+  let repsText = exercise?.series_reps_objetivo || exercise?.repeticiones || exercise?.reps || '';
+  
+  // 🎯 PARSEO INTELIGENTE: Si viene como "3-5x8-12", mostrar solo "8-12"
+  // Regex busca patrón: (números) x (cualquier cosa)
+  const seriesRepsMatch = typeof repsText === 'string' ? repsText.match(/^(\d+(?:-\d+)?)\s*x\s*(.+)$/i) : null;
+  if (seriesRepsMatch) {
+    repsText = seriesRepsMatch[2]; // Nos quedamos con la segunda parte (las reps)
+  }
+
   // 🔥 CORRECCIÓN: Usar originalIndex para buscar feedback en BD
   const currentFeedback = exerciseFeedback?.[exercise?.originalIndex ?? exerciseIndex];
 

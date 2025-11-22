@@ -272,7 +272,7 @@ router.get('/progress', authenticateToken, async (req, res) => {
     const result = await pool.query(
       `SELECT * FROM app.adaptation_progress_summary
        WHERE user_id = $1 AND status = 'active'
-       ORDER BY created_at DESC
+       ORDER BY start_date DESC
        LIMIT 1`,
       [userId]
     );

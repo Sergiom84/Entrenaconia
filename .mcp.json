@@ -4,15 +4,9 @@
       "command": "npx",
       "args": [
         "-y",
-        "@supabase/mcp-server",
-        "https://mcp.supabase.com/mcp?project_ref=lhsnmjgdtjalfcsurxvg&features=docs%2Caccount%2Cdatabase%2Cdebugging%2Cdevelopment%2Cfunctions%2Cbranching%2Cstorage"
-      ]
-    },
-    "devtools": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "devtools-debugger-mcp@latest"
+        "@supabase/mcp-server-supabase@latest",
+        "--access-token",
+        "sbp_a695c76d20b4c0e34b4bf218f79c76469b04fa57"
       ]
     }
   }

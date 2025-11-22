@@ -14,7 +14,7 @@
  * @returns {Promise<Array>} Array de ejercicios seleccionados
  */
 export async function selectExercises(dbClient, filters) {
-  const { nivel, categoria, tipo_ejercicio, cantidad = 1 } = filters;
+  const { nivel, categoria, tipo_ejercicio, cantidad = 1, excludeNames = [] } = filters;
 
   let whereConditions = ['nivel = $1', 'categoria = $2'];
   let params = [nivel, categoria];
@@ -24,6 +24,13 @@ export async function selectExercises(dbClient, filters) {
     paramCount++;
     whereConditions.push(`tipo_ejercicio = $${paramCount}`);
     params.push(tipo_ejercicio);
+  }
+
+  if (Array.isArray(excludeNames) && excludeNames.length > 0) {
+    const placeholders = excludeNames.map((_, idx) => `$${paramCount + idx + 1}`).join(', ');
+    whereConditions.push(`nombre NOT IN (${placeholders})`);
+    params.push(...excludeNames);
+    paramCount += excludeNames.length;
   }
 
   const query = `

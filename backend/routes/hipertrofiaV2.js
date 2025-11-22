@@ -165,11 +165,19 @@ router.post('/generate-single-day', authenticateToken, async (req, res) => {
 
   try {
     const userId = req.user?.userId || req.user?.id;
-    const { nivel = 'Principiante', isWeekendExtra = false } = req.body;
+    const {
+      nivel = 'Principiante',
+      isWeekendExtra = false,
+      selectionMode = 'full_body',
+      focusGroup = null
+    } = req.body;
 
     await dbClient.query('BEGIN');
 
-    const result = await generateSingleDayWorkout(dbClient, userId, nivel, isWeekendExtra);
+    const result = await generateSingleDayWorkout(dbClient, userId, nivel, isWeekendExtra, {
+      selectionMode,
+      focusGroup
+    });
 
     await dbClient.query('COMMIT');
 

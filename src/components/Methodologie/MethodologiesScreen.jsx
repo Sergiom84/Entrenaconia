@@ -30,6 +30,9 @@ import { useNavigate } from 'react-router-dom';
 import WeekendWarningModal from '../routines/modals/WeekendWarningModal.jsx';
 import StartDayConfirmationModal from '../routines/modals/StartDayConfirmationModal.jsx';
 import SessionDistributionModal from '../routines/modals/SessionDistributionModal.jsx';
+import HipertrofiaWeekendModal from '../routines/modals/HipertrofiaWeekendModal.jsx';
+import HipertrofiaFocusModal from '../routines/modals/HipertrofiaFocusModal.jsx';
+import apiClient from '@/lib/apiClient';
 
 // ===============================================
 // 🎯 ESTADO LOCAL MÍNIMO PARA ESTA PANTALLA
@@ -50,7 +53,13 @@ const LOCAL_STATE_INITIAL = {
   showStartDayModal: false,
   showDistributionModal: false,
   startConfig: null,
-  distributionConfig: null
+  distributionConfig: null,
+  // 🆕 Flujos específicos HipertrofiaV2 en fin de semana
+  showHpv2WeekendModal: false,
+  showHpv2FocusModal: false,
+  pendingLevel: null,
+  pendingFocusGroup: null,
+  isGeneratingSingleDay: false
 };
 
 export default function MethodologiesScreen() {
@@ -92,6 +101,22 @@ export default function MethodologiesScreen() {
     const { sessionsFirstWeek, startDayOfWeek } = config;
     const isThursdayStart = startDayOfWeek === 4; // 4 = jueves
     return isThursdayStart && sessionsFirstWeek && sessionsFirstWeek < 5;
+  };
+
+  /**
+   * Nivel del usuario normalizado
+   */
+  const getUserLevel = () => {
+    const raw =
+      userData?.nivel_entrenamiento ||
+      userData?.nivel ||
+      user?.nivel_entrenamiento ||
+      user?.nivel ||
+      'Principiante';
+    const normalized = String(raw).toLowerCase();
+    if (normalized.includes('inter')) return 'Intermedio';
+    if (normalized.includes('avanz')) return 'Avanzado';
+    return 'Principiante';
   };
 
   /**
@@ -335,6 +360,15 @@ export default function MethodologiesScreen() {
 
     // 🎯 VERIFICAR FIN DE SEMANA
     if (isWeekend()) {
+      // HipertrofiaV2 usa flujo especial
+      if (localState.pendingMethodology?.name === 'HipertrofiaV2') {
+        updateLocalState({
+          showHpv2WeekendModal: true,
+          pendingLevel: getUserLevel()
+        });
+        return;
+      }
+
       console.log('🚨 Detectado generación en fin de semana');
       updateLocalState({
         showWeekendWarning: true,
@@ -383,6 +417,16 @@ export default function MethodologiesScreen() {
 
     // Permitir ejecución si está en modo manual O si se fuerza (clic en botón Seleccionar)
     if (localState.selectionMode === 'manual' || forceManual) {
+      // 🚨 HipertrofiaV2 en fin de semana: mostrar flujo especial
+      if (methodology.name === 'HipertrofiaV2' && isWeekend()) {
+        updateLocalState({
+          pendingMethodology: methodology,
+          showHpv2WeekendModal: true,
+          pendingLevel: getUserLevel()
+        });
+        return;
+      }
+
       // 🆕 PASO 1: Detectar si debe mostrar modal de día de inicio
       if (shouldShowStartDayModal()) {
         console.log('🗓️ Día especial detectado, mostrando modal de inicio...');
@@ -823,23 +867,16 @@ export default function MethodologiesScreen() {
 
       // Obtener perfil del usuario para el nivel
       const userProfile = JSON.parse(localStorage.getItem('userProfile') || '{}');
-      const nivel = hipertrofiaV2Data?.evaluation?.level || userProfile.nivel_entrenamiento || 'Principiante';
+      const nivel = hipertrofiaV2Data?.evaluation?.level || userProfile.nivel_entrenamiento || getUserLevel();
 
       // Cerrar el modal de HipertrofiaV2
       ui.hideModal('hipertrofiaV2Manual');
 
+      // Lanzar flujo especial de sesión única (nuevo modal)
       updateLocalState({
-        showWeekendWarning: true,
-        weekendGenerationData: {
-          versionConfig: {
-            mode: 'manual',
-            methodology: 'hipertrofiaV2',
-            ...hipertrofiaV2Data
-          },
-          fullProfile: userProfile,
-          mode: 'manual',
-          nivel: nivel
-        }
+        pendingMethodology: { name: 'HipertrofiaV2' },
+        pendingLevel: nivel,
+        showHpv2WeekendModal: true
       });
       return; // Detener aquí y esperar decisión del usuario
     }
@@ -1400,6 +1437,90 @@ export default function MethodologiesScreen() {
   };
 
   // ===============================================
+  // 🆕 HIPERTROFIA V2 - FIN DE SEMANA (UN SOLO DÍA)
+  // ===============================================
+
+  const closeHipertrofiaWeekendModals = () => {
+    updateLocalState({
+      showHpv2WeekendModal: false,
+      showHpv2FocusModal: false,
+      isGeneratingSingleDay: false,
+      pendingFocusGroup: null
+    });
+  };
+
+  const startHipertrofiaSingleDay = async ({ selectionMode = 'full_body', focusGroup = null, nivelOverride = null }) => {
+    const nivel = nivelOverride || localState.pendingLevel || getUserLevel();
+    updateLocalState({ isGeneratingSingleDay: true });
+
+    try {
+      const response = await apiClient.post('/hipertrofiav2/generate-single-day', {
+        nivel,
+        isWeekendExtra: true,
+        selectionMode,
+        focusGroup
+      });
+
+      const data = response.data || response;
+      if (!data?.success || !data?.sessionId) {
+        throw new Error(data?.error || 'No se pudo generar el entrenamiento');
+      }
+
+      const workout = data.workout || {};
+      const sessionData = {
+        dia: new Date().toLocaleDateString('es-ES', { weekday: 'long' }),
+        tipo: selectionMode === 'focus' && focusGroup ? `Foco: ${focusGroup}` : 'Full Body',
+        ejercicios: workout.exercises || [],
+        isWeekendExtra: true,
+        sessionId: data.sessionId,
+        nivel
+      };
+
+      updateLocalState({
+        pendingSessionData: sessionData,
+        showWarmupModal: true,
+        showHpv2WeekendModal: false,
+        showHpv2FocusModal: false,
+        isGeneratingSingleDay: false
+      });
+
+      ui.showModal('warmup');
+    } catch (err) {
+      console.error('❌ Error generando entrenamiento de un día (HipertrofiaV2):', err);
+      ui.setError(err?.message || 'No se pudo generar el entrenamiento para hoy');
+      updateLocalState({ isGeneratingSingleDay: false });
+    }
+  };
+
+  const handleHipertrofiaWeekendAccept = () => {
+    const level = getUserLevel();
+    // Intermedio/Avanzado → ofrecer elección Full Body vs. foco muscular
+    if (level === 'Intermedio' || level === 'Avanzado') {
+      updateLocalState({
+        showHpv2WeekendModal: false,
+        showHpv2FocusModal: true,
+        pendingLevel: level
+      });
+      return;
+    }
+
+    // Principiante → Full Body directo
+    startHipertrofiaSingleDay({ selectionMode: 'full_body', nivelOverride: level });
+  };
+
+  const handleHipertrofiaWeekendLater = () => {
+    closeHipertrofiaWeekendModals();
+  };
+
+  const handleHipertrofiaFullBodyAdvanced = () => {
+    startHipertrofiaSingleDay({ selectionMode: 'full_body' });
+  };
+
+  const handleHipertrofiaFocusGroup = (group) => {
+    startHipertrofiaSingleDay({ selectionMode: 'focus', focusGroup: group });
+  };
+
+  // ===============================================
   // 🎨 RENDER
   // ===============================================
 
@@ -1856,6 +1977,24 @@ export default function MethodologiesScreen() {
         onConfirm={handleWeekendContinueRegular}
         onFullBody={handleWeekendFullBody}
         nivel={localState.weekendGenerationData?.nivel || user?.nivel || 'Principiante'}
+      />
+
+      {/* HipertrofiaV2: flujo fin de semana de un día */}
+      <HipertrofiaWeekendModal
+        isOpen={localState.showHpv2WeekendModal}
+        dayName={new Date().toLocaleDateString('es-ES', { weekday: 'long' })}
+        onAccept={handleHipertrofiaWeekendAccept}
+        onLater={handleHipertrofiaWeekendLater}
+        onClose={closeHipertrofiaWeekendModals}
+        isLoading={localState.isGeneratingSingleDay}
+      />
+      <HipertrofiaFocusModal
+        isOpen={localState.showHpv2FocusModal}
+        nivel={localState.pendingLevel || getUserLevel()}
+        onFullBody={handleHipertrofiaFullBodyAdvanced}
+        onSelectGroup={handleHipertrofiaFocusGroup}
+        onClose={closeHipertrofiaWeekendModals}
+        isLoading={localState.isGeneratingSingleDay}
       />
 
       {/* Modal de calentamiento para entrenamiento de fin de semana */}
